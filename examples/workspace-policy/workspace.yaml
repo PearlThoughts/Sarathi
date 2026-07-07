@@ -1,0 +1,48 @@
+version: 1
+workspaceId: acme-website-rebuild
+name: Acme Website Rebuild
+
+teamProfile:
+  seniorityMix: intern-heavy
+  nudgeIntensity: high
+  coachingDepth: step-by-step
+  channelPreference: dm-first
+  escalationThreshold: 4h
+  reviewBy: delivery-manager
+
+sources:
+  teams:
+    mode: indexed+events
+    team: Acme Delivery
+    channels:
+      - General
+      - Engineering
+  jira:
+    mode: live+events
+    project: ACME
+    planSource:
+      kind: jql
+      query: project = ACME AND sprint in openSprints()
+  github:
+    mode: live+events
+    repositories:
+      - acme/web
+
+boundaries:
+  defaultSensitivity: internal
+  modelEgress:
+    - azure-openai
+  leadershipOnly:
+    - continuity-risk
+    - work-sufficiency
+    - budget-burn
+
+loops:
+  weeklyStatus:
+    cadence: Mon 09:00
+    approvalRequired: true
+  chase:
+    enabled: true
+    firstSurface: dm
+  processFaq:
+    enabled: true

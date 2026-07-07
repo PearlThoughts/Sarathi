@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": "Sarathi",
+  "purpose": "Open, inspectable AI work-partner engine for source-aware team context and policy-bounded action.",
+  "architecture": {
+    "overview": "docs/architecture/overview.md",
+    "moduleBoundaries": "docs/architecture/module-boundaries.md",
+    "identityBoundaries": "docs/architecture/identity-and-boundaries.md",
+    "workspaceOverlay": "docs/implementation/workspace-overlay.md"
+  },
+  "tests": {
+    "index": "tests/TEST-INDEX.md",
+    "manifest": "tests/manifest.json",
+    "localCi": "bun run check"
+  },
+  "boundedContexts": [
+    {
+      "name": "workspace-model",
+      "path": "src/modules/workspace-model",
+      "responsibility": "Compile source-system structures and YAML overlays into Sarathi policy boundaries."
+    },
+    {
+      "name": "identity-access",
+      "path": "src/modules/identity-access",
+      "responsibility": "Define Better Auth-facing identity and Sarathi authorization ports."
+    },
+    {
+      "name": "boundary-policy",
+      "path": "src/modules/boundary-policy",
+      "responsibility": "Evaluate trust, sensitivity, delegation stage, approval, and model-egress decisions before retrieval, tool invocation, or model egress."
+    },
+    {
+      "name": "follow-up",
+      "path": "src/modules/follow-up",
+      "responsibility": "Format generic due-item planning and exception digests from approved source-system context."
+    },
+    {
+      "name": "messaging",
+      "path": "src/modules/messaging",
+      "responsibility": "Model incoming and outgoing Microsoft Teams-ready messages without binding domain code to Bot Framework adapters."
+    }
+  ]
+}

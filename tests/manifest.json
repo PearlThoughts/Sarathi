@@ -1,0 +1,53 @@
+{
+  "suites": [
+    {
+      "id": "workspace-model",
+      "path": "tests/workspace-model.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Source inference and YAML overlay compilation coverage."
+    },
+    {
+      "id": "platform-api",
+      "path": "tests/platform-api.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Hono API surface coverage for the platform foundation."
+    },
+    {
+      "id": "release-cli",
+      "path": "tests/release-cli.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Runtime smoke command and Railway deploy guard coverage."
+    },
+    {
+      "id": "boundary-policy",
+      "path": "tests/boundary-policy.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Policy gate coverage for trust tier, delegation stage, approval, and model egress."
+    },
+    {
+      "id": "follow-up",
+      "path": "tests/follow-up.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Generic due-item planning and exception digest coverage."
+    },
+    {
+      "id": "messaging",
+      "path": "tests/messaging.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "External-principal mapping and proactive message delivery contract coverage."
+    },
+    {
+      "id": "local-ci",
+      "path": "package.json",
+      "command": "bun run check",
+      "prerequisites": ["bun install"],
+      "description": "Repository-local CI equivalent."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+
+# Beads passive exports. The Dolt-backed .beads database is the source of truth.
+.beads/issues.jsonl
+.beads/interactions.jsonl
+.beads/events.jsonl
+
+# Dependencies and local runtime artifacts.
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store

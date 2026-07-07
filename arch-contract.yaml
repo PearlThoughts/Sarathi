@@ -1,0 +1,153 @@
+version: 1
+
+project:
+  name: sarathi
+  packageManager: bun
+
+paths:
+  include:
+    - src
+  exclude:
+    - "**/*.test.ts"
+    - "**/*.spec.ts"
+
+layers:
+  - name: module-public
+    match:
+      - src/modules/*/index.ts
+      - src/modules/*/contracts.ts
+  - name: domain-kernel
+    match:
+      - src/domain/*.ts
+      - src/domain/**/*.ts
+  - name: module-domain
+    match:
+      - src/modules/**/domain/**/*.ts
+  - name: module-ports
+    match:
+      - src/modules/**/ports/**/*.ts
+      - src/platform/ports/**/*.ts
+  - name: module-application
+    match:
+      - src/modules/**/application/**/*.ts
+  - name: module-api
+    match:
+      - src/modules/**/api/**/*.ts
+  - name: platform
+    match:
+      - src/platform/*.ts
+      - src/platform/**/*.ts
+      - "!src/platform/ports/**/*.ts"
+  - name: infrastructure
+    match:
+      - src/infrastructure/**/*.ts
+  - name: shared
+    match:
+      - src/shared/*.ts
+      - src/shared/**/*.ts
+  - name: release-cli
+    match:
+      - src/cli/**/*.ts
+  - name: composition-root
+    match:
+      - src/app.ts
+      - src/main.ts
+      - src/index.ts
+
+ruleset:
+  module-public:
+    mayDependOn:
+      - domain-kernel
+      - module-api
+      - module-application
+      - module-domain
+      - module-ports
+      - module-public
+      - shared
+  module-api:
+    mayDependOn:
+      - domain-kernel
+      - module-application
+      - module-domain
+      - module-ports
+      - platform
+      - shared
+  module-application:
+    mayDependOn:
+      - domain-kernel
+      - module-application
+      - module-domain
+      - module-ports
+      - shared
+  composition-root:
+    mayDependOn:
+      - domain-kernel
+      - infrastructure
+      - module-public
+      - platform
+      - shared
+  domain-kernel:
+    mayDependOn:
+      - shared
+  infrastructure:
+    mayDependOn:
+      - domain-kernel
+      - infrastructure
+      - module-domain
+      - module-ports
+      - platform
+      - shared
+  module-domain:
+    mayDependOn:
+      - domain-kernel
+      - shared
+  platform:
+    mayDependOn:
+      - domain-kernel
+      - infrastructure
+      - module-api
+      - module-application
+      - module-domain
+      - module-ports
+      - module-public
+      - platform
+      - shared
+  module-ports:
+    mayDependOn:
+      - domain-kernel
+      - module-domain
+      - shared
+  release-cli:
+    mayDependOn:
+      - shared
+  shared:
+    mayDependOn: []
+
+expectations:
+  - name: domain-kernel-must-not-use-frameworks
+    expect:
+      layer: domain-kernel
+    to:
+      notDependOnPackages:
+        - hono
+        - express
+        - fastify
+        - "@nestjs/*"
+    severity: error
+  - name: module-domain-must-not-use-frameworks
+    expect:
+      layer: module-domain
+    to:
+      notDependOnPackages:
+        - hono
+        - express
+        - fastify
+        - "@nestjs/*"
+    severity: error
+  - name: modules-must-not-import-infrastructure
+    expect:
+      path: src/modules/**/*.ts
+    to:
+      notDependOnPaths:
+        - src/infrastructure/**
+    severity: error

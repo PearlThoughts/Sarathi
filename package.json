@@ -1,0 +1,52 @@
+{
+  "name": "@pearlthoughts/sarathi",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "bun@1.2.17",
+  "scripts": {
+    "deploy": "bun run src/cli/release.ts",
+    "deploy:railway": "bun run src/cli/release.ts railway",
+    "deploy:railway:ci": "bun run src/cli/release.ts railway --ci --json",
+    "dev": "bun run --watch src/main.ts",
+    "start": "bun run src/main.ts",
+    "runtime:health": "bun run src/cli/release.ts runtime health",
+    "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
+    "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check README.md AGENTS.md docs specs src tests package.json tsconfig.json vitest.config.ts biome.json .agents/manifest.json .dependency-cruiser.cjs knip.json && oxlint src tests",
+    "static:oxlint": "oxlint src tests",
+    "static:depcruise": "depcruise --config .dependency-cruiser.cjs src tests",
+    "static:architecture": "bun run arch:check && bun run static:depcruise",
+    "static:knip": "knip",
+    "static:type-coverage": "type-coverage --at-least 99",
+    "static:all": "bun run static:oxlint && bun run static:depcruise && bun run static:architecture && bun run static:knip && bun run static:type-coverage",
+    "arch:check": "arch-contract check --config arch-contract.yaml",
+    "arch:check:json": "arch-contract check --config arch-contract.yaml --format json",
+    "format": "biome format --write .",
+    "ci": "bun run typecheck && bun run lint && bun run static:all && bun run test",
+    "check": "bun run ci"
+  },
+  "dependencies": {
+    "better-auth": "^1.6.22",
+    "effect": "^3.15.5",
+    "hono": "^4.8.3",
+    "kysely": "^0.29.2",
+    "pg": "^8.22.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.6",
+    "@types/bun": "^1.2.17",
+    "@types/pg": "^8.20.0",
+    "arch-contract": "^0.3.0",
+    "dependency-cruiser": "^17.0.1",
+    "knip": "^5.61.3",
+    "oxlint": "^0.16.12",
+    "typescript": "^5.8.3",
+    "type-coverage": "^2.29.7",
+    "vitest": "^3.2.4"
+  }
+}
