@@ -15,7 +15,10 @@ Sarathi is currently a work in progress. The roadmap is intentionally wedge-firs
 First useful product loop:
 
 - ingest one Teams/Jira/GitHub workspace,
+- load a versioned workspace pack for source mappings and policies,
+- maintain a small Strategy Kernel of ratified goals, commitments, decisions, risks, and bets,
 - draft a weekly status report,
+- produce a daily delivery brief when the workspace needs active chasing,
 - answer process FAQ from policy,
 - chase missing updates/evidence in DM,
 - surface blockers, stale work, and missing QA,
@@ -28,12 +31,23 @@ Kill metric:
 ## Next: Delivery Assistant Loops
 
 - project intent capture,
+- inferred intent inbox,
+- human ratification workflow,
+- Jira/vault/Teams projection and verification,
 - milestone and release tracking,
 - RAID/risk register,
 - incident follow-up,
 - intern process navigator,
 - maturity dials,
 - retro/pulse pack.
+
+## Next: Strategic Execution Advisor
+
+- goals, commitments, bets, risks, decisions, KPIs, and capacity reservations as typed intent nodes,
+- graph edges from intent to Jira, Teams, GitHub, CI, meeting, and vault evidence,
+- drift detection for goals without work, work without goals, stale commitments, missing evidence, and projection conflicts,
+- weekly drift review with keep, renegotiate, drop, escalate, and publish decisions,
+- optional engineering telemetry import inspired by Apache DevLake-style SDLC models without making DevLake a v1 runtime dependency.
 
 ## Later: Agent Bridge
 
