@@ -40,3 +40,16 @@ Inferences are not enough. YAML overlays provide explicit corrections, boundary 
 This repository does not yet implement live Microsoft Graph, Linear, GitHub App, or Jira ingestion. It defines the contracts and a compiled policy model so those adapters can land without changing the core boundary.
 
 The delivery-assistant module is a skeleton contract, not a complete delivery-management implementation. It exists so product docs, examples, and later runtime loops share the same role boundary: Sarathi assists the PM; it does not replace the PM.
+
+## Strategic Execution Extension
+
+The long-term product architecture adds a Strategy Kernel above the existing evidence and policy boundaries:
+
+- workspaces define project, product, client, initiative, or operating-unit boundaries inside one installed organization,
+- intent nodes store ratified goals, commitments, bets, decisions, risks, assumptions, KPIs, and capacity reservations,
+- evidence items store observed Teams, email, meeting, Jira, GitHub, CI, and vault artifacts,
+- intent edges connect goals to commitments, risks, decisions, and execution evidence,
+- projections reconcile Sarathi-owned intent with systems such as Jira, Teams, GitHub, and vault notes,
+- accountability actions track accepted owner follow-through and escalation state.
+
+This extension is documented in [Workspace Operating Model](./workspace-operating-model.md), [Intent And Evidence Graph](./intent-evidence-graph.md), and [Strategic Execution Loop](../implementation/strategic-execution-loop.md).
