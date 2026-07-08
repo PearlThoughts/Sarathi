@@ -45,6 +45,8 @@ kernel_event
 drift_finding
 ```
 
+Derived records inherit visibility from their sources. An extracted claim, candidate intent node, projection, accountability action, or review item must default to the most restrictive visibility of the evidence and intent it references unless an authorized human explicitly downgrades sensitivity through the workspace policy process.
+
 ## Intent Nodes
 
 `intent_node` stores Sarathi-owned intent:
@@ -112,6 +114,8 @@ ingested_at
 ```
 
 Evidence is not automatically true. It is material Sarathi can cite, summarize, and use to propose extracted claims.
+
+Evidence storage should prefer durable references, excerpts, hashes, and metadata over unnecessary full-content copies. Workspaces that need full-content retention must define retention, redaction, and deletion policy before ingestion is enabled.
 
 ## Extracted Claims
 
@@ -199,4 +203,3 @@ Sarathi owns intent and accountability state. Source systems own their native re
 - Vault or policy repositories own human-readable governance records.
 
 Sarathi reconciles these systems instead of replacing them.
-

@@ -136,6 +136,6 @@ The first production slice should implement:
 6. Jira and vault projection records.
 7. Teams accountability card contracts.
 8. Drift review report generation.
+9. Workspace-scoped context assembly tests that prove one workspace's evidence cannot leak into another workspace's brief, projection, bot card, or model-visible context.
 
 Live Teams/Jira/GitHub adapters can land incrementally after the kernel and workflow are stable.
-

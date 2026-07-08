@@ -70,6 +70,8 @@ Workspace packs are desired configuration:
 
 This split keeps runtime state queryable while making boundary choices reviewable in git.
 
+Pack loading is reconciliation, not blind overwrite. A workspace pack may create missing configuration, propose seed intent, and tighten policy. It must not silently overwrite ratified runtime intent, completed accountability actions, or human-edited decisions. When pack state and database state conflict, Sarathi should create a drift finding or review item for an authorized human to resolve.
+
 ## Public And Private Workspace Packs
 
 The public repository may include synthetic workspace packs. Real organization packs should live in private repositories or private vaults when they contain sensitive names, client details, source-system IDs, or internal rationale.
@@ -111,4 +113,3 @@ workspaces/
 6. **Review:** surface drift and ask the operating owner to keep, renegotiate, drop, or escalate.
 
 The ratified workspace definition becomes the baseline for future drift detection.
-

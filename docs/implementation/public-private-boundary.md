@@ -81,6 +81,10 @@ Every intent node and evidence item should carry visibility:
 
 Visibility must be enforced before retrieval, before projection, before bot messages, and before model egress.
 
+Derived artifacts inherit the most restrictive visibility of their inputs. For example, a claim extracted from leadership-only evidence stays leadership-only even if it references a team-visible Jira issue. A bot message, report, or projection may only use that claim after policy confirms the target audience is allowed to see it.
+
+Cross-workspace aggregation is a high-risk path. Any advisor summary or operating review that spans workspaces must prove that context assembly is workspace-scoped first, then intentionally aggregate only fields allowed by the destination audience.
+
 ## Open Source Development Rule
 
 When a feature requires private context to explain why it exists, split the work:
@@ -89,4 +93,3 @@ When a feature requires private context to explain why it exists, split the work
 - private vault or workspace pack: private rationale, real mappings, and sensitive adoption notes.
 
 This keeps Sarathi open and inspectable while preserving organization-specific trust boundaries.
-
