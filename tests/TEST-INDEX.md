@@ -56,6 +56,13 @@
 - Scope: Strategy kernel entity contracts, visibility inheritance, portable migration coverage, and workspace pack reconciliation rules.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## strategy-kernel-sqlite
+
+- Command: `bun run test:bun-native`
+- Location: `tests/strategy-kernel-sqlite.bun.test.ts`
+- Scope: Bun SQLite migration application and repository persistence coverage.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## local-ci
 
 - Command: `bun run check`

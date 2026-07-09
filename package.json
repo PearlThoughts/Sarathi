@@ -15,6 +15,7 @@
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
     "test": "vitest run",
+    "test:bun-native": "bun test tests/strategy-kernel-sqlite.bun.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check README.md AGENTS.md docs specs src tests package.json tsconfig.json vitest.config.ts biome.json .agents/manifest.json .dependency-cruiser.cjs knip.json && oxlint src tests",
     "static:oxlint": "oxlint src tests",
@@ -26,11 +27,12 @@
     "arch:check": "arch-contract check --config arch-contract.yaml",
     "arch:check:json": "arch-contract check --config arch-contract.yaml --format json",
     "format": "biome format --write .",
-    "ci": "bun run typecheck && bun run lint && bun run static:all && bun run test",
+    "ci": "bun run typecheck && bun run lint && bun run static:all && bun run test && bun run test:bun-native",
     "check": "bun run ci"
   },
   "dependencies": {
     "better-auth": "^1.6.22",
+    "drizzle-orm": "^0.45.2",
     "effect": "^3.15.5",
     "hono": "^4.8.3",
     "kysely": "^0.29.2",

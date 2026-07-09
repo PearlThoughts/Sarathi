@@ -50,6 +50,13 @@
       "description": "Strategy kernel contracts, visibility inheritance, migrations, and workspace pack reconciliation coverage."
     },
     {
+      "id": "strategy-kernel-sqlite",
+      "path": "tests/strategy-kernel-sqlite.bun.test.ts",
+      "command": "bun run test:bun-native",
+      "prerequisites": ["bun install"],
+      "description": "Bun-native SQLite migration application and strategy-kernel repository persistence coverage."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",
