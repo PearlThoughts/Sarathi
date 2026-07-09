@@ -84,6 +84,13 @@
 - Scope: Intended projection creation, simulated verification states, and projection drift findings.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## accountability-actions
+
+- Command: `bun run test`
+- Location: `tests/accountability-actions.test.ts`
+- Scope: Non-live accountability action transitions, evidence-required completion, silence, escalation, and action-card feedback.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## strategic-reports
 
 - Command: `bun run test`
