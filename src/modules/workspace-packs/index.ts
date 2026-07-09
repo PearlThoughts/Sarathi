@@ -49,11 +49,11 @@ export type WorkspacePackReconciliationItem = {
 type MutablePackFragments = {
   version?: number | undefined;
   workspace?: unknown;
-  actors?: unknown;
+  actors: unknown[];
   mappings: unknown[];
   policies: Partial<Record<keyof WorkspacePackPolicies, unknown>>;
   seeds: Partial<Record<keyof WorkspacePackManifest["seeds"], unknown>>;
-  templates?: unknown;
+  templates: unknown[];
 };
 
 const sensitivityRank = {
@@ -82,9 +82,11 @@ export const loadWorkspacePackFromYamlFiles = (
   files: readonly WorkspacePackSourceFile[],
 ): WorkspacePackManifest => {
   const fragments: MutablePackFragments = {
+    actors: [],
     mappings: [],
     policies: {},
     seeds: {},
+    templates: [],
   };
 
   for (const file of files) {
@@ -96,8 +98,8 @@ export const loadWorkspacePackFromYamlFiles = (
 
     mergeOptionalTopLevel(fragments, parsed, "version");
     mergeOptionalTopLevel(fragments, parsed, "workspace");
-    mergeOptionalTopLevel(fragments, parsed, "actors");
-    mergeOptionalTopLevel(fragments, parsed, "templates");
+    mergeArrayFragment(fragments.actors, parsed, "actors", file.path);
+    mergeArrayFragment(fragments.templates, parsed, "templates", file.path);
     mergeArrayFragment(fragments.mappings, parsed, "mappings", file.path);
     mergeRecordFragment(fragments.policies, parsed, requiredPolicyKeys, file.path);
     mergeRecordFragment(fragments.seeds, parsed, ["goals", "commitments", "bets"], file.path);
@@ -107,7 +109,7 @@ export const loadWorkspacePackFromYamlFiles = (
     {
       version: fragments.version,
       workspace: fragments.workspace,
-      actors: fragments.actors,
+      actors: fragments.actors.flat(),
       mappings: fragments.mappings.flat(),
       policies: fragments.policies,
       seeds: {
@@ -115,7 +117,8 @@ export const loadWorkspacePackFromYamlFiles = (
         commitments: fragments.seeds.commitments ?? [],
         bets: fragments.seeds.bets ?? [],
       },
-      templates: fragments.templates ?? inferTemplates(files),
+      templates:
+        fragments.templates.length === 0 ? inferTemplates(files) : fragments.templates.flat(),
     },
     "workspace pack YAML fragments",
   );
@@ -154,6 +157,10 @@ const mergeOptionalTopLevel = <Key extends keyof MutablePackFragments>(
   key: Key,
 ): void => {
   if (parsed[key] !== undefined) {
+    if (fragments[key] !== undefined) {
+      throw new Error(`Workspace pack file declares duplicate top-level field ${String(key)}.`);
+    }
+
     fragments[key] = parsed[key] as MutablePackFragments[Key];
   }
 };
@@ -181,10 +188,21 @@ const mergeRecordFragment = <Key extends string>(
   target: Partial<Record<Key, unknown>>,
   parsed: Record<string, unknown>,
   keys: readonly Key[],
-  _path: string,
+  path: string,
 ): void => {
   for (const key of keys) {
     if (parsed[key] !== undefined) {
+      const existing = target[key];
+
+      if (existing !== undefined) {
+        if (Array.isArray(existing) && Array.isArray(parsed[key])) {
+          target[key] = [...existing, ...parsed[key]];
+          continue;
+        }
+
+        throw new Error(`Workspace pack file ${path} declares duplicate field ${key}.`);
+      }
+
       target[key] = parsed[key];
     }
   }

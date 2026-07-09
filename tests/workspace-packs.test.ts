@@ -358,7 +358,68 @@ describe("workspace packs", () => {
           contents: "actors: delivery-lead",
         },
       ]),
-    ).toThrow(/workspace pack YAML fragments\.actors to be an array/);
+    ).toThrow(/actors\.yaml field actors must be an array/);
+  });
+
+  it("merges split array fragments and rejects duplicate singleton fragments", () => {
+    const splitActorPack = loadWorkspacePack([
+      ...launchpadFiles.filter((file) => file.path !== "actors.yaml"),
+      {
+        path: "actors-delivery.yaml",
+        contents: `actors:
+  - key: delivery-lead
+    displayName: Delivery Lead
+    role: delivery_manager
+    canRatifyIntent: true
+    canApproveSensitivityDowngrade: false
+`,
+      },
+      {
+        path: "actors-technical.yaml",
+        contents: `actors:
+  - key: technical-lead
+    displayName: Technical Lead
+    role: technical_lead
+    canRatifyIntent: true
+    canApproveSensitivityDowngrade: false
+`,
+      },
+    ]);
+
+    expect(splitActorPack.actors.map((actor) => actor.key)).toEqual([
+      "delivery-lead",
+      "technical-lead",
+    ]);
+
+    expect(() =>
+      loadWorkspacePack([
+        ...launchpadFiles,
+        {
+          path: "workspace-duplicate.yaml",
+          contents: `workspace:
+  key: duplicate
+  name: Duplicate
+  kind: project
+  defaultSensitivity: internal
+`,
+        },
+      ]),
+    ).toThrow(/duplicate top-level field workspace/);
+
+    expect(() =>
+      loadWorkspacePack([
+        ...launchpadFiles,
+        {
+          path: "policies/accountability-duplicate.yaml",
+          contents: `accountability:
+  defaultChannel: teams_channel
+  silenceAfterHours: 12
+  escalationAfterHours: 24
+  evidenceRequiredForDone: true
+`,
+        },
+      ]),
+    ).toThrow(/duplicate field accountability/);
   });
 
   it("fails loudly for unsupported template filenames", () => {

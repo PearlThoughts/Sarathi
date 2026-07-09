@@ -154,6 +154,12 @@ const deriveWorkspaceScopedVisibility = (inputs: WorkspaceScopedReportInputs): S
     .map((item) => item.sensitivity)
     .reduce(maxSensitivity, "public");
 
+const deriveRenderedVisibility = (sections: readonly StrategicReportSection[]): SensitivityTier =>
+  sections
+    .flatMap((candidate) => candidate.entries)
+    .map((entry) => entry.sensitivity)
+    .reduce(maxSensitivity, "public");
+
 const report = (
   inputs: StrategicReportInputs,
   kind: StrategicReportKind,
@@ -168,7 +174,7 @@ const report = (
     kind,
     workspaceId: scoped.workspaceId,
     title,
-    visibility: deriveWorkspaceScopedVisibility(scoped),
+    visibility: deriveRenderedVisibility(filteredSections),
     summary,
     sections: filteredSections,
     totals: countTotals(scoped),

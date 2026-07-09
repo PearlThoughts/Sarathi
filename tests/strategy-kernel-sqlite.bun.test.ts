@@ -270,4 +270,57 @@ describe("sqlite strategy kernel repository", () => {
     expect(await repository.listPendingClaims(workspace.id)).toEqual([claim]);
     expect(readWorkspaceActorRoleRows(database, workspace.id)).toEqual([role]);
   });
+
+  it("upserts records using natural unique keys when callers regenerate ids", async () => {
+    const database = openStrategyKernelSqliteDatabase();
+    applyStrategyKernelSqliteMigrations(database);
+    const repository = createSqliteStrategyKernelRepository(database);
+
+    await repository.saveOrganization(organization);
+    await repository.saveWorkspace(workspace);
+    await repository.saveActor(actor);
+    await repository.saveWorkspaceActorRole(role);
+    await repository.saveEvidenceItem(evidence);
+
+    await repository.saveWorkspace({
+      ...workspace,
+      id: "regenerated-workspace-id",
+      name: "Launchpad Renamed",
+      updatedAt: "2026-07-09T13:00:00.000Z",
+    });
+    await repository.saveWorkspaceActorRole({
+      ...role,
+      id: "regenerated-role-id",
+      canApproveSensitivityDowngrade: true,
+    });
+    await repository.saveEvidenceItem({
+      ...evidence,
+      id: "regenerated-evidence-id",
+      title: "QA commitment updated",
+      bodyExcerpt: "Updated synthetic evidence excerpt.",
+      contentHash: "sha256-updated",
+    });
+
+    const workspaceRows = database
+      .query("select id, name from workspace where organization_id = ? and key = ?")
+      .all(organization.id, workspace.key);
+    const roleRows = readWorkspaceActorRoleRows(database, workspace.id);
+    const evidenceRows = await repository.listWorkspaceEvidence(workspace.id);
+
+    expect(workspaceRows).toEqual([{ id: workspace.id, name: "Launchpad Renamed" }]);
+    expect(roleRows).toEqual([
+      {
+        ...role,
+        canApproveSensitivityDowngrade: true,
+      },
+    ]);
+    expect(evidenceRows).toEqual([
+      {
+        ...evidence,
+        title: "QA commitment updated",
+        bodyExcerpt: "Updated synthetic evidence excerpt.",
+        contentHash: "sha256-updated",
+      },
+    ]);
+  });
 });

@@ -125,7 +125,7 @@ export const createSqliteStrategyKernelRepository = (
         .insert(workspaceTable)
         .values(workspace)
         .onConflictDoUpdate({
-          target: workspaceTable.id,
+          target: [workspaceTable.organizationId, workspaceTable.key],
           set: {
             name: workspace.name,
             kind: workspace.kind,
@@ -177,7 +177,11 @@ export const createSqliteStrategyKernelRepository = (
           canApproveSensitivityDowngrade: booleanToInteger(role.canApproveSensitivityDowngrade),
         })
         .onConflictDoUpdate({
-          target: workspaceActorRoleTable.id,
+          target: [
+            workspaceActorRoleTable.workspaceId,
+            workspaceActorRoleTable.actorId,
+            workspaceActorRoleTable.role,
+          ],
           set: {
             role: role.role,
             canRatifyIntent: booleanToInteger(role.canRatifyIntent),
@@ -229,7 +233,11 @@ export const createSqliteStrategyKernelRepository = (
           actorId: optional(item.actorId),
         })
         .onConflictDoUpdate({
-          target: evidenceItemTable.id,
+          target: [
+            evidenceItemTable.workspaceId,
+            evidenceItemTable.sourceSystem,
+            evidenceItemTable.externalId,
+          ],
           set: {
             title: item.title,
             bodyExcerpt: item.bodyExcerpt,
