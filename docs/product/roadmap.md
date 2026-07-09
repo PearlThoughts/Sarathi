@@ -10,13 +10,15 @@ Sarathi is currently a work in progress. The roadmap is intentionally wedge-firs
 - Keep skeleton code honest about what exists.
 - Ask delivery managers and software teams for feedback.
 
-## Wedge: PM-Reviewed Delivery Status
+## Wedge: PM-Reviewed Delivery Review
 
 First useful product loop:
 
 - ingest one Teams/Jira/GitHub workspace,
 - load a versioned workspace pack for source mappings and policies,
 - maintain a small Strategy Kernel of ratified goals, commitments, decisions, risks, and bets,
+- generate an initial delivery review over existing work signals,
+- identify goals without work, work without goals, stale commitments, missing evidence, and projection drift,
 - draft a weekly status report,
 - produce a daily delivery brief when the workspace needs active chasing,
 - answer process FAQ from policy,
@@ -26,9 +28,9 @@ First useful product loop:
 
 Kill metric:
 
-> The PM approves the weekly report with minimal edits and spends materially less time chasing updates.
+> The PM can approve a delivery review with minimal edits, use it to correct Jira/Vault/Teams, and spend materially less time chasing updates.
 
-## Next: Delivery Assistant Loops
+## Next: Delivery Alignment Loops
 
 - project intent capture,
 - inferred intent inbox,
@@ -39,7 +41,7 @@ Kill metric:
 - incident follow-up,
 - intern process navigator,
 - maturity dials,
-- retro/pulse pack.
+- retro/pulse pack and initial delivery-review pack.
 
 ## Next: Strategic Execution Advisor
 
