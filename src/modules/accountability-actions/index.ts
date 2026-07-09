@@ -52,40 +52,51 @@ export type AccountabilityActionResult = {
 export const createAccountabilityAction = async ({
   repository,
   intent,
-  actorId = intent.ownerActorId,
+  actorId,
   channel,
   policy,
   dueAt = intent.dueAt,
   occurredAt,
 }: CreateAccountabilityActionInput): Promise<AccountabilityActionResult> =>
   repository.withTransaction(async (transaction) => {
-    assertChaseableCommitment(intent);
+    const persistedIntent = await transaction.getIntentNode(intent.id);
 
-    if (actorId === undefined) {
+    if (persistedIntent === undefined || persistedIntent.workspaceId !== intent.workspaceId) {
+      throw new Error(`Cannot create accountability action for missing commitment ${intent.id}.`);
+    }
+
+    assertChaseableCommitment(persistedIntent);
+    assertNoOpenActionForIntent(
+      await transaction.listWorkspaceAccountabilityActions(persistedIntent.workspaceId),
+      persistedIntent.id,
+    );
+    const ownerActorId = actorId ?? persistedIntent.ownerActorId;
+
+    if (ownerActorId === undefined) {
       throw new Error(
-        `Cannot create accountability action for commitment ${intent.id} without an owner.`,
+        `Cannot create accountability action for commitment ${persistedIntent.id} without an owner.`,
       );
     }
 
     const action: AccountabilityAction = {
-      id: uniqueId(`action:${intent.id}`),
-      workspaceId: intent.workspaceId,
-      intentNodeId: intent.id,
-      actorId,
+      id: uniqueId(`action:${persistedIntent.id}`),
+      workspaceId: persistedIntent.workspaceId,
+      intentNodeId: persistedIntent.id,
+      actorId: ownerActorId,
       channel: channel ?? policy.defaultChannel,
       state: "pending",
-      dueAt,
+      dueAt: dueAt ?? persistedIntent.dueAt,
       escalationLevel: 0,
       evidenceRequired: policy.evidenceRequiredForDone,
-      sensitivity: deriveAccountabilitySensitivity(intent, []),
+      sensitivity: deriveAccountabilitySensitivity(persistedIntent, []),
     };
     const event = actionEvent(action, {
       action: "edited",
-      actorId,
+      actorId: ownerActorId,
       occurredAt,
       payload: {
         operation: "created",
-        intentNodeId: intent.id,
+        intentNodeId: persistedIntent.id,
         channel: action.channel,
         dueAt: action.dueAt,
         evidenceRequired: action.evidenceRequired,
@@ -261,6 +272,7 @@ export const escalateAction = async (
       patch: {
         state: "escalated",
         escalationLevel,
+        lastNudgedAt: input.occurredAt,
       },
       payload: {
         operation: "escalate",
@@ -272,23 +284,25 @@ export const escalateAction = async (
 export const recordActionCardInteraction = async (
   repository: StrategyKernelRepository,
   interaction: ActionCardInteraction,
-): Promise<KernelEvent> => {
-  const action = await persistedAction(repository, interaction.action);
-  const event = actionEvent(action, {
-    action: "card_interacted",
-    actorId: interaction.actorId,
-    occurredAt: interaction.occurredAt,
-    payload: {
-      interactionId: interaction.interactionId,
-      response: interaction.response,
-      comment: interaction.comment,
-    },
+): Promise<KernelEvent> =>
+  repository.withTransaction(async (transaction) => {
+    const action = await persistedAction(transaction, interaction.action);
+    const event = actionEvent(action, {
+      action: "card_interacted",
+      actorId: interaction.actorId,
+      occurredAt: interaction.occurredAt,
+      payload: {
+        interactionId: interaction.interactionId,
+        response: interaction.response,
+        comment: interaction.comment,
+        eventOnly: true,
+      },
+    });
+
+    await transaction.saveKernelEvent(event);
+
+    return event;
   });
-
-  await repository.saveKernelEvent(event);
-
-  return event;
-};
 
 const updateAction = async (
   repository: StrategyKernelRepository,
@@ -321,6 +335,7 @@ const saveActionTransition = async (
     ...action,
     ...update.patch,
   };
+  assertActionTransitionAllowed(action, updatedAction);
   const event = actionEvent(updatedAction, {
     action: update.action,
     actorId: update.actorId,
@@ -350,7 +365,54 @@ const persistedAction = async (
 
 const assertChaseableCommitment = (intent: IntentNode): void => {
   if (intent.kind !== "commitment" || !["ratified", "active", "at_risk"].includes(intent.state)) {
-    throw new Error(`Sarathi only chases ratified or active commitments, not ${intent.kind}.`);
+    throw new Error(
+      `Sarathi only chases ratified, active, or at-risk commitments, not ${intent.kind}:${intent.state}.`,
+    );
+  }
+};
+
+const assertNoOpenActionForIntent = (
+  actions: readonly AccountabilityAction[],
+  intentNodeId: string,
+): void => {
+  const existing = actions.find(
+    (action) =>
+      action.intentNodeId === intentNodeId && !["done", "cancelled"].includes(action.state),
+  );
+
+  if (existing !== undefined) {
+    throw new Error(`Commitment ${intentNodeId} already has open action ${existing.id}.`);
+  }
+};
+
+const allowedStateTransitions: Readonly<
+  Record<AccountabilityAction["state"], readonly AccountabilityAction["state"][]>
+> = {
+  pending: ["sent"],
+  sent: ["acknowledged", "blocked", "done", "silent", "escalated"],
+  acknowledged: ["blocked", "done", "escalated"],
+  blocked: [],
+  done: [],
+  silent: ["acknowledged", "blocked", "escalated"],
+  escalated: ["acknowledged", "blocked", "done"],
+  cancelled: [],
+};
+
+const assertActionTransitionAllowed = (
+  current: AccountabilityAction,
+  next: AccountabilityAction,
+): void => {
+  if (current.state === next.state) {
+    if (["done", "cancelled"].includes(current.state)) {
+      throw new Error(`Cannot edit terminal accountability action ${current.id}.`);
+    }
+    return;
+  }
+
+  if (!allowedStateTransitions[current.state].includes(next.state)) {
+    throw new Error(
+      `Cannot transition accountability action ${current.id} from ${current.state} to ${next.state}.`,
+    );
   }
 };
 
@@ -365,6 +427,10 @@ const assertElapsedPolicyWindow = (
   }
 
   const elapsedHours = (Date.parse(occurredAt) - Date.parse(anchorAt)) / 3_600_000;
+
+  if (!Number.isFinite(elapsedHours)) {
+    throw new Error(`Cannot mark ${label} with invalid timestamp.`);
+  }
 
   if (elapsedHours < thresholdHours) {
     throw new Error(`Cannot mark ${label} before ${thresholdHours} hours have elapsed.`);

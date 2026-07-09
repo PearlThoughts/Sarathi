@@ -106,6 +106,7 @@ describe("accountability actions", () => {
       sensitivity: "internal",
     });
     expect(result.event.action).toBe("edited");
+    await expect(createAccountabilityAction(input)).rejects.toThrow(/already has open action/);
     await expect(
       createAccountabilityAction({
         repository: store.repository,
@@ -175,6 +176,14 @@ describe("accountability actions", () => {
     expect(
       (await store.repository.listWorkspaceKernelEvents(workspaceId)).map((event) => event.action),
     ).toEqual(["edited", "edited", "edited", "edited", "nudged", "acknowledged", "blocked"]);
+    await expect(
+      markSent({
+        repository: store.repository,
+        action: blocked.action,
+        actorId: "actor-lead",
+        occurredAt: threeDaysLater,
+      }),
+    ).rejects.toThrow(/from blocked to sent/);
   });
 
   it("requires same-workspace evidence before marking evidence-required actions done", async () => {
@@ -219,6 +228,14 @@ describe("accountability actions", () => {
       sensitivity: "confidential",
     });
     expect(done.event.action).toBe("completed");
+    await expect(
+      markSent({
+        repository: store.repository,
+        action: done.action,
+        actorId: "actor-lead",
+        occurredAt: threeDaysLater,
+      }),
+    ).rejects.toThrow(/from done to sent/);
   });
 
   it("records silence, escalation, and action-card interaction feedback", async () => {
@@ -236,6 +253,16 @@ describe("accountability actions", () => {
       occurredAt: now,
     };
     const sent = await markSent(sentInput);
+
+    await expect(
+      markSilent({
+        repository: store.repository,
+        action: sent.action,
+        policy,
+        actorId: "actor-lead",
+        occurredAt: "not-a-date",
+      }),
+    ).rejects.toThrow(/invalid timestamp/);
 
     await expect(
       markSilent({
@@ -261,6 +288,15 @@ describe("accountability actions", () => {
       actorId: "actor-lead",
       occurredAt: threeDaysLater,
     });
+    await expect(
+      escalateAction({
+        repository: store.repository,
+        action: escalated.action,
+        policy,
+        actorId: "actor-lead",
+        occurredAt: threeDaysLater,
+      }),
+    ).rejects.toThrow(/before 48 hours/);
     const interaction: ActionCardInteraction = {
       interactionId: "interaction-1",
       action: escalated.action,
@@ -278,6 +314,7 @@ describe("accountability actions", () => {
     expect(JSON.parse(cardEvent.payloadJson)).toMatchObject({
       interactionId: "interaction-1",
       response: "comment",
+      eventOnly: true,
     });
     expect(
       (await store.repository.listWorkspaceKernelEvents(workspaceId)).map((event) => event.action),
@@ -297,6 +334,9 @@ const createMemoryRepository = (): MemoryRepositoryStore => {
   const actions = new Map<string, AccountabilityAction>();
   const driftFindings = new Map<string, DriftFinding>();
   const events = new Map<string, KernelEvent>();
+
+  intents.set(commitment.id, commitment);
+  intents.set(goal.id, goal);
 
   const repository: StrategyKernelRepository = {
     withTransaction: async (operation) => operation(repository),
