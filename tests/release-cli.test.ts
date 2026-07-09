@@ -110,4 +110,57 @@ describe("release CLI", () => {
       configured: true,
     });
   });
+
+  it("routes strategic runtime CLI commands through domain workflows", async () => {
+    const workspace = "workspace-cli";
+    const commands = [
+      ["workspace", "reconcile", "--pack", "synthetic-pack"],
+      ["intent", "inbox", "--workspace", workspace],
+      ["intent", "accept", "claim-cli", "--workspace", workspace],
+      ["intent", "reject", "claim-cli", "--workspace", workspace],
+      ["projection", "verify", "--workspace", workspace],
+      ["accountability", "list", "--workspace", workspace],
+      ["report", "drift-review", "--workspace", workspace],
+    ] as const;
+
+    const results = await Promise.all(
+      commands.map((args) =>
+        runReleaseCli({
+          args,
+          env: {},
+          fetcher: async () => {
+            throw new Error("unexpected fetch");
+          },
+        }),
+      ),
+    );
+
+    expect(results.every((result) => result.exitCode === 0)).toBe(true);
+    expect(results[0]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      workspaceKey: "launchpad",
+    });
+    expect(results[1]?.output).toMatchObject({ mode: "synthetic", workspaceId: workspace });
+    expect(results[2]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      claim: { id: "claim-cli", state: "accepted" },
+    });
+    expect(results[3]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      claim: { id: "claim-cli", state: "rejected" },
+    });
+    expect(results[4]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      projection: { workspaceId: workspace, driftStatus: "stale" },
+    });
+    expect(results[5]?.output).toMatchObject({ mode: "synthetic", workspaceId: workspace });
+    expect(results[6]?.output).toMatchObject({
+      kind: "weekly_drift_review",
+      workspaceId: workspace,
+    });
+  });
 });
