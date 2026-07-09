@@ -1,0 +1,6 @@
+commitments:
+  - key: qa-evidence
+    kind: commitment
+    title: Attach QA evidence before done
+    body: Completion requires linked QA evidence from an accepted source system.
+    sensitivity: internal

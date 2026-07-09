@@ -38,6 +38,11 @@
       "name": "messaging",
       "path": "src/modules/messaging",
       "responsibility": "Model incoming and outgoing Microsoft Teams-ready messages without binding domain code to Bot Framework adapters."
+    },
+    {
+      "name": "strategy-kernel",
+      "path": "src/modules/strategy-kernel",
+      "responsibility": "Model Sarathi-owned intent, evidence, projections, accountability actions, workspace relations, migrations, and workspace pack contracts."
     }
   ]
 }

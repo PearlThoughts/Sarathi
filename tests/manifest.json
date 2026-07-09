@@ -43,6 +43,13 @@
       "description": "External-principal mapping and proactive message delivery contract coverage."
     },
     {
+      "id": "strategy-kernel",
+      "path": "tests/strategy-kernel.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Strategy kernel contracts, visibility inheritance, migrations, and workspace pack reconciliation coverage."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",

@@ -1,0 +1,10 @@
+version: 1
+workspace:
+  key: launchpad
+  name: Launchpad Delivery
+  kind: project
+  defaultSensitivity: internal
+  relations:
+    - targetWorkspaceKey: portfolio-review
+      relationType: synthesizes_into
+      description: Approved summary fields roll up without raw evidence leakage.

@@ -1,0 +1,5 @@
+accountability:
+  defaultChannel: teams_channel
+  silenceAfterHours: 24
+  escalationAfterHours: 48
+  evidenceRequiredForDone: true
