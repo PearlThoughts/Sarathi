@@ -82,7 +82,7 @@ describe("projections", () => {
       driftStatus: "missing",
       sensitivity: "confidential",
     });
-    expect(projection.lastPublishedHash).toMatch(/^fnv1a-/);
+    expect(projection.lastPublishedHash).toMatch(/^sha256-/);
     expect(event.action).toBe("published");
     expect(JSON.parse(event.payloadJson)).toMatchObject({ intendedOnly: true });
     expect(await store.repository.listWorkspaceProjections(workspaceId)).toEqual([projection]);
@@ -192,8 +192,12 @@ describe("projections", () => {
       publishedHash: "hash-1",
     });
 
-    expect(projectionDriftFinding(projection, "conflicting", now)).toMatchObject({
-      id: "drift:projection:intent-qa-evidence:github:pull_request:pr-1:conflicting",
+    const finding = projectionDriftFinding(projection, "conflicting", now);
+
+    expect(finding.id).toMatch(
+      /^drift:projection:intent-qa-evidence:github:pull_request:pr-1:conflicting:/,
+    );
+    expect(finding).toMatchObject({
       workspaceId,
       findingType: "projection_drift",
       relatedEntityType: "projection",
@@ -216,53 +220,58 @@ const createMemoryRepository = (): MemoryRepositoryStore => {
   const driftFindings = new Map<string, DriftFinding>();
   const events = new Map<string, KernelEvent>();
 
-  return {
-    repository: {
-      saveOrganization: async (_organization: Organization) => undefined,
-      saveWorkspace: async (_workspace: Workspace) => undefined,
-      saveWorkspaceRelation: async (_relation: WorkspaceRelation) => undefined,
-      saveActor: async (_actor: Actor) => undefined,
-      saveWorkspaceActorRole: async (_role: WorkspaceActorRole) => undefined,
-      saveExternalSystem: async (_system: ExternalSystem) => undefined,
-      saveExternalResourceMapping: async (_mapping: ExternalResourceMapping) => undefined,
-      saveEvidenceItem: async (item) => {
-        evidence.set(item.id, item);
-      },
-      saveExtractedClaim: async (claim) => {
-        claims.set(claim.id, claim);
-      },
-      saveIntentNode: async (node) => {
-        intents.set(node.id, node);
-      },
-      saveIntentEdge: async (_edge: IntentEdge) => undefined,
-      saveProjection: async (projection) => {
-        projections.set(projection.id, projection);
-      },
-      saveAccountabilityAction: async (action) => {
-        actions.set(action.id, action);
-      },
-      saveKernelEvent: async (event) => {
-        events.set(event.id, event);
-      },
-      saveDriftFinding: async (finding) => {
-        driftFindings.set(finding.id, finding);
-      },
-      listWorkspaceEvidence: async (workspaceId) =>
-        [...evidence.values()].filter((item) => item.workspaceId === workspaceId),
-      listWorkspaceIntent: async (workspaceId) =>
-        [...intents.values()].filter((intent) => intent.workspaceId === workspaceId),
-      listPendingClaims: async (workspaceId) =>
-        [...claims.values()].filter(
-          (claim) => claim.workspaceId === workspaceId && claim.state === "pending",
-        ),
-      listWorkspaceProjections: async (workspaceId) =>
-        [...projections.values()].filter((projection) => projection.workspaceId === workspaceId),
-      listWorkspaceAccountabilityActions: async (workspaceId) =>
-        [...actions.values()].filter((action) => action.workspaceId === workspaceId),
-      listWorkspaceDriftFindings: async (workspaceId) =>
-        [...driftFindings.values()].filter((finding) => finding.workspaceId === workspaceId),
-      listWorkspaceKernelEvents: async (workspaceId) =>
-        [...events.values()].filter((event) => event.workspaceId === workspaceId),
+  const repository: StrategyKernelRepository = {
+    withTransaction: async (operation) => operation(repository),
+    saveOrganization: async (_organization: Organization) => undefined,
+    saveWorkspace: async (_workspace: Workspace) => undefined,
+    saveWorkspaceRelation: async (_relation: WorkspaceRelation) => undefined,
+    saveActor: async (_actor: Actor) => undefined,
+    saveWorkspaceActorRole: async (_role: WorkspaceActorRole) => undefined,
+    saveExternalSystem: async (_system: ExternalSystem) => undefined,
+    saveExternalResourceMapping: async (_mapping: ExternalResourceMapping) => undefined,
+    saveEvidenceItem: async (item) => {
+      evidence.set(item.id, item);
     },
+    saveExtractedClaim: async (claim) => {
+      claims.set(claim.id, claim);
+    },
+    saveIntentNode: async (node) => {
+      intents.set(node.id, node);
+    },
+    saveIntentEdge: async (_edge: IntentEdge) => undefined,
+    saveProjection: async (projection) => {
+      projections.set(projection.id, projection);
+    },
+    saveAccountabilityAction: async (action) => {
+      actions.set(action.id, action);
+    },
+    saveKernelEvent: async (event) => {
+      events.set(event.id, event);
+    },
+    saveDriftFinding: async (finding) => {
+      driftFindings.set(finding.id, finding);
+    },
+    listWorkspaceEvidence: async (workspaceId) =>
+      [...evidence.values()].filter((item) => item.workspaceId === workspaceId),
+    listWorkspaceIntent: async (workspaceId) =>
+      [...intents.values()].filter((intent) => intent.workspaceId === workspaceId),
+    listPendingClaims: async (workspaceId) =>
+      [...claims.values()].filter(
+        (claim) => claim.workspaceId === workspaceId && claim.state === "pending",
+      ),
+    getExtractedClaim: async (claimId) => claims.get(claimId),
+    getIntentNode: async (intentNodeId) => intents.get(intentNodeId),
+    listWorkspaceProjections: async (workspaceId) =>
+      [...projections.values()].filter((projection) => projection.workspaceId === workspaceId),
+    listWorkspaceAccountabilityActions: async (workspaceId) =>
+      [...actions.values()].filter((action) => action.workspaceId === workspaceId),
+    listWorkspaceDriftFindings: async (workspaceId) =>
+      [...driftFindings.values()].filter((finding) => finding.workspaceId === workspaceId),
+    listWorkspaceKernelEvents: async (workspaceId) =>
+      [...events.values()].filter((event) => event.workspaceId === workspaceId),
+  };
+
+  return {
+    repository,
   };
 };

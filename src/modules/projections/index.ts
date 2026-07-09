@@ -1,3 +1,4 @@
+import { stableSha256, uniqueId } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   type DriftFinding,
@@ -66,7 +67,7 @@ export const recordIntendedProjection = async (
   occurredAt: string,
 ): Promise<KernelEvent> => {
   const event = kernelEvent({
-    id: `event:${projection.id}:published`,
+    id: uniqueEventId(`event:${projection.id}:published`),
     workspaceId: projection.workspaceId,
     entityType: "projection",
     entityId: projection.id,
@@ -81,8 +82,10 @@ export const recordIntendedProjection = async (
     sensitivity: projection.sensitivity,
   });
 
-  await repository.saveProjection(projection);
-  await repository.saveKernelEvent(event);
+  await repository.withTransaction(async (transaction) => {
+    await transaction.saveProjection(projection);
+    await transaction.saveKernelEvent(event);
+  });
 
   return event;
 };
@@ -128,7 +131,7 @@ export const verifyProjectionAgainstSimulation = async (
     driftStatus,
   };
   const event = kernelEvent({
-    id: `event:${projection.id}:verified:${stableHash(`${verifiedAt}:${driftStatus}`)}`,
+    id: uniqueEventId(`event:${projection.id}:verified`),
     workspaceId: projection.workspaceId,
     entityType: "projection",
     entityId: projection.id,
@@ -148,12 +151,14 @@ export const verifyProjectionAgainstSimulation = async (
       ? undefined
       : projectionDriftFinding(verifiedProjection, driftStatus, verifiedAt);
 
-  await repository.saveProjection(verifiedProjection);
-  await repository.saveKernelEvent(event);
+  await repository.withTransaction(async (transaction) => {
+    await transaction.saveProjection(verifiedProjection);
+    await transaction.saveKernelEvent(event);
 
-  if (driftFinding !== undefined) {
-    await repository.saveDriftFinding(driftFinding);
-  }
+    if (driftFinding !== undefined) {
+      await transaction.saveDriftFinding(driftFinding);
+    }
+  });
 
   return { projection: verifiedProjection, event, driftFinding };
 };
@@ -163,7 +168,7 @@ export const projectionDriftFinding = (
   driftStatus: Exclude<ProjectionDriftStatus, "in_sync">,
   createdAt: string,
 ): DriftFinding => ({
-  id: `drift:${projection.id}:${driftStatus}`,
+  id: uniqueId(`drift:${projection.id}:${driftStatus}`),
   workspaceId: projection.workspaceId,
   findingType: "projection_drift",
   title: projectionDriftTitle(projection, driftStatus),
@@ -187,7 +192,7 @@ const projectionHash = (
   targetSystem: ProjectionTargetSystem,
   targetType: ProjectionTargetType,
 ): string =>
-  stableHash(
+  stableSha256(
     [
       intent.id,
       intent.workspaceId,
@@ -226,17 +231,6 @@ const projectionDriftBody = (
     "Sarathi records drift only; live external writes are outside this slice.",
   ].join(" ");
 
-const stableHash = (input: string): string => {
-  let hash = 0x811c9dc5;
-
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
-};
-
 type KernelEventInput = Omit<KernelEvent, "payloadJson"> & {
   readonly payload: Record<string, unknown>;
 };
@@ -245,3 +239,5 @@ const kernelEvent = ({ payload, ...event }: KernelEventInput): KernelEvent => ({
   ...event,
   payloadJson: JSON.stringify(payload),
 });
+
+const uniqueEventId = (prefix: string): string => uniqueId(prefix);

@@ -61,7 +61,7 @@ describe("intent inbox", () => {
     const pendingClaims = await store.repository.listPendingClaims(evidenceInput.workspaceId);
 
     expect(defaultClaimExtractionRules.length).toBeGreaterThan(0);
-    expect(result.evidence.contentHash).toMatch(/^fnv1a-/);
+    expect(result.evidence.contentHash).toMatch(/^sha256-/);
     expect(typedResult.claims.map((claim) => claim.claimType)).toEqual([
       "possible_commitment",
       "blocker",
@@ -179,6 +179,81 @@ describe("intent inbox", () => {
       },
     ]);
   });
+
+  it("rejects transitions when the persisted claim has already left the inbox", async () => {
+    const store = createMemoryRepository();
+    const evidence = buildEvidenceItem(evidenceInput, now);
+    const [claim] = extractClaimsFromEvidence(evidence, now);
+
+    if (claim === undefined) {
+      throw new Error("Expected synthetic fixture to produce a claim.");
+    }
+
+    await store.repository.saveExtractedClaim(claim);
+    await rejectClaim({
+      repository: store.repository,
+      claim,
+      actorId: "actor-lead",
+      reason: "Not actionable.",
+      occurredAt: later,
+    });
+
+    await expect(
+      acceptClaimAsIntent({
+        repository: store.repository,
+        claim,
+        actorId: "actor-lead",
+        occurredAt: later,
+      }),
+    ).rejects.toThrow(/from rejected/);
+  });
+
+  it("tightens target intent sensitivity when merging a higher-sensitivity claim", async () => {
+    const store = createMemoryRepository();
+    const claim: ExtractedClaim = {
+      id: "claim-restricted",
+      evidenceItemId: "evidence-restricted",
+      workspaceId: evidenceInput.workspaceId,
+      claimType: "risk",
+      text: "Restricted risk should not downgrade when merged.",
+      confidence: 0.9,
+      state: "pending",
+      sensitivity: "restricted",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const targetIntent: IntentNode = {
+      id: "intent-public",
+      workspaceId: evidenceInput.workspaceId,
+      kind: "goal",
+      title: "Public launch goal",
+      body: "Launch safely.",
+      state: "ratified",
+      sensitivity: "public",
+      createdBy: "human",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await store.repository.saveExtractedClaim(claim);
+    await store.repository.saveIntentNode(targetIntent);
+
+    const merged = await mergeClaim({
+      repository: store.repository,
+      claim,
+      actorId: "actor-lead",
+      intoIntentNodeId: targetIntent.id,
+      reason: "Restricted risk affects the public goal.",
+      occurredAt: later,
+    });
+
+    expect(merged.intent).toMatchObject({
+      id: targetIntent.id,
+      sensitivity: "restricted",
+      updatedAt: later,
+    });
+    expect((await store.repository.getIntentNode(targetIntent.id))?.sensitivity).toBe("restricted");
+  });
 });
 
 type MemoryRepositoryStore = {
@@ -194,53 +269,58 @@ const createMemoryRepository = (): MemoryRepositoryStore => {
   const driftFindings = new Map<string, DriftFinding>();
   const events = new Map<string, KernelEvent>();
 
-  return {
-    repository: {
-      saveOrganization: async (_organization: Organization) => undefined,
-      saveWorkspace: async (_workspace: Workspace) => undefined,
-      saveWorkspaceRelation: async (_relation: WorkspaceRelation) => undefined,
-      saveActor: async (_actor: Actor) => undefined,
-      saveWorkspaceActorRole: async (_role: WorkspaceActorRole) => undefined,
-      saveExternalSystem: async (_system: ExternalSystem) => undefined,
-      saveExternalResourceMapping: async (_mapping: ExternalResourceMapping) => undefined,
-      saveEvidenceItem: async (item) => {
-        evidence.set(item.id, item);
-      },
-      saveExtractedClaim: async (claim) => {
-        claims.set(claim.id, claim);
-      },
-      saveIntentNode: async (node) => {
-        intents.set(node.id, node);
-      },
-      saveIntentEdge: async (_edge: IntentEdge) => undefined,
-      saveProjection: async (projection) => {
-        projections.set(projection.id, projection);
-      },
-      saveAccountabilityAction: async (action) => {
-        actions.set(action.id, action);
-      },
-      saveKernelEvent: async (event) => {
-        events.set(event.id, event);
-      },
-      saveDriftFinding: async (finding) => {
-        driftFindings.set(finding.id, finding);
-      },
-      listWorkspaceEvidence: async (workspaceId) =>
-        [...evidence.values()].filter((item) => item.workspaceId === workspaceId),
-      listWorkspaceIntent: async (workspaceId) =>
-        [...intents.values()].filter((intent) => intent.workspaceId === workspaceId),
-      listPendingClaims: async (workspaceId) =>
-        [...claims.values()].filter(
-          (claim) => claim.workspaceId === workspaceId && claim.state === "pending",
-        ),
-      listWorkspaceProjections: async (workspaceId) =>
-        [...projections.values()].filter((projection) => projection.workspaceId === workspaceId),
-      listWorkspaceAccountabilityActions: async (workspaceId) =>
-        [...actions.values()].filter((action) => action.workspaceId === workspaceId),
-      listWorkspaceDriftFindings: async (workspaceId) =>
-        [...driftFindings.values()].filter((finding) => finding.workspaceId === workspaceId),
-      listWorkspaceKernelEvents: async (workspaceId) =>
-        [...events.values()].filter((event) => event.workspaceId === workspaceId),
+  const repository: StrategyKernelRepository = {
+    withTransaction: async (operation) => operation(repository),
+    saveOrganization: async (_organization: Organization) => undefined,
+    saveWorkspace: async (_workspace: Workspace) => undefined,
+    saveWorkspaceRelation: async (_relation: WorkspaceRelation) => undefined,
+    saveActor: async (_actor: Actor) => undefined,
+    saveWorkspaceActorRole: async (_role: WorkspaceActorRole) => undefined,
+    saveExternalSystem: async (_system: ExternalSystem) => undefined,
+    saveExternalResourceMapping: async (_mapping: ExternalResourceMapping) => undefined,
+    saveEvidenceItem: async (item) => {
+      evidence.set(item.id, item);
     },
+    saveExtractedClaim: async (claim) => {
+      claims.set(claim.id, claim);
+    },
+    saveIntentNode: async (node) => {
+      intents.set(node.id, node);
+    },
+    saveIntentEdge: async (_edge: IntentEdge) => undefined,
+    saveProjection: async (projection) => {
+      projections.set(projection.id, projection);
+    },
+    saveAccountabilityAction: async (action) => {
+      actions.set(action.id, action);
+    },
+    saveKernelEvent: async (event) => {
+      events.set(event.id, event);
+    },
+    saveDriftFinding: async (finding) => {
+      driftFindings.set(finding.id, finding);
+    },
+    listWorkspaceEvidence: async (workspaceId) =>
+      [...evidence.values()].filter((item) => item.workspaceId === workspaceId),
+    listWorkspaceIntent: async (workspaceId) =>
+      [...intents.values()].filter((intent) => intent.workspaceId === workspaceId),
+    listPendingClaims: async (workspaceId) =>
+      [...claims.values()].filter(
+        (claim) => claim.workspaceId === workspaceId && claim.state === "pending",
+      ),
+    getExtractedClaim: async (claimId) => claims.get(claimId),
+    getIntentNode: async (intentNodeId) => intents.get(intentNodeId),
+    listWorkspaceProjections: async (workspaceId) =>
+      [...projections.values()].filter((projection) => projection.workspaceId === workspaceId),
+    listWorkspaceAccountabilityActions: async (workspaceId) =>
+      [...actions.values()].filter((action) => action.workspaceId === workspaceId),
+    listWorkspaceDriftFindings: async (workspaceId) =>
+      [...driftFindings.values()].filter((finding) => finding.workspaceId === workspaceId),
+    listWorkspaceKernelEvents: async (workspaceId) =>
+      [...events.values()].filter((event) => event.workspaceId === workspaceId),
+  };
+
+  return {
+    repository,
   };
 };

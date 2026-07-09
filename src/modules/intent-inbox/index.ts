@@ -1,3 +1,4 @@
+import { stableSha256, uniqueId } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   deriveClaimFromEvidence,
@@ -112,7 +113,7 @@ export const buildEvidenceItem = (
   ingestedAt = input.ingestedAt ?? input.occurredAt,
 ): EvidenceItem => ({
   ...input,
-  contentHash: input.contentHash ?? stableHash(evidenceHashSource(input)),
+  contentHash: input.contentHash ?? stableSha256(evidenceHashSource(input)),
   ingestedAt,
 });
 
@@ -161,7 +162,7 @@ export const ingestEvidenceAndExtractClaims = async (
   const evidence = buildEvidenceItem(input, ingestedAt);
   const claims = extractClaimsFromEvidence(evidence, ingestedAt);
   const harvestEvent = kernelEvent({
-    id: `event:${evidence.id}:harvested`,
+    id: uniqueEventId(`event:${evidence.id}:harvested`),
     workspaceId: evidence.workspaceId,
     actorId: evidence.actorId,
     entityType: "evidence_item",
@@ -177,7 +178,7 @@ export const ingestEvidenceAndExtractClaims = async (
   });
   const inferenceEvents = claims.map((claim) =>
     kernelEvent({
-      id: `event:${claim.id}:inferred`,
+      id: uniqueEventId(`event:${claim.id}:inferred`),
       workspaceId: claim.workspaceId,
       entityType: "extracted_claim",
       entityId: claim.id,
@@ -192,186 +193,190 @@ export const ingestEvidenceAndExtractClaims = async (
     }),
   );
 
-  await repository.saveEvidenceItem(evidence);
-  await repository.saveKernelEvent(harvestEvent);
+  return repository.withTransaction(async (transaction) => {
+    await transaction.saveEvidenceItem(evidence);
+    await transaction.saveKernelEvent(harvestEvent);
 
-  for (const claim of claims) {
-    await repository.saveExtractedClaim(claim);
-  }
+    for (const claim of claims) {
+      await transaction.saveExtractedClaim(claim);
+    }
 
-  for (const event of inferenceEvents) {
+    for (const event of inferenceEvents) {
+      await transaction.saveKernelEvent(event);
+    }
+
+    return {
+      evidence,
+      claims,
+      events: [harvestEvent, ...inferenceEvents],
+    };
+  });
+};
+
+export const acceptClaimAsIntent = async (
+  input: AcceptClaimInput,
+): Promise<ClaimTransitionResult> =>
+  input.repository.withTransaction(async (repository) => {
+    const claim = await transitionableClaim(repository, input.claim, "accept");
+    const intentId = input.intentId ?? `intent:${claim.id}`;
+    const kind = input.kind ?? intentKindForClaim(claim.claimType);
+    const title = input.title ?? titleFromClaim(claim.text);
+    const body = input.body ?? claim.text;
+    const dueAt = input.dueAt ?? claim.suggestedDueAt;
+    const ownerActorId = input.ownerActorId ?? claim.suggestedOwnerId;
+    const sensitivity = input.sensitivity ?? claim.sensitivity;
+    const intentSensitivity = inheritMostRestrictiveSensitivity([claim.sensitivity, sensitivity]);
+    const intent: IntentNode = {
+      id: intentId,
+      workspaceId: claim.workspaceId,
+      kind,
+      title,
+      body,
+      ownerActorId,
+      state: "ratified",
+      dueAt,
+      sensitivity: intentSensitivity,
+      originEvidenceId: claim.evidenceItemId,
+      createdBy: "sarathi",
+      createdAt: input.occurredAt,
+      updatedAt: input.occurredAt,
+    };
+    const updatedClaim: ExtractedClaim = {
+      ...claim,
+      state: "accepted",
+      sensitivity: intentSensitivity,
+      ratifiedNodeId: intent.id,
+      updatedAt: input.occurredAt,
+    };
+    const event = kernelEvent({
+      id: uniqueEventId(`event:${claim.id}:ratified`),
+      workspaceId: claim.workspaceId,
+      actorId: input.actorId,
+      entityType: "extracted_claim",
+      entityId: claim.id,
+      action: "ratified",
+      payload: {
+        intentNodeId: intent.id,
+        evidenceItemId: claim.evidenceItemId,
+      },
+      occurredAt: input.occurredAt,
+      sensitivity: intentSensitivity,
+    });
+
+    await repository.saveIntentNode(intent);
+    await repository.saveExtractedClaim(updatedClaim);
     await repository.saveKernelEvent(event);
-  }
 
-  return {
-    evidence,
-    claims,
-    events: [harvestEvent, ...inferenceEvents],
-  };
-};
-
-export const acceptClaimAsIntent = async ({
-  repository,
-  claim,
-  actorId,
-  intentId = `intent:${claim.id}`,
-  kind = intentKindForClaim(claim.claimType),
-  title = titleFromClaim(claim.text),
-  body = claim.text,
-  dueAt = claim.suggestedDueAt,
-  ownerActorId = claim.suggestedOwnerId,
-  sensitivity = claim.sensitivity,
-  occurredAt,
-}: AcceptClaimInput): Promise<ClaimTransitionResult> => {
-  const intentSensitivity = inheritMostRestrictiveSensitivity([claim.sensitivity, sensitivity]);
-  const intent: IntentNode = {
-    id: intentId,
-    workspaceId: claim.workspaceId,
-    kind,
-    title,
-    body,
-    ownerActorId,
-    state: "ratified",
-    dueAt,
-    sensitivity: intentSensitivity,
-    originEvidenceId: claim.evidenceItemId,
-    createdBy: "sarathi",
-    createdAt: occurredAt,
-    updatedAt: occurredAt,
-  };
-  const updatedClaim: ExtractedClaim = {
-    ...claim,
-    state: "accepted",
-    sensitivity: intentSensitivity,
-    ratifiedNodeId: intent.id,
-    updatedAt: occurredAt,
-  };
-  const event = kernelEvent({
-    id: `event:${claim.id}:ratified`,
-    workspaceId: claim.workspaceId,
-    actorId,
-    entityType: "extracted_claim",
-    entityId: claim.id,
-    action: "ratified",
-    payload: {
-      intentNodeId: intent.id,
-      evidenceItemId: claim.evidenceItemId,
-    },
-    occurredAt,
-    sensitivity: intentSensitivity,
+    return { claim: updatedClaim, intent, event };
   });
 
-  await repository.saveIntentNode(intent);
-  await repository.saveExtractedClaim(updatedClaim);
-  await repository.saveKernelEvent(event);
+export const editClaim = async (input: EditClaimInput): Promise<ClaimTransitionResult> =>
+  input.repository.withTransaction(async (repository) => {
+    const claim = await transitionableClaim(repository, input.claim, "edit");
+    const sensitivity = input.sensitivity ?? claim.sensitivity;
+    const editedSensitivity = inheritMostRestrictiveSensitivity([claim.sensitivity, sensitivity]);
+    const editedClaim: ExtractedClaim = {
+      ...claim,
+      text: input.text,
+      suggestedOwnerId: input.suggestedOwnerId,
+      suggestedDueAt: input.suggestedDueAt,
+      sensitivity: editedSensitivity,
+      state: "edited",
+      updatedAt: input.occurredAt,
+    };
+    const event = kernelEvent({
+      id: uniqueEventId(`event:${claim.id}:edited`),
+      workspaceId: claim.workspaceId,
+      actorId: input.actorId,
+      entityType: "extracted_claim",
+      entityId: claim.id,
+      action: "edited",
+      payload: {
+        previousText: claim.text,
+        text: input.text,
+        suggestedOwnerId: input.suggestedOwnerId,
+        suggestedDueAt: input.suggestedDueAt,
+      },
+      occurredAt: input.occurredAt,
+      sensitivity: editedSensitivity,
+    });
 
-  return { claim: updatedClaim, intent, event };
-};
+    await repository.saveExtractedClaim(editedClaim);
+    await repository.saveKernelEvent(event);
 
-export const editClaim = async ({
-  repository,
-  claim,
-  actorId,
-  text,
-  suggestedOwnerId,
-  suggestedDueAt,
-  sensitivity = claim.sensitivity,
-  occurredAt,
-}: EditClaimInput): Promise<ClaimTransitionResult> => {
-  const editedSensitivity = inheritMostRestrictiveSensitivity([claim.sensitivity, sensitivity]);
-  const editedClaim: ExtractedClaim = {
-    ...claim,
-    text,
-    suggestedOwnerId,
-    suggestedDueAt,
-    sensitivity: editedSensitivity,
-    state: "edited",
-    updatedAt: occurredAt,
-  };
-  const event = kernelEvent({
-    id: `event:${claim.id}:edited:${stableHash(`${text}:${occurredAt}`)}`,
-    workspaceId: claim.workspaceId,
-    actorId,
-    entityType: "extracted_claim",
-    entityId: claim.id,
-    action: "edited",
-    payload: {
-      previousText: claim.text,
-      text,
-      suggestedOwnerId,
-      suggestedDueAt,
-    },
-    occurredAt,
-    sensitivity: editedSensitivity,
+    return { claim: editedClaim, event };
   });
 
-  await repository.saveExtractedClaim(editedClaim);
-  await repository.saveKernelEvent(event);
+export const rejectClaim = async (input: RejectClaimInput): Promise<ClaimTransitionResult> =>
+  input.repository.withTransaction(async (repository) => {
+    const claim = await transitionableClaim(repository, input.claim, "reject");
+    const rejectedClaim: ExtractedClaim = {
+      ...claim,
+      state: "rejected",
+      updatedAt: input.occurredAt,
+    };
+    const event = kernelEvent({
+      id: uniqueEventId(`event:${claim.id}:rejected`),
+      workspaceId: claim.workspaceId,
+      actorId: input.actorId,
+      entityType: "extracted_claim",
+      entityId: claim.id,
+      action: "rejected",
+      payload: { reason: input.reason },
+      occurredAt: input.occurredAt,
+      sensitivity: claim.sensitivity,
+    });
 
-  return { claim: editedClaim, event };
-};
+    await repository.saveExtractedClaim(rejectedClaim);
+    await repository.saveKernelEvent(event);
 
-export const rejectClaim = async ({
-  repository,
-  claim,
-  actorId,
-  reason,
-  occurredAt,
-}: RejectClaimInput): Promise<ClaimTransitionResult> => {
-  const rejectedClaim: ExtractedClaim = {
-    ...claim,
-    state: "rejected",
-    updatedAt: occurredAt,
-  };
-  const event = kernelEvent({
-    id: `event:${claim.id}:rejected`,
-    workspaceId: claim.workspaceId,
-    actorId,
-    entityType: "extracted_claim",
-    entityId: claim.id,
-    action: "rejected",
-    payload: { reason },
-    occurredAt,
-    sensitivity: claim.sensitivity,
+    return { claim: rejectedClaim, event };
   });
 
-  await repository.saveExtractedClaim(rejectedClaim);
-  await repository.saveKernelEvent(event);
+export const mergeClaim = async (input: MergeClaimInput): Promise<ClaimTransitionResult> =>
+  input.repository.withTransaction(async (repository) => {
+    const claim = await transitionableClaim(repository, input.claim, "merge");
+    const targetIntent = await repository.getIntentNode(input.intoIntentNodeId);
 
-  return { claim: rejectedClaim, event };
-};
+    if (targetIntent === undefined || targetIntent.workspaceId !== claim.workspaceId) {
+      throw new Error(
+        `Cannot merge claim ${claim.id} into missing intent ${input.intoIntentNodeId}.`,
+      );
+    }
 
-export const mergeClaim = async ({
-  repository,
-  claim,
-  actorId,
-  intoIntentNodeId,
-  reason,
-  occurredAt,
-}: MergeClaimInput): Promise<ClaimTransitionResult> => {
-  const mergedClaim: ExtractedClaim = {
-    ...claim,
-    state: "merged",
-    ratifiedNodeId: intoIntentNodeId,
-    updatedAt: occurredAt,
-  };
-  const event = kernelEvent({
-    id: `event:${claim.id}:merged`,
-    workspaceId: claim.workspaceId,
-    actorId,
-    entityType: "extracted_claim",
-    entityId: claim.id,
-    action: "merged",
-    payload: { intoIntentNodeId, reason },
-    occurredAt,
-    sensitivity: claim.sensitivity,
+    const mergedSensitivity = inheritMostRestrictiveSensitivity([
+      targetIntent.sensitivity,
+      claim.sensitivity,
+    ]);
+    const tightenedIntent: IntentNode = {
+      ...targetIntent,
+      sensitivity: mergedSensitivity,
+      updatedAt: input.occurredAt,
+    };
+    const mergedClaim: ExtractedClaim = {
+      ...claim,
+      state: "merged",
+      ratifiedNodeId: input.intoIntentNodeId,
+      updatedAt: input.occurredAt,
+    };
+    const event = kernelEvent({
+      id: uniqueEventId(`event:${claim.id}:merged`),
+      workspaceId: claim.workspaceId,
+      actorId: input.actorId,
+      entityType: "extracted_claim",
+      entityId: claim.id,
+      action: "merged",
+      payload: { intoIntentNodeId: input.intoIntentNodeId, reason: input.reason },
+      occurredAt: input.occurredAt,
+      sensitivity: mergedSensitivity,
+    });
+
+    await repository.saveIntentNode(tightenedIntent);
+    await repository.saveExtractedClaim(mergedClaim);
+    await repository.saveKernelEvent(event);
+
+    return { claim: mergedClaim, intent: tightenedIntent, event };
   });
-
-  await repository.saveExtractedClaim(mergedClaim);
-  await repository.saveKernelEvent(event);
-
-  return { claim: mergedClaim, event };
-};
 
 const intentKindForClaim = (claimType: ExtractedClaimType): IntentNodeKind => {
   switch (claimType) {
@@ -452,15 +457,22 @@ const evidenceHashSource = (input: EvidenceIngestionInput): string =>
     input.sensitivity,
   ].join("\n");
 
-const stableHash = (input: string): string => {
-  let hash = 0x811c9dc5;
+const transitionableClaim = async (
+  repository: StrategyKernelRepository,
+  claim: ExtractedClaim,
+  transition: string,
+): Promise<ExtractedClaim> => {
+  const persisted = await repository.getExtractedClaim(claim.id);
 
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
+  if (persisted === undefined) {
+    throw new Error(`Cannot ${transition} missing extracted claim ${claim.id}.`);
   }
 
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  if (persisted.state !== "pending" && persisted.state !== "edited") {
+    throw new Error(`Cannot ${transition} extracted claim ${claim.id} from ${persisted.state}.`);
+  }
+
+  return persisted;
 };
 
 type KernelEventInput = Omit<KernelEvent, "payloadJson"> & {
@@ -471,3 +483,5 @@ const kernelEvent = ({ payload, ...event }: KernelEventInput): KernelEvent => ({
   ...event,
   payloadJson: JSON.stringify(payload),
 });
+
+const uniqueEventId = (prefix: string): string => uniqueId(prefix);

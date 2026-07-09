@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stableSha256 } from "../src/domain/hash.ts";
 import {
   deriveAccountabilitySensitivity,
   deriveClaimFromEvidence,
@@ -49,6 +50,12 @@ const intent: IntentNode = {
 };
 
 describe("strategy kernel", () => {
+  it("uses stable SHA-256 content hashes for drift-sensitive records", () => {
+    expect(stableSha256("abc")).toBe(
+      "sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+  });
+
   it("inherits the most restrictive sensitivity for derived artifacts", () => {
     expect(inheritMostRestrictiveSensitivity(["public", "internal", "restricted"])).toBe(
       "restricted",

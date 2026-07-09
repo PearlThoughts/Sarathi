@@ -119,6 +119,17 @@ export const createSqliteStrategyKernelRepository = (
   const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
 
   return {
+    withTransaction: async (operation) => {
+      database.exec("begin immediate");
+      try {
+        const result = await operation(createSqliteStrategyKernelRepository(database));
+        database.exec("commit");
+        return result;
+      } catch (error) {
+        database.exec("rollback");
+        throw error;
+      }
+    },
     saveOrganization: async (organization) => {
       drizzleDatabase
         .insert(organizationTable)
@@ -434,6 +445,24 @@ export const createSqliteStrategyKernelRepository = (
         .orderBy(extractedClaimTable.createdAt, extractedClaimTable.id)
         .all()
         .map(rowToExtractedClaim),
+    getExtractedClaim: async (claimId) => {
+      const row = drizzleDatabase
+        .select()
+        .from(extractedClaimTable)
+        .where(eq(extractedClaimTable.id, claimId))
+        .get();
+
+      return row === undefined ? undefined : rowToExtractedClaim(row);
+    },
+    getIntentNode: async (intentNodeId) => {
+      const row = drizzleDatabase
+        .select()
+        .from(intentNodeTable)
+        .where(eq(intentNodeTable.id, intentNodeId))
+        .get();
+
+      return row === undefined ? undefined : rowToIntentNode(row);
+    },
     listWorkspaceProjections: async (workspaceId) =>
       drizzleDatabase
         .select()

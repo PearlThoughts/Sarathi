@@ -17,6 +17,9 @@ import type {
 } from "../domain/strategy-kernel.ts";
 
 export type StrategyKernelRepository = {
+  readonly withTransaction: <Result>(
+    operation: (repository: StrategyKernelRepository) => Promise<Result>,
+  ) => Promise<Result>;
   readonly saveOrganization: (organization: Organization) => Promise<void>;
   readonly saveWorkspace: (workspace: Workspace) => Promise<void>;
   readonly saveWorkspaceRelation: (relation: WorkspaceRelation) => Promise<void>;
@@ -35,6 +38,8 @@ export type StrategyKernelRepository = {
   readonly listWorkspaceEvidence: (workspaceId: string) => Promise<readonly EvidenceItem[]>;
   readonly listWorkspaceIntent: (workspaceId: string) => Promise<readonly IntentNode[]>;
   readonly listPendingClaims: (workspaceId: string) => Promise<readonly ExtractedClaim[]>;
+  readonly getExtractedClaim: (claimId: string) => Promise<ExtractedClaim | undefined>;
+  readonly getIntentNode: (intentNodeId: string) => Promise<IntentNode | undefined>;
   readonly listWorkspaceProjections: (workspaceId: string) => Promise<readonly Projection[]>;
   readonly listWorkspaceAccountabilityActions: (
     workspaceId: string,
