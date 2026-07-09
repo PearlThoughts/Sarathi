@@ -2,7 +2,7 @@
 
 Sarathi is a work-in-progress, open-source **AI Delivery Assistant** for software teams.
 
-It is designed to help a PM or delivery manager keep delivery moving across Teams, Jira, and GitHub: answer routine team questions, chase missing updates, draft weekly status, surface drift, preserve delivery memory, and align work to PM-approved intent.
+It helps a PM, delivery manager, or operating owner coordinate software delivery across Teams, Jira, GitHub, email, and docs. Sarathi answers routine questions, chases missing updates, drafts status, surfaces drift, preserves delivery memory, and compares ratified intent with observed execution evidence so humans can correct course earlier.
 
 Sarathi is not production-ready yet. This repository is being opened early so delivery managers, software services teams, and AI-agent builders can critique the product shape before the implementation hardens.
 
@@ -15,16 +15,17 @@ In small software teams, delivery truth is scattered:
 - GitHub and CI have the engineering evidence.
 - PMs and delivery managers carry the real operating model in their heads.
 
-The result is expensive coordination work: the PM chases updates, answers repeated intern questions, checks whether "done" is actually done, and prepares leadership or client status by stitching systems together manually.
+The result is not only expensive coordination work. It is silent drift: accepted priorities, client commitments, day-to-day conversations, Jira tickets, PRs, QA evidence, and follow-up loops stop matching each other before anyone sees the gap.
 
-Sarathi exists to reduce that coordination load under human supervision.
+Sarathi exists to make that gap visible early and route it through human-supervised course correction.
 
 ## What
 
-Sarathi is one visible bot/app, usually used as `@Sarathi` in Teams or in DM.
+Sarathi is one visible bot/app, usually used as `@Sarathi` in Teams or in DM, backed by a workspace-scoped delivery operating record.
 
-It assists the delivery manager; it does not replace one. The human PM still owns client trust, prioritization, morale, trade-offs, and accountability. Sarathi handles the repeatable coordination work around that human:
+It assists the delivery manager; it does not replace one. The human PM still owns client trust, prioritization, morale, trade-offs, and accountability. Sarathi handles the repeatable delivery coordination work around that human:
 
+- initial delivery reviews over existing work systems,
 - process FAQ for engineers and interns,
 - weekly plan and status drafts,
 - evidence-shaped chase loops,
@@ -39,9 +40,9 @@ It assists the delivery manager; it does not replace one. The human PM still own
 Sarathi combines four layers:
 
 1. **Workspace bindings** map Teams channels, Jira projects, GitHub repos, docs, and policy files into a delivery workspace.
-2. **Policy repo** stores ratified intent, team profile, process FAQ, escalation rules, and learned preferences as Markdown/YAML in git.
+2. **Strategy Kernel** stores ratified goals, commitments, decisions, risks, bets, KPIs, policies, and accountability state.
 3. **Evidence plane** stores observed Teams/Jira/GitHub/CI events and source links in a queryable runtime store.
-4. **Delivery loops** use that context to answer, chase, report, flag drift, and ask the PM to ratify changes.
+4. **Delivery loops** use that context to review delivery state, answer, chase, report, flag drift, and ask the PM to ratify changes.
 
 Public docs start here:
 
@@ -63,7 +64,8 @@ The code currently contains foundations, not the full product:
 - Generic follow-up digest primitives.
 - Messaging contracts for Teams-ready messages and proactive delivery.
 - YAML workspace overlay support for explicit boundaries over Teams, Linear, GitHub, and Jira-derived structure.
-- Skeleton AI Delivery Assistant role and team-profile contracts.
+- Strategic kernel, intent projection, accountability action, and SQLite runtime foundations.
+- Skeleton delivery assistant role and team-profile contracts.
 
 ## Commands
 

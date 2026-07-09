@@ -47,9 +47,11 @@ Declared intent is the setpoint. Revealed intent is the sensor. Sarathi's job is
 Sarathi should provide these long-term capabilities:
 
 1. **Strategy Kernel**
-   - Store active goals, commitments, KPIs, decisions, assumptions, risks, bets, and capacity reservations.
+   - Store the ratified workspace operating record: active goals, commitments, KPIs, decisions, assumptions, risks, bets, policies, and capacity reservations.
    - Support lifecycle states such as pending, ratified, active, at-risk, kept, broken, dropped, superseded, and archived.
    - Version changes through explicit events and, where configured, human-readable policy snapshots.
+
+   The Strategy Kernel is not just the organization's mission, vision, quarterly goals, or OKRs. Those can be represented as intent nodes when they matter to a workspace, but the kernel is broader: it is the current accepted setpoint Sarathi uses to decide whether observed work is aligned or drifting.
 
 2. **Evidence Graph**
    - Ingest or reference Teams messages, emails, meeting transcripts, Jira issues, GitHub PRs, commits, CI results, and vault notes.
@@ -70,6 +72,7 @@ Sarathi should provide these long-term capabilities:
    - Use interactive Teams cards or equivalent surfaces to confirm ownership, due dates, blockers, and evidence.
    - Record silence as a signal instead of retrying indefinitely.
    - Escalate according to explicit workspace policy.
+   - Treat card interactions as events against accepted commitments, not as unstructured chat replies.
 
 6. **Advisor Layer**
    - Recommend keep, renegotiate, drop, escalate, reallocate, or clarify actions.
@@ -85,4 +88,3 @@ Sarathi succeeds when:
 - Jira and team systems become more trustworthy because Sarathi asks owners to correct them.
 - Strategy pivots become explicit decisions rather than silent drift.
 - The same generic kernel works across multiple workspaces without leaking private project data into the public product.
-

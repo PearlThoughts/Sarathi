@@ -7,8 +7,8 @@ Sarathi documentation has two audiences:
 
 ## Product Docs
 
-- [Why Sarathi](product/why.md) explains the delivery-coordination problem.
-- [What Sarathi Is](product/what.md) defines the AI Delivery Assistant role and capabilities.
+- [Why Sarathi](product/why.md) explains the delivery coordination problem.
+- [What Sarathi Is](product/what.md) defines the AI Delivery Assistant role and visible coordination surfaces.
 - [Strategic Execution Advisor](product/strategic-execution-advisor.md) defines the long-term intent/evidence/accountability control plane.
 - [How Sarathi Works](product/how.md) describes workspaces, policy repo, evidence plane, and learning.
 - [Roles And Boundaries](product/roles-and-boundaries.md) separates team-visible, PM/leadership, and agent scopes.

@@ -4,11 +4,12 @@ This note explains how Sarathi compares to nearby AI work products and what it i
 
 ## Positioning Sentence
 
-Sarathi is an open-source, self-hosted AI Delivery Assistant for software teams that helps a PM or delivery manager keep work aligned, followed up, and explainable across Teams, Jira, GitHub, docs, and coding agents.
+Sarathi is an open-source, self-hosted AI Delivery Assistant for software teams that helps a PM or delivery manager keep work coordinated, aligned, followed up, and explainable across Teams, Jira, GitHub, docs, and coding agents.
 
-The wedge is not generic search or generic task delegation. The wedge is delivery coordination under PM supervision:
+The wedge is not generic search or generic task delegation. The wedge is PM-supervised delivery coordination across ratified intent, observed work, and accountable follow-through:
 
 - capture project intent and delivery rhythm,
+- run an initial delivery review over existing work signals,
 - answer team process questions from ratified knowledge,
 - chase missing updates and evidence without spending PM time,
 - surface drift, blockers, risks, and weak handoffs,
@@ -24,15 +25,15 @@ The wedge is not generic search or generic task delegation. The wedge is deliver
 
 That simplicity is valuable. Sarathi should learn from it.
 
-Sarathi's intended difference is not "chat bot versus chat bot." Sarathi is designed around delivery operations:
+Sarathi's intended difference is not "chat bot versus chat bot." Sarathi is designed around delivery coordination operations:
 
 - customer-managed evidence and policy plane rather than a single vendor's assistant runtime,
 - Teams/Jira/GitHub as the first operating surface for software delivery teams,
-- PM-ratified project intent, process FAQ, escalation rules, and learned preferences,
+- PM-ratified project intent, commitments, process FAQ, escalation rules, and learned preferences,
 - per-workspace boundaries for client/project/team isolation,
 - source links and receipts on substantive answers,
 - configurable model egress, including BYOM or local/in-tenant models where practical,
-- delivery loops that ask, chase, escalate, and report under PM oversight.
+- delivery loops that review alignment, ask, chase, escalate, and report under PM oversight.
 
 Claude Tag validates the shared-channel interaction pattern. Sarathi's bet is that delivery teams also need an inspectable operating layer behind the mention.
 
@@ -101,7 +102,7 @@ Sarathi's product thesis is more operational and channel-native:
 
 - not only "show the metric," but "ask for the missing update";
 - not only "detect the risk," but "route the next question to the PM or owner";
-- not only "report status," but "draft the PM-approved message where the team already works";
+- not only "report status," but "compare work against ratified intent and draft the PM-approved message where the team already works";
 - not only "measure engineering," but "teach the local definition of done and process FAQ."
 
 ### Standup Bots And Async Update Tools
@@ -169,7 +170,7 @@ The product rule is simple: Sarathi helps colleagues and PMs see delivery realit
 
 "AI Delivery Assistant" touches status, chase, FAQ, coaching, risks, retros, budget, and coding agents. That can become a feature factory.
 
-The guardrail is PM-supervised delivery coordination. A feature belongs only if it helps a PM or delivery manager keep the team aligned, followed up, and able to deliver.
+The guardrail is PM-supervised delivery coordination. A feature belongs only if it helps a PM or delivery manager detect drift, decide a correction, publish it into the team's work systems, or follow up on accepted commitments.
 
 ### Proactive Can Become Annoying
 
