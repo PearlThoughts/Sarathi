@@ -268,6 +268,10 @@ describe("sqlite strategy kernel repository", () => {
     expect(await repository.listWorkspaceEvidence(workspace.id)).toEqual([evidence]);
     expect(await repository.listWorkspaceIntent(workspace.id)).toEqual([parentIntent, intent]);
     expect(await repository.listPendingClaims(workspace.id)).toEqual([claim]);
+    expect(await repository.listWorkspaceProjections(workspace.id)).toEqual([projection]);
+    expect(await repository.listWorkspaceAccountabilityActions(workspace.id)).toEqual([action]);
+    expect(await repository.listWorkspaceDriftFindings(workspace.id)).toEqual([drift]);
+    expect(await repository.listWorkspaceKernelEvents(workspace.id)).toEqual([event]);
     expect(readWorkspaceActorRoleRows(database, workspace.id)).toEqual([role]);
   });
 

@@ -35,4 +35,10 @@ export type StrategyKernelRepository = {
   readonly listWorkspaceEvidence: (workspaceId: string) => Promise<readonly EvidenceItem[]>;
   readonly listWorkspaceIntent: (workspaceId: string) => Promise<readonly IntentNode[]>;
   readonly listPendingClaims: (workspaceId: string) => Promise<readonly ExtractedClaim[]>;
+  readonly listWorkspaceProjections: (workspaceId: string) => Promise<readonly Projection[]>;
+  readonly listWorkspaceAccountabilityActions: (
+    workspaceId: string,
+  ) => Promise<readonly AccountabilityAction[]>;
+  readonly listWorkspaceDriftFindings: (workspaceId: string) => Promise<readonly DriftFinding[]>;
+  readonly listWorkspaceKernelEvents: (workspaceId: string) => Promise<readonly KernelEvent[]>;
 };

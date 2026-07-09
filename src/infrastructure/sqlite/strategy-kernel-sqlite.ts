@@ -26,6 +26,12 @@ import {
 } from "./strategy-kernel-schema.ts";
 
 type WorkspaceActorRoleRecord = Parameters<StrategyKernelRepository["saveWorkspaceActorRole"]>[0];
+type AccountabilityActionRecord = Awaited<
+  ReturnType<StrategyKernelRepository["listWorkspaceAccountabilityActions"]>
+>[number];
+type DriftFindingRecord = Awaited<
+  ReturnType<StrategyKernelRepository["listWorkspaceDriftFindings"]>
+>[number];
 type EvidenceItemRecord = Awaited<
   ReturnType<StrategyKernelRepository["listWorkspaceEvidence"]>
 >[number];
@@ -34,6 +40,12 @@ type ExtractedClaimRecord = Awaited<
 >[number];
 type IntentNodeRecord = Awaited<
   ReturnType<StrategyKernelRepository["listWorkspaceIntent"]>
+>[number];
+type KernelEventRecord = Awaited<
+  ReturnType<StrategyKernelRepository["listWorkspaceKernelEvents"]>
+>[number];
+type ProjectionRecord = Awaited<
+  ReturnType<StrategyKernelRepository["listWorkspaceProjections"]>
 >[number];
 
 type StrategyKernelDrizzleDatabase = ReturnType<typeof createStrategyKernelDrizzleDatabase>;
@@ -422,6 +434,38 @@ export const createSqliteStrategyKernelRepository = (
         .orderBy(extractedClaimTable.createdAt, extractedClaimTable.id)
         .all()
         .map(rowToExtractedClaim),
+    listWorkspaceProjections: async (workspaceId) =>
+      drizzleDatabase
+        .select()
+        .from(projectionTable)
+        .where(eq(projectionTable.workspaceId, workspaceId))
+        .orderBy(projectionTable.targetSystem, projectionTable.targetType, projectionTable.id)
+        .all()
+        .map(rowToProjection),
+    listWorkspaceAccountabilityActions: async (workspaceId) =>
+      drizzleDatabase
+        .select()
+        .from(accountabilityActionTable)
+        .where(eq(accountabilityActionTable.workspaceId, workspaceId))
+        .orderBy(accountabilityActionTable.dueAt, accountabilityActionTable.id)
+        .all()
+        .map(rowToAccountabilityAction),
+    listWorkspaceDriftFindings: async (workspaceId) =>
+      drizzleDatabase
+        .select()
+        .from(driftFindingTable)
+        .where(eq(driftFindingTable.workspaceId, workspaceId))
+        .orderBy(driftFindingTable.createdAt, driftFindingTable.id)
+        .all()
+        .map(rowToDriftFinding),
+    listWorkspaceKernelEvents: async (workspaceId) =>
+      drizzleDatabase
+        .select()
+        .from(kernelEventTable)
+        .where(eq(kernelEventTable.workspaceId, workspaceId))
+        .orderBy(kernelEventTable.occurredAt, kernelEventTable.id)
+        .all()
+        .map(rowToKernelEvent),
   };
 };
 
@@ -480,6 +524,73 @@ const rowToExtractedClaim = (row: ExtractedClaimRow): ExtractedClaimRecord => ({
   ...maybe("ratifiedNodeId", row.ratifiedNodeId),
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
+});
+
+type ProjectionRow = typeof projectionTable.$inferSelect;
+
+const rowToProjection = (row: ProjectionRow): ProjectionRecord => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  intentNodeId: row.intentNodeId,
+  targetSystem: row.targetSystem as ProjectionRecord["targetSystem"],
+  targetType: row.targetType as ProjectionRecord["targetType"],
+  ...maybe("targetId", row.targetId),
+  ...maybe("targetUrl", row.targetUrl),
+  ...maybe("lastPublishedHash", row.lastPublishedHash),
+  ...maybe("lastVerifiedAt", row.lastVerifiedAt),
+  driftStatus: row.driftStatus as ProjectionRecord["driftStatus"],
+  sensitivity: row.sensitivity as ProjectionRecord["sensitivity"],
+});
+
+type AccountabilityActionRow = typeof accountabilityActionTable.$inferSelect;
+
+const rowToAccountabilityAction = (row: AccountabilityActionRow): AccountabilityActionRecord => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  intentNodeId: row.intentNodeId,
+  actorId: row.actorId,
+  channel: row.channel as AccountabilityActionRecord["channel"],
+  state: row.state as AccountabilityActionRecord["state"],
+  ...maybe("dueAt", row.dueAt),
+  ...maybe("lastNudgedAt", row.lastNudgedAt),
+  escalationLevel: row.escalationLevel,
+  evidenceRequired: integerToBoolean(row.evidenceRequired),
+  ...maybe("completionEvidenceId", row.completionEvidenceId),
+  sensitivity: row.sensitivity as AccountabilityActionRecord["sensitivity"],
+});
+
+type DriftFindingRow = typeof driftFindingTable.$inferSelect;
+
+const rowToDriftFinding = (row: DriftFindingRow): DriftFindingRecord => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  findingType: row.findingType as DriftFindingRecord["findingType"],
+  title: row.title,
+  body: row.body,
+  state: row.state as DriftFindingRecord["state"],
+  ...(row.relatedEntityType === null
+    ? {}
+    : {
+        relatedEntityType: row.relatedEntityType as DriftFindingRecord["relatedEntityType"],
+      }),
+  ...maybe("relatedEntityId", row.relatedEntityId),
+  sensitivity: row.sensitivity as DriftFindingRecord["sensitivity"],
+  createdAt: row.createdAt,
+  ...maybe("resolvedAt", row.resolvedAt),
+});
+
+type KernelEventRow = typeof kernelEventTable.$inferSelect;
+
+const rowToKernelEvent = (row: KernelEventRow): KernelEventRecord => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  ...maybe("actorId", row.actorId),
+  entityType: row.entityType as KernelEventRecord["entityType"],
+  entityId: row.entityId,
+  action: row.action as KernelEventRecord["action"],
+  payloadJson: row.payloadJson,
+  occurredAt: row.occurredAt,
+  sensitivity: row.sensitivity as KernelEventRecord["sensitivity"],
 });
 
 export const readWorkspaceActorRoleRows = (
