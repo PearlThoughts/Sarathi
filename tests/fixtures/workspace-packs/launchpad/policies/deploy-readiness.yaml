@@ -1,0 +1,4 @@
+deployReadiness:
+  requireIssueKey: true
+  requireQaEvidence: true
+  requireRollbackOwner: true

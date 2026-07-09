@@ -1,0 +1,11 @@
+actors:
+  - key: delivery-lead
+    displayName: Delivery Lead
+    role: delivery_manager
+    canRatifyIntent: true
+    canApproveSensitivityDowngrade: false
+  - key: technical-lead
+    displayName: Technical Lead
+    role: technical_lead
+    canRatifyIntent: true
+    canApproveSensitivityDowngrade: false

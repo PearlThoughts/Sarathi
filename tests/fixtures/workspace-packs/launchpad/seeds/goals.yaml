@@ -1,0 +1,6 @@
+goals:
+  - key: launch-readiness
+    kind: goal
+    title: Reach launch readiness
+    body: The synthetic workspace should reach launch readiness with evidence and no private data.
+    sensitivity: internal

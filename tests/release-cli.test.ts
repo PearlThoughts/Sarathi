@@ -114,7 +114,7 @@ describe("release CLI", () => {
   it("routes strategic runtime CLI commands through domain workflows", async () => {
     const workspace = "workspace-cli";
     const commands = [
-      ["workspace", "reconcile", "--pack", "synthetic-pack"],
+      ["workspace", "reconcile"],
       ["intent", "inbox", "--workspace", workspace],
       ["intent", "accept", "claim-cli", "--workspace", workspace],
       ["intent", "reject", "claim-cli", "--workspace", workspace],

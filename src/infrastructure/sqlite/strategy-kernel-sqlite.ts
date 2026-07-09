@@ -4,7 +4,17 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import {
   type StrategyKernelRepository,
   strategyKernelMigrations,
+  type WorkspacePackManifest,
 } from "../../modules/strategy-kernel/index.ts";
+import {
+  actorIdForWorkspacePackActor,
+  type RuntimeIntentSnapshot,
+  type RuntimePolicySnapshot,
+  seedIntentIdForWorkspacePackSeed,
+  type WorkspacePackPolicyRecord,
+  type WorkspacePackRuntimeSnapshot,
+  type WorkspacePackTemplateRecord,
+} from "../../modules/workspace-packs/index.ts";
 import {
   accountabilityActionTable,
   actorTable,
@@ -21,6 +31,8 @@ import {
   schemaMigrationTable,
   strategyKernelSqliteSchema,
   workspaceActorRoleTable,
+  workspacePackPolicyTable,
+  workspacePackTemplateTable,
   workspaceRelationTable,
   workspaceTable,
 } from "./strategy-kernel-schema.ts";
@@ -49,6 +61,11 @@ type ProjectionRecord = Awaited<
 >[number];
 
 type StrategyKernelDrizzleDatabase = ReturnType<typeof createStrategyKernelDrizzleDatabase>;
+type WorkspaceRow = typeof workspaceTable.$inferSelect;
+type WorkspacePackPolicyRow = typeof workspacePackPolicyTable.$inferSelect;
+type MutableRuntimePolicySnapshot = {
+  -readonly [Key in keyof RuntimePolicySnapshot]: RuntimePolicySnapshot[Key];
+};
 
 const optional = (value: string | undefined): string | null => value ?? null;
 const maybe = <K extends string>(key: K, value: string | null): Partial<Record<K, string>> =>
@@ -68,6 +85,221 @@ export const openStrategyKernelSqliteDatabase = (
 
 export const createStrategyKernelDrizzleDatabase = (database: StrategyKernelSqliteDatabase) =>
   drizzle(database, { schema: strategyKernelSqliteSchema });
+
+export const saveWorkspacePackPolicyRecords = (
+  database: StrategyKernelSqliteDatabase,
+  records: readonly WorkspacePackPolicyRecord[],
+): void => {
+  const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
+
+  for (const record of records) {
+    drizzleDatabase
+      .insert(workspacePackPolicyTable)
+      .values(record)
+      .onConflictDoUpdate({
+        target: [workspacePackPolicyTable.workspaceId, workspacePackPolicyTable.policyKey],
+        set: {
+          payloadJson: record.payloadJson,
+          updatedAt: record.updatedAt,
+        },
+      })
+      .run();
+  }
+};
+
+export const saveWorkspacePackTemplateRecords = (
+  database: StrategyKernelSqliteDatabase,
+  records: readonly WorkspacePackTemplateRecord[],
+): void => {
+  const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
+
+  for (const record of records) {
+    drizzleDatabase
+      .insert(workspacePackTemplateTable)
+      .values(record)
+      .onConflictDoUpdate({
+        target: [workspacePackTemplateTable.workspaceId, workspacePackTemplateTable.path],
+        set: {
+          name: record.name,
+          sensitivity: record.sensitivity,
+          updatedAt: record.updatedAt,
+        },
+      })
+      .run();
+  }
+};
+
+export const readWorkspacePackRuntimeSnapshot = (
+  database: StrategyKernelSqliteDatabase,
+  pack: WorkspacePackManifest,
+  organizationId: string,
+): WorkspacePackRuntimeSnapshot => {
+  const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
+  const workspace = drizzleDatabase
+    .select()
+    .from(workspaceTable)
+    .where(
+      and(
+        eq(workspaceTable.organizationId, organizationId),
+        eq(workspaceTable.key, pack.workspace.key),
+      ),
+    )
+    .get();
+
+  if (workspace === undefined) {
+    return {};
+  }
+
+  return {
+    workspaceKey: workspace.key,
+    actorKeys: readWorkspacePackActorKeys(drizzleDatabase, pack, workspace.id),
+    mappings: readWorkspacePackMappings(drizzleDatabase, workspace.id),
+    policies: readWorkspacePackPolicies(drizzleDatabase, workspace.id),
+    intents: readWorkspacePackRuntimeIntents(drizzleDatabase, pack, workspace),
+    templatePaths: drizzleDatabase
+      .select({ path: workspacePackTemplateTable.path })
+      .from(workspacePackTemplateTable)
+      .where(eq(workspacePackTemplateTable.workspaceId, workspace.id))
+      .all()
+      .map((row) => row.path),
+  };
+};
+
+const readWorkspacePackActorKeys = (
+  drizzleDatabase: StrategyKernelDrizzleDatabase,
+  pack: WorkspacePackManifest,
+  workspaceId: string,
+): readonly string[] => {
+  const roleActorIds = new Set(
+    drizzleDatabase
+      .select({ actorId: workspaceActorRoleTable.actorId })
+      .from(workspaceActorRoleTable)
+      .where(eq(workspaceActorRoleTable.workspaceId, workspaceId))
+      .all()
+      .map((row) => row.actorId),
+  );
+
+  return pack.actors
+    .filter((actor) => roleActorIds.has(actorIdForWorkspacePackActor(actor.key)))
+    .map((actor) => actor.key);
+};
+
+const readWorkspacePackMappings = (
+  drizzleDatabase: StrategyKernelDrizzleDatabase,
+  workspaceId: string,
+): WorkspacePackRuntimeSnapshot["mappings"] => {
+  const systems = new Map(
+    drizzleDatabase
+      .select()
+      .from(externalSystemTable)
+      .all()
+      .map((system) => [system.id, system.kind] as const),
+  );
+
+  return drizzleDatabase
+    .select()
+    .from(externalResourceMappingTable)
+    .where(eq(externalResourceMappingTable.workspaceId, workspaceId))
+    .all()
+    .flatMap((mapping) => {
+      const system = systems.get(mapping.externalSystemId);
+
+      if (system === undefined) {
+        return [];
+      }
+
+      return [
+        {
+          system: system as NonNullable<WorkspacePackRuntimeSnapshot["mappings"]>[number]["system"],
+          resourceType: mapping.resourceType,
+          externalId: mapping.externalId,
+          purpose: mapping.purpose as NonNullable<
+            WorkspacePackRuntimeSnapshot["mappings"]
+          >[number]["purpose"],
+          sensitivity: mapping.sensitivity as NonNullable<
+            WorkspacePackRuntimeSnapshot["mappings"]
+          >[number]["sensitivity"],
+        },
+      ];
+    });
+};
+
+const readWorkspacePackPolicies = (
+  drizzleDatabase: StrategyKernelDrizzleDatabase,
+  workspaceId: string,
+): RuntimePolicySnapshot => {
+  const rows = drizzleDatabase
+    .select()
+    .from(workspacePackPolicyTable)
+    .where(eq(workspacePackPolicyTable.workspaceId, workspaceId))
+    .all();
+  const policies: MutableRuntimePolicySnapshot = {};
+
+  for (const row of rows) {
+    assignWorkspacePackPolicy(policies, row);
+  }
+
+  return policies;
+};
+
+const assignWorkspacePackPolicy = (
+  policies: MutableRuntimePolicySnapshot,
+  row: WorkspacePackPolicyRow,
+): void => {
+  const parsed = JSON.parse(row.payloadJson) as unknown;
+
+  if (row.policyKey === "accountability") {
+    policies.accountability = parsed as NonNullable<RuntimePolicySnapshot["accountability"]>;
+  }
+  if (row.policyKey === "visibility") {
+    policies.visibility = parsed as NonNullable<RuntimePolicySnapshot["visibility"]>;
+  }
+  if (row.policyKey === "deployReadiness") {
+    policies.deployReadiness = parsed as NonNullable<RuntimePolicySnapshot["deployReadiness"]>;
+  }
+  if (row.policyKey === "qaEvidence") {
+    policies.qaEvidence = parsed as NonNullable<RuntimePolicySnapshot["qaEvidence"]>;
+  }
+};
+
+const readWorkspacePackRuntimeIntents = (
+  drizzleDatabase: StrategyKernelDrizzleDatabase,
+  pack: WorkspacePackManifest,
+  workspace: WorkspaceRow,
+): readonly RuntimeIntentSnapshot[] => {
+  const rows = drizzleDatabase
+    .select()
+    .from(intentNodeTable)
+    .where(eq(intentNodeTable.workspaceId, workspace.id))
+    .all();
+  const rowsById = new Map(rows.map((row) => [row.id, row] as const));
+
+  return [...pack.seeds.goals, ...pack.seeds.commitments, ...pack.seeds.bets].flatMap((seed) => {
+    const row =
+      rowsById.get(seedIntentIdForWorkspacePackSeed(pack.workspace.key, seed.key)) ??
+      rows.find(
+        (candidate) =>
+          candidate.kind === seed.kind &&
+          candidate.title === seed.title &&
+          candidate.body === seed.body,
+      );
+
+    if (row === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        key: seed.key,
+        kind: row.kind as RuntimeIntentSnapshot["kind"],
+        title: row.title,
+        body: row.body,
+        sensitivity: row.sensitivity as RuntimeIntentSnapshot["sensitivity"],
+        state: row.state as RuntimeIntentSnapshot["state"],
+      },
+    ];
+  });
+};
 
 export const applyStrategyKernelSqliteMigrations = (
   database: StrategyKernelSqliteDatabase,

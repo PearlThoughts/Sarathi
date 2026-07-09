@@ -1,0 +1,6 @@
+mappings:
+  - system: github
+    resourceType: repository
+    externalId: example/launchpad-service
+    purpose: evidence
+    sensitivity: internal

@@ -5,9 +5,11 @@ Sarathi public code and fixtures stay synthetic. Real organization workspace pac
 ## Location Contract
 
 - Store private packs outside the public checkout, for example under a private vault or private policy repository.
-- Point local tooling at that directory with `SARATHI_PRIVATE_WORKSPACE_PACK_DIR`.
+- Point local tooling at that directory with `--pack <path>` or `SARATHI_PRIVATE_WORKSPACE_PACK_DIR`.
+- Point durable local runtime state at SQLite with `--db <path>` or `SARATHI_DB_PATH`.
 - Keep private packs out of `docs/`, `tests/`, committed fixtures, PR descriptions, and generated examples.
-- Current public CLI commands use synthetic in-memory fixtures only. File-backed private pack loading from `SARATHI_PRIVATE_WORKSPACE_PACK_DIR` is the follow-up integration point, not public-repo fixture data.
+- Current public CLI commands stay synthetic by default. File-backed reconciliation is explicit and requires a pack directory plus a SQLite database path.
+- CLI output for file-backed reconciliation is a safe summary. It reports counts and non-identifying workspace shape only; it does not print actor names, external IDs, source paths, Jira keys, repository names, Teams IDs, or vault paths.
 
 ## Required Shape
 
@@ -40,3 +42,18 @@ Pack loading is reconciliation, not overwrite:
 - Create review items when a pack conflicts with ratified runtime intent, completed actions, or human-edited decisions.
 
 Do not include real Teams IDs, Jira keys, repository names, client names, or private note paths in public tests or docs.
+
+## Public Synthetic Fixture
+
+The public repository includes a synthetic fixture at `tests/fixtures/workspace-packs/launchpad/`.
+It mirrors the private-pack directory shape for tests and demos, but every identifier is placeholder data.
+
+Example local dry run:
+
+```bash
+bun run src/cli/release.ts workspace reconcile \
+  --pack tests/fixtures/workspace-packs/launchpad \
+  --db /tmp/sarathi-runtime.sqlite
+```
+
+The command creates missing workspace config, persists pack policies/templates, and proposes seed intent as candidate intent nodes. It does not overwrite ratified or human-edited runtime intent; conflicts become pack drift findings.

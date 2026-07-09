@@ -1,0 +1,6 @@
+mappings:
+  - system: vault
+    resourceType: folder
+    externalId: Synthetic/Launchpad
+    purpose: governance
+    sensitivity: internal

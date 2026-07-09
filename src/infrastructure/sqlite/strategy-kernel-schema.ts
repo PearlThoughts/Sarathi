@@ -38,6 +38,31 @@ export const workspaceRelationTable = sqliteTable("workspace_relation", {
   createdAt: text("created_at").notNull(),
 });
 
+export const workspacePackPolicyTable = sqliteTable(
+  "workspace_pack_policy",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    policyKey: text("policy_key").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("workspace_pack_policy_unique").on(table.workspaceId, table.policyKey)],
+);
+
+export const workspacePackTemplateTable = sqliteTable(
+  "workspace_pack_template",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    path: text("path").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("workspace_pack_template_unique").on(table.workspaceId, table.path)],
+);
+
 export const actorTable = sqliteTable("actor", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id").notNull(),
@@ -216,6 +241,8 @@ export const strategyKernelSqliteSchema = {
   organizationTable,
   workspaceTable,
   workspaceRelationTable,
+  workspacePackPolicyTable,
+  workspacePackTemplateTable,
   actorTable,
   workspaceActorRoleTable,
   externalSystemTable,

@@ -24,8 +24,8 @@
 ## release-cli
 
 - Command: `bun run test`
-- Location: `tests/release-cli.test.ts`
-- Scope: Runtime smoke command and Railway deploy guard coverage.
+- Location: `tests/release-cli.test.ts`, `tests/release-cli-file-backed.bun.test.ts`
+- Scope: Runtime smoke command, Railway deploy guard coverage, and file-backed workspace pack reconciliation into SQLite.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## boundary-policy

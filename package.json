@@ -15,7 +15,7 @@
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
     "test": "vitest run",
-    "test:bun-native": "bun test tests/strategy-kernel-sqlite.bun.test.ts",
+    "test:bun-native": "bun test tests/*.bun.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check README.md AGENTS.md docs specs src tests package.json tsconfig.json vitest.config.ts biome.json .agents/manifest.json .dependency-cruiser.cjs knip.json && oxlint src tests",
     "static:oxlint": "oxlint src tests",
