@@ -63,6 +63,34 @@
 - Scope: Bun SQLite migration application and repository persistence coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## workspace-packs
+
+- Command: `bun run test`
+- Location: `tests/workspace-packs.test.ts`
+- Scope: Workspace pack loading, YAML fragment reconciliation, and conflict behavior.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## intent-inbox
+
+- Command: `bun run test`
+- Location: `tests/intent-inbox.test.ts`
+- Scope: Evidence ingestion, deterministic claim extraction, candidate inbox transitions, and audit events.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## projections
+
+- Command: `bun run test`
+- Location: `tests/projections.test.ts`
+- Scope: Intended projection creation, simulated verification states, and projection drift findings.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## strategic-reports
+
+- Command: `bun run test`
+- Location: `tests/strategic-reports.test.ts`
+- Scope: Workspace-scoped strategic report generation and leakage guards.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## local-ci
 
 - Command: `bun run check`

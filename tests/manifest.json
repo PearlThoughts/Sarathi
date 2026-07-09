@@ -57,6 +57,34 @@
       "description": "Bun-native SQLite migration application and strategy-kernel repository persistence coverage."
     },
     {
+      "id": "workspace-packs",
+      "path": "tests/workspace-packs.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Workspace pack loading, YAML fragment reconciliation, and conflict behavior."
+    },
+    {
+      "id": "intent-inbox",
+      "path": "tests/intent-inbox.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Evidence ingestion, deterministic claim extraction, candidate inbox transitions, and audit events."
+    },
+    {
+      "id": "projections",
+      "path": "tests/projections.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Intended projection creation, simulated verification states, and projection drift findings."
+    },
+    {
+      "id": "strategic-reports",
+      "path": "tests/strategic-reports.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Workspace-scoped strategic report generation and leakage guards."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",
