@@ -223,6 +223,7 @@ describe("sqlite strategy kernel repository", () => {
     expect(applyStrategyKernelSqliteMigrations(database)).toEqual([
       "001_strategy_kernel",
       "002_workspace_pack_runtime",
+      "003_evidence_import_watermark",
     ]);
     expect(applyStrategyKernelSqliteMigrations(database)).toEqual([]);
     expect(drizzleDatabase).toBeDefined();

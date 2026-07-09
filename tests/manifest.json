@@ -19,7 +19,7 @@
       "path": "tests/release-cli.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Runtime smoke command and Railway deploy guard coverage."
+      "description": "Runtime smoke command, Railway deploy guard, file-backed workspace reconciliation, local evidence import, watermark persistence, and private drift-review generation coverage."
     },
     {
       "id": "boundary-policy",
@@ -89,7 +89,7 @@
       "path": "tests/strategic-reports.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Workspace-scoped strategic report generation and leakage guards."
+      "description": "Workspace-scoped strategic report generation, derived drift findings, sensitivity ceilings, and leakage guards."
     },
     {
       "id": "local-ci",

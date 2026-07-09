@@ -165,6 +165,15 @@ export const evidenceItemTable = sqliteTable(
   ],
 );
 
+export const evidenceImportWatermarkTable = sqliteTable("evidence_import_watermark", {
+  workspaceId: text("workspace_id").notNull(),
+  sourceKey: text("source_key").notNull(),
+  lastCursor: text("last_cursor").notNull(),
+  recordCount: integer("record_count").notNull(),
+  contentHash: text("content_hash").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const extractedClaimTable = sqliteTable("extracted_claim", {
   id: text("id").primaryKey(),
   evidenceItemId: text("evidence_item_id").notNull(),
@@ -250,6 +259,7 @@ export const strategyKernelSqliteSchema = {
   intentNodeTable,
   intentEdgeTable,
   evidenceItemTable,
+  evidenceImportWatermarkTable,
   extractedClaimTable,
   projectionTable,
   accountabilityActionTable,

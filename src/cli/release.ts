@@ -1,9 +1,13 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import {
   type AccountabilityPolicy,
   createAccountabilityAction,
 } from "../modules/accountability-actions/index.ts";
+import {
+  importLocalEvidenceRecords,
+  parseLocalEvidenceExport,
+} from "../modules/evidence-import/index.ts";
 import {
   acceptClaimAsIntent,
   buildEvidenceItem,
@@ -14,7 +18,11 @@ import {
   createIntendedProjection,
   verifyProjectionAgainstSimulation,
 } from "../modules/projections/index.ts";
-import { generateWeeklyDriftReview } from "../modules/strategic-reports/index.ts";
+import {
+  filterStrategicReportInputsBySensitivity,
+  generateWeeklyDriftReview,
+  renderStrategicReportMarkdown,
+} from "../modules/strategic-reports/index.ts";
 import type {
   AccountabilityAction,
   Actor,
@@ -377,6 +385,37 @@ const optionValue = (args: readonly string[], option: string): string | undefine
 const workspaceIdFromArgs = (args: readonly string[]): string =>
   optionValue(args, "--workspace") ?? "workspace-launchpad";
 
+const sourcePathFromArgs = (args: readonly string[]): string | undefined =>
+  optionValue(args, "--source");
+
+const sourceKeyFromArgs = (args: readonly string[]): string =>
+  optionValue(args, "--source-key") ?? "local-export";
+
+const outputPathFromArgs = (args: readonly string[]): string | undefined =>
+  optionValue(args, "--out");
+
+const outputFormatFromArgs = (args: readonly string[]): "json" | "markdown" =>
+  optionValue(args, "--format") === "json" ? "json" : "markdown";
+
+const maxSensitivityFromArgs = (
+  args: readonly string[],
+): "public" | "internal" | "confidential" | "restricted" => {
+  const value = optionValue(args, "--max-sensitivity") ?? "restricted";
+
+  if (
+    value !== "public" &&
+    value !== "internal" &&
+    value !== "confidential" &&
+    value !== "restricted"
+  ) {
+    throw new Error(
+      "Invalid --max-sensitivity. Use public, internal, confidential, or restricted.",
+    );
+  }
+
+  return value;
+};
+
 const packDirectoryFromArgs = (
   args: readonly string[],
   env: Record<string, string | undefined>,
@@ -416,6 +455,45 @@ const readWorkspacePackDirectory = (directory: string): readonly WorkspacePackSo
 
   visit(root);
   return files.sort((left, right) => left.path.localeCompare(right.path));
+};
+
+const readEvidenceExportPath = (sourcePath: string): string => {
+  const root = resolve(sourcePath);
+  const sourceStats = statSync(root);
+
+  if (sourceStats.isFile()) {
+    return readFileSync(root, "utf8");
+  }
+
+  if (!sourceStats.isDirectory()) {
+    throw new Error("Evidence import source must be a JSON/JSONL file or directory.");
+  }
+
+  const files: string[] = [];
+  const visit = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const absolutePath = resolve(current, entry.name);
+
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+        continue;
+      }
+
+      if (entry.isFile() && /\.jsonl?$/.test(entry.name)) {
+        files.push(absolutePath);
+      }
+    }
+  };
+
+  visit(root);
+  return files
+    .sort((left, right) => left.localeCompare(right))
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
 };
 
 const reconcileFileBackedWorkspace = async (
@@ -510,6 +588,159 @@ const reconcileFileBackedWorkspace = async (
   }
 };
 
+const importFileBackedEvidence = async (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<CliResult> => {
+  const databasePath = databasePathFromArgs(args, env);
+  const sourcePath = sourcePathFromArgs(args);
+
+  if (databasePath === undefined || databasePath === "") {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: "Evidence import requires --db or SARATHI_DB_PATH.",
+      },
+    };
+  }
+
+  if (sourcePath === undefined || sourcePath === "") {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: "Evidence import requires --source.",
+      },
+    };
+  }
+
+  const {
+    applyStrategyKernelSqliteMigrations,
+    createSqliteStrategyKernelRepository,
+    openStrategyKernelSqliteDatabase,
+    saveEvidenceImportWatermark,
+  } = await import("../infrastructure/sqlite/index.ts");
+  const database = openStrategyKernelSqliteDatabase(databasePath);
+
+  try {
+    applyStrategyKernelSqliteMigrations(database);
+    const repository = createSqliteStrategyKernelRepository(database);
+    const records = parseLocalEvidenceExport(readEvidenceExportPath(sourcePath));
+    const importedAt = new Date().toISOString();
+    const summary = await repository.withTransaction(async (transactionalRepository) =>
+      importLocalEvidenceRecords(
+        transactionalRepository,
+        records,
+        workspaceIdFromArgs(args),
+        sourceKeyFromArgs(args),
+        importedAt,
+      ),
+    );
+
+    saveEvidenceImportWatermark(database, summary.watermark);
+
+    return {
+      exitCode: 0,
+      output: {
+        ok: true,
+        mode: "file-backed",
+        source: "local-evidence-export",
+        database: "sqlite",
+        imported: {
+          recordsRead: summary.recordsRead,
+          evidenceItemsSaved: summary.evidenceItemsSaved,
+        },
+        watermark: {
+          updated: true,
+          records: summary.watermark.recordCount,
+          cursorStored: true,
+        },
+      },
+    };
+  } finally {
+    database.close();
+  }
+};
+
+const generateFileBackedDriftReview = async (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<CliResult> => {
+  const databasePath = databasePathFromArgs(args, env);
+  const outputPath = outputPathFromArgs(args);
+
+  if (databasePath === undefined || databasePath === "") {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: "File-backed drift review requires --db or SARATHI_DB_PATH.",
+      },
+    };
+  }
+
+  if (outputPath === undefined || outputPath === "") {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message:
+          "File-backed drift review requires --out so private report content is not printed.",
+      },
+    };
+  }
+
+  const {
+    applyStrategyKernelSqliteMigrations,
+    createSqliteStrategyKernelRepository,
+    openStrategyKernelSqliteDatabase,
+  } = await import("../infrastructure/sqlite/index.ts");
+  const database = openStrategyKernelSqliteDatabase(databasePath);
+  const workspaceId = workspaceIdFromArgs(args);
+  const generatedAt = new Date().toISOString();
+
+  try {
+    applyStrategyKernelSqliteMigrations(database);
+    const repository = createSqliteStrategyKernelRepository(database);
+    const inputs = {
+      workspaceId,
+      generatedAt,
+      intents: await repository.listWorkspaceIntent(workspaceId),
+      evidence: await repository.listWorkspaceEvidence(workspaceId),
+      projections: await repository.listWorkspaceProjections(workspaceId),
+      actions: await repository.listWorkspaceAccountabilityActions(workspaceId),
+      driftFindings: await repository.listWorkspaceDriftFindings(workspaceId),
+    };
+    const filtered = filterStrategicReportInputsBySensitivity(inputs, maxSensitivityFromArgs(args));
+    const report = generateWeeklyDriftReview(filtered);
+    const rendered =
+      outputFormatFromArgs(args) === "json"
+        ? `${JSON.stringify(report, null, 2)}\n`
+        : renderStrategicReportMarkdown(report);
+
+    writeFileSync(resolve(outputPath), rendered);
+
+    return {
+      exitCode: 0,
+      output: {
+        ok: true,
+        mode: "file-backed",
+        report: {
+          kind: report.kind,
+          visibility: report.visibility,
+          sections: report.sections.length,
+          entries: report.sections.reduce((total, section) => total + section.entries.length, 0),
+          totals: report.totals,
+          written: true,
+        },
+      },
+    };
+  } finally {
+    database.close();
+  }
+};
+
 const runtimeCommand = async (
   args: readonly string[],
   env: Record<string, string | undefined>,
@@ -546,6 +777,10 @@ const runtimeCommand = async (
         decisions: items,
       },
     };
+  }
+
+  if (args[0] === "evidence" && args[1] === "import") {
+    return importFileBackedEvidence(args, env);
   }
 
   if (args[0] === "intent" && args[1] === "inbox") {
@@ -642,6 +877,12 @@ const runtimeCommand = async (
   }
 
   if (args[0] === "report" && args[1] === "drift-review") {
+    const databasePath = databasePathFromArgs(args, env);
+
+    if (databasePath !== undefined && databasePath !== "") {
+      return generateFileBackedDriftReview(args, env);
+    }
+
     const projection = createIntendedProjection({
       intent: fixture.intent,
       targetSystem: "jira",

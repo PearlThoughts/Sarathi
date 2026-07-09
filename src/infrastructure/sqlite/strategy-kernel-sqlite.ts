@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
+import type { EvidenceImportWatermark } from "../../modules/evidence-import/index.ts";
 import {
   type StrategyKernelRepository,
   strategyKernelMigrations,
@@ -19,6 +20,7 @@ import {
   accountabilityActionTable,
   actorTable,
   driftFindingTable,
+  evidenceImportWatermarkTable,
   evidenceItemTable,
   externalResourceMappingTable,
   externalSystemTable,
@@ -127,6 +129,46 @@ export const saveWorkspacePackTemplateRecords = (
       })
       .run();
   }
+};
+
+export const saveEvidenceImportWatermark = (
+  database: StrategyKernelSqliteDatabase,
+  watermark: EvidenceImportWatermark,
+): void => {
+  const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
+
+  drizzleDatabase
+    .insert(evidenceImportWatermarkTable)
+    .values(watermark)
+    .onConflictDoUpdate({
+      target: [evidenceImportWatermarkTable.workspaceId, evidenceImportWatermarkTable.sourceKey],
+      set: {
+        lastCursor: watermark.lastCursor,
+        recordCount: watermark.recordCount,
+        contentHash: watermark.contentHash,
+        updatedAt: watermark.updatedAt,
+      },
+    })
+    .run();
+};
+
+export const readEvidenceImportWatermark = (
+  database: StrategyKernelSqliteDatabase,
+  workspaceId: string,
+  sourceKey: string,
+): EvidenceImportWatermark | undefined => {
+  const drizzleDatabase = createStrategyKernelDrizzleDatabase(database);
+
+  return drizzleDatabase
+    .select()
+    .from(evidenceImportWatermarkTable)
+    .where(
+      and(
+        eq(evidenceImportWatermarkTable.workspaceId, workspaceId),
+        eq(evidenceImportWatermarkTable.sourceKey, sourceKey),
+      ),
+    )
+    .get();
 };
 
 export const readWorkspacePackRuntimeSnapshot = (

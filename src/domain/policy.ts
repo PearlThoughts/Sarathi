@@ -28,6 +28,11 @@ const sensitivityOrder: readonly SensitivityTier[] = [
 export const maxSensitivity = (left: SensitivityTier, right: SensitivityTier): SensitivityTier =>
   sensitivityOrder.indexOf(left) >= sensitivityOrder.indexOf(right) ? left : right;
 
+export const isSensitivityAtOrBelow = (
+  sensitivity: SensitivityTier,
+  maximum: SensitivityTier,
+): boolean => sensitivityOrder.indexOf(sensitivity) <= sensitivityOrder.indexOf(maximum);
+
 export const maxTrustTier = (left: TrustTier, right: TrustTier): TrustTier =>
   trustOrder.indexOf(left) >= trustOrder.indexOf(right) ? left : right;
 
