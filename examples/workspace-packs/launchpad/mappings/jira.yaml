@@ -1,0 +1,6 @@
+mappings:
+  - system: jira
+    resourceType: project
+    externalId: LPAD
+    purpose: execution
+    sensitivity: internal

@@ -49,6 +49,13 @@
 - Scope: External-principal mapping and proactive message delivery contract coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## strategy-kernel
+
+- Command: `bun run test`
+- Location: `tests/strategy-kernel.test.ts`
+- Scope: Strategy kernel entity contracts, visibility inheritance, portable migration coverage, and workspace pack reconciliation rules.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## local-ci
 
 - Command: `bun run check`
