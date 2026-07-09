@@ -120,6 +120,7 @@ ruleset:
   release-cli:
     mayDependOn:
       - domain-kernel
+      - infrastructure
       - module-public
       - shared
   shared:

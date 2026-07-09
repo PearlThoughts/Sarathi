@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { relative, resolve, sep } from "node:path";
 import {
   type AccountabilityPolicy,
   createAccountabilityAction,
@@ -32,7 +33,14 @@ import type {
   WorkspaceActorRole,
   WorkspaceRelation,
 } from "../modules/strategy-kernel/index.ts";
-import { loadWorkspacePack, reconcileWorkspacePack } from "../modules/workspace-packs/index.ts";
+import {
+  buildWorkspacePackPersistencePlan,
+  loadWorkspacePack,
+  reconcileWorkspacePack,
+  summarizeWorkspacePackPersistencePlan,
+  summarizeWorkspacePackReconciliation,
+  type WorkspacePackSourceFile,
+} from "../modules/workspace-packs/index.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -369,7 +377,143 @@ const optionValue = (args: readonly string[], option: string): string | undefine
 const workspaceIdFromArgs = (args: readonly string[]): string =>
   optionValue(args, "--workspace") ?? "workspace-launchpad";
 
-const runtimeCommand = async (args: readonly string[]): Promise<CliResult | undefined> => {
+const packDirectoryFromArgs = (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): string | undefined => optionValue(args, "--pack") ?? env.SARATHI_PRIVATE_WORKSPACE_PACK_DIR;
+
+const databasePathFromArgs = (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): string | undefined => optionValue(args, "--db") ?? env.SARATHI_DB_PATH;
+
+const readWorkspacePackDirectory = (directory: string): readonly WorkspacePackSourceFile[] => {
+  const root = resolve(directory);
+  const files: WorkspacePackSourceFile[] = [];
+  const visit = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const absolutePath = resolve(current, entry.name);
+
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+        continue;
+      }
+
+      if (!entry.isFile() || !/\.(md|ya?ml)$/.test(entry.name)) {
+        continue;
+      }
+
+      files.push({
+        path: relative(root, absolutePath).split(sep).join("/"),
+        contents: readFileSync(absolutePath, "utf8"),
+      });
+    }
+  };
+
+  visit(root);
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+};
+
+const reconcileFileBackedWorkspace = async (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+  packDirectory: string,
+): Promise<CliResult> => {
+  const databasePath = databasePathFromArgs(args, env);
+
+  if (databasePath === undefined || databasePath === "") {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: "File-backed workspace reconciliation requires --db or SARATHI_DB_PATH.",
+      },
+    };
+  }
+
+  const organizationId = env.SARATHI_ORGANIZATION_ID ?? "org-local";
+  const organizationName = env.SARATHI_ORGANIZATION_NAME ?? "Local Sarathi";
+  const occurredAt = new Date().toISOString();
+  const pack = loadWorkspacePack(readWorkspacePackDirectory(packDirectory));
+  const {
+    applyStrategyKernelSqliteMigrations,
+    createSqliteStrategyKernelRepository,
+    openStrategyKernelSqliteDatabase,
+    readWorkspacePackRuntimeSnapshot,
+    saveWorkspacePackPolicyRecords,
+    saveWorkspacePackTemplateRecords,
+  } = await import("../infrastructure/sqlite/index.ts");
+  const database = openStrategyKernelSqliteDatabase(databasePath);
+
+  try {
+    applyStrategyKernelSqliteMigrations(database);
+    const repository = createSqliteStrategyKernelRepository(database);
+    const runtime = readWorkspacePackRuntimeSnapshot(database, pack, organizationId);
+    const decisions = reconcileWorkspacePack(pack, runtime);
+    const plan = buildWorkspacePackPersistencePlan({
+      pack,
+      decisions,
+      organizationId,
+      organizationName,
+      occurredAt,
+    });
+
+    await repository.withTransaction(async (transactionalRepository) => {
+      await transactionalRepository.saveOrganization(plan.organization);
+      if (plan.workspace !== undefined) {
+        await transactionalRepository.saveWorkspace(plan.workspace);
+      }
+      for (const actor of plan.actors) {
+        await transactionalRepository.saveActor(actor);
+      }
+      for (const role of plan.workspaceActorRoles) {
+        await transactionalRepository.saveWorkspaceActorRole(role);
+      }
+      for (const system of plan.externalSystems) {
+        await transactionalRepository.saveExternalSystem(system);
+      }
+      for (const mapping of plan.externalResourceMappings) {
+        await transactionalRepository.saveExternalResourceMapping(mapping);
+      }
+      for (const intent of plan.seedIntents) {
+        await transactionalRepository.saveIntentNode(intent);
+      }
+      for (const finding of plan.driftFindings) {
+        await transactionalRepository.saveDriftFinding(finding);
+      }
+      saveWorkspacePackPolicyRecords(database, plan.policies);
+      saveWorkspacePackTemplateRecords(database, plan.templates);
+    });
+
+    return {
+      exitCode: 0,
+      output: {
+        ok: true,
+        mode: "file-backed",
+        source: "workspace-pack-directory",
+        database: "sqlite",
+        workspace: {
+          loaded: true,
+          kind: pack.workspace.kind,
+          defaultSensitivity: pack.workspace.defaultSensitivity,
+        },
+        decisions: summarizeWorkspacePackReconciliation(decisions),
+        persisted: summarizeWorkspacePackPersistencePlan(plan),
+      },
+    };
+  } finally {
+    database.close();
+  }
+};
+
+const runtimeCommand = async (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<CliResult | undefined> => {
   const workspaceId = workspaceIdFromArgs(args);
   const repository = createMemoryStrategyKernelRepository();
   const fixture = createRuntimeFixture(workspaceId);
@@ -377,9 +521,15 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
   await repository.saveIntentNode(fixture.intent);
 
   if (args[0] === "workspace" && args[1] === "reconcile") {
+    const packDirectory = packDirectoryFromArgs(args, env);
+
+    if (packDirectory !== undefined && packDirectory !== "") {
+      return reconcileFileBackedWorkspace(args, env, packDirectory);
+    }
+
     const pack = loadWorkspacePack(syntheticPack);
     const items = reconcileWorkspacePack(pack, {
-      workspaceKey: optionValue(args, "--pack") === undefined ? undefined : "launchpad",
+      workspaceKey: undefined,
       actorKeys: [],
       mappings: [],
       policies: {},
@@ -533,7 +683,7 @@ export const runReleaseCli = async (options: CliOptions): Promise<CliResult> => 
   const args = options.args.filter((arg) => arg !== "--ci" && arg !== "--json");
   const env = options.env ?? Bun.env;
   const fetcher = options.fetcher ?? fetch;
-  const runtimeResult = await runtimeCommand(args);
+  const runtimeResult = await runtimeCommand(args, env);
 
   if (runtimeResult !== undefined) {
     return runtimeResult;

@@ -1,0 +1,5 @@
+qaEvidence:
+  acceptedEvidenceSystems:
+    - github
+    - jira
+    - vault

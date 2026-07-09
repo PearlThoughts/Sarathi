@@ -220,7 +220,10 @@ describe("sqlite strategy kernel repository", () => {
     const typedDatabase: StrategyKernelSqliteDatabase = database;
     const drizzleDatabase = createStrategyKernelDrizzleDatabase(typedDatabase);
 
-    expect(applyStrategyKernelSqliteMigrations(database)).toEqual(["001_strategy_kernel"]);
+    expect(applyStrategyKernelSqliteMigrations(database)).toEqual([
+      "001_strategy_kernel",
+      "002_workspace_pack_runtime",
+    ]);
     expect(applyStrategyKernelSqliteMigrations(database)).toEqual([]);
     expect(drizzleDatabase).toBeDefined();
 

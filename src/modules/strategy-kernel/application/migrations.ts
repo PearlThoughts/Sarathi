@@ -184,12 +184,37 @@ export const strategyKernelMigrations = [
       )`,
     ],
   },
+  {
+    id: "002_workspace_pack_runtime",
+    description: "Persist workspace pack policy and template runtime state.",
+    sql: [
+      `create table if not exists workspace_pack_policy (
+        id text primary key,
+        workspace_id text not null references workspace(id),
+        policy_key text not null,
+        payload_json text not null,
+        updated_at text not null,
+        unique (workspace_id, policy_key)
+      )`,
+      `create table if not exists workspace_pack_template (
+        id text primary key,
+        workspace_id text not null references workspace(id),
+        name text not null,
+        path text not null,
+        sensitivity text not null,
+        updated_at text not null,
+        unique (workspace_id, path)
+      )`,
+    ],
+  },
 ] as const satisfies readonly [StrategyKernelMigration, ...StrategyKernelMigration[]];
 
 export const strategyKernelTableNames: readonly string[] = [
   "organization",
   "workspace",
   "workspace_relation",
+  "workspace_pack_policy",
+  "workspace_pack_template",
   "actor",
   "workspace_actor_role",
   "external_system",

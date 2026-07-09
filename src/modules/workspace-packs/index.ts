@@ -1,10 +1,20 @@
 import { parse as parseYaml } from "yaml";
 import type {
+  Actor,
+  DriftFinding,
+  ExternalResourceMapping,
+  ExternalSystem,
+  IntentNode,
+  IntentNodeState,
+  Organization,
+  Workspace,
+  WorkspaceActorRole,
   WorkspacePackManifest,
   WorkspacePackMapping,
   WorkspacePackPolicies,
   WorkspacePackReconciliationDecision,
   WorkspacePackSeedIntent,
+  WorkspacePackTemplate,
 } from "../strategy-kernel/index.ts";
 
 export type WorkspacePackSourceFile = {
@@ -16,7 +26,7 @@ export type WorkspacePackLoadInput = WorkspacePackManifest | readonly WorkspaceP
 
 export type RuntimePolicySnapshot = Partial<WorkspacePackPolicies>;
 
-export type RuntimeIntentState = "candidate" | "ratified" | "active" | "done" | "human_edited";
+export type RuntimeIntentState = IntentNodeState | "done" | "human_edited";
 
 export type RuntimeIntentSnapshot = WorkspacePackSeedIntent & {
   readonly state: RuntimeIntentState;
@@ -44,6 +54,44 @@ export type WorkspacePackReconciliationItem = {
   readonly target: WorkspacePackDecisionTarget;
   readonly key: string;
   readonly reason: string;
+};
+
+export type WorkspacePackPolicyRecord = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly policyKey: keyof WorkspacePackPolicies;
+  readonly payloadJson: string;
+  readonly updatedAt: string;
+};
+
+export type WorkspacePackTemplateRecord = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly name: WorkspacePackTemplate["name"];
+  readonly path: string;
+  readonly sensitivity: WorkspacePackTemplate["sensitivity"];
+  readonly updatedAt: string;
+};
+
+type WorkspacePackPersistencePlan = {
+  readonly organization: Organization;
+  readonly workspace?: Workspace | undefined;
+  readonly actors: readonly Actor[];
+  readonly workspaceActorRoles: readonly WorkspaceActorRole[];
+  readonly externalSystems: readonly ExternalSystem[];
+  readonly externalResourceMappings: readonly ExternalResourceMapping[];
+  readonly seedIntents: readonly IntentNode[];
+  readonly driftFindings: readonly DriftFinding[];
+  readonly policies: readonly WorkspacePackPolicyRecord[];
+  readonly templates: readonly WorkspacePackTemplateRecord[];
+};
+
+type WorkspacePackPersistencePlanInput = {
+  readonly pack: WorkspacePackManifest;
+  readonly decisions: readonly WorkspacePackReconciliationItem[];
+  readonly organizationId: string;
+  readonly organizationName: string;
+  readonly occurredAt: string;
 };
 
 type MutablePackFragments = {
@@ -132,6 +180,198 @@ export const reconcileWorkspacePack = (
   ...seedIntentDecisions(pack, runtime),
   ...policyDecisions(pack, runtime),
 ];
+
+export const buildWorkspacePackPersistencePlan = ({
+  pack,
+  decisions,
+  organizationId,
+  organizationName,
+  occurredAt,
+}: WorkspacePackPersistencePlanInput): WorkspacePackPersistencePlan => {
+  const workspaceId = workspaceIdForWorkspacePack(pack.workspace.key);
+  const decisionTargets = new Set(decisions.map(decisionKey));
+  const shouldCreateWorkspace = decisions.some(
+    (decision) => decision.target === "workspace" && decision.decision === "create_missing_config",
+  );
+  const policyKeys = policyKeysToPersist(decisions);
+
+  return {
+    organization: {
+      id: organizationId,
+      name: organizationName,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+    },
+    workspace: shouldCreateWorkspace
+      ? {
+          id: workspaceId,
+          organizationId,
+          key: pack.workspace.key,
+          name: pack.workspace.name,
+          kind: pack.workspace.kind,
+          defaultSensitivity: pack.workspace.defaultSensitivity,
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        }
+      : undefined,
+    actors: pack.actors
+      .filter((actor) => decisionTargets.has(`actor:${actor.key}`))
+      .map((actor) => ({
+        id: actorIdForWorkspacePackActor(actor.key),
+        organizationId,
+        kind: actor.role === "stakeholder" ? "external_stakeholder" : "person",
+        displayName: actor.displayName,
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+      })),
+    workspaceActorRoles: pack.actors
+      .filter((actor) => decisionTargets.has(`actor:${actor.key}`))
+      .map((actor) => ({
+        id: workspaceActorRoleIdForWorkspacePackActor(pack.workspace.key, actor.key, actor.role),
+        workspaceId,
+        actorId: actorIdForWorkspacePackActor(actor.key),
+        role: actor.role,
+        canRatifyIntent: actor.canRatifyIntent,
+        canApproveSensitivityDowngrade: actor.canApproveSensitivityDowngrade,
+        createdAt: occurredAt,
+      })),
+    externalSystems: uniqueExternalSystems(
+      pack.mappings.filter((mapping) => decisionTargets.has(`mapping:${mappingKey(mapping)}`)),
+      organizationId,
+      occurredAt,
+    ),
+    externalResourceMappings: pack.mappings
+      .filter((mapping) => decisionTargets.has(`mapping:${mappingKey(mapping)}`))
+      .map((mapping) => ({
+        id: externalResourceMappingIdForWorkspacePackMapping(pack.workspace.key, mapping),
+        workspaceId,
+        externalSystemId: externalSystemIdForWorkspacePackMapping(mapping.system),
+        resourceType: mapping.resourceType as ExternalResourceMapping["resourceType"],
+        externalId: mapping.externalId,
+        purpose: mapping.purpose,
+        sensitivity: mapping.sensitivity,
+        createdAt: occurredAt,
+      })),
+    seedIntents: allSeeds(pack)
+      .filter((seed) => decisionTargets.has(`seed_intent:${seed.key}:propose_seed_intent`))
+      .map((seed) => ({
+        id: seedIntentIdForWorkspacePackSeed(pack.workspace.key, seed.key),
+        workspaceId,
+        kind: seed.kind,
+        title: seed.title,
+        body: seed.body,
+        state: "candidate",
+        sensitivity: seed.sensitivity,
+        createdBy: "import",
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+      })),
+    driftFindings: decisions
+      .filter((decision) => decision.decision === "create_drift_review")
+      .map((decision) => ({
+        id: driftFindingIdForWorkspacePackDecision(pack.workspace.key, decision),
+        workspaceId,
+        findingType: "pack_conflict",
+        title: `Workspace pack conflict for ${decision.target}`,
+        body: decision.reason,
+        state: "open",
+        ...(decision.target === "seed_intent"
+          ? {
+              relatedEntityType: "intent_node" as const,
+              relatedEntityId: seedIntentIdForWorkspacePackSeed(pack.workspace.key, decision.key),
+            }
+          : {}),
+        sensitivity: pack.workspace.defaultSensitivity,
+        createdAt: occurredAt,
+      })),
+    policies: policyKeys.map((policyKey) => ({
+      id: workspacePackPolicyId(workspaceId, policyKey),
+      workspaceId,
+      policyKey,
+      payloadJson: JSON.stringify(pack.policies[policyKey]),
+      updatedAt: occurredAt,
+    })),
+    templates: pack.templates
+      .filter((template) => decisionTargets.has(`template:${template.path}`))
+      .map((template) => ({
+        id: workspacePackTemplateId(workspaceId, template.path),
+        workspaceId,
+        name: template.name,
+        path: template.path,
+        sensitivity: template.sensitivity,
+        updatedAt: occurredAt,
+      })),
+  };
+};
+
+export const summarizeWorkspacePackPersistencePlan = (
+  plan: WorkspacePackPersistencePlan,
+): Record<string, number> => ({
+  workspaces: plan.workspace === undefined ? 0 : 1,
+  actors: plan.actors.length,
+  actorRoles: plan.workspaceActorRoles.length,
+  externalSystems: plan.externalSystems.length,
+  externalResourceMappings: plan.externalResourceMappings.length,
+  seedIntents: plan.seedIntents.length,
+  driftFindings: plan.driftFindings.length,
+  policies: plan.policies.length,
+  templates: plan.templates.length,
+});
+
+export const summarizeWorkspacePackReconciliation = (
+  decisions: readonly WorkspacePackReconciliationItem[],
+): readonly { readonly decision: string; readonly target: string; readonly count: number }[] => {
+  const counts = new Map<string, number>();
+
+  for (const item of decisions) {
+    const key = `${item.decision}:${item.target}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, count]) => {
+      const [decision, target] = key.split(":");
+
+      return {
+        decision: decision ?? "unknown",
+        target: target ?? "unknown",
+        count,
+      };
+    });
+};
+
+export const workspaceIdForWorkspacePack = (workspaceKey: string): string =>
+  `workspace-${stableIdentifier(workspaceKey)}`;
+
+export const actorIdForWorkspacePackActor = (actorKey: string): string =>
+  `actor-${stableIdentifier(actorKey)}`;
+
+const workspaceActorRoleIdForWorkspacePackActor = (
+  workspaceKey: string,
+  actorKey: string,
+  role: string,
+): string =>
+  `role-${stableIdentifier(workspaceKey)}-${stableIdentifier(actorKey)}-${stableIdentifier(role)}`;
+
+const externalSystemIdForWorkspacePackMapping = (system: WorkspacePackMapping["system"]): string =>
+  `system-${stableIdentifier(system)}`;
+
+const externalResourceMappingIdForWorkspacePackMapping = (
+  workspaceKey: string,
+  mapping: WorkspacePackMapping,
+): string => `mapping-${stableIdentifier(workspaceKey)}-${stableIdentifier(mappingKey(mapping))}`;
+
+export const seedIntentIdForWorkspacePackSeed = (workspaceKey: string, seedKey: string): string =>
+  `intent-seed-${stableIdentifier(workspaceKey)}-${stableIdentifier(seedKey)}`;
+
+const workspacePackPolicyId = (
+  workspaceId: string,
+  policyKey: keyof WorkspacePackPolicies,
+): string => `policy-${stableIdentifier(workspaceId)}-${stableIdentifier(policyKey)}`;
+
+const workspacePackTemplateId = (workspaceId: string, templatePath: string): string =>
+  `template-${stableIdentifier(workspaceId)}-${stableIdentifier(templatePath)}`;
 
 const parseWorkspacePackYaml = (file: WorkspacePackSourceFile): Record<string, unknown> => {
   let parsed: unknown;
@@ -718,6 +958,67 @@ const allSeeds = (pack: WorkspacePackManifest): readonly WorkspacePackSeedIntent
   ...pack.seeds.commitments,
   ...pack.seeds.bets,
 ];
+
+const uniqueExternalSystems = (
+  mappings: readonly WorkspacePackMapping[],
+  organizationId: string,
+  occurredAt: string,
+): readonly ExternalSystem[] => {
+  const systems = new Map<WorkspacePackMapping["system"], ExternalSystem>();
+
+  for (const mapping of mappings) {
+    systems.set(mapping.system, {
+      id: externalSystemIdForWorkspacePackMapping(mapping.system),
+      organizationId,
+      kind: mapping.system,
+      name: `${mapping.system} workspace pack source`,
+      createdAt: occurredAt,
+    });
+  }
+
+  return [...systems.values()].sort((left, right) => left.id.localeCompare(right.id));
+};
+
+const policyKeysToPersist = (
+  decisions: readonly WorkspacePackReconciliationItem[],
+): readonly (keyof WorkspacePackPolicies)[] => {
+  const keys = new Set<keyof WorkspacePackPolicies>();
+
+  for (const decision of decisions) {
+    if (decision.target !== "policy" || decision.decision === "create_drift_review") {
+      continue;
+    }
+
+    const rootKey = decision.key.split(".")[0];
+
+    if (isWorkspacePackPolicyKey(rootKey)) {
+      keys.add(rootKey);
+    }
+  }
+
+  return [...keys].sort();
+};
+
+const decisionKey = (decision: WorkspacePackReconciliationItem): string =>
+  decision.target === "seed_intent"
+    ? `${decision.target}:${decision.key}:${decision.decision}`
+    : `${decision.target}:${decision.key}`;
+
+const driftFindingIdForWorkspacePackDecision = (
+  workspaceKey: string,
+  decision: WorkspacePackReconciliationItem,
+): string =>
+  `drift-pack-${stableIdentifier(workspaceKey)}-${stableIdentifier(decision.target)}-${stableIdentifier(decision.key)}`;
+
+const stableIdentifier = (value: string): string => value.replace(/[^A-Za-z0-9_.:-]+/g, "_");
+
+const isWorkspacePackPolicyKey = (
+  value: string | undefined,
+): value is keyof WorkspacePackPolicies =>
+  value === "accountability" ||
+  value === "visibility" ||
+  value === "deployReadiness" ||
+  value === "qaEvidence";
 
 const intentDrifted = (
   seed: WorkspacePackSeedIntent,

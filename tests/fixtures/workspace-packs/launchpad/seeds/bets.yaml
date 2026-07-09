@@ -1,0 +1,6 @@
+bets:
+  - key: controlled-rollup
+    kind: bet
+    title: Controlled workspace rollup
+    body: Approved summary fields can roll up to a portfolio workspace without exposing raw evidence.
+    sensitivity: internal

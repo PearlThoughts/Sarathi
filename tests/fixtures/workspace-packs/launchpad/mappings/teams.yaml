@@ -1,0 +1,6 @@
+mappings:
+  - system: teams
+    resourceType: channel
+    externalId: synthetic-launchpad-delivery
+    purpose: conversation
+    sensitivity: internal
