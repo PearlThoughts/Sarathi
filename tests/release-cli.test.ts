@@ -136,15 +136,28 @@ describe("release CLI", () => {
     );
 
     expect(results.every((result) => result.exitCode === 0)).toBe(true);
-    expect(results[0]?.output).toMatchObject({ ok: true, workspaceKey: "launchpad" });
-    expect(results[1]?.output).toMatchObject({ workspaceId: workspace });
-    expect(results[2]?.output).toMatchObject({ ok: true });
-    expect(results[3]?.output).toMatchObject({ ok: true });
+    expect(results[0]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      workspaceKey: "launchpad",
+    });
+    expect(results[1]?.output).toMatchObject({ mode: "synthetic", workspaceId: workspace });
+    expect(results[2]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      claim: { id: "claim-cli", state: "accepted" },
+    });
+    expect(results[3]?.output).toMatchObject({
+      ok: true,
+      mode: "synthetic",
+      claim: { id: "claim-cli", state: "rejected" },
+    });
     expect(results[4]?.output).toMatchObject({
       ok: true,
+      mode: "synthetic",
       projection: { workspaceId: workspace, driftStatus: "stale" },
     });
-    expect(results[5]?.output).toMatchObject({ workspaceId: workspace });
+    expect(results[5]?.output).toMatchObject({ mode: "synthetic", workspaceId: workspace });
     expect(results[6]?.output).toMatchObject({
       kind: "weekly_drift_review",
       workspaceId: workspace,

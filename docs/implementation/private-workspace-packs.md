@@ -7,6 +7,7 @@ Sarathi public code and fixtures stay synthetic. Real organization workspace pac
 - Store private packs outside the public checkout, for example under a private vault or private policy repository.
 - Point local tooling at that directory with `SARATHI_PRIVATE_WORKSPACE_PACK_DIR`.
 - Keep private packs out of `docs/`, `tests/`, committed fixtures, PR descriptions, and generated examples.
+- Current public CLI commands use synthetic in-memory fixtures only. File-backed private pack loading from `SARATHI_PRIVATE_WORKSPACE_PACK_DIR` is the follow-up integration point, not public-repo fixture data.
 
 ## Required Shape
 

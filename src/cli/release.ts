@@ -391,6 +391,7 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
       exitCode: 0,
       output: {
         ok: true,
+        mode: "synthetic",
         workspaceKey: pack.workspace.key,
         decisions: items,
       },
@@ -404,6 +405,7 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
     return {
       exitCode: 0,
       output: {
+        mode: "synthetic",
         workspaceId,
         pendingClaims: claims,
       },
@@ -440,7 +442,7 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
 
     return {
       exitCode: 0,
-      output: { ok: true, claim: result.claim, intent: result.intent },
+      output: { ok: true, mode: "synthetic", claim: result.claim, intent: result.intent },
     };
   }
 
@@ -462,7 +464,12 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
 
     return {
       exitCode: 0,
-      output: { ok: true, projection: result.projection, driftFinding: result.driftFinding },
+      output: {
+        ok: true,
+        mode: "synthetic",
+        projection: result.projection,
+        driftFinding: result.driftFinding,
+      },
     };
   }
 
@@ -477,6 +484,7 @@ const runtimeCommand = async (args: readonly string[]): Promise<CliResult | unde
     return {
       exitCode: 0,
       output: {
+        mode: "synthetic",
         workspaceId,
         actions: [action.action],
       },
