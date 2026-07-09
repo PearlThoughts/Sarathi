@@ -25,7 +25,7 @@
 
 - Command: `bun run test`
 - Location: `tests/release-cli.test.ts`, `tests/release-cli-file-backed.bun.test.ts`
-- Scope: Runtime smoke command, Railway deploy guard coverage, and file-backed workspace pack reconciliation into SQLite.
+- Scope: Runtime smoke command, Railway deploy guard coverage, file-backed workspace pack reconciliation into SQLite, local evidence import, watermark persistence, and private drift-review report generation.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## boundary-policy
@@ -95,7 +95,7 @@
 
 - Command: `bun run test`
 - Location: `tests/strategic-reports.test.ts`
-- Scope: Workspace-scoped strategic report generation and leakage guards.
+- Scope: Workspace-scoped strategic report generation, derived drift findings, sensitivity ceilings, and leakage guards.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## local-ci

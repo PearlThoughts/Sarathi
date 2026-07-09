@@ -207,6 +207,21 @@ export const strategyKernelMigrations = [
       )`,
     ],
   },
+  {
+    id: "003_evidence_import_watermark",
+    description: "Persist idempotent local evidence import watermarks.",
+    sql: [
+      `create table if not exists evidence_import_watermark (
+        workspace_id text not null references workspace(id),
+        source_key text not null,
+        last_cursor text not null,
+        record_count integer not null,
+        content_hash text not null,
+        updated_at text not null,
+        primary key (workspace_id, source_key)
+      )`,
+    ],
+  },
 ] as const satisfies readonly [StrategyKernelMigration, ...StrategyKernelMigration[]];
 
 export const strategyKernelTableNames: readonly string[] = [
@@ -222,6 +237,7 @@ export const strategyKernelTableNames: readonly string[] = [
   "intent_node",
   "intent_edge",
   "evidence_item",
+  "evidence_import_watermark",
   "extracted_claim",
   "projection",
   "accountability_action",
