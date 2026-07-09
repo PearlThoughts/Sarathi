@@ -78,6 +78,13 @@
       "description": "Intended projection creation, simulated verification states, and projection drift findings."
     },
     {
+      "id": "accountability-actions",
+      "path": "tests/accountability-actions.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Non-live accountability action transitions, evidence-required completion, silence, escalation, and action-card feedback."
+    },
+    {
       "id": "strategic-reports",
       "path": "tests/strategic-reports.test.ts",
       "command": "bun run test",
