@@ -114,13 +114,13 @@ describe("release CLI", () => {
   it("routes strategic runtime CLI commands through domain workflows", async () => {
     const workspace = "workspace-cli";
     const commands = [
-      ["workspace", "reconcile"],
-      ["intent", "inbox", "--workspace", workspace],
-      ["intent", "accept", "claim-cli", "--workspace", workspace],
-      ["intent", "reject", "claim-cli", "--workspace", workspace],
-      ["projection", "verify", "--workspace", workspace],
-      ["accountability", "list", "--workspace", workspace],
-      ["report", "drift-review", "--workspace", workspace],
+      ["workspace", "reconcile", "--synthetic", "--workspace", workspace],
+      ["intent", "inbox", "--synthetic", "--workspace", workspace],
+      ["intent", "accept", "claim-cli", "--synthetic", "--workspace", workspace],
+      ["intent", "reject", "claim-cli", "--synthetic", "--workspace", workspace],
+      ["projection", "verify", "--synthetic", "--workspace", workspace],
+      ["accountability", "list", "--synthetic", "--workspace", workspace],
+      ["report", "drift-review", "--synthetic", "--workspace", workspace],
     ] as const;
 
     const results = await Promise.all(
@@ -161,6 +161,24 @@ describe("release CLI", () => {
     expect(results[6]?.output).toMatchObject({
       kind: "weekly_drift_review",
       workspaceId: workspace,
+    });
+  });
+
+  it("does not select synthetic operator state implicitly", async () => {
+    const result = await runReleaseCli({
+      args: ["intent", "inbox"],
+      env: {},
+      fetcher: async () => {
+        throw new Error("unexpected fetch");
+      },
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: expect.stringContaining("requires --workspace"),
+      },
     });
   });
 });

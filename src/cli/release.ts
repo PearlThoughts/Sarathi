@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
+import { Effect } from "effect";
 import {
   type AccountabilityPolicy,
   createAccountabilityAction,
@@ -48,7 +49,14 @@ import {
   summarizeWorkspacePackPersistencePlan,
   summarizeWorkspacePackReconciliation,
   type WorkspacePackSourceFile,
+  workspaceIdForWorkspacePack,
 } from "../modules/workspace-packs/index.ts";
+import {
+  type DurableOperatorRuntimeSelection,
+  OperatorRuntimeSelectionError,
+  openSqliteOperatorRuntime,
+  parseOperatorRuntimeSelection,
+} from "./commands/operator-runtime.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -382,9 +390,6 @@ const optionValue = (args: readonly string[], option: string): string | undefine
   return index === -1 ? undefined : args[index + 1];
 };
 
-const workspaceIdFromArgs = (args: readonly string[]): string =>
-  optionValue(args, "--workspace") ?? "workspace-launchpad";
-
 const sourcePathFromArgs = (args: readonly string[]): string | undefined =>
   optionValue(args, "--source");
 
@@ -420,11 +425,6 @@ const packDirectoryFromArgs = (
   args: readonly string[],
   env: Record<string, string | undefined>,
 ): string | undefined => optionValue(args, "--pack") ?? env.SARATHI_PRIVATE_WORKSPACE_PACK_DIR;
-
-const databasePathFromArgs = (
-  args: readonly string[],
-  env: Record<string, string | undefined>,
-): string | undefined => optionValue(args, "--db") ?? env.SARATHI_DB_PATH;
 
 const readWorkspacePackDirectory = (directory: string): readonly WorkspacePackSourceFile[] => {
   const root = resolve(directory);
@@ -497,26 +497,30 @@ const readEvidenceExportPath = (sourcePath: string): string => {
 };
 
 const reconcileFileBackedWorkspace = async (
-  args: readonly string[],
   env: Record<string, string | undefined>,
   packDirectory: string,
+  selection: DurableOperatorRuntimeSelection,
 ): Promise<CliResult> => {
-  const databasePath = databasePathFromArgs(args, env);
-
-  if (databasePath === undefined || databasePath === "") {
-    return {
-      exitCode: 2,
-      output: {
-        ok: false,
-        message: "File-backed workspace reconciliation requires --db or SARATHI_DB_PATH.",
-      },
-    };
-  }
-
   const organizationId = env.SARATHI_ORGANIZATION_ID ?? "org-local";
   const organizationName = env.SARATHI_ORGANIZATION_NAME ?? "Local Sarathi";
   const occurredAt = new Date().toISOString();
   const pack = loadWorkspacePack(readWorkspacePackDirectory(packDirectory));
+  const workspaceId = workspaceIdForWorkspacePack(pack.workspace.key);
+
+  if (
+    selection.workspaceSelector !== workspaceId &&
+    selection.workspaceSelector !== pack.workspace.key
+  ) {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message:
+          "Selected workspace does not match the workspace pack. Use the pack workspace ID or key.",
+      },
+    };
+  }
+
   const {
     applyStrategyKernelSqliteMigrations,
     createSqliteStrategyKernelRepository,
@@ -525,7 +529,7 @@ const reconcileFileBackedWorkspace = async (
     saveWorkspacePackPolicyRecords,
     saveWorkspacePackTemplateRecords,
   } = await import("../infrastructure/sqlite/index.ts");
-  const database = openStrategyKernelSqliteDatabase(databasePath);
+  const database = openStrategyKernelSqliteDatabase(selection.databasePath);
 
   try {
     applyStrategyKernelSqliteMigrations(database);
@@ -590,20 +594,9 @@ const reconcileFileBackedWorkspace = async (
 
 const importFileBackedEvidence = async (
   args: readonly string[],
-  env: Record<string, string | undefined>,
+  selection: DurableOperatorRuntimeSelection,
 ): Promise<CliResult> => {
-  const databasePath = databasePathFromArgs(args, env);
   const sourcePath = sourcePathFromArgs(args);
-
-  if (databasePath === undefined || databasePath === "") {
-    return {
-      exitCode: 2,
-      output: {
-        ok: false,
-        message: "Evidence import requires --db or SARATHI_DB_PATH.",
-      },
-    };
-  }
 
   if (sourcePath === undefined || sourcePath === "") {
     return {
@@ -615,30 +608,23 @@ const importFileBackedEvidence = async (
     };
   }
 
-  const {
-    applyStrategyKernelSqliteMigrations,
-    createSqliteStrategyKernelRepository,
-    openStrategyKernelSqliteDatabase,
-    saveEvidenceImportWatermark,
-  } = await import("../infrastructure/sqlite/index.ts");
-  const database = openStrategyKernelSqliteDatabase(databasePath);
+  const { saveEvidenceImportWatermark } = await import("../infrastructure/sqlite/index.ts");
+  const runtime = await Effect.runPromise(openSqliteOperatorRuntime(selection));
 
   try {
-    applyStrategyKernelSqliteMigrations(database);
-    const repository = createSqliteStrategyKernelRepository(database);
     const records = parseLocalEvidenceExport(readEvidenceExportPath(sourcePath));
     const importedAt = new Date().toISOString();
-    const summary = await repository.withTransaction(async (transactionalRepository) =>
+    const summary = await runtime.repository.withTransaction(async (transactionalRepository) =>
       importLocalEvidenceRecords(
         transactionalRepository,
         records,
-        workspaceIdFromArgs(args),
+        runtime.workspace.id,
         sourceKeyFromArgs(args),
         importedAt,
       ),
     );
 
-    saveEvidenceImportWatermark(database, summary.watermark);
+    saveEvidenceImportWatermark(runtime.database, summary.watermark);
 
     return {
       exitCode: 0,
@@ -659,26 +645,15 @@ const importFileBackedEvidence = async (
       },
     };
   } finally {
-    database.close();
+    runtime.close();
   }
 };
 
 const generateFileBackedDriftReview = async (
   args: readonly string[],
-  env: Record<string, string | undefined>,
+  selection: DurableOperatorRuntimeSelection,
 ): Promise<CliResult> => {
-  const databasePath = databasePathFromArgs(args, env);
   const outputPath = outputPathFromArgs(args);
-
-  if (databasePath === undefined || databasePath === "") {
-    return {
-      exitCode: 2,
-      output: {
-        ok: false,
-        message: "File-backed drift review requires --db or SARATHI_DB_PATH.",
-      },
-    };
-  }
 
   if (outputPath === undefined || outputPath === "") {
     return {
@@ -691,26 +666,19 @@ const generateFileBackedDriftReview = async (
     };
   }
 
-  const {
-    applyStrategyKernelSqliteMigrations,
-    createSqliteStrategyKernelRepository,
-    openStrategyKernelSqliteDatabase,
-  } = await import("../infrastructure/sqlite/index.ts");
-  const database = openStrategyKernelSqliteDatabase(databasePath);
-  const workspaceId = workspaceIdFromArgs(args);
+  const runtime = await Effect.runPromise(openSqliteOperatorRuntime(selection));
+  const workspaceId = runtime.workspace.id;
   const generatedAt = new Date().toISOString();
 
   try {
-    applyStrategyKernelSqliteMigrations(database);
-    const repository = createSqliteStrategyKernelRepository(database);
     const inputs = {
       workspaceId,
       generatedAt,
-      intents: await repository.listWorkspaceIntent(workspaceId),
-      evidence: await repository.listWorkspaceEvidence(workspaceId),
-      projections: await repository.listWorkspaceProjections(workspaceId),
-      actions: await repository.listWorkspaceAccountabilityActions(workspaceId),
-      driftFindings: await repository.listWorkspaceDriftFindings(workspaceId),
+      intents: await runtime.repository.listWorkspaceIntent(workspaceId),
+      evidence: await runtime.repository.listWorkspaceEvidence(workspaceId),
+      projections: await runtime.repository.listWorkspaceProjections(workspaceId),
+      actions: await runtime.repository.listWorkspaceAccountabilityActions(workspaceId),
+      driftFindings: await runtime.repository.listWorkspaceDriftFindings(workspaceId),
     };
     const filtered = filterStrategicReportInputsBySensitivity(inputs, maxSensitivityFromArgs(args));
     const report = generateWeeklyDriftReview(filtered);
@@ -737,25 +705,44 @@ const generateFileBackedDriftReview = async (
       },
     };
   } finally {
-    database.close();
+    runtime.close();
   }
 };
+
+const isOperatorRuntimeCommand = (args: readonly string[]): boolean =>
+  (args[0] === "workspace" && args[1] === "reconcile") ||
+  (args[0] === "evidence" && args[1] === "import") ||
+  (args[0] === "intent" && (args[1] === "inbox" || args[1] === "accept" || args[1] === "reject")) ||
+  (args[0] === "projection" && args[1] === "verify") ||
+  (args[0] === "accountability" && args[1] === "list") ||
+  (args[0] === "report" && args[1] === "drift-review");
 
 const runtimeCommand = async (
   args: readonly string[],
   env: Record<string, string | undefined>,
 ): Promise<CliResult | undefined> => {
-  const workspaceId = workspaceIdFromArgs(args);
-  const repository = createMemoryStrategyKernelRepository();
-  const fixture = createRuntimeFixture(workspaceId);
+  if (!isOperatorRuntimeCommand(args)) {
+    return undefined;
+  }
 
-  await repository.saveIntentNode(fixture.intent);
+  const selection = parseOperatorRuntimeSelection(args, env);
 
   if (args[0] === "workspace" && args[1] === "reconcile") {
     const packDirectory = packDirectoryFromArgs(args, env);
 
-    if (packDirectory !== undefined && packDirectory !== "") {
-      return reconcileFileBackedWorkspace(args, env, packDirectory);
+    if (selection.mode === "sqlite") {
+      if (packDirectory === undefined || packDirectory === "") {
+        return {
+          exitCode: 2,
+          output: {
+            ok: false,
+            message:
+              "Durable workspace reconciliation requires --pack or SARATHI_PRIVATE_WORKSPACE_PACK_DIR.",
+          },
+        };
+      }
+
+      return reconcileFileBackedWorkspace(env, packDirectory, selection);
     }
 
     const pack = loadWorkspacePack(syntheticPack);
@@ -780,8 +767,41 @@ const runtimeCommand = async (
   }
 
   if (args[0] === "evidence" && args[1] === "import") {
-    return importFileBackedEvidence(args, env);
+    if (selection.mode === "synthetic") {
+      return {
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: "Evidence import requires a durable SQLite runtime; remove --synthetic.",
+        },
+      };
+    }
+
+    return importFileBackedEvidence(args, selection);
   }
+
+  if (selection.mode === "sqlite" && !(args[0] === "report" && args[1] === "drift-review")) {
+    const runtime = await Effect.runPromise(openSqliteOperatorRuntime(selection));
+    runtime.close();
+
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: `Durable ${args[0]} ${args[1]} behavior is not implemented in the runtime-selection foundation.`,
+      },
+    };
+  }
+
+  if (args[0] === "report" && args[1] === "drift-review" && selection.mode === "sqlite") {
+    return generateFileBackedDriftReview(args, selection);
+  }
+
+  const workspaceId = selection.workspaceSelector;
+  const repository = createMemoryStrategyKernelRepository();
+  const fixture = createRuntimeFixture(workspaceId);
+
+  await repository.saveIntentNode(fixture.intent);
 
   if (args[0] === "intent" && args[1] === "inbox") {
     const evidence = buildEvidenceItem(fixture.evidence, fixture.now);
@@ -877,12 +897,6 @@ const runtimeCommand = async (
   }
 
   if (args[0] === "report" && args[1] === "drift-review") {
-    const databasePath = databasePathFromArgs(args, env);
-
-    if (databasePath !== undefined && databasePath !== "") {
-      return generateFileBackedDriftReview(args, env);
-    }
-
     const projection = createIntendedProjection({
       intent: fixture.intent,
       targetSystem: "jira",
@@ -920,11 +934,36 @@ const runtimeCommand = async (
   return undefined;
 };
 
+const runtimeSelectionFailure = (error: unknown): CliResult | undefined => {
+  if (!(error instanceof OperatorRuntimeSelectionError)) {
+    return undefined;
+  }
+
+  return {
+    exitCode: 2,
+    output: {
+      ok: false,
+      message: error.message,
+    },
+  };
+};
+
 export const runReleaseCli = async (options: CliOptions): Promise<CliResult> => {
   const args = options.args.filter((arg) => arg !== "--ci" && arg !== "--json");
   const env = options.env ?? Bun.env;
   const fetcher = options.fetcher ?? fetch;
-  const runtimeResult = await runtimeCommand(args, env);
+  let runtimeResult: CliResult | undefined;
+
+  try {
+    runtimeResult = await runtimeCommand(args, env);
+  } catch (error) {
+    const failure = runtimeSelectionFailure(error);
+    if (failure !== undefined) {
+      return failure;
+    }
+
+    throw error;
+  }
 
   if (runtimeResult !== undefined) {
     return runtimeResult;

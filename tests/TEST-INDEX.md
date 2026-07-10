@@ -28,6 +28,20 @@
 - Scope: Runtime smoke command, Railway deploy guard coverage, file-backed workspace pack reconciliation into SQLite, local evidence import, watermark persistence, and private drift-review report generation.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## operator-runtime
+
+- Command: `bun run test`
+- Location: `tests/operator-runtime.test.ts`
+- Scope: Explicit durable/synthetic selector parsing, missing selector rejection, and ambiguous selector rejection.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## operator-runtime-sqlite
+
+- Command: `bun run test:bun-native`
+- Location: `tests/operator-runtime.bun.test.ts`
+- Scope: SQLite repository composition plus exact workspace resolution by ID or key, including unknown and ambiguous fail-closed behavior.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## boundary-policy
 
 - Command: `bun run test`

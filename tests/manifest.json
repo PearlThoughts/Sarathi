@@ -22,6 +22,20 @@
       "description": "Runtime smoke command, Railway deploy guard, file-backed workspace reconciliation, local evidence import, watermark persistence, and private drift-review generation coverage."
     },
     {
+      "id": "operator-runtime",
+      "path": "tests/operator-runtime.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Explicit durable/synthetic runtime selector parsing and fail-closed ambiguity coverage."
+    },
+    {
+      "id": "operator-runtime-sqlite",
+      "path": "tests/operator-runtime.bun.test.ts",
+      "command": "bun run test:bun-native",
+      "prerequisites": ["bun install"],
+      "description": "SQLite repository composition and exact workspace ID/key resolution coverage."
+    },
+    {
       "id": "boundary-policy",
       "path": "tests/boundary-policy.test.ts",
       "command": "bun run test",
