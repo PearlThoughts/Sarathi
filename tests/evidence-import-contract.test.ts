@@ -36,6 +36,17 @@ const record: NormalizedEvidenceRecord = {
   consent,
 };
 
+const supportedSourceSystems = [
+  "teams",
+  "jira",
+  "github",
+  "vault",
+  "email",
+  "meeting",
+  "pulse",
+  "manual",
+] as const satisfies readonly NormalizedEvidenceRecord["sourceSystem"][];
+
 const memoryRepository = () => {
   const evidence = new Map<string, EvidenceItem>();
   const watermarks = new Map<
@@ -57,6 +68,22 @@ const memoryRepository = () => {
 };
 
 describe("evidence import contract", () => {
+  it("accepts a synthetic normalized record for every supported source system", () => {
+    const normalized = parseLocalEvidenceExport(
+      JSON.stringify(
+        supportedSourceSystems.map((sourceSystem) => ({
+          ...record,
+          sourceSystem,
+          externalId: `synthetic-${sourceSystem}-001`,
+          title: `Synthetic ${sourceSystem} evidence`,
+        })),
+      ),
+    );
+
+    expect(normalized.map((item) => item.sourceSystem)).toEqual(supportedSourceSystems);
+    expect(normalized.every((item) => item.consent.status === "granted")).toBe(true);
+  });
+
   it("normalizes consent metadata and gives absent legacy consent a safe explicit value", () => {
     const [normalized] = parseLocalEvidenceExport(JSON.stringify([record]));
     const [legacy] = parseLocalEvidenceExport(

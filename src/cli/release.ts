@@ -593,22 +593,19 @@ const importFileBackedEvidence = async (
   try {
     const records = parseLocalEvidenceExport(readEvidenceExportPath(sourcePath));
     const importedAt = new Date().toISOString();
-    const evidenceRepository: EvidenceImportRepository = {
+    const evidenceRepositoryFor = (
+      repository: StrategyKernelRepository,
+    ): EvidenceImportRepository => ({
       withTransaction: async (operation) =>
-        runtime.repository.withTransaction(async (transactionalRepository) =>
-          operation({
-            withTransaction: async (nestedOperation) => nestedOperation(evidenceRepository),
-            saveEvidenceItem: transactionalRepository.saveEvidenceItem,
-            saveEvidenceImportWatermark: async (watermark) => {
-              saveEvidenceImportWatermark(runtime.database, watermark);
-            },
-          }),
+        repository.withTransaction(async (transactionalRepository) =>
+          operation(evidenceRepositoryFor(transactionalRepository)),
         ),
-      saveEvidenceItem: runtime.repository.saveEvidenceItem,
+      saveEvidenceItem: repository.saveEvidenceItem,
       saveEvidenceImportWatermark: async (watermark) => {
         saveEvidenceImportWatermark(runtime.database, watermark);
       },
-    };
+    });
+    const evidenceRepository = evidenceRepositoryFor(runtime.repository);
     const summary = await importEvidenceRecords(
       evidenceRepository,
       records,
