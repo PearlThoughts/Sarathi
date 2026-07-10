@@ -24,7 +24,7 @@ export type IntendedProjectionInput = {
   readonly sensitivity?: SensitivityTier | undefined;
 };
 
-export type SimulatedProjectionState = {
+export type ProjectionObservation = {
   readonly authorized: boolean;
   readonly exists: boolean;
   readonly targetId?: string | undefined;
@@ -92,41 +92,41 @@ export const recordIntendedProjection = async (
 
 export const determineProjectionDriftStatus = (
   projection: Projection,
-  simulated: SimulatedProjectionState,
+  observation: ProjectionObservation,
 ): ProjectionDriftStatus => {
-  if (!simulated.authorized) {
+  if (!observation.authorized) {
     return "unauthorized";
   }
 
-  if (!simulated.exists) {
+  if (!observation.exists) {
     return "missing";
   }
 
   if (
     projection.lastPublishedHash !== undefined &&
-    simulated.contentHash === projection.lastPublishedHash
+    observation.contentHash === projection.lastPublishedHash
   ) {
     return "in_sync";
   }
 
-  if (simulated.managedBySarathi === false) {
+  if (observation.managedBySarathi === false) {
     return "conflicting";
   }
 
   return "stale";
 };
 
-export const verifyProjectionAgainstSimulation = async (
+export const verifyProjectionAgainstObservation = async (
   repository: StrategyKernelRepository,
   projection: Projection,
-  simulated: SimulatedProjectionState,
+  observation: ProjectionObservation,
   verifiedAt: string,
 ): Promise<ProjectionVerificationResult> => {
-  const driftStatus = determineProjectionDriftStatus(projection, simulated);
+  const driftStatus = determineProjectionDriftStatus(projection, observation);
   const verifiedProjection: Projection = {
     ...projection,
-    targetId: simulated.targetId ?? projection.targetId,
-    targetUrl: simulated.targetUrl ?? projection.targetUrl,
+    targetId: observation.targetId ?? projection.targetId,
+    targetUrl: observation.targetUrl ?? projection.targetUrl,
     lastVerifiedAt: verifiedAt,
     driftStatus,
   };
@@ -141,7 +141,7 @@ export const verifyProjectionAgainstSimulation = async (
       driftStatus,
       targetSystem: projection.targetSystem,
       targetType: projection.targetType,
-      contentHash: simulated.contentHash,
+      contentHash: observation.contentHash,
     },
     occurredAt: verifiedAt,
     sensitivity: projection.sensitivity,

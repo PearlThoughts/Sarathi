@@ -3,11 +3,11 @@ import {
   createIntendedProjection,
   determineProjectionDriftStatus,
   type IntendedProjectionInput,
+  type ProjectionObservation,
   type ProjectionVerificationResult,
   projectionDriftFinding,
   recordIntendedProjection,
-  type SimulatedProjectionState,
-  verifyProjectionAgainstSimulation,
+  verifyProjectionAgainstObservation,
 } from "../src/modules/projections/index.ts";
 import type {
   AccountabilityAction,
@@ -88,7 +88,7 @@ describe("projections", () => {
     expect(await store.repository.listWorkspaceProjections(workspaceId)).toEqual([projection]);
   });
 
-  it("classifies simulated projection states deterministically", () => {
+  it("classifies projection observations deterministically", () => {
     const projection = createIntendedProjection({
       intent,
       targetSystem: "teams",
@@ -96,7 +96,7 @@ describe("projections", () => {
       targetId: "card-1",
       publishedHash: "hash-1",
     });
-    const cases: readonly [SimulatedProjectionState, ProjectionDriftStatus][] = [
+    const cases: readonly [ProjectionObservation, ProjectionDriftStatus][] = [
       [{ authorized: false, exists: true, contentHash: "hash-1" }, "unauthorized"],
       [{ authorized: true, exists: false }, "missing"],
       [{ authorized: true, exists: true, contentHash: "hash-1" }, "in_sync"],
@@ -135,7 +135,7 @@ describe("projections", () => {
       publishedHash: "hash-1",
       relatedEvidence: [relatedEvidence],
     });
-    const states: readonly SimulatedProjectionState[] = [
+    const states: readonly ProjectionObservation[] = [
       {
         authorized: true,
         exists: true,
@@ -161,7 +161,7 @@ describe("projections", () => {
     const results: ProjectionVerificationResult[] = [];
     for (const state of states) {
       results.push(
-        await verifyProjectionAgainstSimulation(store.repository, projection, state, now),
+        await verifyProjectionAgainstObservation(store.repository, projection, state, now),
       );
     }
 
