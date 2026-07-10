@@ -557,6 +557,10 @@ export const createSqliteStrategyKernelRepository = (
             bodyExcerpt: item.bodyExcerpt,
             contentHash: item.contentHash,
             sensitivity: item.sensitivity,
+            consentStatus: optional(item.consentStatus),
+            consentScope: optional(item.consentScope),
+            consentRecordedAt: optional(item.consentRecordedAt),
+            consentRecordedBy: optional(item.consentRecordedBy),
             ingestedAt: item.ingestedAt,
           },
         })
@@ -804,6 +808,12 @@ const rowToEvidenceItem = (row: EvidenceItemRow): EvidenceItemRecord => ({
   bodyExcerpt: row.bodyExcerpt,
   contentHash: row.contentHash,
   sensitivity: row.sensitivity as EvidenceItemRecord["sensitivity"],
+  ...(row.consentStatus === null
+    ? {}
+    : { consentStatus: row.consentStatus as EvidenceItemRecord["consentStatus"] }),
+  ...maybe("consentScope", row.consentScope),
+  ...maybe("consentRecordedAt", row.consentRecordedAt),
+  ...maybe("consentRecordedBy", row.consentRecordedBy),
   ingestedAt: row.ingestedAt,
 });
 

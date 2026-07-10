@@ -154,6 +154,10 @@ export const evidenceItemTable = sqliteTable(
     bodyExcerpt: text("body_excerpt").notNull(),
     contentHash: text("content_hash").notNull(),
     sensitivity: text("sensitivity").notNull(),
+    consentStatus: text("consent_status"),
+    consentScope: text("consent_scope"),
+    consentRecordedAt: text("consent_recorded_at"),
+    consentRecordedBy: text("consent_recorded_by"),
     ingestedAt: text("ingested_at").notNull(),
   },
   (table) => [

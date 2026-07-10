@@ -201,6 +201,10 @@ export type EvidenceItem = {
   readonly bodyExcerpt: string;
   readonly contentHash: string;
   readonly sensitivity: SensitivityTier;
+  readonly consentStatus?: "granted" | "not_required" | "unknown" | "withdrawn" | undefined;
+  readonly consentScope?: string | undefined;
+  readonly consentRecordedAt?: string | undefined;
+  readonly consentRecordedBy?: string | undefined;
   readonly ingestedAt: string;
 };
 
