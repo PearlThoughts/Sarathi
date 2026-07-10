@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import type { EvidenceImportWatermark } from "../../modules/evidence-import/index.ts";
 import {
   type StrategyKernelRepository,
   strategyKernelMigrations,
+  type Workspace,
   type WorkspacePackManifest,
 } from "../../modules/strategy-kernel/index.ts";
 import {
@@ -87,6 +88,22 @@ export const openStrategyKernelSqliteDatabase = (
 
 export const createStrategyKernelDrizzleDatabase = (database: StrategyKernelSqliteDatabase) =>
   drizzle(database, { schema: strategyKernelSqliteSchema });
+
+export const findStrategyKernelSqliteWorkspaces = (
+  database: StrategyKernelSqliteDatabase,
+  selector: string,
+): readonly Workspace[] =>
+  createStrategyKernelDrizzleDatabase(database)
+    .select()
+    .from(workspaceTable)
+    .where(or(eq(workspaceTable.id, selector), eq(workspaceTable.key, selector)))
+    .orderBy(workspaceTable.id)
+    .all()
+    .map((row) => ({
+      ...row,
+      kind: row.kind as Workspace["kind"],
+      defaultSensitivity: row.defaultSensitivity as Workspace["defaultSensitivity"],
+    }));
 
 export const saveWorkspacePackPolicyRecords = (
   database: StrategyKernelSqliteDatabase,

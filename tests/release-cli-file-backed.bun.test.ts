@@ -59,7 +59,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
       expect(firstOutput).not.toContain(launchpadPackDirectory);
 
       const second = await runReleaseCli({
-        args: ["workspace", "reconcile", "--db", databasePath],
+        args: ["workspace", "reconcile", "--db", databasePath, "--workspace", "launchpad"],
         env: {
           SARATHI_PRIVATE_WORKSPACE_PACK_DIR: launchpadPackDirectory,
         },
@@ -92,7 +92,16 @@ describe("file-backed release CLI workspace reconciliation", () => {
 
     try {
       await runReleaseCli({
-        args: ["workspace", "reconcile", "--pack", launchpadPackDirectory, "--db", databasePath],
+        args: [
+          "workspace",
+          "reconcile",
+          "--pack",
+          launchpadPackDirectory,
+          "--db",
+          databasePath,
+          "--workspace",
+          "launchpad",
+        ],
         env: {},
         fetcher: async () => {
           throw new Error("unexpected fetch");
@@ -120,7 +129,16 @@ describe("file-backed release CLI workspace reconciliation", () => {
       database.close();
 
       const result = await runReleaseCli({
-        args: ["workspace", "reconcile", "--pack", launchpadPackDirectory, "--db", databasePath],
+        args: [
+          "workspace",
+          "reconcile",
+          "--pack",
+          launchpadPackDirectory,
+          "--db",
+          databasePath,
+          "--workspace",
+          "launchpad",
+        ],
         env: {},
         fetcher: async () => {
           throw new Error("unexpected fetch");
@@ -166,7 +184,16 @@ describe("file-backed release CLI workspace reconciliation", () => {
 
     try {
       await runReleaseCli({
-        args: ["workspace", "reconcile", "--pack", launchpadPackDirectory, "--db", databasePath],
+        args: [
+          "workspace",
+          "reconcile",
+          "--pack",
+          launchpadPackDirectory,
+          "--db",
+          databasePath,
+          "--workspace",
+          "launchpad",
+        ],
         env: {},
         fetcher: async () => {
           throw new Error("unexpected fetch");
@@ -286,7 +313,16 @@ describe("file-backed release CLI workspace reconciliation", () => {
 
     try {
       await runReleaseCli({
-        args: ["workspace", "reconcile", "--pack", launchpadPackDirectory, "--db", databasePath],
+        args: [
+          "workspace",
+          "reconcile",
+          "--pack",
+          launchpadPackDirectory,
+          "--db",
+          databasePath,
+          "--workspace",
+          "launchpad",
+        ],
         env: {},
         fetcher: async () => {
           throw new Error("unexpected fetch");
