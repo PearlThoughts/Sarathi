@@ -222,6 +222,16 @@ export const strategyKernelMigrations = [
       )`,
     ],
   },
+  {
+    id: "004_evidence_import_consent",
+    description: "Persist normalized evidence consent metadata for source imports.",
+    sql: [
+      "alter table evidence_item add column consent_status text",
+      "alter table evidence_item add column consent_scope text",
+      "alter table evidence_item add column consent_recorded_at text",
+      "alter table evidence_item add column consent_recorded_by text",
+    ],
+  },
 ] as const satisfies readonly [StrategyKernelMigration, ...StrategyKernelMigration[]];
 
 export const strategyKernelTableNames: readonly string[] = [

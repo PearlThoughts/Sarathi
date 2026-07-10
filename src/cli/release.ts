@@ -6,7 +6,8 @@ import {
   createAccountabilityAction,
 } from "../modules/accountability-actions/index.ts";
 import {
-  importLocalEvidenceRecords,
+  type EvidenceImportRepository,
+  importEvidenceRecords,
   parseLocalEvidenceExport,
 } from "../modules/evidence-import/index.ts";
 import {
@@ -592,17 +593,26 @@ const importFileBackedEvidence = async (
   try {
     const records = parseLocalEvidenceExport(readEvidenceExportPath(sourcePath));
     const importedAt = new Date().toISOString();
-    const summary = await runtime.repository.withTransaction(async (transactionalRepository) =>
-      importLocalEvidenceRecords(
-        transactionalRepository,
-        records,
-        runtime.workspace.id,
-        sourceKeyFromArgs(args),
-        importedAt,
-      ),
+    const evidenceRepositoryFor = (
+      repository: StrategyKernelRepository,
+    ): EvidenceImportRepository => ({
+      withTransaction: async (operation) =>
+        repository.withTransaction(async (transactionalRepository) =>
+          operation(evidenceRepositoryFor(transactionalRepository)),
+        ),
+      saveEvidenceItem: repository.saveEvidenceItem,
+      saveEvidenceImportWatermark: async (watermark) => {
+        saveEvidenceImportWatermark(runtime.database, watermark);
+      },
+    });
+    const evidenceRepository = evidenceRepositoryFor(runtime.repository);
+    const summary = await importEvidenceRecords(
+      evidenceRepository,
+      records,
+      runtime.workspace.id,
+      sourceKeyFromArgs(args),
+      importedAt,
     );
-
-    saveEvidenceImportWatermark(runtime.database, summary.watermark);
 
     return {
       exitCode: 0,
