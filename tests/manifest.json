@@ -64,6 +64,13 @@
       "description": "External-principal mapping and proactive message delivery contract coverage."
     },
     {
+      "id": "evidence-import-contract",
+      "path": "tests/evidence-import-contract.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Read-only source adapter, normalized metadata, consent, hash, watermark, and idempotent import contract coverage."
+    },
+    {
       "id": "strategy-kernel",
       "path": "tests/strategy-kernel.test.ts",
       "command": "bun run test",

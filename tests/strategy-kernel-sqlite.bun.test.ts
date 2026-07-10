@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   applyStrategyKernelSqliteMigrations,
   createSqliteStrategyKernelRepository,
@@ -114,6 +117,16 @@ const evidence: EvidenceItem = {
   contentHash: "sha256-synthetic",
   sensitivity: "confidential",
   ingestedAt: now,
+};
+
+const consentedEvidence: EvidenceItem = {
+  ...evidence,
+  id: "evidence-message-consented",
+  externalId: "synthetic-message-consented",
+  consentStatus: "granted",
+  consentScope: "synthetic-delivery-channel",
+  consentRecordedAt: now,
+  consentRecordedBy: actor.id,
 };
 
 const claim: ExtractedClaim = {
@@ -278,6 +291,33 @@ describe("sqlite strategy kernel repository", () => {
     expect(await repository.listWorkspaceDriftFindings(workspace.id)).toEqual([drift]);
     expect(await repository.listWorkspaceKernelEvents(workspace.id)).toEqual([event]);
     expect(readWorkspaceActorRoleRows(database, workspace.id)).toEqual([role]);
+  });
+
+  it("preserves evidence consent metadata across a SQLite restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "sarathi-evidence-consent-"));
+    const databasePath = join(directory, "strategy-kernel.sqlite");
+
+    try {
+      const firstDatabase = openStrategyKernelSqliteDatabase(databasePath);
+      applyStrategyKernelSqliteMigrations(firstDatabase);
+      const firstRepository = createSqliteStrategyKernelRepository(firstDatabase);
+      await firstRepository.saveOrganization(organization);
+      await firstRepository.saveWorkspace(workspace);
+      await firstRepository.saveActor(actor);
+      await firstRepository.saveEvidenceItem(consentedEvidence);
+      firstDatabase.close();
+
+      const secondDatabase = openStrategyKernelSqliteDatabase(databasePath);
+      applyStrategyKernelSqliteMigrations(secondDatabase);
+      const secondRepository = createSqliteStrategyKernelRepository(secondDatabase);
+
+      expect(await secondRepository.listWorkspaceEvidence(workspace.id)).toEqual([
+        consentedEvidence,
+      ]);
+      secondDatabase.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("upserts records using natural unique keys when callers regenerate ids", async () => {

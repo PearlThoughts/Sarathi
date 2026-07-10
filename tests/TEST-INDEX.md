@@ -77,6 +77,13 @@
 - Scope: Strategy kernel entity contracts, visibility inheritance, portable migration coverage, and workspace pack reconciliation rules.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## evidence-import-contract
+
+- Command: `bun run test`
+- Location: `tests/evidence-import-contract.test.ts`
+- Scope: Read-only source adapter surface, synthetic provider normalization, consent metadata, stable hashes, watermarks, and replay idempotence.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## strategy-kernel-sqlite
 
 - Command: `bun run test:bun-native`
