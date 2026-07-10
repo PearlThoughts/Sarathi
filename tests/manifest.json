@@ -92,6 +92,13 @@
       "description": "Workspace-scoped strategic report generation, derived drift findings, sensitivity ceilings, and leakage guards."
     },
     {
+      "id": "private-data-scan",
+      "path": "tests/private-data-scan.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Tracked-file leakage scanning with invented stdin values and ignored private configuration."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",
