@@ -56,6 +56,7 @@ import {
   OperatorRuntimeSelectionError,
   openSqliteOperatorRuntime,
   parseOperatorRuntimeSelection,
+  parseWorkspaceReconcileRuntimeSelection,
 } from "./commands/operator-runtime.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -499,7 +500,8 @@ const readEvidenceExportPath = (sourcePath: string): string => {
 const reconcileFileBackedWorkspace = async (
   env: Record<string, string | undefined>,
   packDirectory: string,
-  selection: DurableOperatorRuntimeSelection,
+  databasePath: string,
+  workspaceSelector: string | undefined,
 ): Promise<CliResult> => {
   const organizationId = env.SARATHI_ORGANIZATION_ID ?? "org-local";
   const organizationName = env.SARATHI_ORGANIZATION_NAME ?? "Local Sarathi";
@@ -508,8 +510,9 @@ const reconcileFileBackedWorkspace = async (
   const workspaceId = workspaceIdForWorkspacePack(pack.workspace.key);
 
   if (
-    selection.workspaceSelector !== workspaceId &&
-    selection.workspaceSelector !== pack.workspace.key
+    workspaceSelector !== undefined &&
+    workspaceSelector !== workspaceId &&
+    workspaceSelector !== pack.workspace.key
   ) {
     return {
       exitCode: 2,
@@ -529,7 +532,7 @@ const reconcileFileBackedWorkspace = async (
     saveWorkspacePackPolicyRecords,
     saveWorkspacePackTemplateRecords,
   } = await import("../infrastructure/sqlite/index.ts");
-  const database = openStrategyKernelSqliteDatabase(selection.databasePath);
+  const database = openStrategyKernelSqliteDatabase(databasePath);
 
   try {
     applyStrategyKernelSqliteMigrations(database);
@@ -717,6 +720,70 @@ const isOperatorRuntimeCommand = (args: readonly string[]): boolean =>
   (args[0] === "accountability" && args[1] === "list") ||
   (args[0] === "report" && args[1] === "drift-review");
 
+const reconcileWorkspaceCommand = async (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<CliResult> => {
+  const selection = parseWorkspaceReconcileRuntimeSelection(args, env);
+  const packDirectory = packDirectoryFromArgs(args, env);
+
+  if (selection.mode === "sqlite") {
+    if (packDirectory === undefined || packDirectory === "") {
+      return {
+        exitCode: 2,
+        output: {
+          ok: false,
+          message:
+            "Durable workspace reconciliation requires --pack or SARATHI_PRIVATE_WORKSPACE_PACK_DIR.",
+        },
+      };
+    }
+
+    return reconcileFileBackedWorkspace(
+      env,
+      packDirectory,
+      selection.databasePath,
+      selection.workspaceSelector,
+    );
+  }
+
+  const pack = loadWorkspacePack(syntheticPack);
+  const workspaceId = workspaceIdForWorkspacePack(pack.workspace.key);
+  if (
+    selection.workspaceSelector !== undefined &&
+    selection.workspaceSelector !== workspaceId &&
+    selection.workspaceSelector !== pack.workspace.key
+  ) {
+    return {
+      exitCode: 2,
+      output: {
+        ok: false,
+        message:
+          "Selected workspace does not match the workspace pack. Use the pack workspace ID or key.",
+      },
+    };
+  }
+
+  const items = reconcileWorkspacePack(pack, {
+    workspaceKey: undefined,
+    actorKeys: [],
+    mappings: [],
+    policies: {},
+    intents: [],
+    templatePaths: [],
+  });
+
+  return {
+    exitCode: 0,
+    output: {
+      ok: true,
+      mode: "synthetic",
+      workspaceKey: pack.workspace.key,
+      decisions: items,
+    },
+  };
+};
+
 const runtimeCommand = async (
   args: readonly string[],
   env: Record<string, string | undefined>,
@@ -725,46 +792,11 @@ const runtimeCommand = async (
     return undefined;
   }
 
-  const selection = parseOperatorRuntimeSelection(args, env);
-
   if (args[0] === "workspace" && args[1] === "reconcile") {
-    const packDirectory = packDirectoryFromArgs(args, env);
-
-    if (selection.mode === "sqlite") {
-      if (packDirectory === undefined || packDirectory === "") {
-        return {
-          exitCode: 2,
-          output: {
-            ok: false,
-            message:
-              "Durable workspace reconciliation requires --pack or SARATHI_PRIVATE_WORKSPACE_PACK_DIR.",
-          },
-        };
-      }
-
-      return reconcileFileBackedWorkspace(env, packDirectory, selection);
-    }
-
-    const pack = loadWorkspacePack(syntheticPack);
-    const items = reconcileWorkspacePack(pack, {
-      workspaceKey: undefined,
-      actorKeys: [],
-      mappings: [],
-      policies: {},
-      intents: [],
-      templatePaths: [],
-    });
-
-    return {
-      exitCode: 0,
-      output: {
-        ok: true,
-        mode: "synthetic",
-        workspaceKey: pack.workspace.key,
-        decisions: items,
-      },
-    };
+    return reconcileWorkspaceCommand(args, env);
   }
+
+  const selection = parseOperatorRuntimeSelection(args, env);
 
   if (args[0] === "evidence" && args[1] === "import") {
     if (selection.mode === "synthetic") {

@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { parseOperatorRuntimeSelection } from "../src/cli/commands/operator-runtime.ts";
+import {
+  parseOperatorRuntimeSelection,
+  parseWorkspaceReconcileRuntimeSelection,
+} from "../src/cli/commands/operator-runtime.ts";
 
 describe("operator runtime selection", () => {
+  it("derives workspace identity from a durable reconciliation pack", () => {
+    expect(
+      parseWorkspaceReconcileRuntimeSelection(
+        ["workspace", "reconcile", "--pack", "fixture", "--db", "runtime.sqlite"],
+        {},
+      ),
+    ).toEqual({
+      mode: "sqlite",
+      databasePath: "runtime.sqlite",
+      workspaceSelector: undefined,
+    });
+  });
+
+  it("derives synthetic reconciliation identity without a workspace selector", () => {
+    expect(
+      parseWorkspaceReconcileRuntimeSelection(["workspace", "reconcile", "--synthetic"], {}),
+    ).toEqual({
+      mode: "synthetic",
+      workspaceSelector: undefined,
+    });
+  });
+
   it("parses one explicit durable database and workspace selection", () => {
     expect(
       parseOperatorRuntimeSelection(

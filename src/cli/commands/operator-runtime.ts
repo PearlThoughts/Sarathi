@@ -16,6 +16,17 @@ type SyntheticOperatorRuntimeSelection = {
 
 type OperatorRuntimeSelection = DurableOperatorRuntimeSelection | SyntheticOperatorRuntimeSelection;
 
+type WorkspaceReconcileRuntimeSelection =
+  | {
+      readonly mode: "sqlite";
+      readonly databasePath: string;
+      readonly workspaceSelector: string | undefined;
+    }
+  | {
+      readonly mode: "synthetic";
+      readonly workspaceSelector: string | undefined;
+    };
+
 type SqliteOperatorRuntime = {
   readonly mode: "sqlite";
   readonly database: StrategyKernelSqliteDatabase;
@@ -105,6 +116,39 @@ export const parseOperatorRuntimeSelection = (
   if (databasePath === undefined) {
     throw new OperatorRuntimeSelectionError(
       "Durable operator runtime requires --db or SARATHI_DB_PATH. Select a SQLite database, or use --synthetic for deterministic test/demo state.",
+    );
+  }
+
+  return {
+    mode: "sqlite",
+    databasePath,
+    workspaceSelector,
+  };
+};
+
+export const parseWorkspaceReconcileRuntimeSelection = (
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): WorkspaceReconcileRuntimeSelection => {
+  const workspaceSelector = selectorValue(args, "--workspace", env.SARATHI_WORKSPACE_ID);
+
+  if (args.includes("--synthetic")) {
+    if (optionValues(args, "--db").length > 0) {
+      throw new OperatorRuntimeSelectionError(
+        "Synthetic runtime cannot be combined with --db. Remove --db or remove --synthetic.",
+      );
+    }
+
+    return {
+      mode: "synthetic",
+      workspaceSelector,
+    };
+  }
+
+  const databasePath = selectorValue(args, "--db", env.SARATHI_DB_PATH);
+  if (databasePath === undefined) {
+    throw new OperatorRuntimeSelectionError(
+      "Durable workspace reconciliation requires --db or SARATHI_DB_PATH. Select a SQLite database, or use --synthetic for deterministic test/demo state.",
     );
   }
 

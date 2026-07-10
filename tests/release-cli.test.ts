@@ -114,7 +114,7 @@ describe("release CLI", () => {
   it("routes strategic runtime CLI commands through domain workflows", async () => {
     const workspace = "workspace-cli";
     const commands = [
-      ["workspace", "reconcile", "--synthetic", "--workspace", workspace],
+      ["workspace", "reconcile", "--synthetic"],
       ["intent", "inbox", "--synthetic", "--workspace", workspace],
       ["intent", "accept", "claim-cli", "--synthetic", "--workspace", workspace],
       ["intent", "reject", "claim-cli", "--synthetic", "--workspace", workspace],
@@ -178,6 +178,24 @@ describe("release CLI", () => {
       output: {
         ok: false,
         message: expect.stringContaining("requires --workspace"),
+      },
+    });
+  });
+
+  it("validates an optional synthetic reconciliation workspace selector", async () => {
+    const result = await runReleaseCli({
+      args: ["workspace", "reconcile", "--synthetic", "--workspace", "wrong-workspace"],
+      env: {},
+      fetcher: async () => {
+        throw new Error("unexpected fetch");
+      },
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 2,
+      output: {
+        ok: false,
+        message: expect.stringContaining("does not match the workspace pack"),
       },
     });
   });
