@@ -86,7 +86,9 @@ describe("private-data scan", () => {
 
     const result = await runPrivateDataScan(repository, [forbiddenValue]);
 
-    expect(result.findings).toEqual([{ filePath: "tracked.txt", forbiddenValueIndex: 0 }]);
+    expect(result.findings).toEqual([
+      { trackedFileIndex: 0, forbiddenValueIndex: 0, location: "content" },
+    ]);
     expect(JSON.stringify(result)).not.toContain(forbiddenValue);
   });
 
@@ -103,9 +105,35 @@ describe("private-data scan", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Private-data scan failed");
-    expect(result.stderr).toContain("tracked.txt");
+    expect(result.stderr).not.toContain("tracked.txt");
     expect(result.stderr).not.toContain(forbiddenValue);
     expect(result.stdout).toBe("");
+  });
+
+  it("detects a forbidden identifier in a tracked filename without echoing it", async () => {
+    const repository = await createRepository();
+    const forbiddenValue = "invented-private-client-4d9a";
+    const relativeFilePath = `notes/${forbiddenValue}-brief.txt`;
+    await writeFile(join(repository, relativeFilePath), "Invented public fixture content.\n");
+    await run(["git", "add", relativeFilePath], { cwd: repository });
+
+    const scanResult = await runPrivateDataScan(repository, [forbiddenValue]);
+    const cliResult = await run(["bun", cliPath, "--root", repository, "--stdin"], {
+      cwd: repository,
+      stdin: `${forbiddenValue}\n`,
+    });
+    const serializedResult = JSON.stringify(scanResult);
+    const processOutput = `${cliResult.stdout}${cliResult.stderr}`;
+
+    expect(scanResult.findings).toEqual([
+      { trackedFileIndex: 0, forbiddenValueIndex: 0, location: "path" },
+    ]);
+    expect(serializedResult).not.toContain(forbiddenValue);
+    expect(serializedResult).not.toContain(relativeFilePath);
+    expect(cliResult.exitCode).toBe(1);
+    expect(processOutput).toContain("Private-data scan failed");
+    expect(processOutput).not.toContain(forbiddenValue);
+    expect(processOutput).not.toContain(relativeFilePath);
   });
 
   it("accepts an ignored values file and leaves a clean tracked tree passing", async () => {

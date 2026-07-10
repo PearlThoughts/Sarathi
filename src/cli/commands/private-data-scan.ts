@@ -5,8 +5,9 @@ import { promisify } from "node:util";
 import { Effect } from "effect";
 
 export type PrivateDataScanFinding = {
-  readonly filePath: string;
+  readonly trackedFileIndex: number;
   readonly forbiddenValueIndex: number;
+  readonly location: "path" | "content";
 };
 
 export type PrivateDataScanResult = {
@@ -70,12 +71,16 @@ export const scanTrackedFiles = async (
 ): Promise<PrivateDataScanResult> => {
   const findings: PrivateDataScanFinding[] = [];
 
-  for (const filePath of trackedFiles) {
+  for (const [trackedFileIndex, filePath] of trackedFiles.entries()) {
     const contents = await readFile(resolve(rootDirectory, filePath), "utf8");
 
     for (const [forbiddenValueIndex, forbiddenValue] of forbiddenValues.entries()) {
+      if (filePath.includes(forbiddenValue)) {
+        findings.push({ trackedFileIndex, forbiddenValueIndex, location: "path" });
+      }
+
       if (contents.includes(forbiddenValue)) {
-        findings.push({ filePath, forbiddenValueIndex });
+        findings.push({ trackedFileIndex, forbiddenValueIndex, location: "content" });
       }
     }
   }
@@ -187,10 +192,10 @@ const formatResult = (result: PrivateDataScanResult): string => {
     return `Private-data scan passed: ${result.trackedFileCount} tracked files checked against ${result.forbiddenValueCount} forbidden values.\n`;
   }
 
-  const affectedFiles = [...new Set(result.findings.map((finding) => finding.filePath))];
-  const fileList = affectedFiles.map((filePath) => `- ${filePath}`).join("\n");
+  const affectedFileCount = new Set(result.findings.map((finding) => finding.trackedFileIndex))
+    .size;
 
-  return `Private-data scan failed: ${result.findings.length} forbidden matches across ${affectedFiles.length} tracked files.\n${fileList}\n`;
+  return `Private-data scan failed: ${result.findings.length} forbidden matches across ${affectedFileCount} tracked files.\n`;
 };
 
 const runCli = async (): Promise<number> => {
