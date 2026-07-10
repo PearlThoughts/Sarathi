@@ -24,8 +24,15 @@
 ## release-cli
 
 - Command: `bun run test`
-- Location: `tests/release-cli.test.ts`, `tests/release-cli-file-backed.bun.test.ts`
-- Scope: Runtime smoke command, Railway deploy guard coverage, file-backed workspace pack reconciliation into SQLite, local evidence import, watermark persistence, and private drift-review report generation.
+- Location: `tests/release-cli.test.ts`
+- Scope: Runtime smoke command, Railway deploy guard coverage, explicit synthetic operator workflows, and fail-closed runtime selection.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## release-cli-file-backed
+
+- Command: `bun run test:bun-native`
+- Location: `tests/release-cli-file-backed.bun.test.ts`
+- Scope: File-backed workspace reconciliation, durable intent inbox/accept/reject across process restarts, origin-evidence retention, cross-workspace isolation, local evidence import, watermark persistence, and private drift-review generation.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## operator-runtime

@@ -19,7 +19,14 @@
       "path": "tests/release-cli.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Runtime smoke command, Railway deploy guard, file-backed workspace reconciliation, local evidence import, watermark persistence, and private drift-review generation coverage."
+      "description": "Runtime smoke command, Railway deploy guard, explicit synthetic operator workflows, and fail-closed runtime selection coverage."
+    },
+    {
+      "id": "release-cli-file-backed",
+      "path": "tests/release-cli-file-backed.bun.test.ts",
+      "command": "bun run test:bun-native",
+      "prerequisites": ["bun install"],
+      "description": "File-backed workspace reconciliation, durable intent inbox/accept/reject across process restarts, origin-evidence retention, cross-workspace isolation, local evidence import, watermark persistence, and private drift-review generation coverage."
     },
     {
       "id": "operator-runtime",

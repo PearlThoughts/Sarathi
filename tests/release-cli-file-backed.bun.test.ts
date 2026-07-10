@@ -10,6 +10,11 @@ import {
   openStrategyKernelSqliteDatabase,
   readEvidenceImportWatermark,
 } from "../src/infrastructure/sqlite/index.ts";
+import type {
+  EvidenceItem,
+  ExtractedClaim,
+  Workspace,
+} from "../src/modules/strategy-kernel/index.ts";
 import {
   actorIdForWorkspacePackActor,
   seedIntentIdForWorkspacePackSeed,
@@ -18,6 +23,30 @@ import {
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const launchpadPackDirectory = join(testDirectory, "fixtures", "workspace-packs", "launchpad");
+const repositoryDirectory = join(testDirectory, "..");
+const releaseCliPath = join(repositoryDirectory, "src", "cli", "release.ts");
+
+const runReleaseCliProcess = (args: readonly string[]) => {
+  const result = Bun.spawnSync({
+    cmd: [process.execPath, "run", releaseCliPath, ...args, "--json"],
+    cwd: repositoryDirectory,
+    env: { ...process.env, NO_COLOR: "1" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = new TextDecoder().decode(result.stdout);
+  const stderr = new TextDecoder().decode(result.stderr);
+
+  if (stdout.trim() === "") {
+    throw new Error(`Release CLI process produced no JSON output. stderr: ${stderr}`);
+  }
+
+  return {
+    exitCode: result.exitCode,
+    output: JSON.parse(stdout) as unknown,
+    stderr,
+  };
+};
 
 describe("file-backed release CLI workspace reconciliation", () => {
   it("reconciles a workspace pack into durable SQLite with a safe summary", async () => {
@@ -81,6 +110,231 @@ describe("file-backed release CLI workspace reconciliation", () => {
           templates: 0,
         },
       });
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("persists intent inbox decisions across processes and isolates workspaces", async () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "sarathi-intent-runtime-"));
+    const databasePath = join(temporaryDirectory, "runtime.sqlite");
+    const workspaceId = workspaceIdForWorkspacePack("launchpad");
+    const otherWorkspaceId = "workspace-other";
+    const timestamp = "2026-07-10T06:00:00.000Z";
+
+    const evidence = (id: string, selectedWorkspaceId: string): EvidenceItem => ({
+      id,
+      workspaceId: selectedWorkspaceId,
+      sourceSystem: "teams",
+      sourceType: "message",
+      externalId: `external-${id}`,
+      occurredAt: timestamp,
+      title: `Synthetic evidence ${id}`,
+      bodyExcerpt: "Delivery lead will attach synthetic QA evidence.",
+      contentHash: `sha256-${id}`,
+      sensitivity: "internal",
+      ingestedAt: timestamp,
+    });
+    const claim = (
+      id: string,
+      selectedWorkspaceId: string,
+      evidenceItemId: string,
+    ): ExtractedClaim => ({
+      id,
+      evidenceItemId,
+      workspaceId: selectedWorkspaceId,
+      claimType: "possible_commitment",
+      text: `Possible commitment from ${evidenceItemId}`,
+      confidence: 0.9,
+      state: "pending",
+      sensitivity: "internal",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    try {
+      const reconciliation = runReleaseCliProcess([
+        "workspace",
+        "reconcile",
+        "--pack",
+        launchpadPackDirectory,
+        "--db",
+        databasePath,
+      ]);
+      expect(reconciliation.exitCode).toBe(0);
+
+      const database = openStrategyKernelSqliteDatabase(databasePath);
+      applyStrategyKernelSqliteMigrations(database);
+      const repository = createSqliteStrategyKernelRepository(database);
+      const otherWorkspace: Workspace = {
+        id: otherWorkspaceId,
+        organizationId: "org-local",
+        key: "other",
+        name: "Synthetic Other Workspace",
+        kind: "project",
+        defaultSensitivity: "internal",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      const launchpadEvidence = evidence("evidence-launchpad", workspaceId);
+      const otherEvidence = evidence("evidence-other", otherWorkspaceId);
+      const launchpadClaim = claim("claim-launchpad", workspaceId, launchpadEvidence.id);
+      const otherClaim = claim("claim-other", otherWorkspaceId, otherEvidence.id);
+
+      await repository.saveWorkspace(otherWorkspace);
+      await repository.saveEvidenceItem(launchpadEvidence);
+      await repository.saveEvidenceItem(otherEvidence);
+      await repository.saveExtractedClaim(launchpadClaim);
+      await repository.saveExtractedClaim(otherClaim);
+      database.close();
+
+      const inbox = runReleaseCliProcess([
+        "intent",
+        "inbox",
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+      ]);
+      expect(inbox.exitCode).toBe(0);
+      expect(inbox.output).toMatchObject({
+        ok: true,
+        mode: "file-backed",
+        workspaceId,
+        pendingClaims: [{ id: launchpadClaim.id, evidenceItemId: launchpadEvidence.id }],
+      });
+      expect(JSON.stringify(inbox.output)).not.toContain(otherClaim.id);
+
+      const crossWorkspace = runReleaseCliProcess([
+        "intent",
+        "accept",
+        otherClaim.id,
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+      ]);
+      expect(crossWorkspace).toMatchObject({
+        exitCode: 2,
+        output: { ok: false, message: "Claim was not found in the selected workspace." },
+      });
+
+      const accepted = runReleaseCliProcess([
+        "intent",
+        "accept",
+        launchpadClaim.id,
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+        "--actor",
+        "actor-delivery-lead",
+      ]);
+      expect(accepted).toMatchObject({
+        exitCode: 0,
+        output: {
+          ok: true,
+          mode: "file-backed",
+          workspaceId,
+          claim: { id: launchpadClaim.id, state: "accepted" },
+          intent: { originEvidenceId: launchpadEvidence.id, workspaceId },
+          event: { workspaceId, action: "ratified" },
+        },
+      });
+
+      const repeatedAcceptance = runReleaseCliProcess([
+        "intent",
+        "accept",
+        launchpadClaim.id,
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+      ]);
+      expect(repeatedAcceptance).toMatchObject({
+        exitCode: 2,
+        output: { ok: false, message: "Claim is no longer pending in the selected workspace." },
+      });
+
+      const missingReason = runReleaseCliProcess([
+        "intent",
+        "reject",
+        otherClaim.id,
+        "--db",
+        databasePath,
+        "--workspace",
+        otherWorkspaceId,
+      ]);
+      expect(missingReason).toMatchObject({
+        exitCode: 2,
+        output: { ok: false, message: expect.stringContaining("requires --reason") },
+      });
+
+      const rejected = runReleaseCliProcess([
+        "intent",
+        "reject",
+        otherClaim.id,
+        "--db",
+        databasePath,
+        "--workspace",
+        otherWorkspaceId,
+        "--actor",
+        "actor-delivery-lead",
+        "--reason",
+        "Duplicate synthetic commitment.",
+      ]);
+      expect(rejected).toMatchObject({
+        exitCode: 0,
+        output: {
+          ok: true,
+          mode: "file-backed",
+          workspaceId: otherWorkspaceId,
+          claim: { id: otherClaim.id, state: "rejected" },
+          event: { workspaceId: otherWorkspaceId, action: "rejected" },
+        },
+      });
+
+      const verificationDatabase = openStrategyKernelSqliteDatabase(databasePath);
+      const verificationRepository = createSqliteStrategyKernelRepository(verificationDatabase);
+      const persistedAccepted = await verificationRepository.getExtractedClaim(launchpadClaim.id);
+      const persistedRejected = await verificationRepository.getExtractedClaim(otherClaim.id);
+      const persistedIntent = await verificationRepository.getIntentNode(
+        `intent:${launchpadClaim.id}`,
+      );
+      const launchpadEvents = await verificationRepository.listWorkspaceKernelEvents(workspaceId);
+      const otherEvents = await verificationRepository.listWorkspaceKernelEvents(otherWorkspaceId);
+      verificationDatabase.close();
+
+      expect(persistedAccepted).toMatchObject({
+        id: launchpadClaim.id,
+        workspaceId,
+        state: "accepted",
+        ratifiedNodeId: `intent:${launchpadClaim.id}`,
+      });
+      expect(persistedRejected).toMatchObject({
+        id: otherClaim.id,
+        workspaceId: otherWorkspaceId,
+        state: "rejected",
+      });
+      expect(persistedIntent).toMatchObject({
+        workspaceId,
+        originEvidenceId: launchpadEvidence.id,
+        state: "ratified",
+      });
+      expect(launchpadEvents).toContainEqual(
+        expect.objectContaining({
+          workspaceId,
+          entityId: launchpadClaim.id,
+          action: "ratified",
+        }),
+      );
+      expect(otherEvents).toContainEqual(
+        expect.objectContaining({
+          workspaceId: otherWorkspaceId,
+          entityId: otherClaim.id,
+          action: "rejected",
+        }),
+      );
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }
