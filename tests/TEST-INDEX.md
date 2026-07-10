@@ -98,8 +98,15 @@
 - Scope: Workspace-scoped strategic report generation, derived drift findings, sensitivity ceilings, and leakage guards.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## private-data-scan
+
+- Command: `bun run test`
+- Location: `tests/private-data-scan.test.ts`
+- Scope: Tracked-file leakage detection, redacted failure output, stdin configuration, and ignored private values-file coverage.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## local-ci
 
 - Command: `bun run check`
-- Scope: TypeScript, lint, architecture, static checks, and test suite.
+- Scope: TypeScript, lint, architecture, static checks, test suite, and tracked-file private-data scan.
 - Prerequisites: Bun dependencies installed with `bun install`.

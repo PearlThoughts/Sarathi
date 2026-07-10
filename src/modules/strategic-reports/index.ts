@@ -1,8 +1,16 @@
 import {
+  defaultBoundaryForSensitivity,
   isSensitivityAtOrBelow,
   maxSensitivity,
   type SensitivityTier,
 } from "../../domain/policy.ts";
+import {
+  type BoundaryAudience,
+  type BoundaryAuthorizationStatus,
+  type BoundaryDecisionReason,
+  type BoundarySubject,
+  evaluateBoundaryAccess,
+} from "../boundary-policy/index.ts";
 import type {
   AccountabilityAction,
   DriftFinding,
@@ -26,6 +34,23 @@ export type StrategicReportInputs = {
   readonly actions: readonly AccountabilityAction[];
   readonly driftFindings: readonly DriftFinding[];
 };
+
+export type StrategicReportBoundaryContext = {
+  readonly subject: BoundarySubject;
+  readonly audience: BoundaryAudience;
+  readonly consent: BoundaryAuthorizationStatus;
+  readonly actionAuthorization: BoundaryAuthorizationStatus;
+};
+
+export class StrategicReportBoundaryDeniedError extends Error {
+  readonly reasonCode: BoundaryDecisionReason;
+
+  constructor(reasonCode: BoundaryDecisionReason, reason: string) {
+    super(`Strategic report access denied: ${reason}`);
+    this.name = "StrategicReportBoundaryDeniedError";
+    this.reasonCode = reasonCode;
+  }
+}
 
 export type StrategicReportEntrySource =
   | "intent"
@@ -534,4 +559,58 @@ export const generateLeadershipReview = (
       section("Drift requiring leadership attention", scoped.driftFindings.map(driftFindingEntry)),
     ],
   );
+};
+
+const allReportInputs = (inputs: StrategicReportInputs) => [
+  ...inputs.intents,
+  ...inputs.evidence,
+  ...inputs.projections,
+  ...inputs.actions,
+  ...inputs.driftFindings,
+];
+
+const reportGenerators: Readonly<
+  Record<StrategicReportKind, (inputs: StrategicReportInputs) => StrategicExecutionReport>
+> = {
+  daily_delivery_brief: generateDailyDeliveryBrief,
+  weekly_drift_review: generateWeeklyDriftReview,
+  stakeholder_update_draft: generateStakeholderUpdateDraft,
+  leadership_review: generateLeadershipReview,
+};
+
+export const generateBoundarySafeStrategicReport = (
+  kind: StrategicReportKind,
+  inputs: StrategicReportInputs,
+  boundaryContext: StrategicReportBoundaryContext,
+): StrategicExecutionReport => {
+  if (allReportInputs(inputs).some((input) => input.workspaceId !== inputs.workspaceId)) {
+    throw new StrategicReportBoundaryDeniedError(
+      "workspace-denied",
+      "The report input contains records from another workspace.",
+    );
+  }
+
+  const derivedSensitivity = deriveStrategicReportVisibility(inputs);
+  const decision = evaluateBoundaryAccess({
+    subject: boundaryContext.subject,
+    action: "render-report",
+    target: {
+      type: "report",
+      id: kind,
+      workspaceId: inputs.workspaceId,
+      boundary: defaultBoundaryForSensitivity(derivedSensitivity),
+    },
+    output: {
+      workspaceId: inputs.workspaceId,
+      audience: boundaryContext.audience,
+      consent: boundaryContext.consent,
+      actionAuthorization: boundaryContext.actionAuthorization,
+    },
+  });
+
+  if (!decision.allowed) {
+    throw new StrategicReportBoundaryDeniedError(decision.reasonCode, decision.reason);
+  }
+
+  return reportGenerators[kind](inputs);
 };

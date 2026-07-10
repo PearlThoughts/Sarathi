@@ -14,6 +14,7 @@
     "runtime:health": "bun run src/cli/release.ts runtime health",
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
+    "privacy:scan": "bun run src/cli/commands/private-data-scan.ts",
     "test": "vitest run",
     "test:bun-native": "bun test tests/*.bun.test.ts",
     "typecheck": "tsc --noEmit",
@@ -27,7 +28,7 @@
     "arch:check": "arch-contract check --config arch-contract.yaml",
     "arch:check:json": "arch-contract check --config arch-contract.yaml --format json",
     "format": "biome format --write .",
-    "ci": "bun run typecheck && bun run lint && bun run static:all && bun run test && bun run test:bun-native",
+    "ci": "bun run typecheck && bun run lint && bun run static:all && bun run test && bun run test:bun-native && bun run privacy:scan",
     "check": "bun run ci"
   },
   "dependencies": {
