@@ -51,6 +51,7 @@ import {
   type WorkspacePackSourceFile,
   workspaceIdForWorkspacePack,
 } from "../modules/workspace-packs/index.ts";
+import { runDurableIntentCommand } from "./commands/intent-runtime.ts";
 import {
   type DurableOperatorRuntimeSelection,
   OperatorRuntimeSelectionError,
@@ -810,6 +811,10 @@ const runtimeCommand = async (
     }
 
     return importFileBackedEvidence(args, selection);
+  }
+
+  if (args[0] === "intent" && selection.mode === "sqlite") {
+    return runDurableIntentCommand(args, selection);
   }
 
   if (selection.mode === "sqlite" && !(args[0] === "report" && args[1] === "drift-review")) {
