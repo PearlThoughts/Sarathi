@@ -26,7 +26,7 @@
       "path": "tests/release-cli-file-backed.bun.test.ts",
       "command": "bun run test:bun-native",
       "prerequisites": ["bun install"],
-      "description": "File-backed workspace reconciliation, durable intent inbox/accept/reject across process restarts, origin-evidence retention, cross-workspace isolation, local evidence import, watermark persistence, and private drift-review generation coverage."
+      "description": "File-backed workspace reconciliation, durable intent decisions, operator-supplied projection observations, sensitivity-scoped accountability counts, explicit report boundary context and denial handling, restart persistence, workspace isolation, local evidence import, watermarks, and private drift-review generation coverage."
     },
     {
       "id": "operator-runtime",
@@ -96,7 +96,7 @@
       "path": "tests/projections.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Intended projection creation, simulated verification states, and projection drift findings."
+      "description": "Intended projection creation, observation classification, operator-observation persistence semantics, and projection drift findings."
     },
     {
       "id": "accountability-actions",

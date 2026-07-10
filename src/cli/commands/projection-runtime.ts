@@ -174,7 +174,10 @@ export const runDurableProjectionCommand = async (
         ok: true,
         mode: "file-backed",
         projection: {
-          verified: true,
+          observationRecorded: true,
+          observationSource: "operator-supplied",
+          providerVerified: false,
+          liveVerification: false,
           driftStatus: result.projection.driftStatus,
           driftFindingRecorded: result.driftFinding !== undefined,
         },

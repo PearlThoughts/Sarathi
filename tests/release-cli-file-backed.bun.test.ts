@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -695,7 +695,10 @@ describe("file-backed release CLI workspace reconciliation", () => {
           ok: true,
           mode: "file-backed",
           projection: {
-            verified: true,
+            observationRecorded: true,
+            observationSource: "operator-supplied",
+            providerVerified: false,
+            liveVerification: false,
             driftStatus: "stale",
             driftFindingRecorded: true,
           },
@@ -705,6 +708,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
       expect(verificationText).not.toContain("SYN-OPS-1");
       expect(verificationText).not.toContain("private-projection");
       expect(verificationText).not.toContain("sha256-stale");
+      expect(verificationText).not.toContain('"verified":true');
 
       const crossWorkspaceVerification = runReleaseCliProcess([
         "projection",
@@ -756,6 +760,22 @@ describe("file-backed release CLI workspace reconciliation", () => {
       expect(accountabilityText).not.toContain(actorId);
       expect(accountabilityText).not.toContain(intentId);
 
+      const missingAccountabilityCeiling = runReleaseCliProcess([
+        "accountability",
+        "list",
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+      ]);
+      expect(missingAccountabilityCeiling).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: expect.stringContaining("requires --max-sensitivity"),
+        },
+      });
+
       const verificationDatabase = openStrategyKernelSqliteDatabase(databasePath);
       const verificationRepository = createSqliteStrategyKernelRepository(verificationDatabase);
       const persistedProjection = (
@@ -802,6 +822,8 @@ describe("file-backed release CLI workspace reconciliation", () => {
     const databasePath = join(temporaryDirectory, "runtime.sqlite");
     const sourcePath = join(temporaryDirectory, "evidence.json");
     const reportPath = join(temporaryDirectory, "drift-review.md");
+    const missingContextReportPath = join(temporaryDirectory, "missing-context.md");
+    const deniedContextReportPath = join(temporaryDirectory, "denied-context.md");
     const workspaceId = workspaceIdForWorkspacePack("launchpad");
 
     try {
@@ -907,6 +929,81 @@ describe("file-backed release CLI workspace reconciliation", () => {
       });
       database.close();
 
+      const missingBoundaryContext = await runReleaseCli({
+        args: [
+          "report",
+          "drift-review",
+          "--db",
+          databasePath,
+          "--workspace",
+          workspaceId,
+          "--out",
+          missingContextReportPath,
+          "--format",
+          "markdown",
+          "--max-sensitivity",
+          "internal",
+        ],
+        env: {},
+        fetcher: async () => {
+          throw new Error("unexpected fetch");
+        },
+      });
+      expect(missingBoundaryContext).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: expect.stringContaining("requires --principal"),
+        },
+      });
+      expect(existsSync(missingContextReportPath)).toBe(false);
+
+      const deniedBoundaryContext = await runReleaseCli({
+        args: [
+          "report",
+          "drift-review",
+          "--db",
+          databasePath,
+          "--workspace",
+          workspaceId,
+          "--out",
+          deniedContextReportPath,
+          "--format",
+          "markdown",
+          "--principal",
+          "synthetic-operator",
+          "--trust-tier",
+          "maintainer",
+          "--authorized-workspace",
+          workspaceId,
+          "--audience-kind",
+          "workspace",
+          "--audience-workspace",
+          workspaceId,
+          "--max-sensitivity",
+          "internal",
+          "--consent",
+          "denied",
+          "--action-authorization",
+          "granted",
+        ],
+        env: {},
+        fetcher: async () => {
+          throw new Error("unexpected fetch");
+        },
+      });
+      expect(deniedBoundaryContext).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          report: {
+            authorized: false,
+            reasonCode: "consent-denied",
+          },
+        },
+      });
+      expect(existsSync(deniedContextReportPath)).toBe(false);
+
       const result = await runReleaseCli({
         args: [
           "report",
@@ -919,8 +1016,22 @@ describe("file-backed release CLI workspace reconciliation", () => {
           reportPath,
           "--format",
           "markdown",
+          "--principal",
+          "synthetic-operator",
+          "--trust-tier",
+          "maintainer",
+          "--authorized-workspace",
+          workspaceId,
+          "--audience-kind",
+          "workspace",
+          "--audience-workspace",
+          workspaceId,
           "--max-sensitivity",
           "internal",
+          "--consent",
+          "granted",
+          "--action-authorization",
+          "granted",
         ],
         env: {},
         fetcher: async () => {
@@ -940,6 +1051,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
         },
       });
       expect(resultText).not.toContain(reportPath);
+      expect(resultText).not.toContain("synthetic-operator");
       expect(resultText).not.toContain("Restricted leadership");
       expect(report).toContain("Goal has no linked work");
       expect(report).toContain("Work evidence is not linked to intent");

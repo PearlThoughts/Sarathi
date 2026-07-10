@@ -32,7 +32,7 @@
 
 - Command: `bun run test:bun-native`
 - Location: `tests/release-cli-file-backed.bun.test.ts`
-- Scope: File-backed workspace reconciliation, durable intent inbox/accept/reject across process restarts, origin-evidence retention, cross-workspace isolation, local evidence import, watermark persistence, and private drift-review generation.
+- Scope: File-backed workspace reconciliation, durable intent decisions, operator-supplied projection observations, sensitivity-scoped accountability counts, explicit report boundary context, denial handling, restart persistence, workspace isolation, local evidence import, watermarks, and private drift-review generation.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## operator-runtime
@@ -102,7 +102,7 @@
 
 - Command: `bun run test`
 - Location: `tests/projections.test.ts`
-- Scope: Intended projection creation, simulated verification states, and projection drift findings.
+- Scope: Intended projection creation, observation classification, operator-observation persistence semantics, and projection drift findings.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## accountability-actions

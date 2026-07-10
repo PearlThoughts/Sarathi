@@ -59,7 +59,14 @@ const maxSensitivityFromArgs = (
     };
   }
 
-  const value = values[0]?.trim() ?? "restricted";
+  const value = values[0]?.trim();
+  if (value === undefined || value === "") {
+    return {
+      error: failure(
+        "Accountability list requires --max-sensitivity so the output ceiling is explicit.",
+      ),
+    };
+  }
   if (
     value !== "public" &&
     value !== "internal" &&
