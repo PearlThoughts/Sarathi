@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +11,10 @@ import {
   readEvidenceImportWatermark,
 } from "../src/infrastructure/sqlite/index.ts";
 import type {
+  AccountabilityAction,
   EvidenceItem,
   ExtractedClaim,
+  Projection,
   Workspace,
 } from "../src/modules/strategy-kernel/index.ts";
 import {
@@ -558,11 +560,270 @@ describe("file-backed release CLI workspace reconciliation", () => {
     }
   });
 
+  it("persists projection verification and lists boundary-filtered accountability counts", async () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "sarathi-runtime-ops-"));
+    const databasePath = join(temporaryDirectory, "runtime.sqlite");
+    const workspaceId = workspaceIdForWorkspacePack("launchpad");
+    const otherWorkspaceId = "workspace-runtime-ops-other";
+    const actorId = actorIdForWorkspacePackActor("delivery-lead");
+    const intentId = seedIntentIdForWorkspacePackSeed("launchpad", "qa-evidence");
+    const projectionId = "projection-runtime-ops-selected";
+    const otherProjectionId = "projection-runtime-ops-other";
+
+    try {
+      const reconciliation = runReleaseCliProcess([
+        "workspace",
+        "reconcile",
+        "--pack",
+        launchpadPackDirectory,
+        "--db",
+        databasePath,
+      ]);
+      expect(reconciliation.exitCode).toBe(0);
+
+      const database = openStrategyKernelSqliteDatabase(databasePath);
+      applyStrategyKernelSqliteMigrations(database);
+      const repository = createSqliteStrategyKernelRepository(database);
+      const otherWorkspace: Workspace = {
+        id: otherWorkspaceId,
+        organizationId: "org-local",
+        key: "runtime-ops-other",
+        name: "Synthetic Runtime Ops Other Workspace",
+        kind: "project",
+        defaultSensitivity: "internal",
+        createdAt: "2026-07-10T07:00:00.000Z",
+        updatedAt: "2026-07-10T07:00:00.000Z",
+      };
+      const projection: Projection = {
+        id: projectionId,
+        workspaceId,
+        intentNodeId: intentId,
+        targetSystem: "jira",
+        targetType: "issue",
+        targetId: "SYN-OPS-1",
+        targetUrl: "https://example.invalid/private-projection",
+        lastPublishedHash: "sha256-current",
+        driftStatus: "in_sync",
+        sensitivity: "internal",
+      };
+      const otherProjection: Projection = {
+        ...projection,
+        id: otherProjectionId,
+        workspaceId: otherWorkspaceId,
+        intentNodeId: "intent-runtime-ops-other",
+        targetId: "SYN-OPS-OTHER",
+      };
+      const actions: readonly AccountabilityAction[] = [
+        {
+          id: "action-runtime-ops-internal",
+          workspaceId,
+          intentNodeId: intentId,
+          actorId,
+          channel: "teams_channel",
+          state: "pending",
+          escalationLevel: 0,
+          evidenceRequired: true,
+          sensitivity: "internal",
+        },
+        {
+          id: "action-runtime-ops-restricted",
+          workspaceId,
+          intentNodeId: intentId,
+          actorId,
+          channel: "teams_dm",
+          state: "escalated",
+          escalationLevel: 2,
+          evidenceRequired: true,
+          sensitivity: "restricted",
+        },
+        {
+          id: "action-runtime-ops-other",
+          workspaceId: otherWorkspaceId,
+          intentNodeId: "intent-runtime-ops-other",
+          actorId,
+          channel: "email",
+          state: "silent",
+          escalationLevel: 1,
+          evidenceRequired: false,
+          sensitivity: "internal",
+        },
+      ];
+
+      await repository.saveWorkspace(otherWorkspace);
+      await repository.saveIntentNode({
+        id: otherProjection.intentNodeId,
+        workspaceId: otherWorkspaceId,
+        kind: "commitment",
+        title: "Synthetic other workspace commitment",
+        body: "Must remain outside selected workspace operations.",
+        ownerActorId: actorId,
+        state: "ratified",
+        sensitivity: "internal",
+        createdBy: "human",
+        createdAt: "2026-07-10T07:00:00.000Z",
+        updatedAt: "2026-07-10T07:00:00.000Z",
+      });
+      await repository.saveProjection(projection);
+      await repository.saveProjection(otherProjection);
+      for (const action of actions) {
+        await repository.saveAccountabilityAction(action);
+      }
+      database.close();
+
+      const verification = runReleaseCliProcess([
+        "projection",
+        "verify",
+        projectionId,
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+        "--observed-authorized",
+        "true",
+        "--observed-exists",
+        "true",
+        "--observed-content-hash",
+        "sha256-stale",
+        "--observed-managed-by-sarathi",
+        "true",
+      ]);
+      const verificationText = JSON.stringify(verification.output);
+
+      expect(verification).toMatchObject({
+        exitCode: 0,
+        output: {
+          ok: true,
+          mode: "file-backed",
+          projection: {
+            observationRecorded: true,
+            observationSource: "operator-supplied",
+            providerVerified: false,
+            liveVerification: false,
+            driftStatus: "stale",
+            driftFindingRecorded: true,
+          },
+        },
+      });
+      expect(verificationText).not.toContain(projectionId);
+      expect(verificationText).not.toContain("SYN-OPS-1");
+      expect(verificationText).not.toContain("private-projection");
+      expect(verificationText).not.toContain("sha256-stale");
+      expect(verificationText).not.toContain('"verified":true');
+
+      const crossWorkspaceVerification = runReleaseCliProcess([
+        "projection",
+        "verify",
+        otherProjectionId,
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+        "--observed-authorized",
+        "true",
+        "--observed-exists",
+        "false",
+      ]);
+      expect(crossWorkspaceVerification).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: "Projection was not found in the selected workspace.",
+        },
+      });
+      expect(JSON.stringify(crossWorkspaceVerification.output)).not.toContain(otherProjectionId);
+
+      const accountability = runReleaseCliProcess([
+        "accountability",
+        "list",
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+        "--max-sensitivity",
+        "internal",
+      ]);
+      const accountabilityText = JSON.stringify(accountability.output);
+
+      expect(accountability).toMatchObject({
+        exitCode: 0,
+        output: {
+          ok: true,
+          mode: "file-backed",
+          accountability: {
+            listed: true,
+            total: 1,
+            states: { pending: 1, escalated: 0, silent: 0 },
+          },
+        },
+      });
+      expect(accountabilityText).not.toContain("action-runtime-ops");
+      expect(accountabilityText).not.toContain(actorId);
+      expect(accountabilityText).not.toContain(intentId);
+
+      const missingAccountabilityCeiling = runReleaseCliProcess([
+        "accountability",
+        "list",
+        "--db",
+        databasePath,
+        "--workspace",
+        workspaceId,
+      ]);
+      expect(missingAccountabilityCeiling).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: expect.stringContaining("requires --max-sensitivity"),
+        },
+      });
+
+      const verificationDatabase = openStrategyKernelSqliteDatabase(databasePath);
+      const verificationRepository = createSqliteStrategyKernelRepository(verificationDatabase);
+      const persistedProjection = (
+        await verificationRepository.listWorkspaceProjections(workspaceId)
+      ).find((candidate) => candidate.id === projectionId);
+      const persistedOtherProjection = (
+        await verificationRepository.listWorkspaceProjections(otherWorkspaceId)
+      ).find((candidate) => candidate.id === otherProjectionId);
+      const findings = await verificationRepository.listWorkspaceDriftFindings(workspaceId);
+      const events = await verificationRepository.listWorkspaceKernelEvents(workspaceId);
+      verificationDatabase.close();
+
+      expect(persistedProjection).toMatchObject({
+        id: projectionId,
+        driftStatus: "stale",
+        lastVerifiedAt: expect.any(String),
+      });
+      expect(persistedOtherProjection).toMatchObject({
+        id: otherProjectionId,
+        driftStatus: "in_sync",
+      });
+      expect(persistedOtherProjection?.lastVerifiedAt).toBeUndefined();
+      expect(findings).toContainEqual(
+        expect.objectContaining({
+          workspaceId,
+          findingType: "projection_drift",
+          relatedEntityId: projectionId,
+        }),
+      );
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          workspaceId,
+          entityId: projectionId,
+          action: "drift_detected",
+        }),
+      );
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("writes a file-backed drift review without leaking restricted evidence into internal output", async () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "sarathi-drift-report-"));
     const databasePath = join(temporaryDirectory, "runtime.sqlite");
     const sourcePath = join(temporaryDirectory, "evidence.json");
     const reportPath = join(temporaryDirectory, "drift-review.md");
+    const missingContextReportPath = join(temporaryDirectory, "missing-context.md");
+    const deniedContextReportPath = join(temporaryDirectory, "denied-context.md");
     const workspaceId = workspaceIdForWorkspacePack("launchpad");
 
     try {
@@ -668,6 +929,81 @@ describe("file-backed release CLI workspace reconciliation", () => {
       });
       database.close();
 
+      const missingBoundaryContext = await runReleaseCli({
+        args: [
+          "report",
+          "drift-review",
+          "--db",
+          databasePath,
+          "--workspace",
+          workspaceId,
+          "--out",
+          missingContextReportPath,
+          "--format",
+          "markdown",
+          "--max-sensitivity",
+          "internal",
+        ],
+        env: {},
+        fetcher: async () => {
+          throw new Error("unexpected fetch");
+        },
+      });
+      expect(missingBoundaryContext).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          message: expect.stringContaining("requires --principal"),
+        },
+      });
+      expect(existsSync(missingContextReportPath)).toBe(false);
+
+      const deniedBoundaryContext = await runReleaseCli({
+        args: [
+          "report",
+          "drift-review",
+          "--db",
+          databasePath,
+          "--workspace",
+          workspaceId,
+          "--out",
+          deniedContextReportPath,
+          "--format",
+          "markdown",
+          "--principal",
+          "synthetic-operator",
+          "--trust-tier",
+          "maintainer",
+          "--authorized-workspace",
+          workspaceId,
+          "--audience-kind",
+          "workspace",
+          "--audience-workspace",
+          workspaceId,
+          "--max-sensitivity",
+          "internal",
+          "--consent",
+          "denied",
+          "--action-authorization",
+          "granted",
+        ],
+        env: {},
+        fetcher: async () => {
+          throw new Error("unexpected fetch");
+        },
+      });
+      expect(deniedBoundaryContext).toMatchObject({
+        exitCode: 2,
+        output: {
+          ok: false,
+          report: {
+            authorized: false,
+            reasonCode: "consent-denied",
+          },
+        },
+      });
+      expect(existsSync(deniedContextReportPath)).toBe(false);
+
       const result = await runReleaseCli({
         args: [
           "report",
@@ -680,8 +1016,22 @@ describe("file-backed release CLI workspace reconciliation", () => {
           reportPath,
           "--format",
           "markdown",
+          "--principal",
+          "synthetic-operator",
+          "--trust-tier",
+          "maintainer",
+          "--authorized-workspace",
+          workspaceId,
+          "--audience-kind",
+          "workspace",
+          "--audience-workspace",
+          workspaceId,
           "--max-sensitivity",
           "internal",
+          "--consent",
+          "granted",
+          "--action-authorization",
+          "granted",
         ],
         env: {},
         fetcher: async () => {
@@ -701,6 +1051,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
         },
       });
       expect(resultText).not.toContain(reportPath);
+      expect(resultText).not.toContain("synthetic-operator");
       expect(resultText).not.toContain("Restricted leadership");
       expect(report).toContain("Goal has no linked work");
       expect(report).toContain("Work evidence is not linked to intent");

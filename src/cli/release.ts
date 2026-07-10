@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { Effect } from "effect";
 import {
@@ -17,13 +17,9 @@ import {
 } from "../modules/intent-inbox/index.ts";
 import {
   createIntendedProjection,
-  verifyProjectionAgainstSimulation,
+  verifyProjectionAgainstObservation,
 } from "../modules/projections/index.ts";
-import {
-  filterStrategicReportInputsBySensitivity,
-  generateWeeklyDriftReview,
-  renderStrategicReportMarkdown,
-} from "../modules/strategic-reports/index.ts";
+import { generateWeeklyDriftReview } from "../modules/strategic-reports/index.ts";
 import type {
   AccountabilityAction,
   Actor,
@@ -51,6 +47,7 @@ import {
   type WorkspacePackSourceFile,
   workspaceIdForWorkspacePack,
 } from "../modules/workspace-packs/index.ts";
+import { runDurableAccountabilityCommand } from "./commands/accountability-runtime.ts";
 import { runDurableIntentCommand } from "./commands/intent-runtime.ts";
 import {
   type DurableOperatorRuntimeSelection,
@@ -59,6 +56,8 @@ import {
   parseOperatorRuntimeSelection,
   parseWorkspaceReconcileRuntimeSelection,
 } from "./commands/operator-runtime.ts";
+import { runDurableProjectionCommand } from "./commands/projection-runtime.ts";
+import { runDurableDriftReviewCommand } from "./commands/report-runtime.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -398,31 +397,6 @@ const sourcePathFromArgs = (args: readonly string[]): string | undefined =>
 const sourceKeyFromArgs = (args: readonly string[]): string =>
   optionValue(args, "--source-key") ?? "local-export";
 
-const outputPathFromArgs = (args: readonly string[]): string | undefined =>
-  optionValue(args, "--out");
-
-const outputFormatFromArgs = (args: readonly string[]): "json" | "markdown" =>
-  optionValue(args, "--format") === "json" ? "json" : "markdown";
-
-const maxSensitivityFromArgs = (
-  args: readonly string[],
-): "public" | "internal" | "confidential" | "restricted" => {
-  const value = optionValue(args, "--max-sensitivity") ?? "restricted";
-
-  if (
-    value !== "public" &&
-    value !== "internal" &&
-    value !== "confidential" &&
-    value !== "restricted"
-  ) {
-    throw new Error(
-      "Invalid --max-sensitivity. Use public, internal, confidential, or restricted.",
-    );
-  }
-
-  return value;
-};
-
 const packDirectoryFromArgs = (
   args: readonly string[],
   env: Record<string, string | undefined>,
@@ -653,66 +627,6 @@ const importFileBackedEvidence = async (
   }
 };
 
-const generateFileBackedDriftReview = async (
-  args: readonly string[],
-  selection: DurableOperatorRuntimeSelection,
-): Promise<CliResult> => {
-  const outputPath = outputPathFromArgs(args);
-
-  if (outputPath === undefined || outputPath === "") {
-    return {
-      exitCode: 2,
-      output: {
-        ok: false,
-        message:
-          "File-backed drift review requires --out so private report content is not printed.",
-      },
-    };
-  }
-
-  const runtime = await Effect.runPromise(openSqliteOperatorRuntime(selection));
-  const workspaceId = runtime.workspace.id;
-  const generatedAt = new Date().toISOString();
-
-  try {
-    const inputs = {
-      workspaceId,
-      generatedAt,
-      intents: await runtime.repository.listWorkspaceIntent(workspaceId),
-      evidence: await runtime.repository.listWorkspaceEvidence(workspaceId),
-      projections: await runtime.repository.listWorkspaceProjections(workspaceId),
-      actions: await runtime.repository.listWorkspaceAccountabilityActions(workspaceId),
-      driftFindings: await runtime.repository.listWorkspaceDriftFindings(workspaceId),
-    };
-    const filtered = filterStrategicReportInputsBySensitivity(inputs, maxSensitivityFromArgs(args));
-    const report = generateWeeklyDriftReview(filtered);
-    const rendered =
-      outputFormatFromArgs(args) === "json"
-        ? `${JSON.stringify(report, null, 2)}\n`
-        : renderStrategicReportMarkdown(report);
-
-    writeFileSync(resolve(outputPath), rendered);
-
-    return {
-      exitCode: 0,
-      output: {
-        ok: true,
-        mode: "file-backed",
-        report: {
-          kind: report.kind,
-          visibility: report.visibility,
-          sections: report.sections.length,
-          entries: report.sections.reduce((total, section) => total + section.entries.length, 0),
-          totals: report.totals,
-          written: true,
-        },
-      },
-    };
-  } finally {
-    runtime.close();
-  }
-};
-
 const isOperatorRuntimeCommand = (args: readonly string[]): boolean =>
   (args[0] === "workspace" && args[1] === "reconcile") ||
   (args[0] === "evidence" && args[1] === "import") ||
@@ -817,7 +731,19 @@ const runtimeCommand = async (
     return runDurableIntentCommand(args, selection);
   }
 
-  if (selection.mode === "sqlite" && !(args[0] === "report" && args[1] === "drift-review")) {
+  if (args[0] === "projection" && args[1] === "verify" && selection.mode === "sqlite") {
+    return runDurableProjectionCommand(args, selection);
+  }
+
+  if (args[0] === "accountability" && args[1] === "list" && selection.mode === "sqlite") {
+    return runDurableAccountabilityCommand(args, selection);
+  }
+
+  if (args[0] === "report" && args[1] === "drift-review" && selection.mode === "sqlite") {
+    return runDurableDriftReviewCommand(args, selection);
+  }
+
+  if (selection.mode === "sqlite") {
     const runtime = await Effect.runPromise(openSqliteOperatorRuntime(selection));
     runtime.close();
 
@@ -828,10 +754,6 @@ const runtimeCommand = async (
         message: `Durable ${args[0]} ${args[1]} behavior is not implemented in the runtime-selection foundation.`,
       },
     };
-  }
-
-  if (args[0] === "report" && args[1] === "drift-review" && selection.mode === "sqlite") {
-    return generateFileBackedDriftReview(args, selection);
   }
 
   const workspaceId = selection.workspaceSelector;
@@ -897,7 +819,7 @@ const runtimeCommand = async (
       publishedHash: "sha256-current",
       relatedEvidence: [fixture.evidence],
     });
-    const result = await verifyProjectionAgainstSimulation(
+    const result = await verifyProjectionAgainstObservation(
       repository,
       projection,
       { authorized: true, exists: true, contentHash: "sha256-stale", managedBySarathi: true },
