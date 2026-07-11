@@ -158,8 +158,12 @@ const hasCompleteCommand = (command: {
 
 export const createTeamsIngressApplication = (
   dependencies: TeamsMentionDependencies = failClosedDependencies,
+  adapter?: CloudAdapter,
 ): AgentApplication<TurnState> => {
-  const application = new AgentApplication({ storage: new MemoryStorage() });
+  const application = new AgentApplication({
+    storage: new MemoryStorage(),
+    ...(adapter === undefined ? {} : { adapter }),
+  });
   application.onActivity("message", async (context: TurnContext) => {
     const activity = context.activity;
     const text = activity.text ?? "";
@@ -204,7 +208,7 @@ export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();
   const composition = hostedTeamsIngressCompositionFromEnvironment();
   const adapter = new CloudAdapter(authConfiguration(configuration));
-  const application = createTeamsIngressApplication(composition.dependencies);
+  const application = createTeamsIngressApplication(composition.dependencies, adapter);
   const server = express();
   server.use(express.json());
   server.post(

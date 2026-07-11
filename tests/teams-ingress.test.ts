@@ -1,6 +1,8 @@
+import { CloudAdapter } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  createTeamsIngressApplication,
   hostedTeamsIngressCompositionFromEnvironment,
   teamsIngressConfigurationFromEnvironment,
 } from "../src/teams-ingress/node-server.ts";
@@ -77,5 +79,15 @@ describe("Teams ingress configuration", () => {
         }),
       ),
     ).rejects.toThrow("Approved Teams workspace configuration is unavailable");
+  });
+
+  it("uses the configured CloudAdapter instead of creating an unconfigured production adapter", () => {
+    const adapter = new CloudAdapter({
+      clientId: "app",
+      clientSecret: "password",
+      tenantId: "tenant",
+    });
+
+    expect(() => createTeamsIngressApplication(undefined, adapter)).not.toThrow();
   });
 });
