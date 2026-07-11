@@ -63,6 +63,13 @@
 - Scope: Generic due-item planning and exception digest coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## compliance-reminders
+
+- Command: `bun run test:bun-native`
+- Location: `tests/compliance-reminders.bun.test.ts`
+- Scope: Workspace isolation, dry-run behavior, atomic idempotency reservation, durable outcome audit, retryable delivery failure, and audit-failure handling.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## messaging
 
 - Command: `bun run test`

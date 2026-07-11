@@ -71,6 +71,13 @@
       "description": "Generic due-item planning and exception digest coverage."
     },
     {
+      "id": "compliance-reminders",
+      "path": "tests/compliance-reminders.bun.test.ts",
+      "command": "bun run test:bun-native",
+      "prerequisites": ["bun install"],
+      "description": "Workspace-scoped dry-run, atomic idempotency reservation, delivery audit, and retry contract coverage."
+    },
+    {
       "id": "messaging",
       "path": "tests/messaging.test.ts",
       "command": "bun run test",
