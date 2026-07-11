@@ -70,6 +70,13 @@
 - Scope: External-principal mapping and proactive message delivery contract coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## teams-mention
+
+- Command: `bun run test`
+- Location: `tests/teams-mention.test.ts`
+- Scope: Direct mention normalization, idempotency, workspace/actor resolution, and policy-gated answer orchestration.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## strategy-kernel
 
 - Command: `bun run test`

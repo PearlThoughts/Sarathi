@@ -7,3 +7,4 @@ Product strategy, launch positioning, naming, and commercial notes belong in Sen
 ## Active Specifications
 
 - [Production Pilot Readiness](./001-production-pilot-readiness/spec.md) defines the community-safe capability, dependency, privacy, ownership, and verification contract for the internal production pilot.
+- [1851 Teams Mention Production](./002-1851-teams-mention-production/spec.md) defines the sole team-facing production slice: a policy-bounded, grounded, same-thread answer to a direct Teams mention.

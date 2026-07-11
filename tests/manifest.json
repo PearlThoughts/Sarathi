@@ -1,6 +1,13 @@
 {
   "suites": [
     {
+      "id": "teams-mention",
+      "path": "tests/teams-mention.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Direct mention, policy-gated answer orchestration, and duplicate-delivery coverage."
+    },
+    {
       "id": "workspace-model",
       "path": "tests/workspace-model.test.ts",
       "command": "bun run test",
