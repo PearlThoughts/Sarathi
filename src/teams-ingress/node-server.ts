@@ -11,11 +11,27 @@ import { Effect } from "effect";
 import express from "express";
 import { RepositoryError } from "../domain/errors.ts";
 import type { TrustTier } from "../domain/policy.ts";
+import { createGitHubEvidenceReader } from "../infrastructure/github/index.ts";
+import { createTeamsGraphThreadReader } from "../infrastructure/graph/index.ts";
+import { createJiraEvidenceReader } from "../infrastructure/jira/index.ts";
+import {
+  createOpenAiGroundedAnswerGenerator,
+  openAiGroundedAnswerConfigurationFromEnvironment,
+} from "../infrastructure/model/index.ts";
+import {
+  createPostgresTeamsMentionAudit,
+  openStrategyKernelPostgresDatabase,
+} from "../infrastructure/postgres/index.ts";
 import {
   createWorkspaceProjectionResolver,
   workspaceProjectionFromEnvironment,
 } from "../infrastructure/teams/workspace-projection-resolver.ts";
 import {
+  createVaultProjectionReader,
+  vaultProjectionFromEnvironment,
+} from "../infrastructure/vault/index.ts";
+import {
+  createAuthorizedContextAssembler,
   handleTeamsMention,
   stripSarathiMention,
   type TeamsMentionDependencies,
@@ -78,9 +94,60 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
   environment: Record<string, string | undefined> = process.env,
 ): HostedTeamsIngressComposition => {
   try {
-    const resolver = createWorkspaceProjectionResolver(
-      workspaceProjectionFromEnvironment(environment),
+    const sourceKeys = JSON.parse(
+      required(
+        "SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON",
+        environment.SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON,
+      ),
+    ) as { teams: string; jira: string; github: string; vault: string };
+    const graphToken = required(
+      "MICROSOFT_GRAPH_ACCESS_TOKEN",
+      environment.MICROSOFT_GRAPH_ACCESS_TOKEN,
     );
+    const githubToken = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
+    const databaseUrl = required(
+      "SARATHI_STRATEGY_DATABASE_URL",
+      environment.SARATHI_STRATEGY_DATABASE_URL,
+    );
+    const projection = workspaceProjectionFromEnvironment(environment);
+    const resolver = createWorkspaceProjectionResolver(projection);
+    const contextAssembler = createAuthorizedContextAssembler([
+      {
+        reader: createTeamsGraphThreadReader({
+          accessToken: graphToken,
+          approvedStandardChannels: new Set(
+            projection.channels.map((channel) => `${channel.teamId}:${channel.channelId}`),
+          ),
+        }),
+        sourceKey: () => sourceKeys.teams,
+      },
+      {
+        reader: createJiraEvidenceReader({
+          baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
+          email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
+          apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
+        }),
+        sourceKey: () => sourceKeys.jira,
+      },
+      {
+        reader: createGitHubEvidenceReader({
+          token: githubToken,
+          allowedRepositories: new Set(
+            JSON.parse(
+              required(
+                "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+                environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+              ),
+            ) as string[],
+          ),
+        }),
+        sourceKey: () => sourceKeys.github,
+      },
+      {
+        reader: createVaultProjectionReader(vaultProjectionFromEnvironment(environment)),
+        sourceKey: () => sourceKeys.vault,
+      },
+    ]);
     return {
       dependencies: {
         resolver,
@@ -94,26 +161,14 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 !resolved.boundary.requiresHumanApproval,
             }),
         },
-        contextAssembler: {
-          assemble: () =>
-            unavailable(
-              "Approved context assembly is not configured; Sarathi will not retrieve context.",
-            ),
-        },
-        answerGenerator: {
-          generate: () =>
-            unavailable(
-              "Approved answer generation is not configured; Sarathi will not generate a response.",
-            ),
-        },
+        contextAssembler,
+        answerGenerator: createOpenAiGroundedAnswerGenerator(
+          openAiGroundedAnswerConfigurationFromEnvironment(environment),
+        ),
         delivery: { reply: () => Effect.void },
-        audit: {
-          acquireLease: () => Effect.succeed({ kind: "acquired", attempt: 1 }),
-          markDelivered: () => Effect.void,
-          markFailed: () => Effect.void,
-        },
+        audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
       },
-      ready: false,
+      ready: true,
     };
   } catch {
     return {

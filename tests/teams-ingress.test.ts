@@ -24,7 +24,7 @@ describe("Teams ingress configuration", () => {
     ).toEqual({ appId: "app", appPassword: "secret", tenantId: "tenant" });
   });
 
-  it("uses the approved standard-channel projection and remains unready until context and answers are composed", async () => {
+  it("fails closed when a workspace projection is present but hosted dependencies are incomplete", async () => {
     const composition = hostedTeamsIngressCompositionFromEnvironment({
       SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
         channels: [
@@ -57,7 +57,7 @@ describe("Teams ingress configuration", () => {
           receivedAt: "2026-07-11T00:00:00.000Z",
         }),
       ),
-    ).resolves.toMatchObject({ workspaceId: "workspace", callerId: "actor" });
+    ).rejects.toThrow("Approved Teams workspace configuration is unavailable");
   });
 
   it("fails closed when the private workspace projection is absent", async () => {
