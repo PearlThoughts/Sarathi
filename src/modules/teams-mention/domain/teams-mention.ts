@@ -57,6 +57,18 @@ export type TeamsMentionOutcome =
   | { readonly kind: "denied"; readonly reason: string }
   | { readonly kind: "answered"; readonly answer: GroundedAnswer };
 
+export type TeamsMentionProcessingState =
+  | "processing"
+  | "delivered"
+  | "failed-retryable"
+  | "failed-terminal";
+
+export type TeamsMentionLease =
+  | { readonly kind: "acquired"; readonly attempt: number }
+  | { readonly kind: "duplicate-delivered" }
+  | { readonly kind: "in-progress" }
+  | { readonly kind: "terminal" };
+
 export const stripSarathiMention = (text: string, botId: string): string =>
   text
     .replace(new RegExp(`<at>${escapeRegExp(botId)}</at>`, "gi"), "")

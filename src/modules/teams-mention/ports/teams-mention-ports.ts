@@ -5,6 +5,8 @@ import type {
   GroundedAnswer,
   ResolvedTeamsMention,
   TeamsMentionCommand,
+  TeamsMentionLease,
+  TeamsMentionProcessingState,
 } from "../domain/teams-mention.ts";
 
 export type TeamsMentionContextAuthorization = {
@@ -45,10 +47,14 @@ export type TeamsMentionDelivery = {
 };
 
 export type TeamsMentionAudit = {
-  readonly reserveActivity: (activityId: string) => Effect.Effect<boolean, RepositoryError>;
-  readonly record: (
+  readonly acquireLease: (activityId: string) => Effect.Effect<TeamsMentionLease, RepositoryError>;
+  readonly markDelivered: (
     activityId: string,
-    outcome: "answered" | "denied",
+    workspaceId: string,
+  ) => Effect.Effect<void, RepositoryError>;
+  readonly markFailed: (
+    activityId: string,
+    state: Extract<TeamsMentionProcessingState, "failed-retryable" | "failed-terminal">,
     workspaceId?: string | undefined,
   ) => Effect.Effect<void, RepositoryError>;
 };

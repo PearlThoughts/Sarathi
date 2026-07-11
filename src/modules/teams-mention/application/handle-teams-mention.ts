@@ -27,17 +27,25 @@ export const handleTeamsMention = (
   }
 
   return Effect.gen(function* () {
-    const reserved = yield* dependencies.audit
-      .reserveActivity(command.activityId)
-      .pipe(Effect.orElseSucceed(() => false));
-    if (!reserved) return { kind: "ignored", reason: "duplicate" } as const;
+    const lease = yield* dependencies.audit
+      .acquireLease(command.activityId)
+      .pipe(Effect.orElseSucceed(() => ({ kind: "in-progress" }) as const));
+    if (lease.kind !== "acquired") return { kind: "ignored", reason: "duplicate" } as const;
 
-    const resolved = yield* dependencies.resolver
-      .resolve(command)
-      .pipe(Effect.orElseSucceed(() => undefined));
+    const resolvedResult = yield* Effect.either(dependencies.resolver.resolve(command));
+    if (resolvedResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable")
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return {
+        kind: "denied",
+        reason: "Sarathi cannot resolve the approved workspace right now.",
+      } as const;
+    }
+    const resolved = resolvedResult.right;
     if (resolved === undefined) {
       yield* dependencies.audit
-        .record(command.activityId, "denied")
+        .markFailed(command.activityId, "failed-terminal")
         .pipe(Effect.orElseSucceed(() => undefined));
       return {
         kind: "denied",
@@ -45,37 +53,60 @@ export const handleTeamsMention = (
       } as const;
     }
 
-    const authorization = yield* dependencies.authorizer
-      .authorizeContext(command, resolved)
-      .pipe(Effect.orElseSucceed(() => ({ allowed: false })));
+    const authorizationResult = yield* Effect.either(
+      dependencies.authorizer.authorizeContext(command, resolved),
+    );
+    if (authorizationResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return { kind: "denied", reason: "Sarathi cannot evaluate access right now." } as const;
+    }
+    const authorization = authorizationResult.right;
     if (!authorization.allowed) {
       yield* dependencies.audit
-        .record(command.activityId, "denied", resolved.workspaceId)
+        .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
         .pipe(Effect.orElseSucceed(() => undefined));
       return { kind: "denied", reason: "Sarathi cannot use this thread's context." } as const;
     }
 
-    const envelope = yield* dependencies.contextAssembler
-      .assemble(command, resolved)
-      .pipe(Effect.orElseSucceed(() => undefined));
-    if (envelope === undefined) {
+    const envelopeResult = yield* Effect.either(
+      dependencies.contextAssembler.assemble(command, resolved),
+    );
+    if (envelopeResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
       return {
         kind: "denied",
         reason: "Sarathi cannot retrieve the approved context right now.",
       } as const;
     }
-    const answer = yield* dependencies.answerGenerator
-      .generate(envelope)
-      .pipe(Effect.orElseSucceed(() => undefined));
-    if (answer === undefined) {
+    const answerResult = yield* Effect.either(
+      dependencies.answerGenerator.generate(envelopeResult.right),
+    );
+    if (answerResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
       return {
         kind: "denied",
         reason: "Sarathi's approved answer service is unavailable.",
       } as const;
     }
-    yield* dependencies.delivery.reply(command, answer).pipe(Effect.orElseSucceed(() => undefined));
+    const answer = answerResult.right;
+    const deliveryResult = yield* Effect.either(dependencies.delivery.reply(command, answer));
+    if (deliveryResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return {
+        kind: "denied",
+        reason: "Sarathi could not deliver the response; retry safely.",
+      } as const;
+    }
     yield* dependencies.audit
-      .record(command.activityId, "answered", resolved.workspaceId)
+      .markDelivered(command.activityId, resolved.workspaceId)
       .pipe(Effect.orElseSucceed(() => undefined));
     return { kind: "answered", answer } as const;
   });
