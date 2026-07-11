@@ -1,3 +1,4 @@
+export * from "./application/compliance-reminder-scheduler.ts";
 export * from "./application/run-compliance-reminder.ts";
 export * from "./domain/compliance-reminder.ts";
 export * from "./ports/compliance-reminder-audit.ts";
