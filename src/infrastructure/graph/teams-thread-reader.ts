@@ -1,7 +1,8 @@
 import type { EvidenceSourceReader } from "../../modules/evidence-import/index.ts";
+import type { GraphAccessTokenProvider } from "./entra-token-provider.ts";
 
 export type TeamsGraphThreadReaderConfiguration = {
-  readonly accessToken: string;
+  readonly tokenProvider: GraphAccessTokenProvider;
   readonly approvedStandardChannels: ReadonlySet<string>;
   readonly fetcher?: typeof fetch | undefined;
   readonly pageSize?: number | undefined;
@@ -47,6 +48,7 @@ export const createTeamsGraphThreadReader = (
       return { records: [] };
     }
     const fetcher = configuration.fetcher ?? fetch;
+    const accessToken = await configuration.tokenProvider.getAccessToken();
     const limit = configuration.pageSize ?? 20;
     const url = new URL(
       `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(scope.teamId)}/channels/${encodeURIComponent(scope.channelId)}/messages/${encodeURIComponent(scope.rootId)}/replies`,
@@ -55,7 +57,7 @@ export const createTeamsGraphThreadReader = (
     if (afterCursor !== undefined)
       url.searchParams.set("$filter", `createdDateTime gt ${afterCursor}`);
     const response = await fetcher(url, {
-      headers: { Authorization: `Bearer ${configuration.accessToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) throw new Error(`Graph thread read failed with HTTP ${response.status}.`);
     const payload = (await response.json()) as { readonly value?: readonly TeamsMessage[] };

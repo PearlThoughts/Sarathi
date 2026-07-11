@@ -8,7 +8,7 @@ describe("Teams Graph thread reader", () => {
   it("does not call Graph for an unapproved channel", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const configuration: TeamsGraphThreadReaderConfiguration = {
-      accessToken: "synthetic",
+      tokenProvider: { getAccessToken: async () => "synthetic" },
       approvedStandardChannels: new Set(),
       fetcher: fetcher as unknown as typeof fetch,
     };
@@ -36,7 +36,7 @@ describe("Teams Graph thread reader", () => {
       ),
     );
     const reader = createTeamsGraphThreadReader({
-      accessToken: "synthetic",
+      tokenProvider: { getAccessToken: async () => "synthetic" },
       approvedStandardChannels: new Set(["team:channel"]),
       fetcher: fetcher as unknown as typeof fetch,
       pageSize: 1,

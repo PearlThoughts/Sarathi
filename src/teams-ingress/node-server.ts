@@ -12,7 +12,10 @@ import express from "express";
 import { RepositoryError } from "../domain/errors.ts";
 import type { TrustTier } from "../domain/policy.ts";
 import { createGitHubEvidenceReader } from "../infrastructure/github/index.ts";
-import { createTeamsGraphThreadReader } from "../infrastructure/graph/index.ts";
+import {
+  createEntraClientCredentialsTokenProvider,
+  createTeamsGraphThreadReader,
+} from "../infrastructure/graph/index.ts";
 import { createJiraEvidenceReader } from "../infrastructure/jira/index.ts";
 import {
   createOpenAiGroundedAnswerGenerator,
@@ -88,6 +91,7 @@ const unavailableDependencies = (message: string): TeamsMentionDependencies => (
 export type HostedTeamsIngressComposition = {
   readonly dependencies: TeamsMentionDependencies;
   readonly ready: boolean;
+  readonly checkReadiness: () => Promise<boolean>;
 };
 
 export const hostedTeamsIngressCompositionFromEnvironment = (
@@ -100,10 +104,11 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         environment.SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON,
       ),
     ) as { teams: string; jira: string; github: string; vault: string };
-    const graphToken = required(
-      "MICROSOFT_GRAPH_ACCESS_TOKEN",
-      environment.MICROSOFT_GRAPH_ACCESS_TOKEN,
-    );
+    const graphTokenProvider = createEntraClientCredentialsTokenProvider({
+      tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
+      clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
+      clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
+    });
     const githubToken = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
     const databaseUrl = required(
       "SARATHI_STRATEGY_DATABASE_URL",
@@ -114,7 +119,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     const contextAssembler = createAuthorizedContextAssembler([
       {
         reader: createTeamsGraphThreadReader({
-          accessToken: graphToken,
+          tokenProvider: graphTokenProvider,
           approvedStandardChannels: new Set(
             projection.channels.map((channel) => `${channel.teamId}:${channel.channelId}`),
           ),
@@ -169,6 +174,14 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
       },
       ready: true,
+      checkReadiness: async () => {
+        try {
+          await graphTokenProvider.getAccessToken();
+          return true;
+        } catch {
+          return false;
+        }
+      },
     };
   } catch {
     return {
@@ -176,6 +189,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         "Approved Teams workspace configuration is unavailable; Sarathi will not process this mention.",
       ),
       ready: false,
+      checkReadiness: async () => false,
     };
   }
 };
@@ -276,9 +290,10 @@ export const startTeamsIngress = (): void => {
   server.get("/health", (_request, response) =>
     response.json({ status: "ok", service: "sarathi", ingress: "teams" }),
   );
-  server.get("/ready", (_request, response) =>
-    response.status(composition.ready ? 200 : 503).json({ ready: composition.ready }),
-  );
+  server.get("/ready", async (_request, response) => {
+    const ready = composition.ready && (await composition.checkReadiness());
+    response.status(ready ? 200 : 503).json({ ready });
+  });
   server.listen(Number.parseInt(process.env.PORT ?? "3978", 10));
 };
 
