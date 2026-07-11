@@ -1,6 +1,13 @@
 {
   "suites": [
     {
+      "id": "teams-ingress",
+      "path": "tests/teams-ingress.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Agents SDK ingress configuration fail-closed coverage."
+    },
+    {
       "id": "teams-mention",
       "path": "tests/teams-mention.test.ts",
       "command": "bun run test",

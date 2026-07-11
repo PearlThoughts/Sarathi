@@ -77,6 +77,13 @@
 - Scope: Direct mention normalization, idempotency, workspace/actor resolution, and policy-gated answer orchestration.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## teams-ingress
+
+- Command: `bun run test`
+- Location: `tests/teams-ingress.test.ts`
+- Scope: Official Agents SDK ingress configuration fails closed without Bot credentials.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## strategy-kernel
 
 - Command: `bun run test`
