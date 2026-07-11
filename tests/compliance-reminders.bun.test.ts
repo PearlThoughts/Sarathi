@@ -45,7 +45,12 @@ const auditStore = (
   appendFailure = false,
 ): ComplianceReminderAuditStore => ({
   provider: "compliance-reminder-audit",
-  reserve: () => Effect.succeed(existing),
+  reserve: () =>
+    Effect.succeed(
+      existing === undefined
+        ? { kind: "acquired" as const }
+        : { kind: "duplicate" as const, audit: existing },
+    ),
   append: (audit) =>
     appendFailure
       ? Effect.fail(new RepositoryError({ message: "audit append failed" }))

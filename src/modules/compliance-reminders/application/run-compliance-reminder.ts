@@ -56,14 +56,14 @@ export const runComplianceReminder = (
       return { state: "planned", digest, idempotencyKey: request.idempotencyKey };
     }
 
-    const existing = yield* dependencies.audit.reserve({
+    const reservation = yield* dependencies.audit.reserve({
       workspaceId: request.workspaceId,
       idempotencyKey: request.idempotencyKey,
     });
-    if (existing !== undefined) {
+    if (reservation.kind === "duplicate") {
       return {
         state: "suppressed_duplicate",
-        digest: existing.digest,
+        digest: reservation.audit?.digest ?? digest,
         idempotencyKey: request.idempotencyKey,
       };
     }

@@ -2,6 +2,10 @@ import type { Effect } from "effect";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { ComplianceReminderAudit } from "../domain/compliance-reminder.ts";
 
+export type ComplianceReminderReservation =
+  | { readonly kind: "acquired" }
+  | { readonly kind: "duplicate"; readonly audit?: ComplianceReminderAudit | undefined };
+
 export type ComplianceReminderAuditStore = {
   readonly provider: "compliance-reminder-audit";
   /**
@@ -12,6 +16,6 @@ export type ComplianceReminderAuditStore = {
   readonly reserve: (input: {
     readonly workspaceId: string;
     readonly idempotencyKey: string;
-  }) => Effect.Effect<ComplianceReminderAudit | undefined, RepositoryError>;
+  }) => Effect.Effect<ComplianceReminderReservation, RepositoryError>;
   readonly append: (audit: ComplianceReminderAudit) => Effect.Effect<void, RepositoryError>;
 };
