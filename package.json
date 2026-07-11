@@ -14,6 +14,8 @@
     "runtime:health": "bun run src/cli/release.ts runtime health",
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
+    "teams:ingress": "node --import tsx src/teams-ingress/node-server.ts",
+    "teams:manifest:validate": "atk validate --manifest-file appPackage/manifest.json",
     "privacy:scan": "bun run src/cli/commands/private-data-scan.ts",
     "test": "vitest run",
     "test:bun-native": "bun test tests/*.bun.test.ts",
@@ -32,6 +34,8 @@
     "check": "bun run ci"
   },
   "dependencies": {
+    "@microsoft/agents-hosting": "1.6.1",
+    "@microsoft/agents-hosting-express": "1.6.1",
     "better-auth": "^1.6.22",
     "drizzle-orm": "^0.45.2",
     "effect": "^3.15.5",
@@ -42,14 +46,16 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.6",
+    "@microsoft/m365agentstoolkit-cli": "1.1.11",
     "@types/bun": "^1.2.17",
     "@types/pg": "^8.20.0",
     "arch-contract": "^0.3.0",
     "dependency-cruiser": "^17.0.1",
     "knip": "^5.61.3",
     "oxlint": "^0.16.12",
-    "typescript": "^5.8.3",
+    "tsx": "4.20.5",
     "type-coverage": "^2.29.7",
+    "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
 }
