@@ -307,6 +307,51 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
 export const hostedTeamsIngressCompositionFromEnvironment = (
   environment: Record<string, string | undefined> = process.env,
 ): HostedTeamsIngressComposition => {
+  if (enabled(environment.SARATHI_TEAMS_HELLO_DIAGNOSTIC_ENABLED)) {
+    try {
+      const projection = workspaceProjectionFromEnvironment(environment);
+      const resolver = createWorkspaceProjectionResolver(projection);
+      const database = openStrategyKernelPostgresDatabase(
+        required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
+      );
+      return {
+        dependencies: {
+          resolver,
+          authorizer: {
+            authorizeContext: (_command, resolved) =>
+              Effect.succeed({
+                allowed:
+                  hasRequiredTrust(resolved.callerTrustTier, resolved.boundary.minimumTrustTier) &&
+                  resolved.boundary.allowedDelegationStages.includes("answer") &&
+                  !resolved.boundary.requiresHumanApproval,
+              }),
+          },
+          contextAssembler: { assemble: () => unavailable("Diagnostic-only composition") },
+          answerGenerator: { generate: () => unavailable("Diagnostic-only composition") },
+          delivery: { reply: () => Effect.void },
+          audit: createPostgresTeamsMentionAudit(database),
+          helloDiagnosticEnabled: true,
+        },
+        ready: true,
+        checkReadiness: async () => {
+          try {
+            await database.query("select 1");
+            return true;
+          } catch {
+            return false;
+          }
+        },
+      };
+    } catch {
+      return {
+        dependencies: unavailableDependencies(
+          "Approved Teams diagnostic configuration is unavailable; Sarathi will not process this mention.",
+        ),
+        ready: false,
+        checkReadiness: async () => false,
+      };
+    }
+  }
   try {
     const sourceKeys = JSON.parse(
       required(

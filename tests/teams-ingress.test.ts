@@ -83,6 +83,45 @@ describe("Teams ingress configuration", () => {
     ).rejects.toThrow("Approved Teams workspace configuration is unavailable");
   });
 
+  it("composes hello from only the approved projection and persistent audit configuration", async () => {
+    const composition = hostedTeamsIngressCompositionFromEnvironment({
+      SARATHI_TEAMS_HELLO_DIAGNOSTIC_ENABLED: "true",
+      SARATHI_STRATEGY_DATABASE_URL: "postgres://example.invalid/synthetic",
+      SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
+        channels: [
+          {
+            tenantId: "tenant",
+            teamId: "team",
+            channelId: "channel",
+            scope: "standard",
+            workspaceId: "workspace",
+            sensitivity: "internal",
+            actors: [{ entraObjectId: "entra", actorId: "actor", trustTier: "member" }],
+          },
+        ],
+      }),
+    });
+
+    expect(composition.ready).toBe(true);
+    expect(composition.dependencies.helloDiagnosticEnabled).toBe(true);
+    await expect(
+      Effect.runPromise(
+        composition.dependencies.resolver.resolve({
+          activityId: "activity",
+          tenantId: "tenant",
+          teamId: "team",
+          channelId: "channel",
+          conversationId: "conversation",
+          rootActivityId: "root",
+          serviceUrl: "https://service.example.test",
+          caller: { entraObjectId: "entra", displayName: "Caller" },
+          question: "hello",
+          receivedAt: "2026-07-11T00:00:00.000Z",
+        }),
+      ),
+    ).resolves.toMatchObject({ workspaceId: "workspace", callerId: "actor" });
+  });
+
   it("uses the configured CloudAdapter instead of creating an unconfigured production adapter", () => {
     const adapter = new CloudAdapter({
       clientId: "app",
