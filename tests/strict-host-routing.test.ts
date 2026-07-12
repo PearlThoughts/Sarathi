@@ -51,6 +51,18 @@ describe("strict host routing", () => {
     ).toBe("denied");
   });
 
+  it("allows Railway deployment probes only on documented health paths", () => {
+    expect(classifyHostSurface("healthcheck.railway.app", "/health", configuration)).toBe(
+      "railway-health",
+    );
+    expect(classifyHostSurface("healthcheck.railway.app", "/ready", configuration)).toBe(
+      "railway-health",
+    );
+    expect(classifyHostSurface("healthcheck.railway.app", "/api/messages", configuration)).toBe(
+      "denied",
+    );
+  });
+
   it("retains the legacy host only as a temporary API migration surface", () => {
     expect(classifyHostSurface(configuration.legacyApiHost, "/api/messages", configuration)).toBe(
       "legacy-api",
@@ -64,6 +76,7 @@ describe("strict host routing", () => {
     expect(classifyHostSurface("attacker.example.test", "/api/messages", configuration)).toBe(
       "denied",
     );
+    expect(classifyHostSurface("attacker.example.test", "/health", configuration)).toBe("denied");
     expect(classifyHostSurface(configuration.apiHost, "/", configuration)).toBe("denied");
     expect(classifyHostSurface(configuration.appHost, "/ready", configuration)).toBe("denied");
   });
