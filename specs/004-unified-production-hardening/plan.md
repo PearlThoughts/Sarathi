@@ -20,3 +20,6 @@ retry eligibility and acceptance metadata.
 3. Add a mode-aware hosted Finance composition and authenticated dry-run route.
 4. Replace boolean readiness with a safe component report.
 5. Add deterministic regression coverage and run the full check.
+6. Add a shadow-only acceptance operation that uses real source/audit adapters,
+   a fail-closed no-delivery port, durable retry proof, scheduler-error proof,
+   and terminal audit cleanup.

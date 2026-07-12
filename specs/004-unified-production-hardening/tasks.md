@@ -5,3 +5,5 @@
 - [ ] FIN-003 Add mode-gated authenticated dry-run operation.
 - [ ] OPS-001 Publish component-safe readiness.
 - [ ] FIN-004 Add permanent regression coverage and run `bun run check`.
+- [ ] FIN-005 Prove shadow audit reservation, retry selection, scheduler error
+  containment, and zero delivery through the hosted runtime.

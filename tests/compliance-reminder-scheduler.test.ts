@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type ComplianceReminderSchedule,
+  runComplianceReminderSchedulerTick,
   scheduledComplianceReminderRequest,
   startComplianceReminderScheduler,
 } from "../src/modules/compliance-reminders/index.ts";
@@ -84,5 +85,23 @@ describe("compliance reminder scheduler", () => {
     handle.stop();
     expect(retryChecks).toBe(1);
     expect(executions).toBe(1);
+  });
+
+  it("reports a contained durable-retry load failure", async () => {
+    await expect(
+      runComplianceReminderSchedulerTick(
+        schedule,
+        async () => undefined,
+        async () => {
+          throw new Error("synthetic audit outage");
+        },
+        new Date("2026-07-13T09:00:00.000Z"),
+      ),
+    ).resolves.toEqual({
+      retryLoadFailed: true,
+      retryCount: 0,
+      scheduledCount: 0,
+      executionFailures: 0,
+    });
   });
 });

@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createTeamsIngressApplication,
+  financeReminderKindFromBody,
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
   sameThreadReplyActivity,
@@ -26,6 +27,13 @@ describe("Teams ingress configuration", () => {
     expect(() => stringListFromEnvironment("LABELS", '["finance-compliance", 1]')).toThrow(
       "LABELS must be a string array",
     );
+  });
+
+  it("rejects missing or unknown Finance operation kinds", () => {
+    expect(financeReminderKindFromBody({ kind: "planning" })).toBe("planning");
+    expect(financeReminderKindFromBody({ kind: "exceptions" })).toBe("exceptions");
+    expect(financeReminderKindFromBody({ kind: "other" })).toBeUndefined();
+    expect(financeReminderKindFromBody({})).toBeUndefined();
   });
 
   it("fails closed when bot credentials are incomplete", () => {
