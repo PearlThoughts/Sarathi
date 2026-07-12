@@ -36,8 +36,8 @@ import {
   workspaceProjectionFromEnvironment,
 } from "../infrastructure/teams/workspace-projection-resolver.ts";
 import {
-  createVaultProjectionReader,
-  vaultProjectionFromEnvironment,
+  createGitHubVaultAllowlistReader,
+  vaultAllowlistFromEnvironment,
 } from "../infrastructure/vault/index.ts";
 import {
   type ComplianceReminderRequest,
@@ -355,7 +355,10 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         sourceKey: () => sourceKeys.github,
       },
       {
-        reader: createVaultProjectionReader(vaultProjectionFromEnvironment(environment)),
+        reader: createGitHubVaultAllowlistReader({
+          token: githubToken,
+          allowlist: vaultAllowlistFromEnvironment(environment),
+        }),
         sourceKey: () => sourceKeys.vault,
       },
     ]);
