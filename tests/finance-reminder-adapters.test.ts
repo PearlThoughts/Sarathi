@@ -122,4 +122,38 @@ describe("Finance reminder adapters", () => {
       Effect.runPromise(audit.reserve({ ...key, occurredAt: "2026-07-11T00:05:00.000Z" })),
     ).resolves.toEqual({ kind: "acquired" });
   });
+
+  it("terminates shadow acceptance without leaving a due retry", async () => {
+    let state = "retryable_failure";
+    const audit = createPostgresComplianceReminderAudit({
+      query: async (text) => {
+        if (text.includes("state = 'shadow_accepted'")) {
+          state = "shadow_accepted";
+          return { rows: [{ state }] };
+        }
+        return { rows: [] };
+      },
+    });
+    await expect(
+      Effect.runPromise(
+        audit.completeShadowAcceptance({
+          workspaceId: "finance",
+          idempotencyKey: "finance:shadow-acceptance:synthetic",
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(state).toBe("shadow_accepted");
+  });
+
+  it("fails when shadow acceptance has no retryable audit to terminate", async () => {
+    const audit = createPostgresComplianceReminderAudit({ query: async () => ({ rows: [] }) });
+    await expect(
+      Effect.runPromise(
+        audit.completeShadowAcceptance({
+          workspaceId: "finance",
+          idempotencyKey: "finance:shadow-acceptance:missing",
+        }),
+      ),
+    ).rejects.toThrow("Shadow acceptance retry evidence is missing");
+  });
 });

@@ -56,7 +56,9 @@ const auditStore = (
       ? Effect.fail(new RepositoryError({ message: "audit append failed" }))
       : Effect.sync(() => appended.push(audit)),
   dueRetries: () => Effect.succeed([]),
+  hasDueRetry: () => Effect.succeed(false),
   recordDryRunEvidence: () => Effect.void,
+  completeShadowAcceptance: () => Effect.void,
 });
 
 const delivery = (shouldFail = false): ComplianceReminderDelivery => ({

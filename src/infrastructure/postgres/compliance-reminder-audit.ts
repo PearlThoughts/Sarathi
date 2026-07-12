@@ -87,6 +87,18 @@ export const createPostgresComplianceReminderAudit = (
       },
       catch: unavailable,
     }),
+  hasDueRetry: (input) =>
+    Effect.tryPromise({
+      try: async () => {
+        await ensureTable(database);
+        const result = await database.query(
+          "select 1 from compliance_reminder_audit where workspace_id = $1 and idempotency_hash = $2 and state = 'retryable_failure' and retry_at <= $3 limit 1",
+          [input.workspaceId, stableSha256(input.idempotencyKey), input.now],
+        );
+        return result.rows.length === 1;
+      },
+      catch: unavailable,
+    }),
   recordDryRunEvidence: (evidence) =>
     Effect.tryPromise({
       try: async () => {
@@ -104,5 +116,23 @@ export const createPostgresComplianceReminderAudit = (
         );
       },
       catch: unavailable,
+    }),
+  completeShadowAcceptance: (input) =>
+    Effect.gen(function* () {
+      const result = yield* Effect.tryPromise({
+        try: async () => {
+          await ensureTable(database);
+          return database.query(
+            "update compliance_reminder_audit set state = 'shadow_accepted', request_json = null, digest_json = null, retry_at = null, external_id = null, updated_at = now() where workspace_id = $1 and idempotency_hash = $2 and state = 'retryable_failure' returning state",
+            [input.workspaceId, stableSha256(input.idempotencyKey)],
+          );
+        },
+        catch: unavailable,
+      });
+      if (result.rows.length === 0) {
+        return yield* Effect.fail(
+          new RepositoryError({ message: "Shadow acceptance retry evidence is missing." }),
+        );
+      }
     }),
 });

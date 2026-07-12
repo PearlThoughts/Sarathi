@@ -147,20 +147,41 @@ export const startComplianceReminderScheduler = (
     }
   };
   const tick = (): void => {
-    void (async () => {
-      const current = now();
-      let retries: readonly ComplianceReminderRequest[] = [];
-      try {
-        retries = await dueRetries(current);
-      } catch {
-        return;
-      }
-      const scheduled = scheduledComplianceReminderRequest(schedule, current);
-      const requests = [...retries, ...(scheduled === undefined ? [] : [scheduled])];
-      await Promise.allSettled(requests.map(executeSafely));
-    })().catch(() => undefined);
+    void runComplianceReminderSchedulerTick(schedule, executeSafely, dueRetries, now()).catch(
+      () => undefined,
+    );
   };
   tick();
   const interval = setInterval(tick, 60_000);
   return { stop: () => clearInterval(interval) };
+};
+
+type ComplianceReminderSchedulerTickResult = {
+  readonly retryLoadFailed: boolean;
+  readonly retryCount: number;
+  readonly scheduledCount: number;
+  readonly executionFailures: number;
+};
+
+export const runComplianceReminderSchedulerTick = async (
+  schedule: ComplianceReminderSchedule,
+  execute: (request: ComplianceReminderRequest) => Promise<unknown>,
+  dueRetries: (now: Date) => Promise<readonly ComplianceReminderRequest[]>,
+  current: Date,
+): Promise<ComplianceReminderSchedulerTickResult> => {
+  let retries: readonly ComplianceReminderRequest[];
+  try {
+    retries = await dueRetries(current);
+  } catch {
+    return { retryLoadFailed: true, retryCount: 0, scheduledCount: 0, executionFailures: 0 };
+  }
+  const scheduled = scheduledComplianceReminderRequest(schedule, current);
+  const requests = [...retries, ...(scheduled === undefined ? [] : [scheduled])];
+  const results = await Promise.allSettled(requests.map(execute));
+  return {
+    retryLoadFailed: false,
+    retryCount: retries.length,
+    scheduledCount: scheduled === undefined ? 0 : 1,
+    executionFailures: results.filter((result) => result.status === "rejected").length,
+  };
 };

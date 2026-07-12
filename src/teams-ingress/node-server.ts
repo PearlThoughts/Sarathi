@@ -44,6 +44,7 @@ import {
   type ComplianceReminderRequest,
   manualComplianceReminderRequest,
   runComplianceReminder,
+  runComplianceReminderShadowAcceptance,
   startComplianceReminderScheduler,
 } from "../modules/compliance-reminders/index.ts";
 import {
@@ -119,6 +120,7 @@ export type HostedFinanceReminderComposition = {
   readonly enabled: boolean;
   readonly run: (request: ComplianceReminderRequest) => Promise<unknown>;
   readonly runDryRun: (kind: "planning" | "exceptions") => Promise<unknown>;
+  readonly runShadowAcceptance: (kind: "planning" | "exceptions") => Promise<unknown>;
   readonly start: () => { readonly stop: () => void };
   readonly readiness: () => Promise<FinanceReadiness>;
 };
@@ -138,6 +140,13 @@ const financeMode = (value: string | undefined): "disabled" | "shadow" | "live" 
   return normalized === "disabled" || normalized === "shadow" || normalized === "live"
     ? normalized
     : undefined;
+};
+
+export const financeReminderKindFromBody = (
+  value: unknown,
+): "planning" | "exceptions" | undefined => {
+  if (typeof value !== "object" || value === null || !("kind" in value)) return undefined;
+  return value.kind === "planning" || value.kind === "exceptions" ? value.kind : undefined;
 };
 
 export const stringListFromEnvironment = (name: string, value: string | undefined): string[] => {
@@ -165,6 +174,9 @@ const disabledFinanceComposition = (
   },
   runDryRun: async () => {
     throw new Error("Finance dry-run is unavailable while Finance is disabled.");
+  },
+  runShadowAcceptance: async () => {
+    throw new Error("Finance shadow acceptance is unavailable while Finance is disabled.");
   },
   start: () => ({ stop: () => undefined }),
   readiness: async () => ({
@@ -267,11 +279,26 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
       }
       return result;
     };
+    const runShadowAcceptance = async (kind: "planning" | "exceptions"): Promise<unknown> => {
+      if (mode !== "shadow") throw new Error("Finance shadow acceptance requires shadow mode.");
+      const occurredAt = new Date().toISOString();
+      const planned = manualComplianceReminderRequest(schedule, kind, new Date(occurredAt));
+      if (planned === undefined)
+        throw new Error("Finance shadow acceptance configuration is unavailable.");
+      const request: ComplianceReminderRequest = {
+        ...planned,
+        dryRun: false,
+        idempotencyKey: `${workspaceId}:shadow-acceptance:${kind}:${occurredAt}`,
+        retryAt: "9999-12-31T23:59:59.999Z",
+      };
+      return runComplianceReminderShadowAcceptance(request, dependencies);
+    };
     return {
       mode,
       enabled: mode === "live",
       run,
       runDryRun,
+      runShadowAcceptance,
       start: () =>
         mode === "live"
           ? startComplianceReminderScheduler(schedule, run, (now) =>
@@ -627,9 +654,39 @@ export const startTeamsIngress = (): void => {
       response.status(409).json({ ok: false, mode: finance.mode });
       return;
     }
-    const kind = request.body?.kind === "exceptions" ? "exceptions" : "planning";
+    const kind = financeReminderKindFromBody(request.body);
+    if (kind === undefined) {
+      response.status(400).json({ ok: false, error: "invalid_kind" });
+      return;
+    }
     try {
       response.json({ ok: true, result: await finance.runDryRun(kind) });
+    } catch {
+      response.status(503).json({ ok: false, mode: finance.mode });
+    }
+  });
+  server.post("/internal/finance/reminders/shadow-acceptance", async (request, response) => {
+    const expectedToken = process.env.SARATHI_ADMIN_TOKEN;
+    const authorization = request.header("authorization");
+    if (
+      expectedToken === undefined ||
+      expectedToken.trim() === "" ||
+      authorization !== `Bearer ${expectedToken}`
+    ) {
+      response.status(401).json({ ok: false });
+      return;
+    }
+    if (finance.mode !== "shadow") {
+      response.status(409).json({ ok: false, mode: finance.mode });
+      return;
+    }
+    const kind = financeReminderKindFromBody(request.body);
+    if (kind === undefined) {
+      response.status(400).json({ ok: false, error: "invalid_kind" });
+      return;
+    }
+    try {
+      response.json({ ok: true, result: await finance.runShadowAcceptance(kind) });
     } catch {
       response.status(503).json({ ok: false, mode: finance.mode });
     }

@@ -21,6 +21,13 @@ describe("strict host routing", () => {
         configuration,
       ),
     ).toBe("api");
+    expect(
+      classifyHostSurface(
+        configuration.apiHost,
+        "/internal/finance/reminders/shadow-acceptance",
+        configuration,
+      ),
+    ).toBe("api");
     expect(classifyHostSurface(configuration.apiHost, "/oauth/callback", configuration)).toBe(
       "denied",
     );

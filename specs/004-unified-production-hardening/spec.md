@@ -16,6 +16,10 @@ variable is present.
   delivered reminder audit event.
 - Dry-run acceptance evidence is durable but contains only a digest hash and
   safe metadata, never item text or recipient identifiers.
+- Shadow runtime acceptance uses the real source and durable audit adapter,
+  exercises reservation and due-retry selection, contains scheduler-load
+  failure, performs zero external delivery, and finishes in a non-retryable
+  `shadow_accepted` audit state.
 - Live Finance requires an explicit promotion reference in addition to an
   explicit `live` mode.
 - `/ready` reports safe component states for Teams mention handling, Finance,
@@ -36,6 +40,6 @@ variable is present.
 ## Verification
 
 - Unit and integration tests cover mode gates, authenticated dry-run behavior,
-  component readiness, deferred retry, caught scheduler errors, and restart
-  idempotency.
+  authenticated shadow acceptance, component readiness, deferred retry, caught
+  scheduler errors, zero delivery, and restart idempotency.
 - `bun run check` passes from the feature worktree.

@@ -27,7 +27,16 @@ export type ComplianceReminderAuditStore = {
     readonly workspaceId: string;
     readonly now: string;
   }) => Effect.Effect<readonly ComplianceReminderRequest[], RepositoryError>;
+  readonly hasDueRetry: (input: {
+    readonly workspaceId: string;
+    readonly idempotencyKey: string;
+    readonly now: string;
+  }) => Effect.Effect<boolean, RepositoryError>;
   readonly recordDryRunEvidence: (
     evidence: ComplianceReminderDryRunEvidence,
   ) => Effect.Effect<void, RepositoryError>;
+  readonly completeShadowAcceptance: (input: {
+    readonly workspaceId: string;
+    readonly idempotencyKey: string;
+  }) => Effect.Effect<void, RepositoryError>;
 };
