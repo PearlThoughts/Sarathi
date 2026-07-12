@@ -1,1 +1,1 @@
-export * from "./vault-projection-reader.ts";
+export * from "./vault-allowlist-reader.ts";

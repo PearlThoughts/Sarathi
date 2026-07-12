@@ -136,6 +136,19 @@ describe("private-data scan", () => {
     expect(processOutput).not.toContain(relativeFilePath);
   });
 
+  it("scans the current working tree when a tracked file is pending deletion", async () => {
+    const repository = await createRepository();
+    await writeFile(join(repository, "retired.txt"), "Retired synthetic content.\n");
+    await run(["git", "add", "retired.txt"], { cwd: repository });
+    await rm(join(repository, "retired.txt"));
+
+    await expect(
+      runPrivateDataScan(repository, ["invented-private-value-28a9"]),
+    ).resolves.toMatchObject({
+      findings: [],
+    });
+  });
+
   it("accepts an ignored values file and leaves a clean tracked tree passing", async () => {
     const repository = await createRepository();
     const forbiddenValue = "invented-private-account-91a4";

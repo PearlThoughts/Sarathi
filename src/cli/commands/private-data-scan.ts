@@ -72,7 +72,13 @@ export const scanTrackedFiles = async (
   const findings: PrivateDataScanFinding[] = [];
 
   for (const [trackedFileIndex, filePath] of trackedFiles.entries()) {
-    const contents = await readFile(resolve(rootDirectory, filePath), "utf8");
+    let contents: string;
+    try {
+      contents = await readFile(resolve(rootDirectory, filePath), "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
 
     for (const [forbiddenValueIndex, forbiddenValue] of forbiddenValues.entries()) {
       if (filePath.includes(forbiddenValue)) {
