@@ -16,7 +16,10 @@ export type TeamsMentionDependencies = {
   readonly answerGenerator: GroundedAnswerGenerator;
   readonly delivery: TeamsMentionDelivery;
   readonly audit: TeamsMentionAudit;
+  readonly helloDiagnosticEnabled?: boolean;
 };
+
+const isHelloDiagnostic = (question: string): boolean => question.trim().toLowerCase() === "hello";
 
 export const handleTeamsMention = (
   command: TeamsMentionCommand | undefined,
@@ -68,6 +71,34 @@ export const handleTeamsMention = (
         .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
         .pipe(Effect.orElseSucceed(() => undefined));
       return { kind: "denied", reason: "Sarathi cannot use this thread's context." } as const;
+    }
+
+    if (isHelloDiagnostic(command.question)) {
+      if (dependencies.helloDiagnosticEnabled !== true) {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return { kind: "denied", reason: "Sarathi diagnostics are not enabled here." } as const;
+      }
+      const answer = {
+        text: "Hello from Sarathi.",
+        citations: [],
+        unavailableSources: [],
+      } as const;
+      const deliveryResult = yield* Effect.either(dependencies.delivery.reply(command, answer));
+      if (deliveryResult._tag === "Left") {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return {
+          kind: "denied",
+          reason: "Sarathi could not deliver the response; retry safely.",
+        } as const;
+      }
+      yield* dependencies.audit
+        .markDelivered(command.activityId, resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return { kind: "answered", answer } as const;
     }
 
     const envelopeResult = yield* Effect.either(

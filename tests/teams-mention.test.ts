@@ -23,7 +23,7 @@ const command = {
 type AuditState = "new" | "processing" | "delivered" | "failed-retryable" | "failed-terminal";
 
 const dependencies = (
-  input: { readonly deliveryFails?: boolean } = {},
+  input: { readonly deliveryFails?: boolean; readonly helloDiagnosticEnabled?: boolean } = {},
 ): {
   readonly dependencies: TeamsMentionDependencies;
   readonly state: () => AuditState;
@@ -97,6 +97,9 @@ const dependencies = (
             states.push(auditState);
           }),
       },
+      ...(input.helloDiagnosticEnabled === undefined
+        ? {}
+        : { helloDiagnosticEnabled: input.helloDiagnosticEnabled }),
     },
     state: () => auditState,
     calls: { delivered: () => delivered, failed: () => failed, states: () => states },
@@ -133,6 +136,82 @@ describe("teams mention", () => {
     });
     expect(fixture.calls.delivered()).toBe(1);
     expect(fixture.state()).toBe("delivered");
+  });
+
+  it("answers the authorized hello diagnostic without retrieving evidence or calling a model", async () => {
+    const fixture = dependencies({ helloDiagnosticEnabled: true });
+    let contextCalls = 0;
+    let modelCalls = 0;
+    const diagnosticDependencies = {
+      ...fixture.dependencies,
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          return Effect.succeed({ workspaceId: "workspace-1", question: "hello", evidence: [] });
+        },
+      },
+      answerGenerator: {
+        generate: () => {
+          modelCalls += 1;
+          return fixture.dependencies.answerGenerator.generate({
+            workspaceId: "workspace-1",
+            question: "hello",
+            evidence: [],
+          });
+        },
+      },
+    } as TeamsMentionDependencies;
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention({ ...command, question: "hello" }, diagnosticDependencies),
+      ),
+    ).resolves.toEqual({
+      kind: "answered",
+      answer: { text: "Hello from Sarathi.", citations: [], unavailableSources: [] },
+    });
+    expect(contextCalls).toBe(0);
+    expect(modelCalls).toBe(0);
+    expect(fixture.calls.delivered()).toBe(1);
+  });
+
+  it("fails closed for hello when the private diagnostic enablement is absent", async () => {
+    const fixture = dependencies();
+    let contextCalls = 0;
+    const diagnosticDependencies = {
+      ...fixture.dependencies,
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          return Effect.succeed({ workspaceId: "workspace-1", question: "hello", evidence: [] });
+        },
+      },
+    } as TeamsMentionDependencies;
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention({ ...command, question: "hello" }, diagnosticDependencies),
+      ),
+    ).resolves.toEqual({
+      kind: "denied",
+      reason: "Sarathi diagnostics are not enabled here.",
+    });
+    expect(contextCalls).toBe(0);
+    expect(fixture.calls.delivered()).toBe(0);
+    expect(fixture.state()).toBe("failed-terminal");
+  });
+
+  it("suppresses duplicate hello diagnostic delivery", async () => {
+    const fixture = dependencies({ helloDiagnosticEnabled: true });
+    const hello = { ...command, question: "hello" };
+    await Effect.runPromise(handleTeamsMention(hello, fixture.dependencies));
+    await expect(
+      Effect.runPromise(handleTeamsMention(hello, fixture.dependencies)),
+    ).resolves.toEqual({
+      kind: "ignored",
+      reason: "duplicate",
+    });
+    expect(fixture.calls.delivered()).toBe(1);
   });
 
   it("records retryable failure without recording delivery", async () => {

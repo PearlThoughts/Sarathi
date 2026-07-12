@@ -34,6 +34,7 @@
     "check": "bun run ci"
   },
   "dependencies": {
+    "@microsoft/agents-activity": "1.6.1",
     "@microsoft/agents-hosting": "1.6.1",
     "better-auth": "^1.6.22",
     "drizzle-orm": "^0.45.2",
