@@ -52,6 +52,10 @@ import {
   stripSarathiMention,
   type TeamsMentionDependencies,
 } from "../modules/teams-mention/index.ts";
+import {
+  classifyHostSurface,
+  strictHostRoutingConfigurationFromEnvironment,
+} from "./host-routing.ts";
 
 export type TeamsIngressConfiguration = {
   readonly appId: string;
@@ -557,6 +561,16 @@ export const startTeamsIngress = (): void => {
   const adapter = new CloudAdapter(authConfiguration(configuration));
   const application = createTeamsIngressApplication(composition.dependencies, adapter);
   const server = express();
+  const strictHosts = strictHostRoutingConfigurationFromEnvironment();
+  if (strictHosts !== undefined) {
+    server.use((request, response, next) => {
+      if (classifyHostSurface(request.hostname, request.path, strictHosts) === "denied") {
+        response.status(421).json({ ok: false, error: "misdirected_request" });
+        return;
+      }
+      next();
+    });
+  }
   server.use(express.json());
   server.post(
     "/api/messages",
