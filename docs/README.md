@@ -7,6 +7,7 @@ Sarathi documentation has two audiences:
 
 ## Product Docs
 
+- [Operating Thesis](product/operating-thesis.md) captures the durable product identity, control loop, authority model, and guardrails.
 - [Why Sarathi](product/why.md) explains the delivery coordination problem.
 - [What Sarathi Is](product/what.md) defines the AI Delivery Assistant role and visible coordination surfaces.
 - [Strategic Execution Advisor](product/strategic-execution-advisor.md) defines the long-term intent/evidence/accountability control plane.
@@ -19,6 +20,7 @@ Sarathi documentation has two audiences:
 ## Implementation Docs
 
 - [Architecture Overview](architecture/overview.md) describes the system shape.
+- [Workspace And Capability Model](architecture/workspace-capability-model.md) defines one runtime, isolated workspaces, capability profiles, and controlled synthesis.
 - [Module Boundaries](architecture/module-boundaries.md) defines capability boundaries and import rules.
 - [Identity And Boundaries](architecture/identity-and-boundaries.md) explains the Better Auth/Sarathi policy split.
 - [Workspace Operating Model](architecture/workspace-operating-model.md) defines single-tenant organization and multi-workspace boundaries.
@@ -26,6 +28,8 @@ Sarathi documentation has two audiences:
 - [Workspace Overlay](implementation/workspace-overlay.md) documents the Teams/Linear/GitHub model.
 - [Strategic Execution Loop](implementation/strategic-execution-loop.md) specifies observe, infer, ratify, publish, verify, chase, and review.
 - [Public And Private Boundary](implementation/public-private-boundary.md) defines what belongs in the open repo versus private workspace packs and vaults.
+- [Production Readiness Standard](standards/production-readiness.md) defines implemented, composed, configured, deployed, healthy, ready, and accepted states.
+- [ADR 0005](adr/0005-single-runtime-private-overlays.md) records the single-runtime and private-overlay decision.
 - [Test Index](../tests/TEST-INDEX.md) lists verification commands and test scope.
 
 ## Current Capabilities

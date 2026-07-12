@@ -57,9 +57,9 @@ The loop is:
 
 ## Storage Split
 
-- **Ratified policy and intent:** Markdown/YAML in a git-backed policy repo.
-- **Evidence and events:** SQLite evidence store.
-- **Loop state and timers:** SQLite transactional state.
-- **Retrieval memory:** LanceDB or rebuildable indexes.
+- **Ratified policy and intent:** Markdown/YAML in a git-backed policy repo and queryable Strategy Kernel state.
+- **Evidence and events:** SQLite for local operation; Postgres for the hosted single-tenant runtime.
+- **Loop state, timers, audit, and idempotency:** transactional SQLite or Postgres state according to deployment mode.
+- **Retrieval memory:** rebuildable full-text or vector indexes derived from canonical evidence.
 
-Postgres, Glean, and mem0 are not v1 dependencies. Postgres is only for future hosted multi-tenant scale. Glean is a competing lookup category, not Sarathi's memory layer. Opaque memory blobs weaken the product's trust story.
+Glean is a competing lookup category, not Sarathi's memory layer. Opaque memory blobs weaken the product's trust story. A hosted Postgres database does not imply SaaS multi-tenancy; one deployment still serves one organization.
