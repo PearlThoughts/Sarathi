@@ -55,6 +55,8 @@ const auditStore = (
     appendFailure
       ? Effect.fail(new RepositoryError({ message: "audit append failed" }))
       : Effect.sync(() => appended.push(audit)),
+  dueRetries: () => Effect.succeed([]),
+  recordDryRunEvidence: () => Effect.void,
 });
 
 const delivery = (shouldFail = false): ComplianceReminderDelivery => ({
@@ -94,6 +96,7 @@ describe("compliance reminders", () => {
     const existing: ComplianceReminderAudit = {
       workspaceId: "finance",
       idempotencyKey: request.idempotencyKey,
+      request,
       digest: {
         kind: "planning",
         today: request.today,

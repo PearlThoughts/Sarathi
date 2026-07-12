@@ -10,6 +10,7 @@ import {
 import { Effect } from "effect";
 import express from "express";
 import { RepositoryError } from "../domain/errors.ts";
+import { stableSha256 } from "../domain/hash.ts";
 import type { TrustTier } from "../domain/policy.ts";
 import { createGitHubEvidenceReader } from "../infrastructure/github/index.ts";
 import {
@@ -40,6 +41,7 @@ import {
 } from "../infrastructure/vault/index.ts";
 import {
   type ComplianceReminderRequest,
+  manualComplianceReminderRequest,
   runComplianceReminder,
   startComplianceReminderScheduler,
 } from "../modules/compliance-reminders/index.ts";
@@ -105,27 +107,72 @@ export type HostedTeamsIngressComposition = {
 };
 
 export type HostedFinanceReminderComposition = {
+  readonly mode: "disabled" | "shadow" | "live";
   readonly enabled: boolean;
   readonly run: (request: ComplianceReminderRequest) => Promise<unknown>;
+  readonly runDryRun: (kind: "planning" | "exceptions") => Promise<unknown>;
   readonly start: () => { readonly stop: () => void };
+  readonly readiness: () => Promise<FinanceReadiness>;
 };
 
-const booleanValue = (value: string | undefined): boolean => value?.trim().toLowerCase() === "true";
+export type FinanceReadiness = {
+  readonly mode: "disabled" | "shadow" | "live";
+  readonly configuration: "disabled" | "ready" | "invalid" | "unavailable";
+  readonly scheduler: "not_running" | "shadow_manual" | "live_running";
+  readonly postgres: "not_required" | "configured" | "available" | "unavailable";
+  readonly sourceCredentials: "not_configured" | "configured";
+  readonly deliveryCredentials: "not_configured" | "configured" | "unavailable";
+};
+
+const financeMode = (value: string | undefined): "disabled" | "shadow" | "live" | undefined => {
+  if (value === undefined || value.trim() === "") return "disabled";
+  const normalized = value.trim().toLowerCase();
+  return normalized === "disabled" || normalized === "shadow" || normalized === "live"
+    ? normalized
+    : undefined;
+};
+
+const disabledFinanceComposition = (
+  configuration: FinanceReadiness["configuration"] = "disabled",
+): HostedFinanceReminderComposition => ({
+  mode: "disabled",
+  enabled: false,
+  run: async () => {
+    throw new Error("Finance reminder configuration is unavailable.");
+  },
+  runDryRun: async () => {
+    throw new Error("Finance dry-run is unavailable while Finance is disabled.");
+  },
+  start: () => ({ stop: () => undefined }),
+  readiness: async () => ({
+    mode: "disabled",
+    configuration,
+    scheduler: "not_running",
+    postgres: "not_required",
+    sourceCredentials: "not_configured",
+    deliveryCredentials: "not_configured",
+  }),
+});
 
 export const hostedFinanceReminderCompositionFromEnvironment = (
   environment: Record<string, string | undefined> = process.env,
 ): HostedFinanceReminderComposition => {
-  const unavailableRun = async (): Promise<never> => {
-    throw new Error("Finance reminder configuration is unavailable.");
-  };
+  const mode = financeMode(environment.SARATHI_FINANCE_MODE);
+  if (mode === undefined) return disabledFinanceComposition("invalid");
+  if (mode === "disabled") return disabledFinanceComposition();
   try {
-    const enabled = booleanValue(environment.SARATHI_REMINDERS_ENABLED);
+    if (mode === "live") {
+      required(
+        "SARATHI_FINANCE_PROMOTION_APPROVAL_REF",
+        environment.SARATHI_FINANCE_PROMOTION_APPROVAL_REF,
+      );
+    }
     const workspaceId = required(
       "SARATHI_REMINDER_WORKSPACE_ID",
       environment.SARATHI_REMINDER_WORKSPACE_ID,
     );
     const schedule = {
-      enabled,
+      enabled: mode === "live",
       workspaceId,
       timezone: required("SARATHI_REMINDER_TIMEZONE", environment.SARATHI_REMINDER_TIMEZONE),
       weeklyDigestTime: required(
@@ -170,13 +217,86 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
     };
     const run = (request: ComplianceReminderRequest): Promise<unknown> =>
       Effect.runPromise(runComplianceReminder(request, dependencies));
+    const runDryRun = async (kind: "planning" | "exceptions"): Promise<unknown> => {
+      const request = manualComplianceReminderRequest(schedule, kind, new Date());
+      if (request === undefined) throw new Error("Finance dry-run configuration is unavailable.");
+      const result = await run(request);
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "state" in result &&
+        result.state === "planned" &&
+        "digest" in result &&
+        typeof result.digest === "object" &&
+        result.digest !== null &&
+        "text" in result.digest &&
+        typeof result.digest.text === "string" &&
+        "itemCount" in result.digest &&
+        typeof result.digest.itemCount === "number"
+      ) {
+        await Effect.runPromise(
+          dependencies.audit.recordDryRunEvidence({
+            workspaceId,
+            idempotencyKey: request.idempotencyKey,
+            kind,
+            itemCount: result.digest.itemCount,
+            digestHash: stableSha256(result.digest.text),
+            occurredAt: request.occurredAt,
+          }),
+        );
+      }
+      return result;
+    };
     return {
-      enabled,
+      mode,
+      enabled: mode === "live",
       run,
-      start: () => startComplianceReminderScheduler(schedule, run),
+      runDryRun,
+      start: () =>
+        mode === "live"
+          ? startComplianceReminderScheduler(schedule, run, (now) =>
+              Effect.runPromise(
+                dependencies.audit.dueRetries({ workspaceId, now: now.toISOString() }),
+              ),
+            )
+          : { stop: () => undefined },
+      readiness: async () => {
+        try {
+          await database.query("select 1");
+          await tokenProvider.getAccessToken();
+          return {
+            mode,
+            configuration: "ready",
+            scheduler: mode === "live" ? "live_running" : "shadow_manual",
+            postgres: "available",
+            sourceCredentials: "configured",
+            deliveryCredentials: "configured",
+          };
+        } catch {
+          return {
+            mode,
+            configuration: "ready",
+            scheduler: mode === "live" ? "live_running" : "shadow_manual",
+            postgres: "unavailable",
+            sourceCredentials: "configured",
+            deliveryCredentials: "unavailable",
+          };
+        }
+      },
     };
   } catch {
-    return { enabled: false, run: unavailableRun, start: () => ({ stop: () => undefined }) };
+    return {
+      ...disabledFinanceComposition("unavailable"),
+      mode,
+      readiness: async () => ({
+        mode,
+        configuration: "unavailable",
+        scheduler: mode === "shadow" ? "shadow_manual" : "not_running",
+        postgres: "unavailable",
+        sourceCredentials: "not_configured",
+        deliveryCredentials: "not_configured",
+      }),
+    };
   }
 };
 
@@ -378,8 +498,44 @@ export const startTeamsIngress = (): void => {
     response.json({ status: "ok", service: "sarathi", ingress: "teams" }),
   );
   server.get("/ready", async (_request, response) => {
-    const ready = composition.ready && (await composition.checkReadiness());
-    response.status(ready ? 200 : 503).json({ ready });
+    const teamsReady = composition.ready && (await composition.checkReadiness());
+    const financeReadiness = await finance.readiness();
+    const financeBroken =
+      financeReadiness.configuration === "invalid" ||
+      financeReadiness.configuration === "unavailable" ||
+      (financeReadiness.mode !== "disabled" &&
+        (financeReadiness.postgres !== "available" ||
+          financeReadiness.deliveryCredentials !== "configured"));
+    const ready = teamsReady && !financeBroken;
+    response.status(ready ? 200 : 503).json({
+      ready,
+      components: {
+        teamsMention: teamsReady ? "ready" : "unavailable",
+        finance: financeReadiness,
+      },
+    });
+  });
+  server.post("/internal/finance/reminders/dry-run", async (request, response) => {
+    const expectedToken = process.env.SARATHI_ADMIN_TOKEN;
+    const authorization = request.header("authorization");
+    if (
+      expectedToken === undefined ||
+      expectedToken.trim() === "" ||
+      authorization !== `Bearer ${expectedToken}`
+    ) {
+      response.status(401).json({ ok: false });
+      return;
+    }
+    if (finance.mode === "disabled") {
+      response.status(409).json({ ok: false, mode: finance.mode });
+      return;
+    }
+    const kind = request.body?.kind === "exceptions" ? "exceptions" : "planning";
+    try {
+      response.json({ ok: true, result: await finance.runDryRun(kind) });
+    } catch {
+      response.status(503).json({ ok: false, mode: finance.mode });
+    }
   });
   server.listen(Number.parseInt(process.env.PORT ?? "3978", 10));
   if (finance.enabled) finance.start();

@@ -59,6 +59,7 @@ export const runComplianceReminder = (
     const reservation = yield* dependencies.audit.reserve({
       workspaceId: request.workspaceId,
       idempotencyKey: request.idempotencyKey,
+      occurredAt: request.occurredAt,
     });
     if (reservation.kind === "duplicate") {
       return {
@@ -75,6 +76,7 @@ export const runComplianceReminder = (
       yield* dependencies.audit.append({
         workspaceId: request.workspaceId,
         idempotencyKey: request.idempotencyKey,
+        request,
         digest,
         state: "retryable_failure",
         occurredAt: request.occurredAt,
@@ -86,6 +88,7 @@ export const runComplianceReminder = (
     yield* dependencies.audit.append({
       workspaceId: request.workspaceId,
       idempotencyKey: request.idempotencyKey,
+      request,
       digest,
       state: "delivered",
       occurredAt: request.occurredAt,
