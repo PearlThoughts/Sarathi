@@ -7,6 +7,8 @@ type StrictHostRoutingConfiguration = {
 
 type HostSurface = "api" | "app" | "railway-health" | "legacy-api" | "denied";
 
+const railwayHealthcheckHost = "healthcheck.railway.app";
+
 const normalizedHost = (host: string): string => host.trim().toLowerCase().split(":", 1)[0] ?? "";
 
 const isApiPath = (path: string): boolean =>
@@ -29,6 +31,9 @@ export const classifyHostSurface = (
   configuration: StrictHostRoutingConfiguration,
 ): HostSurface => {
   const normalized = normalizedHost(host);
+  if (normalized === railwayHealthcheckHost) {
+    return isRailwayHealthPath(path) ? "railway-health" : "denied";
+  }
   if (normalized === normalizedHost(configuration.apiHost))
     return isApiPath(path) ? "api" : "denied";
   if (normalized === normalizedHost(configuration.appHost))
