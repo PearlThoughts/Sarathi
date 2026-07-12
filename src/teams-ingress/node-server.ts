@@ -15,13 +15,18 @@ import { createGitHubEvidenceReader } from "../infrastructure/github/index.ts";
 import {
   createEntraClientCredentialsTokenProvider,
   createTeamsGraphThreadReader,
+  createTeamsProactiveReminderDelivery,
 } from "../infrastructure/graph/index.ts";
-import { createJiraEvidenceReader } from "../infrastructure/jira/index.ts";
+import {
+  createJiraComplianceReminderSource,
+  createJiraEvidenceReader,
+} from "../infrastructure/jira/index.ts";
 import {
   createOpenAiGroundedAnswerGenerator,
   openAiGroundedAnswerConfigurationFromEnvironment,
 } from "../infrastructure/model/index.ts";
 import {
+  createPostgresComplianceReminderAudit,
   createPostgresTeamsMentionAudit,
   openStrategyKernelPostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
@@ -33,6 +38,11 @@ import {
   createVaultProjectionReader,
   vaultProjectionFromEnvironment,
 } from "../infrastructure/vault/index.ts";
+import {
+  type ComplianceReminderRequest,
+  runComplianceReminder,
+  startComplianceReminderScheduler,
+} from "../modules/compliance-reminders/index.ts";
 import {
   createAuthorizedContextAssembler,
   handleTeamsMention,
@@ -92,6 +102,82 @@ export type HostedTeamsIngressComposition = {
   readonly dependencies: TeamsMentionDependencies;
   readonly ready: boolean;
   readonly checkReadiness: () => Promise<boolean>;
+};
+
+export type HostedFinanceReminderComposition = {
+  readonly enabled: boolean;
+  readonly run: (request: ComplianceReminderRequest) => Promise<unknown>;
+  readonly start: () => { readonly stop: () => void };
+};
+
+const booleanValue = (value: string | undefined): boolean => value?.trim().toLowerCase() === "true";
+
+export const hostedFinanceReminderCompositionFromEnvironment = (
+  environment: Record<string, string | undefined> = process.env,
+): HostedFinanceReminderComposition => {
+  const unavailableRun = async (): Promise<never> => {
+    throw new Error("Finance reminder configuration is unavailable.");
+  };
+  try {
+    const enabled = booleanValue(environment.SARATHI_REMINDERS_ENABLED);
+    const workspaceId = required(
+      "SARATHI_REMINDER_WORKSPACE_ID",
+      environment.SARATHI_REMINDER_WORKSPACE_ID,
+    );
+    const schedule = {
+      enabled,
+      workspaceId,
+      timezone: required("SARATHI_REMINDER_TIMEZONE", environment.SARATHI_REMINDER_TIMEZONE),
+      weeklyDigestTime: required(
+        "SARATHI_WEEKLY_DIGEST_TIME",
+        environment.SARATHI_WEEKLY_DIGEST_TIME,
+      ),
+      exceptionDigestTime: required(
+        "SARATHI_EXCEPTION_DIGEST_TIME",
+        environment.SARATHI_EXCEPTION_DIGEST_TIME,
+      ),
+    };
+    const tokenProvider = createEntraClientCredentialsTokenProvider({
+      tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
+      clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
+      clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
+    });
+    const database = openStrategyKernelPostgresDatabase(
+      required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
+    );
+    const dependencies = {
+      source: createJiraComplianceReminderSource({
+        baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
+        email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
+        apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
+        projectKey: required(
+          "SARATHI_COMPLIANCE_JIRA_PROJECT",
+          environment.SARATHI_COMPLIANCE_JIRA_PROJECT,
+        ),
+        labels: required(
+          "SARATHI_COMPLIANCE_JIRA_LABELS",
+          environment.SARATHI_COMPLIANCE_JIRA_LABELS,
+        )
+          .split(",")
+          .map((label) => label.trim())
+          .filter((label) => label !== ""),
+      }),
+      delivery: createTeamsProactiveReminderDelivery({
+        chatId: required("SARATHI_DEFAULT_CHAT_ID", environment.SARATHI_DEFAULT_CHAT_ID),
+        tokenProvider,
+      }),
+      audit: createPostgresComplianceReminderAudit(database),
+    };
+    const run = (request: ComplianceReminderRequest): Promise<unknown> =>
+      Effect.runPromise(runComplianceReminder(request, dependencies));
+    return {
+      enabled,
+      run,
+      start: () => startComplianceReminderScheduler(schedule, run),
+    };
+  } catch {
+    return { enabled: false, run: unavailableRun, start: () => ({ stop: () => undefined }) };
+  }
 };
 
 export const hostedTeamsIngressCompositionFromEnvironment = (
@@ -276,6 +362,7 @@ export const createTeamsIngressApplication = (
 export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();
   const composition = hostedTeamsIngressCompositionFromEnvironment();
+  const finance = hostedFinanceReminderCompositionFromEnvironment();
   const adapter = new CloudAdapter(authConfiguration(configuration));
   const application = createTeamsIngressApplication(composition.dependencies, adapter);
   const server = express();
@@ -295,6 +382,7 @@ export const startTeamsIngress = (): void => {
     response.status(ready ? 200 : 503).json({ ready });
   });
   server.listen(Number.parseInt(process.env.PORT ?? "3978", 10));
+  if (finance.enabled) finance.start();
 };
 
 if (import.meta.main) {
