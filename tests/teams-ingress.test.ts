@@ -100,6 +100,7 @@ describe("Teams ingress configuration", () => {
 
     const complete = hostedFinanceReminderCompositionFromEnvironment({
       SARATHI_REMINDERS_ENABLED: "true",
+      SARATHI_FINANCE_MODE: "shadow",
       SARATHI_REMINDER_WORKSPACE_ID: "synthetic-workspace",
       SARATHI_REMINDER_TIMEZONE: "UTC",
       SARATHI_WEEKLY_DIGEST_TIME: "09:00",
@@ -115,6 +116,20 @@ describe("Teams ingress configuration", () => {
       SARATHI_COMPLIANCE_JIRA_LABELS: "compliance",
       SARATHI_DEFAULT_CHAT_ID: "synthetic-chat",
     });
-    expect(complete.enabled).toBe(true);
+    expect(complete.enabled).toBe(false);
+    expect(complete.mode).toBe("shadow");
+  });
+
+  it("keeps disabled Finance distinguishable from invalid configuration", async () => {
+    await expect(
+      hostedFinanceReminderCompositionFromEnvironment({}).readiness(),
+    ).resolves.toMatchObject({
+      mode: "disabled",
+      configuration: "disabled",
+      scheduler: "not_running",
+    });
+    await expect(
+      hostedFinanceReminderCompositionFromEnvironment({ SARATHI_FINANCE_MODE: "live" }).readiness(),
+    ).resolves.toMatchObject({ configuration: "unavailable" });
   });
 });

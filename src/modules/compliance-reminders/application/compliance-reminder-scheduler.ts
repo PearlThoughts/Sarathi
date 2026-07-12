@@ -8,6 +8,8 @@ export type ComplianceReminderSchedule = {
   readonly exceptionDigestTime: string;
 };
 
+type ComplianceReminderManualKind = "planning" | "exceptions";
+
 type Clock = {
   readonly date: string;
   readonly weekday: number;
@@ -62,6 +64,25 @@ const weekWindow = (date: string): { readonly startDate: string; readonly endDat
   return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
 };
 
+export const manualComplianceReminderRequest = (
+  schedule: ComplianceReminderSchedule,
+  kind: ComplianceReminderManualKind,
+  now: Date,
+): ComplianceReminderRequest | undefined => {
+  if (schedule.workspaceId.trim() === "") return undefined;
+  const clock = clockAt(now, schedule.timezone);
+  return {
+    workspaceId: schedule.workspaceId,
+    idempotencyKey: `${schedule.workspaceId}:dry-run:${kind}:${clock.date}`,
+    kind,
+    today: clock.date,
+    ...(kind === "planning" ? { window: weekWindow(clock.date) } : {}),
+    dryRun: true,
+    occurredAt: now.toISOString(),
+    retryAt: now.toISOString(),
+  };
+};
+
 export const scheduledComplianceReminderRequest = (
   schedule: ComplianceReminderSchedule,
   now: Date,
@@ -110,14 +131,34 @@ export const scheduledComplianceReminderRequest = (
 export const startComplianceReminderScheduler = (
   schedule: ComplianceReminderSchedule,
   execute: (request: ComplianceReminderRequest) => Promise<unknown>,
+  dueRetries: (now: Date) => Promise<readonly ComplianceReminderRequest[]> = async () => [],
   now: () => Date = () => new Date(),
 ): { readonly stop: () => void } => {
   const inFlight = new Set<string>();
-  const tick = (): void => {
-    const request = scheduledComplianceReminderRequest(schedule, now());
-    if (request === undefined || inFlight.has(request.idempotencyKey)) return;
+  const executeSafely = async (request: ComplianceReminderRequest): Promise<void> => {
+    if (inFlight.has(request.idempotencyKey)) return;
     inFlight.add(request.idempotencyKey);
-    void execute(request).finally(() => inFlight.delete(request.idempotencyKey));
+    try {
+      await execute(request);
+    } catch {
+      // The next durable retry is driven by retryAt, not by an unhandled timer promise.
+    } finally {
+      inFlight.delete(request.idempotencyKey);
+    }
+  };
+  const tick = (): void => {
+    void (async () => {
+      const current = now();
+      let retries: readonly ComplianceReminderRequest[] = [];
+      try {
+        retries = await dueRetries(current);
+      } catch {
+        return;
+      }
+      const scheduled = scheduledComplianceReminderRequest(schedule, current);
+      const requests = [...retries, ...(scheduled === undefined ? [] : [scheduled])];
+      await Promise.allSettled(requests.map(executeSafely));
+    })().catch(() => undefined);
   };
   tick();
   const interval = setInterval(tick, 60_000);

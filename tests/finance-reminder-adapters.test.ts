@@ -70,9 +70,15 @@ describe("Finance reminder adapters", () => {
   it("atomically reserves a key and permits a retryable outcome to be retried", async () => {
     let state: "missing" | "processing" | "retryable_failure" = "missing";
     const audit = createPostgresComplianceReminderAudit({
-      query: async (text) => {
+      query: async (text, values) => {
         if (text.startsWith("insert into compliance_reminder_audit")) {
-          if (state === "missing" || state === "retryable_failure") {
+          const occurredAt = values?.[2];
+          if (
+            state === "missing" ||
+            (state === "retryable_failure" &&
+              typeof occurredAt === "string" &&
+              occurredAt >= "2026-07-11T00:05:00.000Z")
+          ) {
             state = "processing";
             return { rows: [{ state }] };
           }
@@ -85,18 +91,35 @@ describe("Finance reminder adapters", () => {
         return { rows: [] };
       },
     });
-    const key = { workspaceId: "finance", idempotencyKey: "key" };
+    const key = {
+      workspaceId: "finance",
+      idempotencyKey: "key",
+      occurredAt: "2026-07-11T00:00:00.000Z",
+    };
     await expect(Effect.runPromise(audit.reserve(key))).resolves.toEqual({ kind: "acquired" });
     await expect(Effect.runPromise(audit.reserve(key))).resolves.toEqual({ kind: "duplicate" });
     await Effect.runPromise(
       audit.append({
         ...key,
+        request: {
+          ...key,
+          kind: "planning",
+          today: "2026-07-11",
+          window: { startDate: "2026-07-11", endDate: "2026-07-17" },
+          dryRun: false,
+          retryAt: "2026-07-11T00:05:00.000Z",
+        },
         digest: { kind: "planning", today: "2026-07-11", itemCount: 0, text: "Synthetic" },
         state: "retryable_failure",
         occurredAt: "2026-07-11T00:00:00.000Z",
         retryAt: "2026-07-11T00:05:00.000Z",
       }),
     );
-    await expect(Effect.runPromise(audit.reserve(key))).resolves.toEqual({ kind: "acquired" });
+    await expect(
+      Effect.runPromise(audit.reserve({ ...key, occurredAt: "2026-07-11T00:04:00.000Z" })),
+    ).resolves.toEqual({ kind: "duplicate" });
+    await expect(
+      Effect.runPromise(audit.reserve({ ...key, occurredAt: "2026-07-11T00:05:00.000Z" })),
+    ).resolves.toEqual({ kind: "acquired" });
   });
 });
