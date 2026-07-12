@@ -5,6 +5,7 @@ import {
   createTeamsIngressApplication,
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
+  sameThreadReplyActivity,
   teamsIngressConfigurationFromEnvironment,
 } from "../src/teams-ingress/node-server.ts";
 
@@ -90,6 +91,14 @@ describe("Teams ingress configuration", () => {
     });
 
     expect(() => createTeamsIngressApplication(undefined, adapter)).not.toThrow();
+  });
+
+  it("builds an explicit same-thread reply without including private activity content", () => {
+    expect(sameThreadReplyActivity("root-activity", "Hello from Sarathi.")).toMatchObject({
+      type: "message",
+      replyToId: "root-activity",
+      text: "Hello from Sarathi.",
+    });
   });
 
   it("fails closed for Finance scheduling until an explicit workspace projection is present", () => {

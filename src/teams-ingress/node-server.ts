@@ -1,3 +1,4 @@
+import { Activity, ActivityTypes } from "@microsoft/agents-activity";
 import {
   AgentApplication,
   type AuthConfiguration,
@@ -98,7 +99,10 @@ const unavailableDependencies = (message: string): TeamsMentionDependencies => (
     markDelivered: () => Effect.void,
     markFailed: () => Effect.void,
   },
+  helloDiagnosticEnabled: false,
 });
+
+const enabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === "true";
 
 export type HostedTeamsIngressComposition = {
   readonly dependencies: TeamsMentionDependencies;
@@ -381,6 +385,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         ),
         delivery: { reply: () => Effect.void },
         audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
+        helloDiagnosticEnabled: enabled(environment.SARATHI_TEAMS_HELLO_DIAGNOSTIC_ENABLED),
       },
       ready: true,
       checkReadiness: async () => {
@@ -475,12 +480,30 @@ export const createTeamsIngressApplication = (
           : (activity.timestamp?.toISOString() ?? new Date().toISOString()),
     };
     if (!hasCompleteCommand(command)) return;
-    const outcome = await Effect.runPromise(handleTeamsMention(command, dependencies));
-    if (outcome.kind === "answered") await context.sendActivity(outcome.answer.text);
-    if (outcome.kind === "denied") await context.sendActivity(outcome.reason);
+    const turnDependencies: TeamsMentionDependencies = {
+      ...dependencies,
+      delivery: {
+        reply: (_replyCommand, answer) =>
+          Effect.tryPromise({
+            try: async () => {
+              await context.sendActivity(
+                sameThreadReplyActivity(command.rootActivityId, answer.text),
+              );
+            },
+            catch: () => new RepositoryError({ message: "Teams delivery failed" }),
+          }),
+      },
+    };
+    const outcome = await Effect.runPromise(handleTeamsMention(command, turnDependencies));
+    if (outcome.kind === "denied") {
+      await context.sendActivity(sameThreadReplyActivity(command.rootActivityId, outcome.reason));
+    }
   });
   return application;
 };
+
+export const sameThreadReplyActivity = (replyToId: string, text: string): Activity =>
+  Activity.fromObject({ type: ActivityTypes.Message, replyToId, text });
 
 export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();
