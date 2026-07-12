@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createTeamsIngressApplication,
+  hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
   teamsIngressConfigurationFromEnvironment,
 } from "../src/teams-ingress/node-server.ts";
@@ -89,5 +90,31 @@ describe("Teams ingress configuration", () => {
     });
 
     expect(() => createTeamsIngressApplication(undefined, adapter)).not.toThrow();
+  });
+
+  it("fails closed for Finance scheduling until an explicit workspace projection is present", () => {
+    const incomplete = hostedFinanceReminderCompositionFromEnvironment({
+      SARATHI_REMINDERS_ENABLED: "true",
+    });
+    expect(incomplete.enabled).toBe(false);
+
+    const complete = hostedFinanceReminderCompositionFromEnvironment({
+      SARATHI_REMINDERS_ENABLED: "true",
+      SARATHI_REMINDER_WORKSPACE_ID: "synthetic-workspace",
+      SARATHI_REMINDER_TIMEZONE: "UTC",
+      SARATHI_WEEKLY_DIGEST_TIME: "09:00",
+      SARATHI_EXCEPTION_DIGEST_TIME: "10:00",
+      MICROSOFT_APP_ID: "synthetic-app",
+      MICROSOFT_APP_PASSWORD: "synthetic-password",
+      MICROSOFT_APP_TENANT_ID: "synthetic-tenant",
+      SARATHI_STRATEGY_DATABASE_URL: "postgres://example.invalid/synthetic",
+      JIRA_BASE_URL: "https://jira.example.invalid",
+      JIRA_EMAIL: "synthetic@example.invalid",
+      JIRA_API_TOKEN: "synthetic-token",
+      SARATHI_COMPLIANCE_JIRA_PROJECT: "TEST",
+      SARATHI_COMPLIANCE_JIRA_LABELS: "compliance",
+      SARATHI_DEFAULT_CHAT_ID: "synthetic-chat",
+    });
+    expect(complete.enabled).toBe(true);
   });
 });
