@@ -35,11 +35,11 @@ Sarathi should infer what it can from the systems a team already uses:
 
 Inferences are not enough. YAML overlays provide explicit corrections, boundary declarations, and sensitivity overrides.
 
-## First Implementation Boundary
+## Current Implementation Boundary
 
-This repository does not yet implement live Microsoft Graph, Linear, GitHub App, or Jira ingestion. It defines the contracts and a compiled policy model so those adapters can land without changing the core boundary.
+The repository includes hosted Microsoft Teams ingress, Microsoft Graph, Jira, GitHub, Vault projection, model, Postgres audit, workspace-resolution, compliance-reminder, and context-assembly adapters. Their presence does not make every deployment ready: each capability still requires authorized private configuration, runtime composition, capability-specific readiness, and real acceptance evidence.
 
-The delivery-assistant module is a skeleton contract, not a complete delivery-management implementation. It exists so product docs, examples, and later runtime loops share the same role boundary: Sarathi assists the PM; it does not replace the PM.
+The delivery-assistant contracts and Strategy Kernel define a broader product than the currently proven production paths. Sarathi assists the PM or operating owner; it does not replace them.
 
 ## Strategic Execution Extension
 
@@ -53,3 +53,5 @@ The long-term product architecture adds a Strategy Kernel above the existing evi
 - accountability actions track accepted owner follow-through and escalation state.
 
 This extension is documented in [Workspace Operating Model](./workspace-operating-model.md), [Intent And Evidence Graph](./intent-evidence-graph.md), and [Strategic Execution Loop](../implementation/strategic-execution-loop.md).
+
+The relationship between one deployment, multiple isolated workspaces, and reusable capability profiles is documented in [Workspace And Capability Model](./workspace-capability-model.md).

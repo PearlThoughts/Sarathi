@@ -4,8 +4,11 @@
   "purpose": "Open, inspectable AI work-partner engine for source-aware team context and policy-bounded action.",
   "architecture": {
     "overview": "docs/architecture/overview.md",
+    "operatingThesis": "docs/product/operating-thesis.md",
     "moduleBoundaries": "docs/architecture/module-boundaries.md",
     "identityBoundaries": "docs/architecture/identity-and-boundaries.md",
+    "workspaceCapabilities": "docs/architecture/workspace-capability-model.md",
+    "productionReadiness": "docs/standards/production-readiness.md",
     "workspaceOverlay": "docs/implementation/workspace-overlay.md"
   },
   "tests": {
