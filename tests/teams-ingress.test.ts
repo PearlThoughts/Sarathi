@@ -6,10 +6,28 @@ import {
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
   sameThreadReplyActivity,
+  stringListFromEnvironment,
   teamsIngressConfigurationFromEnvironment,
 } from "../src/teams-ingress/node-server.ts";
 
 describe("Teams ingress configuration", () => {
+  it("parses private-overlay string lists from JSON or CSV without retaining syntax", () => {
+    expect(stringListFromEnvironment("LABELS", '["finance-compliance", "statutory"]')).toEqual([
+      "finance-compliance",
+      "statutory",
+    ]);
+    expect(stringListFromEnvironment("LABELS", "finance-compliance, statutory")).toEqual([
+      "finance-compliance",
+      "statutory",
+    ]);
+  });
+
+  it("rejects malformed structured list configuration", () => {
+    expect(() => stringListFromEnvironment("LABELS", '["finance-compliance", 1]')).toThrow(
+      "LABELS must be a string array",
+    );
+  });
+
   it("fails closed when bot credentials are incomplete", () => {
     expect(() => teamsIngressConfigurationFromEnvironment({ MICROSOFT_APP_ID: "app" })).toThrow(
       "MICROSOFT_APP_PASSWORD is required",
