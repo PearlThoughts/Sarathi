@@ -19,6 +19,7 @@ Sarathi documentation has two audiences:
 
 ## Implementation Docs
 
+- [Organization Installation And Activation](installation.md) explains the sponsor, trust-boundary, hosting, Microsoft 365, private configuration, shadow-mode, acceptance, and rollout steps for an internal pilot.
 - [Architecture Overview](architecture/overview.md) describes the system shape.
 - [Workspace And Capability Model](architecture/workspace-capability-model.md) defines one runtime, isolated workspaces, capability profiles, and controlled synthesis.
 - [Module Boundaries](architecture/module-boundaries.md) defines capability boundaries and import rules.

@@ -1,167 +1,169 @@
 # Sarathi
 
-Sarathi is a work-in-progress, open-source **AI Delivery Assistant** and delivery-coordination platform for software teams.
+> 🧭 An open-source AI Delivery Assistant that helps software organizations keep promises, priorities, people, and delivery evidence aligned.
 
-It helps a PM, delivery manager, or operating owner keep goals, commitments, conversations, delivery work, and engineering evidence connected across Microsoft Teams, Jira, GitHub, email, meetings, and documentation. Sarathi answers grounded questions, prepares delivery reviews, follows up on accepted actions, surfaces drift, and preserves ratified delivery memory so humans can correct course earlier.
+Software delivery rarely goes off track because teams lack another task tracker. It goes off track because the real picture is spread across meetings, chat, Jira, code, documents, and people's memory.
 
-Sarathi is self-hosted and single-tenant per deployment. One installation can serve multiple isolated workspaces and capability profiles without turning every project or workflow into another bot.
+Important messages are forgotten. Commitments lose owners. Priorities change without being renegotiated. "Done" lacks evidence. Leaders and clients discover the drift after it has become expensive.
 
-## Project Status
+Sarathi helps teams see that gap earlier and turn it into a clear human decision.
 
-Sarathi is no longer only a domain-model skeleton. This repository contains real hosted runtime paths, Microsoft Teams ingress, source adapters, persisted coordination state, and a proactive compliance-reminder capability.
+## 🎯 Purpose
 
-It is not yet a turn-key production product. Code being implemented or deployed does not prove that a capability is configured, ready, or accepted in a particular organization. A real installation still needs private workspace mappings, renewable credentials, provider consent, deployment configuration, and capability-specific acceptance testing. See the [Production Readiness Standard](docs/standards/production-readiness.md) for the terminology used in this repository.
+Sarathi gives a delivery leader a continuously updated view of:
 
-## Why
+- what the organization said it would achieve;
+- what teams and individuals committed to do;
+- what is actually happening across delivery systems;
+- where evidence, ownership, or follow-through is missing;
+- which decisions need clarification, renegotiation, or escalation.
 
-Delivery truth is commonly scattered:
+It works alongside the tools a team already uses. It does not replace Jira, Microsoft Teams, GitHub, project managers, or engineering leaders.
 
-- Teams has decisions, confusion, blockers, and informal status.
-- Jira has planned work and team commitments, but only when it stays current.
-- GitHub and CI contain engineering evidence.
-- Documents and meetings contain goals, policies, and decisions.
-- PMs and delivery managers carry the real operating model in their heads.
+## 😓 The Problem It Solves
 
-The result is not only expensive coordination work. It is silent drift: accepted priorities, client commitments, day-to-day conversations, Jira tickets, pull requests, QA evidence, and follow-up loops stop matching before anyone sees the gap.
+Sarathi is intended for organizations experiencing patterns such as:
 
-Sarathi exists to make that gap visible early and route it through human-supervised course correction.
+- leaders repeatedly asking for the same status;
+- important Teams messages being ignored or forgotten;
+- Jira and actual delivery telling different stories;
+- client commitments disappearing into conversations;
+- projects consuming attention without a clear link to business goals;
+- blockers and quality gaps surfacing late;
+- delivery managers spending most of their time chasing updates;
+- confident progress claims that cannot be supported with evidence.
 
-## Product Model
+These are not merely reporting problems. They are coordination and accountability problems.
 
-Sarathi runs one recurring control loop:
+## 🤝 How Sarathi Collaborates
 
-1. **Sense:** read authorized evidence from the systems where work already happens.
-2. **Compare:** compare observed activity with ratified goals, commitments, decisions, policy, and expected cadence.
-3. **Decide:** ask an authorized human to ratify, correct, renegotiate, reject, reassign, or escalate.
-4. **Act:** answer, publish, remind, follow up, or report through policy-approved surfaces.
+```mermaid
+flowchart LR
+    A["🎯 Goals & commitments"] --> S
+    B["💬 Team conversations"] --> S
+    C["📋 Delivery work"] --> S
+    D["💻 Engineering evidence"] --> S
+    E["📚 Decisions & policies"] --> S
 
-Sarathi proposes and remembers; humans ratify; source systems record. It assists the delivery owner rather than replacing one.
+    subgraph S["🧭 Sarathi"]
+      S1["Understand context"] --> S2["Compare promise with reality"]
+      S2 --> S3["Explain gaps with evidence"]
+      S3 --> S4["Recommend the next decision"]
+    end
 
-## Implemented Capabilities
-
-### Grounded Microsoft Teams Mentions
-
-The hosted Teams path includes:
-
-- authenticated Microsoft Agents SDK ingress at `/api/messages`;
-- direct-mention detection and same-thread replies;
-- private workspace, channel, actor, trust-tier, and sensitivity resolution;
-- bounded Microsoft Graph thread retrieval with renewable Entra credentials;
-- read-only Jira, GitHub, and allowlisted Vault evidence readers;
-- authorization before retrieval and before model egress;
-- workspace-scoped evidence assembly with source links;
-- an OpenAI-compatible grounded-answer adapter;
-- Postgres-backed audit leases and duplicate suppression;
-- a team-scoped Teams app manifest with resource-specific consent.
-
-The composition fails closed when required private mappings or credentials are missing.
-
-### Compliance And Operational Reminders
-
-The proactive reminder path includes:
-
-- workspace-scoped Jira selection for planning and exception digests;
-- scheduled and operator-triggered dry-run workflows;
-- proactive Microsoft Teams delivery with renewable Graph tokens;
-- Postgres-backed idempotency, audit, retry eligibility, and delivery outcomes;
-- explicit `disabled`, `shadow`, and `live` promotion modes;
-- readiness that distinguishes a disabled capability from invalid configuration.
-
-This is a reusable coordination capability, not a separate Finance product or runtime.
-
-### Strategy And Delivery Coordination
-
-The Strategy Kernel and operator workflows include:
-
-- isolated workspaces plus typed workspace relations;
-- goals, commitments, decisions, risks, bets, KPIs, policies, and capacity reservations;
-- evidence and intent graphs with provenance and sensitivity inheritance;
-- file-backed private workspace packs reconciled into durable state;
-- SQLite persistence for local operation and Postgres repositories for hosted paths;
-- read-only evidence-import contracts, hashes, consent metadata, and watermarks;
-- inferred-intent inbox transitions and ratification audit events;
-- projection verification and drift findings;
-- accountability-action state, including evidence-required completion, silence, and escalation;
-- workspace-scoped delivery briefs and drift reviews with leakage guards.
-
-Interactive accountability cards, broader live ingestion, and organization-specific operating policies remain capability work rather than completed universal product behavior.
-
-### Platform And Safety
-
-The repository also provides:
-
-- a Bun and Hono platform API;
-- Better Auth-backed production identity for the platform surface;
-- health and dependency-aware readiness endpoints for hosted Teams composition;
-- Railway deployment and runtime verification commands;
-- architecture boundary checks, dependency analysis, linting, type coverage, deterministic tests, and a tracked-file privacy scan;
-- synthetic examples that exercise the product without publishing private organizational data.
-
-## Architecture
-
-One Sarathi deployment serves one organization. Workspaces are independently governed boundaries for intent, evidence, identities, actions, and reporting. Cross-workspace collaboration must be opened explicitly through typed relations and approved projections; it never implies unrestricted evidence access.
-
-Reusable code, schemas, adapters, tests, and synthetic examples belong in this public repository. Real workspace identifiers, source mappings, schedules, recipients, allowlists, templates, and confidential policy belong in an organization-owned private overlay. Credentials remain in an approved secret manager, while evidence and transactional state remain in runtime storage.
-
-Start with:
-
-- [Operating Thesis](docs/product/operating-thesis.md)
-- [What Sarathi Is](docs/product/what.md)
-- [Workspace And Capability Model](docs/architecture/workspace-capability-model.md)
-- [Architecture Overview](docs/architecture/overview.md)
-- [Intent And Evidence Graph](docs/architecture/intent-evidence-graph.md)
-- [Public And Private Boundary](docs/implementation/public-private-boundary.md)
-- [Documentation Index](docs/README.md)
-
-## Local Development
-
-Install dependencies and run the full local CI-equivalent gate:
-
-```bash
-bun install
-bun run check
+    S --> H["👤 Human owner decides"]
+    H --> F["🔔 Follow up & verify"]
+    F --> O["✅ Fewer surprises<br/>Clear ownership<br/>Earlier correction"]
+    F -. learns from outcomes .-> S
 ```
 
-Run the local Hono platform API:
+Sarathi follows a simple operating loop:
 
-```bash
-bun run dev
-```
+1. **Listen:** understand approved context from the systems where work happens.
+2. **Compare:** identify gaps between agreed intent and observed delivery.
+3. **Explain:** show the evidence and distinguish facts from inference.
+4. **Ask:** put a clear choice in front of the responsible human.
+5. **Follow through:** remind, record the response, and verify the outcome.
 
-The local API defaults to `http://localhost:3000`. Static identity is allowed only for local development. The production platform API requires Better Auth with Postgres-backed configuration.
+Sarathi proposes and remembers. Humans decide. Existing work systems retain their authority.
 
-Run the separately composed Microsoft Teams ingress after supplying its required private configuration and credentials:
+## 💼 Value For The Organization
 
-```bash
-bun run teams:ingress
-```
+### For executives and business owners
 
-The Teams ingress defaults to port `3978` and exposes `/api/messages`, `/health`, `/ready`, and an authenticated internal Finance dry-run endpoint. Validate the Teams package with:
+- See whether delivery attention matches business priorities.
+- Discover silent strategic changes before they become client surprises.
+- Separate genuine progress from unsupported confidence.
+- Make capacity and course-correction decisions with better evidence.
 
-```bash
-bun run teams:manifest:validate
-```
+### For delivery managers
 
-Runtime and Railway verification commands are exposed through the release CLI:
+- Spend less time reconstructing status and chasing routine updates.
+- Turn scattered conversations into explicit commitments and decisions.
+- Produce delivery reviews and stakeholder updates from the same evidence.
+- Escalate silence, blockers, and missing evidence consistently.
 
-```bash
-bun run runtime:health
-bun run runtime:smoke
-bun run deploy:railway:ci
-```
+### For delivery teams
 
-Private deployment configuration is intentionally not included in this public repository.
+- Receive clearer asks with context and response choices.
+- Find project decisions and delivery expectations without interrupting the PM.
+- Correct misunderstandings before they become permanent records.
+- Avoid repeating status in multiple places.
 
-## Feedback Wanted
+## ✨ What Sarathi Is Designed To Support
 
-Useful feedback includes:
+- Evidence-linked answers inside Microsoft Teams.
+- Delivery health and alignment reviews over existing work signals.
+- Goal, commitment, decision, risk, and dependency tracking.
+- Follow-up and accountability workflows for accepted actions.
+- Operational and compliance reminders.
+- Daily delivery briefs and weekly drift reviews.
+- Human-approved stakeholder and leadership updates.
+- Isolated workspaces for different projects, products, clients, or operating units.
 
-- Which delivery-coordination loops are painful enough to self-host for?
-- Which sources and evidence links make a delivery answer trustworthy?
-- What should be team-visible versus PM- or leadership-only?
-- Which interventions should happen in DM, a thread, an action card, or a private review?
-- How should organizations express workspace intent when they use Jira epics, spreadsheets, docs, or informal Teams threads?
-- Which production-readiness and privacy controls would you require before installing Sarathi?
+Capabilities are enabled per workspace. Sensitive Finance, leadership, client, and team context remain separated by policy.
+
+## 🔐 Human Control And Trust
+
+Sarathi is designed to be a work partner, not a hidden employee-scoring system or autonomous manager.
+
+- Inferred goals or commitments remain proposals until an authorized person accepts them.
+- Important answers should link back to their evidence.
+- Sensitive information is filtered before it is retrieved or sent to an AI model.
+- Silence and missed commitments can be recorded without endlessly nagging people.
+- Teams can correct, reject, renegotiate, reassign, or escalate an action.
+- Each organization controls where Sarathi runs and what it may access.
+
+## 🌍 Why Open Source
+
+Sarathi touches an organization's goals, conversations, delivery evidence, and operating memory. Leaders and teams should be able to inspect the system influencing those decisions.
+
+Open source allows an organization to:
+
+- self-host its delivery intelligence;
+- inspect and change its policies;
+- keep private work data inside its chosen environment;
+- understand how recommendations and actions are produced;
+- contribute reusable delivery practices without publishing confidential context;
+- avoid placing a critical operating relationship behind an opaque vendor service.
+
+The public repository contains the reusable product. Each organization keeps its real workspace mappings, policies, recipients, and sensitive context in a private configuration repository or approved private store.
+
+## 🚀 Activate Sarathi In Your Organization
+
+Sarathi is currently best introduced as a controlled internal pilot rather than a company-wide rollout.
+
+1. Choose one delivery problem and one accountable sponsor.
+2. Select a bounded pilot workspace, such as one project or operating team.
+3. Connect only the approved Teams, Jira, GitHub, and documentation sources.
+4. Run Sarathi in observation or shadow mode and review its findings privately.
+5. Install the Teams app and prove one real, evidence-linked workflow.
+6. Expand capabilities only after the team accepts the value and boundaries.
+
+The technical operator and Microsoft 365 administrator should follow the [Organization Installation And Activation Guide](docs/installation.md).
+
+## 🏗️ Current Maturity
+
+Sarathi is under active development. The repository contains working foundations for Teams-based questions, delivery evidence, workspace intent, reports, reminders, and hosted operation. It is not yet a one-click enterprise installation.
+
+Production use should be treated capability by capability. A successful deployment is not the same as a useful or trusted organizational rollout. Start small, verify the evidence boundaries, measure whether it reduces coordination work, and keep a manual override.
+
+## 📚 Learn More
+
+- [Product purpose and boundaries](docs/product/what.md)
+- [Why Sarathi exists](docs/product/why.md)
+- [How Sarathi works](docs/product/how.md)
+- [Organization installation and activation](docs/installation.md)
+- [Documentation index](docs/README.md)
+
+## 💬 Feedback
+
+We are especially interested in feedback from delivery managers, engineering leaders, software services firms, and organizations running Microsoft Teams:
+
+- Which coordination failures cost you the most time or client trust?
+- Which decisions should an assistant prepare but never make?
+- What evidence would make you trust a delivery warning?
+- What would your security or leadership team require before adoption?
 
 ## License
 
