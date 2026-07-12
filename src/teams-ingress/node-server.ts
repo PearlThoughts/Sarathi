@@ -140,6 +140,21 @@ const financeMode = (value: string | undefined): "disabled" | "shadow" | "live" 
     : undefined;
 };
 
+export const stringListFromEnvironment = (name: string, value: string | undefined): string[] => {
+  const configured = required(name, value).trim();
+  if (configured.startsWith("[")) {
+    const parsed = JSON.parse(configured) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === "string")) {
+      throw new Error(`[TEAMS INGRESS CONFIGURATION FAILED]: ${name} must be a string array.`);
+    }
+    return parsed.map((entry) => entry.trim()).filter((entry) => entry !== "");
+  }
+  return configured
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
+};
+
 const disabledFinanceComposition = (
   configuration: FinanceReadiness["configuration"] = "disabled",
 ): HostedFinanceReminderComposition => ({
@@ -209,13 +224,10 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
           "SARATHI_COMPLIANCE_JIRA_PROJECT",
           environment.SARATHI_COMPLIANCE_JIRA_PROJECT,
         ),
-        labels: required(
+        labels: stringListFromEnvironment(
           "SARATHI_COMPLIANCE_JIRA_LABELS",
           environment.SARATHI_COMPLIANCE_JIRA_LABELS,
-        )
-          .split(",")
-          .map((label) => label.trim())
-          .filter((label) => label !== ""),
+        ),
       }),
       delivery: createTeamsProactiveReminderDelivery({
         chatId: required("SARATHI_DEFAULT_CHAT_ID", environment.SARATHI_DEFAULT_CHAT_ID),
