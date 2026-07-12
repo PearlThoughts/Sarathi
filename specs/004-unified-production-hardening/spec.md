@@ -9,7 +9,8 @@ variable is present.
 ## Requirements
 
 - Finance runtime mode is exactly `disabled`, `shadow`, or `live`; the default
-  is `disabled`.
+  is `disabled`. The private projection supplies it as
+  `SARATHI_FINANCE_RUNTIME_MODE`.
 - An authenticated dry-run uses the real configured Finance source and returns
   the exact proposed digest, but performs no Teams delivery and creates no
   delivered reminder audit event.
