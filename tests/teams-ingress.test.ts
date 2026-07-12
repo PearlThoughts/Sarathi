@@ -100,7 +100,7 @@ describe("Teams ingress configuration", () => {
 
     const complete = hostedFinanceReminderCompositionFromEnvironment({
       SARATHI_REMINDERS_ENABLED: "true",
-      SARATHI_FINANCE_MODE: "shadow",
+      SARATHI_FINANCE_RUNTIME_MODE: "shadow",
       SARATHI_REMINDER_WORKSPACE_ID: "synthetic-workspace",
       SARATHI_REMINDER_TIMEZONE: "UTC",
       SARATHI_WEEKLY_DIGEST_TIME: "09:00",
@@ -129,7 +129,9 @@ describe("Teams ingress configuration", () => {
       scheduler: "not_running",
     });
     await expect(
-      hostedFinanceReminderCompositionFromEnvironment({ SARATHI_FINANCE_MODE: "live" }).readiness(),
+      hostedFinanceReminderCompositionFromEnvironment({
+        SARATHI_FINANCE_RUNTIME_MODE: "live",
+      }).readiness(),
     ).resolves.toMatchObject({ configuration: "unavailable" });
   });
 });

@@ -157,7 +157,7 @@ const disabledFinanceComposition = (
 export const hostedFinanceReminderCompositionFromEnvironment = (
   environment: Record<string, string | undefined> = process.env,
 ): HostedFinanceReminderComposition => {
-  const mode = financeMode(environment.SARATHI_FINANCE_MODE);
+  const mode = financeMode(environment.SARATHI_FINANCE_RUNTIME_MODE);
   if (mode === undefined) return disabledFinanceComposition("invalid");
   if (mode === "disabled") return disabledFinanceComposition();
   try {
