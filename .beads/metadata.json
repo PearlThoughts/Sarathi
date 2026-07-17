@@ -1,7 +1,10 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "sar",
+  "dolt_mode": "server",
+  "dolt_server_host": "127.0.0.1",
+  "dolt_server_port": 3307,
+  "dolt_server_user": "root",
+  "dolt_database": "Sarathi",
   "project_id": "6b68f2a7-6397-4ec0-9694-4de1a8939f51"
 }
