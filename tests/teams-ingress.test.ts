@@ -11,6 +11,7 @@ import {
   hostedTeamsIngressCompositionFromEnvironment,
   sameThreadReplyActivity,
   stringListFromEnvironment,
+  teamsIngressAuthConfiguration,
   teamsIngressConfigurationFromEnvironment,
 } from "../src/teams-ingress/node-server.ts";
 
@@ -53,6 +54,21 @@ describe("Teams ingress configuration", () => {
         MICROSOFT_APP_TENANT_ID: "tenant",
       }),
     ).toEqual({ appId: "app", appPassword: "secret", tenantId: "tenant" });
+  });
+
+  it("materializes the SDK connection map required for JWT audience validation", () => {
+    const auth = teamsIngressAuthConfiguration({
+      appId: "app",
+      appPassword: "secret",
+      tenantId: "tenant",
+    });
+
+    expect(auth.connectionsMap).toEqual([{ serviceUrl: "*", connection: "serviceConnection" }]);
+    expect(auth.connections?.get("serviceConnection")).toMatchObject({
+      clientId: "app",
+      clientSecret: "secret",
+      tenantId: "tenant",
+    });
   });
 
   it("fails closed when a workspace projection is present but hosted dependencies are incomplete", async () => {
