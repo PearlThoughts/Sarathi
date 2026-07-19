@@ -528,10 +528,41 @@ const hasCompleteCommand = (command: {
   ].every((value) => value.trim() !== "");
 
 type MentionActivity = {
+  readonly id?: string | undefined;
   readonly text?: string | undefined;
   readonly recipient?: { readonly id?: string | undefined } | undefined;
   readonly entities?: readonly unknown[] | undefined;
 };
+
+type DirectTeamsMentionGate =
+  | { readonly kind: "accepted"; readonly question: string }
+  | {
+      readonly kind: "ignored";
+      readonly reason: "missing_recipient" | "missing_matching_mention" | "empty_question";
+    };
+
+export type TeamsIngressDiagnosticEvent = {
+  readonly event: "teams_ingress";
+  readonly stage: "http" | "activity" | "handler";
+  readonly outcome: string;
+  readonly activityHash?: string;
+  readonly reason?: string;
+  readonly statusCode?: number;
+  readonly missingFields?: readonly string[];
+};
+
+export type TeamsIngressDiagnosticSink = (event: TeamsIngressDiagnosticEvent) => void;
+
+const noTeamsIngressDiagnostics: TeamsIngressDiagnosticSink = () => undefined;
+
+export const createPrivacySafeTeamsIngressDiagnosticSink =
+  (write: (line: string) => void = console.info): TeamsIngressDiagnosticSink =>
+  (event) => {
+    write(JSON.stringify(event));
+  };
+
+const activityHash = (activityId: unknown): string | undefined =>
+  typeof activityId === "string" && activityId.trim() !== "" ? stableSha256(activityId) : undefined;
 
 const recipientMentionText = (
   entities: readonly unknown[] | undefined,
@@ -560,17 +591,29 @@ const recipientMentionText = (
 };
 
 export const directTeamsMentionQuestion = (activity: MentionActivity): string | undefined => {
+  const gate = directTeamsMentionGate(activity);
+  return gate.kind === "accepted" ? gate.question : undefined;
+};
+
+const directTeamsMentionGate = (activity: MentionActivity): DirectTeamsMentionGate => {
   const recipientId = activity.recipient?.id;
-  if (recipientId === undefined) return undefined;
+  if (recipientId === undefined || recipientId.trim() === "") {
+    return { kind: "ignored", reason: "missing_recipient" };
+  }
   const mentionText = recipientMentionText(activity.entities, recipientId);
-  if (mentionText === undefined) return undefined;
+  if (mentionText === undefined) {
+    return { kind: "ignored", reason: "missing_matching_mention" };
+  }
   const question = stripSarathiMention(activity.text ?? "", mentionText);
-  return question === "" ? undefined : question;
+  return question === ""
+    ? { kind: "ignored", reason: "empty_question" }
+    : { kind: "accepted", question };
 };
 
 export const createTeamsIngressApplication = (
   dependencies: TeamsMentionDependencies = failClosedDependencies,
   adapter?: CloudAdapter,
+  diagnostics: TeamsIngressDiagnosticSink = noTeamsIngressDiagnostics,
 ): AgentApplication<TurnState> => {
   const application = new AgentApplication({
     storage: new MemoryStorage(),
@@ -578,8 +621,19 @@ export const createTeamsIngressApplication = (
   });
   application.onActivity("message", async (context: TurnContext) => {
     const activity = context.activity;
-    const question = directTeamsMentionQuestion(activity);
-    if (question === undefined) return;
+    const hash = activityHash(activity.id);
+    const gate = directTeamsMentionGate(activity);
+    if (gate.kind === "ignored") {
+      diagnostics({
+        event: "teams_ingress",
+        stage: "activity",
+        outcome: "ignored",
+        ...(hash === undefined ? {} : { activityHash: hash }),
+        reason: gate.reason,
+      });
+      return;
+    }
+    const question = gate.question;
 
     const channelData = activity.channelData as
       | {
@@ -606,7 +660,37 @@ export const createTeamsIngressApplication = (
           ? activity.timestamp
           : (activity.timestamp?.toISOString() ?? new Date().toISOString()),
     };
-    if (!hasCompleteCommand(command)) return;
+    if (!hasCompleteCommand(command)) {
+      const missingFields: string[] = [];
+      const recordMissing = (name: string, value: string): void => {
+        if (value.trim() === "") missingFields.push(name);
+      };
+      recordMissing("activityId", command.activityId);
+      recordMissing("tenantId", command.tenantId);
+      recordMissing("teamId", command.teamId);
+      recordMissing("channelId", command.channelId);
+      recordMissing("conversationId", command.conversationId);
+      recordMissing("rootActivityId", command.rootActivityId);
+      recordMissing("serviceUrl", command.serviceUrl);
+      recordMissing("callerEntraObjectId", command.caller.entraObjectId);
+      recordMissing("callerDisplayName", command.caller.displayName);
+      recordMissing("question", command.question);
+      diagnostics({
+        event: "teams_ingress",
+        stage: "activity",
+        outcome: "ignored",
+        ...(hash === undefined ? {} : { activityHash: hash }),
+        reason: "incomplete_command",
+        missingFields,
+      });
+      return;
+    }
+    diagnostics({
+      event: "teams_ingress",
+      stage: "activity",
+      outcome: "accepted",
+      ...(hash === undefined ? {} : { activityHash: hash }),
+    });
     const turnDependencies: TeamsMentionDependencies = {
       ...dependencies,
       delivery: {
@@ -621,9 +705,26 @@ export const createTeamsIngressApplication = (
           }),
       },
     };
-    const outcome = await Effect.runPromise(handleTeamsMention(command, turnDependencies));
-    if (outcome.kind === "denied") {
-      await context.sendActivity(sameThreadReplyActivity(command.rootActivityId, outcome.reason));
+    try {
+      const outcome = await Effect.runPromise(handleTeamsMention(command, turnDependencies));
+      diagnostics({
+        event: "teams_ingress",
+        stage: "handler",
+        outcome: outcome.kind,
+        ...(hash === undefined ? {} : { activityHash: hash }),
+      });
+      if (outcome.kind === "denied") {
+        await context.sendActivity(sameThreadReplyActivity(command.rootActivityId, outcome.reason));
+      }
+    } catch (error) {
+      diagnostics({
+        event: "teams_ingress",
+        stage: "handler",
+        outcome: "failed",
+        ...(hash === undefined ? {} : { activityHash: hash }),
+        reason: error instanceof Error ? error.name : "unknown_error",
+      });
+      throw error;
     }
   });
   return application;
@@ -637,7 +738,8 @@ export const startTeamsIngress = (): void => {
   const composition = hostedTeamsIngressCompositionFromEnvironment();
   const finance = hostedFinanceReminderCompositionFromEnvironment();
   const adapter = new CloudAdapter(authConfiguration(configuration));
-  const application = createTeamsIngressApplication(composition.dependencies, adapter);
+  const diagnostics = createPrivacySafeTeamsIngressDiagnosticSink();
+  const application = createTeamsIngressApplication(composition.dependencies, adapter, diagnostics);
   const server = express();
   const strictHosts = strictHostRoutingConfigurationFromEnvironment();
   if (strictHosts !== undefined) {
@@ -652,6 +754,29 @@ export const startTeamsIngress = (): void => {
   server.use(express.json());
   server.post(
     "/api/messages",
+    (request, response, next) => {
+      const hash = activityHash(
+        typeof request.body === "object" && request.body !== null && "id" in request.body
+          ? request.body.id
+          : undefined,
+      );
+      diagnostics({
+        event: "teams_ingress",
+        stage: "http",
+        outcome: "received",
+        ...(hash === undefined ? {} : { activityHash: hash }),
+      });
+      response.once("finish", () => {
+        diagnostics({
+          event: "teams_ingress",
+          stage: "http",
+          outcome: "completed",
+          ...(hash === undefined ? {} : { activityHash: hash }),
+          statusCode: response.statusCode,
+        });
+      });
+      next();
+    },
     authorizeJWT(authConfiguration(configuration)),
     async (request, response) => {
       await adapter.process(request, response, async (context) => application.run(context));
