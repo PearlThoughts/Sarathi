@@ -421,12 +421,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         reader: createTeamsGraphThreadReader({
           tokenProvider: graphTokenProvider,
           approvedStandardChannels: new Set(
-            projection.channels.map((channel) => `${channel.teamId}:${channel.channelId}`),
+            projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
           ),
         }),
         sourceKey: (command) =>
           teamsThreadSourceKey({
-            teamId: command.teamId,
+            teamId: command.graphTeamId,
             channelId: command.channelId,
             rootId: command.rootActivityId,
           }),
@@ -511,6 +511,7 @@ const hasCompleteCommand = (command: {
   readonly activityId: string;
   readonly tenantId: string;
   readonly teamId: string;
+  readonly graphTeamId: string;
   readonly channelId: string;
   readonly conversationId: string;
   readonly rootActivityId: string;
@@ -525,6 +526,7 @@ const hasCompleteCommand = (command: {
     command.activityId,
     command.tenantId,
     command.teamId,
+    command.graphTeamId,
     command.channelId,
     command.conversationId,
     command.rootActivityId,
@@ -617,6 +619,35 @@ const directTeamsMentionGate = (activity: MentionActivity): DirectTeamsMentionGa
     : { kind: "accepted", question };
 };
 
+export const teamsMentionCommandFromActivity = (activity: Activity, question: string) => {
+  const channelData = activity.channelData as
+    | {
+        readonly team?: { readonly id?: string; readonly aadGroupId?: string };
+        readonly channel?: { readonly id?: string };
+        readonly tenant?: { readonly id?: string };
+      }
+    | undefined;
+  return {
+    activityId: activity.id ?? "",
+    tenantId: channelData?.tenant?.id ?? "",
+    teamId: channelData?.team?.id ?? "",
+    graphTeamId: channelData?.team?.aadGroupId ?? "",
+    channelId: channelData?.channel?.id ?? "",
+    conversationId: activity.conversation?.id ?? "",
+    rootActivityId: activity.replyToId ?? activity.id ?? "",
+    serviceUrl: activity.serviceUrl ?? "",
+    caller: {
+      entraObjectId: activity.from?.aadObjectId ?? "",
+      displayName: activity.from?.name ?? "",
+    },
+    question,
+    receivedAt:
+      typeof activity.timestamp === "string"
+        ? activity.timestamp
+        : (activity.timestamp?.toISOString() ?? new Date().toISOString()),
+  };
+};
+
 export const createTeamsIngressApplication = (
   dependencies: TeamsMentionDependencies = failClosedDependencies,
   adapter?: CloudAdapter,
@@ -642,31 +673,7 @@ export const createTeamsIngressApplication = (
     }
     const question = gate.question;
 
-    const channelData = activity.channelData as
-      | {
-          readonly team?: { readonly id?: string };
-          readonly channel?: { readonly id?: string };
-          readonly tenant?: { readonly id?: string };
-        }
-      | undefined;
-    const command = {
-      activityId: activity.id ?? "",
-      tenantId: channelData?.tenant?.id ?? "",
-      teamId: channelData?.team?.id ?? "",
-      channelId: channelData?.channel?.id ?? "",
-      conversationId: activity.conversation?.id ?? "",
-      rootActivityId: activity.replyToId ?? activity.id ?? "",
-      serviceUrl: activity.serviceUrl ?? "",
-      caller: {
-        entraObjectId: activity.from?.aadObjectId ?? "",
-        displayName: activity.from?.name ?? "",
-      },
-      question,
-      receivedAt:
-        typeof activity.timestamp === "string"
-          ? activity.timestamp
-          : (activity.timestamp?.toISOString() ?? new Date().toISOString()),
-    };
+    const command = teamsMentionCommandFromActivity(activity, question);
     if (!hasCompleteCommand(command)) {
       const missingFields: string[] = [];
       const recordMissing = (name: string, value: string): void => {
@@ -675,6 +682,7 @@ export const createTeamsIngressApplication = (
       recordMissing("activityId", command.activityId);
       recordMissing("tenantId", command.tenantId);
       recordMissing("teamId", command.teamId);
+      recordMissing("graphTeamId", command.graphTeamId);
       recordMissing("channelId", command.channelId);
       recordMissing("conversationId", command.conversationId);
       recordMissing("rootActivityId", command.rootActivityId);

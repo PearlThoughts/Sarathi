@@ -12,6 +12,7 @@ const projection: WorkspaceProjection = {
     {
       tenantId: "tenant-synthetic",
       teamId: "team-synthetic",
+      graphTeamId: "graph-team-synthetic",
       channelId: "channel-synthetic",
       scope: "standard" as const,
       workspaceId: "workspace-synthetic",
@@ -31,6 +32,7 @@ const command = {
   activityId: "activity-synthetic",
   tenantId: "tenant-synthetic",
   teamId: "team-synthetic",
+  graphTeamId: "graph-team-synthetic",
   channelId: "channel-synthetic",
   conversationId: "conversation-synthetic",
   rootActivityId: "root-synthetic",

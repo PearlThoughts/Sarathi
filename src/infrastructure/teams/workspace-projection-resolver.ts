@@ -15,6 +15,7 @@ export type WorkspaceProjection = {
   readonly channels: readonly {
     readonly tenantId: string;
     readonly teamId: string;
+    readonly graphTeamId: string;
     readonly channelId: string;
     readonly scope: "standard";
     readonly workspaceId: string;
@@ -76,6 +77,7 @@ export const workspaceProjectionFromEnvironment = (
     if (
       !nonEmptyString(channel.tenantId) ||
       !nonEmptyString(channel.teamId) ||
+      !nonEmptyString(channel.graphTeamId) ||
       !nonEmptyString(channel.channelId) ||
       !nonEmptyString(channel.workspaceId) ||
       channel.scope !== "standard" ||
@@ -108,6 +110,7 @@ export const workspaceProjectionFromEnvironment = (
     return {
       tenantId: channel.tenantId,
       teamId: channel.teamId,
+      graphTeamId: channel.graphTeamId,
       channelId: channel.channelId,
       scope: "standard" as const,
       workspaceId: channel.workspaceId,
