@@ -135,7 +135,9 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 
 ### Approved AI model
 
-Configure one OpenAI-compatible primary provider:
+Configure one approved primary provider. Sarathi uses Vercel AI SDK as its
+in-process model boundary: OpenAI and OpenRouter use dedicated providers, while
+Z.AI uses the SDK's OpenAI-compatible Chat Completions provider.
 
 - `SARATHI_MODEL_PROVIDER` (`openai`, `openrouter`, or `zai`)
 - `SARATHI_MODEL_API_KEY`
@@ -151,6 +153,8 @@ configuration fails closed. Failover emits provider and outcome only; prompts,
 answers, evidence, identifiers, and credentials are excluded from diagnostics.
 Z.AI production integrations use its general API endpoint; its Coding Plan
 endpoint remains limited to the supported tool scenarios documented by Z.AI.
+SDK-internal retries are disabled so Sarathi owns the explicit, observable
+single-primary/single-fallback policy.
 
 The workspace projection must map only approved standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
 

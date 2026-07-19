@@ -1,1 +1,1 @@
-export * from "./openai-grounded-answer-generator.ts";
+export * from "./ai-sdk-grounded-answer-generator.ts";
