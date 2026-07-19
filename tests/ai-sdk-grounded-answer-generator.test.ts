@@ -1,15 +1,51 @@
+import { MockLanguageModelV4 } from "ai/test";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createFailoverGroundedAnswerGenerator,
-  createOpenAiGroundedAnswerGenerator,
+  createLanguageModel,
   groundedAnswerFailoverConfigurationFromEnvironment,
-  openAiGroundedAnswerConfigurationFromEnvironment,
 } from "../src/infrastructure/model/index.ts";
 
-describe("approved OpenAI-compatible answer generator", () => {
+const successfulModel = (text: string): MockLanguageModelV4 =>
+  new MockLanguageModelV4({
+    doGenerate: {
+      content: [{ type: "text", text }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 5, text: 5, reasoning: undefined },
+      },
+      warnings: [],
+    },
+  });
+
+const failingModel = (): MockLanguageModelV4 =>
+  new MockLanguageModelV4({
+    doGenerate: async () => {
+      throw new Error("synthetic provider failure");
+    },
+  });
+
+const primaryConfiguration = {
+  provider: "zai" as const,
+  apiKey: "primary-secret",
+  model: "glm-synthetic",
+  baseUrl: "https://primary.example.test/v1",
+  timeoutMs: 1_000,
+};
+
+const fallbackConfiguration = {
+  provider: "openrouter" as const,
+  apiKey: "fallback-secret",
+  model: "openai/gpt-synthetic",
+  baseUrl: "https://fallback.example.test/v1",
+  timeoutMs: 1_000,
+};
+
+describe("AI SDK grounded answer generator", () => {
   it("fails closed without explicit provider configuration", () => {
-    expect(() => openAiGroundedAnswerConfigurationFromEnvironment({})).toThrow(
+    expect(() => groundedAnswerFailoverConfigurationFromEnvironment({})).toThrow(
       "Approved model provider configuration is required",
     );
   });
@@ -70,22 +106,23 @@ describe("approved OpenAI-compatible answer generator", () => {
     ).not.toHaveProperty("fallback");
   });
 
-  it("sends bounded evidence and returns only evidence citations", async () => {
-    let requestBody = "";
-    const generator = createOpenAiGroundedAnswerGenerator({
-      provider: "openai",
-      apiKey: "key",
-      model: "model",
-      baseUrl: "https://model.example.test/v1",
-      timeoutMs: 1_000,
-      fetcher: async (_input, init) => {
-        requestBody = String(init?.body);
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "Known fact." } }] }),
-          { status: 200 },
-        );
-      },
-    });
+  it("constructs dedicated OpenAI and OpenRouter models and an OpenAI-compatible Z.AI model", () => {
+    expect(createLanguageModel({ ...primaryConfiguration, provider: "openai" }).provider).toContain(
+      "openai",
+    );
+    expect(
+      createLanguageModel({ ...fallbackConfiguration, provider: "openrouter" }).provider,
+    ).toContain("openrouter");
+    expect(createLanguageModel(primaryConfiguration).provider).toContain("zai");
+  });
+
+  it("sends bounded evidence through the SDK and returns only evidence citations", async () => {
+    const model = successfulModel("Known fact.");
+    const generator = createFailoverGroundedAnswerGenerator(
+      { primary: { ...primaryConfiguration, provider: "openai" } },
+      undefined,
+      () => model,
+    );
     await expect(
       Effect.runPromise(
         generator.generate({
@@ -110,39 +147,21 @@ describe("approved OpenAI-compatible answer generator", () => {
       text: "Known fact.",
       citations: [{ url: "https://jira.example.test/F1851-754" }],
     });
-    expect(requestBody).toContain("Approved detail");
-    expect(requestBody).not.toContain("workspace");
+    expect(JSON.stringify(model.doGenerateCalls)).toContain("Approved detail");
+    expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 
   it("uses the fallback once and emits only privacy-safe provider diagnostics", async () => {
     const diagnostics: unknown[] = [];
-    let fallbackCalls = 0;
+    const primary = failingModel();
+    const fallback = successfulModel("Fallback fact.");
     const generator = createFailoverGroundedAnswerGenerator(
       {
-        primary: {
-          provider: "zai",
-          apiKey: "primary-secret",
-          model: "glm-synthetic",
-          baseUrl: "https://primary.example.test/v1",
-          timeoutMs: 1_000,
-          fetcher: async () => new Response("unavailable", { status: 503 }),
-        },
-        fallback: {
-          provider: "openrouter",
-          apiKey: "fallback-secret",
-          model: "openai/gpt-synthetic",
-          baseUrl: "https://fallback.example.test/v1",
-          timeoutMs: 1_000,
-          fetcher: async () => {
-            fallbackCalls += 1;
-            return new Response(
-              JSON.stringify({ choices: [{ message: { content: "Fallback fact." } }] }),
-              { status: 200 },
-            );
-          },
-        },
+        primary: primaryConfiguration,
+        fallback: fallbackConfiguration,
       },
       (event) => diagnostics.push(event),
+      (configuration) => (configuration.provider === "zai" ? primary : fallback),
     );
 
     await expect(
@@ -154,7 +173,8 @@ describe("approved OpenAI-compatible answer generator", () => {
         }),
       ),
     ).resolves.toMatchObject({ text: "Fallback fact." });
-    expect(fallbackCalls).toBe(1);
+    expect(primary.doGenerateCalls).toHaveLength(1);
+    expect(fallback.doGenerateCalls).toHaveLength(1);
     expect(diagnostics).toEqual([
       { event: "model_provider", stage: "primary", outcome: "failed", provider: "zai" },
       {
@@ -169,29 +189,23 @@ describe("approved OpenAI-compatible answer generator", () => {
   });
 
   it("fails when both configured providers fail", async () => {
-    const generator = createFailoverGroundedAnswerGenerator({
-      primary: {
-        provider: "zai",
-        apiKey: "primary-secret",
-        model: "glm-synthetic",
-        baseUrl: "https://primary.example.test/v1",
-        timeoutMs: 1_000,
-        fetcher: async () => new Response("unavailable", { status: 503 }),
+    const primary = failingModel();
+    const fallback = failingModel();
+    const generator = createFailoverGroundedAnswerGenerator(
+      {
+        primary: primaryConfiguration,
+        fallback: fallbackConfiguration,
       },
-      fallback: {
-        provider: "openrouter",
-        apiKey: "fallback-secret",
-        model: "openai/gpt-synthetic",
-        baseUrl: "https://fallback.example.test/v1",
-        timeoutMs: 1_000,
-        fetcher: async () => new Response("unavailable", { status: 503 }),
-      },
-    });
+      undefined,
+      (configuration) => (configuration.provider === "zai" ? primary : fallback),
+    );
 
     await expect(
       Effect.runPromise(
         generator.generate({ workspaceId: "workspace", question: "Question", evidence: [] }),
       ),
     ).rejects.toThrow("Approved answer generation is unavailable");
+    expect(primary.doGenerateCalls).toHaveLength(1);
+    expect(fallback.doGenerateCalls).toHaveLength(1);
   });
 });
