@@ -3,6 +3,7 @@ import { CloudAdapter } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  createPrivacySafeTeamsIngressDiagnosticSink,
   createTeamsIngressApplication,
   directTeamsMentionQuestion,
   financeReminderKindFromBody,
@@ -201,6 +202,34 @@ describe("Teams ingress configuration", () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  it("emits only privacy-safe ingress diagnostics", () => {
+    const lines: string[] = [];
+    const sink = createPrivacySafeTeamsIngressDiagnosticSink((line) => lines.push(line));
+
+    sink({
+      event: "teams_ingress",
+      stage: "activity",
+      outcome: "ignored",
+      activityHash: "already-hashed-activity",
+      reason: "missing_matching_mention",
+      missingFields: ["callerEntraObjectId"],
+    });
+
+    expect(lines).toEqual([
+      JSON.stringify({
+        event: "teams_ingress",
+        stage: "activity",
+        outcome: "ignored",
+        activityHash: "already-hashed-activity",
+        reason: "missing_matching_mention",
+        missingFields: ["callerEntraObjectId"],
+      }),
+    ]);
+    expect(lines[0]).not.toContain("Hello from a private thread");
+    expect(lines[0]).not.toContain("28:sarathi-bot");
+    expect(lines[0]).not.toContain("entra-object-id");
   });
 
   it("builds an explicit same-thread reply without including private activity content", () => {
