@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import {
   defaultBoundaryForSensitivity,
+  type ModelEgressPolicy,
   type SensitivityTier,
   type TrustTier,
 } from "../../domain/policy.ts";
@@ -18,6 +19,7 @@ export type WorkspaceProjection = {
     readonly scope: "standard";
     readonly workspaceId: string;
     readonly sensitivity: SensitivityTier;
+    readonly modelEgress?: ModelEgressPolicy | undefined;
     readonly actors: readonly {
       readonly entraObjectId: string;
       readonly actorId: string;
@@ -33,6 +35,12 @@ const sensitivities = new Set<SensitivityTier>([
   "restricted",
 ]);
 const trustTiers = new Set<TrustTier>(["guest", "member", "trusted", "maintainer", "admin"]);
+const modelEgressPolicies = new Set<ModelEgressPolicy>([
+  "allow",
+  "redact",
+  "approval-required",
+  "block",
+]);
 
 const nonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";
@@ -42,20 +50,26 @@ export const workspaceProjectionFromEnvironment = (
 ): WorkspaceProjection => {
   const raw = environment.SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON;
   if (raw === undefined || raw.trim() === "") {
-    throw new RepositoryError({ message: "SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON is required." });
+    throw new RepositoryError({
+      message: "SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON is required.",
+    });
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new RepositoryError({ message: "Teams workspace projection must be valid JSON." });
+    throw new RepositoryError({
+      message: "Teams workspace projection must be valid JSON.",
+    });
   }
   if (
     typeof parsed !== "object" ||
     parsed === null ||
     !Array.isArray((parsed as { channels?: unknown }).channels)
   ) {
-    throw new RepositoryError({ message: "Teams workspace projection must contain channels." });
+    throw new RepositoryError({
+      message: "Teams workspace projection must contain channels.",
+    });
   }
   const channels = (parsed as { channels: readonly unknown[] }).channels.map((candidate) => {
     const channel = candidate as Record<string, unknown>;
@@ -66,6 +80,8 @@ export const workspaceProjectionFromEnvironment = (
       !nonEmptyString(channel.workspaceId) ||
       channel.scope !== "standard" ||
       !sensitivities.has(channel.sensitivity as SensitivityTier) ||
+      (channel.modelEgress !== undefined &&
+        !modelEgressPolicies.has(channel.modelEgress as ModelEgressPolicy)) ||
       !Array.isArray(channel.actors)
     ) {
       throw new RepositoryError({
@@ -96,6 +112,9 @@ export const workspaceProjectionFromEnvironment = (
       scope: "standard" as const,
       workspaceId: channel.workspaceId,
       sensitivity: channel.sensitivity as SensitivityTier,
+      ...(channel.modelEgress === undefined
+        ? {}
+        : { modelEgress: channel.modelEgress as ModelEgressPolicy }),
       actors,
     };
   });
@@ -142,12 +161,16 @@ export const createWorkspaceProjectionResolver = (
           (candidate) => candidate.entraObjectId === command.caller.entraObjectId,
         );
         if (channel === undefined || actor === undefined) return undefined;
+        const defaultBoundary = defaultBoundaryForSensitivity(channel.sensitivity);
         return {
           workspaceId: channel.workspaceId,
           callerId: actor.actorId,
           callerTrustTier: actor.trustTier,
           channelSensitivity: channel.sensitivity,
-          boundary: defaultBoundaryForSensitivity(channel.sensitivity),
+          boundary:
+            channel.modelEgress === undefined
+              ? defaultBoundary
+              : { ...defaultBoundary, modelEgress: channel.modelEgress },
         };
       }),
   };
