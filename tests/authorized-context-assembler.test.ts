@@ -6,6 +6,7 @@ const command = {
   activityId: "activity",
   tenantId: "tenant",
   teamId: "team",
+  graphTeamId: "graph-team",
   channelId: "channel",
   conversationId: "conversation",
   rootActivityId: "root",

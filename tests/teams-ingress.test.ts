@@ -13,6 +13,7 @@ import {
   stringListFromEnvironment,
   teamsIngressAuthConfiguration,
   teamsIngressConfigurationFromEnvironment,
+  teamsMentionCommandFromActivity,
 } from "../src/teams-ingress/node-server.ts";
 
 describe("Teams ingress configuration", () => {
@@ -78,6 +79,7 @@ describe("Teams ingress configuration", () => {
           {
             tenantId: "tenant",
             teamId: "team",
+            graphTeamId: "graph-team",
             channelId: "channel",
             scope: "standard",
             workspaceId: "workspace",
@@ -95,6 +97,7 @@ describe("Teams ingress configuration", () => {
           activityId: "activity",
           tenantId: "tenant",
           teamId: "team",
+          graphTeamId: "graph-team",
           channelId: "channel",
           conversationId: "conversation",
           rootActivityId: "root",
@@ -116,6 +119,7 @@ describe("Teams ingress configuration", () => {
           activityId: "activity",
           tenantId: "tenant",
           teamId: "team",
+          graphTeamId: "graph-team",
           channelId: "channel",
           conversationId: "conversation",
           rootActivityId: "root",
@@ -137,6 +141,7 @@ describe("Teams ingress configuration", () => {
           {
             tenantId: "tenant",
             teamId: "team",
+            graphTeamId: "graph-team",
             channelId: "channel",
             scope: "standard",
             workspaceId: "workspace",
@@ -155,6 +160,7 @@ describe("Teams ingress configuration", () => {
           activityId: "activity",
           tenantId: "tenant",
           teamId: "team",
+          graphTeamId: "graph-team",
           channelId: "channel",
           conversationId: "conversation",
           rootActivityId: "root",
@@ -192,6 +198,33 @@ describe("Teams ingress configuration", () => {
     });
 
     expect(directTeamsMentionQuestion(activity)).toBe("hello");
+  });
+
+  it("uses the Teams Entra group ID for Microsoft Graph reads", () => {
+    const command = teamsMentionCommandFromActivity(
+      Activity.fromObject({
+        type: "message",
+        id: "activity",
+        replyToId: "root",
+        timestamp: "2026-07-19T00:00:00.000Z",
+        serviceUrl: "https://service.example.test",
+        conversation: { id: "conversation" },
+        from: { aadObjectId: "caller", name: "Caller" },
+        channelData: {
+          tenant: { id: "tenant" },
+          team: { id: "19:bot-framework-team@thread.skype", aadGroupId: "graph-team-guid" },
+          channel: { id: "19:channel@thread.tacv2" },
+        },
+      }),
+      "What changed?",
+    );
+
+    expect(command).toMatchObject({
+      teamId: "19:bot-framework-team@thread.skype",
+      graphTeamId: "graph-team-guid",
+      channelId: "19:channel@thread.tacv2",
+      rootActivityId: "root",
+    });
   });
 
   it("ignores text without a matching recipient mention entity", () => {

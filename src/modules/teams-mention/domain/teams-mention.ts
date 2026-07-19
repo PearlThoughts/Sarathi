@@ -4,6 +4,7 @@ export type TeamsMentionCommand = {
   readonly activityId: string;
   readonly tenantId: string;
   readonly teamId: string;
+  readonly graphTeamId: string;
   readonly channelId: string;
   readonly conversationId: string;
   readonly rootActivityId: string;
