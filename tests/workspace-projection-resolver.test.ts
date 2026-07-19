@@ -44,7 +44,9 @@ describe("workspace projection resolver", () => {
   it("requires a private JSON projection rather than falling back to an open scope", () => {
     expect(() => workspaceProjectionFromEnvironment({})).toThrow(RepositoryError);
     expect(() =>
-      workspaceProjectionFromEnvironment({ SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: "{}" }),
+      workspaceProjectionFromEnvironment({
+        SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: "{}",
+      }),
     ).toThrow(RepositoryError);
   });
 
@@ -54,14 +56,45 @@ describe("workspace projection resolver", () => {
       workspaceId: "workspace-synthetic",
       callerId: "actor-synthetic",
       channelSensitivity: "internal",
+      boundary: { modelEgress: "redact" },
     });
+  });
+
+  it("projects an explicit approved model-egress decision without lowering sensitivity", async () => {
+    const firstChannel = projection.channels[0];
+    if (firstChannel === undefined) throw new Error("Synthetic projection is missing its channel.");
+    const approvedProjection: WorkspaceProjection = {
+      channels: [{ ...firstChannel, modelEgress: "allow" }],
+    };
+
+    const resolved = await Effect.runPromise(
+      createWorkspaceProjectionResolver(approvedProjection).resolve(command),
+    );
+
+    expect(resolved).toMatchObject({
+      channelSensitivity: "internal",
+      boundary: { sensitivity: "internal", modelEgress: "allow" },
+    });
+  });
+
+  it("rejects an unknown projected model-egress policy", () => {
+    expect(() =>
+      workspaceProjectionFromEnvironment({
+        SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
+          channels: [{ ...projection.channels[0], modelEgress: "unreviewed-bypass" }],
+        }),
+      }),
+    ).toThrow(RepositoryError);
   });
 
   it("fails closed for unmapped callers and channels", async () => {
     const resolver = createWorkspaceProjectionResolver(projection);
     await expect(
       Effect.runPromise(
-        resolver.resolve({ ...command, caller: { ...command.caller, entraObjectId: "unknown" } }),
+        resolver.resolve({
+          ...command,
+          caller: { ...command.caller, entraObjectId: "unknown" },
+        }),
       ),
     ).resolves.toBeUndefined();
     await expect(
