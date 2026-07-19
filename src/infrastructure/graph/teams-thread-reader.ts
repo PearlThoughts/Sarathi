@@ -24,10 +24,34 @@ const parseSourceKey = (
   const parts = sourceKey.split(":");
   if (parts.length !== 4 || parts[0] !== "teams" || parts.some((part) => part.trim() === ""))
     return undefined;
-  const [, teamId, channelId, rootId] = parts;
-  if (teamId === undefined || channelId === undefined || rootId === undefined) return undefined;
-  return { teamId, channelId, rootId };
+  try {
+    const [, encodedTeamId, encodedChannelId, encodedRootId] = parts;
+    if (
+      encodedTeamId === undefined ||
+      encodedChannelId === undefined ||
+      encodedRootId === undefined
+    )
+      return undefined;
+    return {
+      teamId: decodeURIComponent(encodedTeamId),
+      channelId: decodeURIComponent(encodedChannelId),
+      rootId: decodeURIComponent(encodedRootId),
+    };
+  } catch {
+    return undefined;
+  }
 };
+
+export const teamsThreadSourceKey = ({
+  teamId,
+  channelId,
+  rootId,
+}: {
+  readonly teamId: string;
+  readonly channelId: string;
+  readonly rootId: string;
+}): string =>
+  `teams:${encodeURIComponent(teamId)}:${encodeURIComponent(channelId)}:${encodeURIComponent(rootId)}`;
 
 const excerpt = (value: string | undefined): string =>
   (value ?? "")
@@ -50,18 +74,28 @@ export const createTeamsGraphThreadReader = (
     const fetcher = configuration.fetcher ?? fetch;
     const accessToken = await configuration.tokenProvider.getAccessToken();
     const limit = configuration.pageSize ?? 20;
-    const url = new URL(
+    const repliesUrl = new URL(
       `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(scope.teamId)}/channels/${encodeURIComponent(scope.channelId)}/messages/${encodeURIComponent(scope.rootId)}/replies`,
     );
-    url.searchParams.set("$top", String(limit));
+    repliesUrl.searchParams.set("$top", String(limit));
     if (afterCursor !== undefined)
-      url.searchParams.set("$filter", `createdDateTime gt ${afterCursor}`);
-    const response = await fetcher(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) throw new Error(`Graph thread read failed with HTTP ${response.status}.`);
-    const payload = (await response.json()) as { readonly value?: readonly TeamsMessage[] };
-    const records = (payload.value ?? []).flatMap((message) => {
+      repliesUrl.searchParams.set("$filter", `createdDateTime gt ${afterCursor}`);
+    const rootUrl = new URL(repliesUrl);
+    rootUrl.pathname = rootUrl.pathname.replace(/\/replies$/, "");
+    rootUrl.search = "";
+    const [rootResponse, repliesResponse] = await Promise.all([
+      fetcher(rootUrl, { headers: { Authorization: `Bearer ${accessToken}` } }),
+      fetcher(repliesUrl, { headers: { Authorization: `Bearer ${accessToken}` } }),
+    ]);
+    if (!rootResponse.ok)
+      throw new Error(`Graph thread root read failed with HTTP ${rootResponse.status}.`);
+    if (!repliesResponse.ok)
+      throw new Error(`Graph thread replies read failed with HTTP ${repliesResponse.status}.`);
+    const [root, payload] = (await Promise.all([
+      rootResponse.json() as Promise<TeamsMessage>,
+      repliesResponse.json() as Promise<{ readonly value?: readonly TeamsMessage[] }>,
+    ])) as [TeamsMessage, { readonly value?: readonly TeamsMessage[] }];
+    const records = [root, ...(payload.value ?? [])].flatMap((message) => {
       if (message.id === undefined || message.createdDateTime === undefined) return [];
       return [
         {

@@ -25,8 +25,12 @@ describe("Jira evidence reader", () => {
       new Response(
         JSON.stringify({
           key: "F1851-1",
-          self: "https://jira.example.test/browse/F1851-1",
-          fields: { summary: "Synthetic delivery issue", updated: "2026-07-11T00:00:00Z" },
+          self: "https://jira.example.test/rest/api/3/issue/F1851-1",
+          fields: {
+            summary: "Synthetic delivery issue",
+            updated: "2026-07-11T00:00:00Z",
+            status: { name: "In Review" },
+          },
         }),
         { status: 200 },
       ),
@@ -39,6 +43,16 @@ describe("Jira evidence reader", () => {
     });
     await expect(
       reader.readEvidence({ workspaceId: "workspace", sourceKey: "jira:F1851-1" }),
-    ).resolves.toMatchObject({ records: [{ sourceSystem: "jira", externalId: "F1851-1" }] });
+    ).resolves.toMatchObject({
+      records: [
+        {
+          sourceSystem: "jira",
+          externalId: "F1851-1",
+          externalUrl: "https://jira.example.test/browse/F1851-1",
+          bodyExcerpt:
+            "Status: In Review. Jira issue metadata retrieved through approved read adapter.",
+        },
+      ],
+    });
   });
 });

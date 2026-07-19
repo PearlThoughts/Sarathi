@@ -19,6 +19,7 @@ import {
   createEntraClientCredentialsTokenProvider,
   createTeamsGraphThreadReader,
   createTeamsProactiveReminderDelivery,
+  teamsThreadSourceKey,
 } from "../infrastructure/graph/index.ts";
 import {
   createJiraComplianceReminderSource,
@@ -402,7 +403,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         "SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON",
         environment.SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON,
       ),
-    ) as { teams: string; jira: string; github: string; vault: string };
+    ) as { jira: string; github: string; vault: string };
     const graphTokenProvider = createEntraClientCredentialsTokenProvider({
       tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
       clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
@@ -423,7 +424,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             projection.channels.map((channel) => `${channel.teamId}:${channel.channelId}`),
           ),
         }),
-        sourceKey: () => sourceKeys.teams,
+        sourceKey: (command) =>
+          teamsThreadSourceKey({
+            teamId: command.teamId,
+            channelId: command.channelId,
+            rootId: command.rootActivityId,
+          }),
       },
       {
         reader: createJiraEvidenceReader({
