@@ -108,8 +108,11 @@ const dependencies = (
 
 describe("teams mention", () => {
   it("strips only the Sarathi mention", () => {
-    expect(stripSarathiMention("<at>bot-1</at> What is the goal?", "bot-1")).toBe(
+    expect(stripSarathiMention("<at>Sarathi</at> What is the goal?", "<at>Sarathi</at>")).toBe(
       "What is the goal?",
+    );
+    expect(stripSarathiMention("<at>Someone</at> hello", "<at>Sarathi</at>")).toBe(
+      "<at>Someone</at> hello",
     );
   });
 
