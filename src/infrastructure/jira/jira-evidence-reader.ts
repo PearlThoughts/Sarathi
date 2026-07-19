@@ -25,19 +25,26 @@ export const createJiraEvidenceReader = (
     if (!response.ok) throw new Error(`Jira read failed with HTTP ${response.status}.`);
     const issue = (await response.json()) as {
       key: string;
-      self?: string;
-      fields?: { summary?: string; updated?: string; description?: unknown };
+      fields?: {
+        summary?: string;
+        updated?: string;
+        status?: { name?: string };
+      };
     };
+    const status = issue.fields?.status?.name?.trim() || "Unknown";
     return {
       records: [
         {
           sourceSystem: "jira",
           sourceType: "issue",
           externalId: issue.key,
-          externalUrl: issue.self,
+          externalUrl: new URL(
+            `/browse/${encodeURIComponent(issue.key)}`,
+            configuration.baseUrl,
+          ).toString(),
           occurredAt: issue.fields?.updated ?? new Date().toISOString(),
           title: issue.fields?.summary ?? issue.key,
-          bodyExcerpt: "Jira issue metadata retrieved through approved read adapter.",
+          bodyExcerpt: `Status: ${status}. Jira issue metadata retrieved through approved read adapter.`,
           sensitivity: "internal",
           consent: {
             status: "not_required",
