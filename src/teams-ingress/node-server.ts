@@ -24,10 +24,7 @@ import {
   createJiraComplianceReminderSource,
   createJiraEvidenceReader,
 } from "../infrastructure/jira/index.ts";
-import {
-  createOpenAiGroundedAnswerGenerator,
-  openAiGroundedAnswerConfigurationFromEnvironment,
-} from "../infrastructure/model/index.ts";
+import { createGroundedAnswerGeneratorFromEnvironment } from "../infrastructure/model/index.ts";
 import {
   createPostgresComplianceReminderAudit,
   createPostgresTeamsMentionAudit,
@@ -472,8 +469,8 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             }),
         },
         contextAssembler,
-        answerGenerator: createOpenAiGroundedAnswerGenerator(
-          openAiGroundedAnswerConfigurationFromEnvironment(environment),
+        answerGenerator: createGroundedAnswerGeneratorFromEnvironment(environment, (event) =>
+          console.info(JSON.stringify(event)),
         ),
         delivery: { reply: () => Effect.void },
         audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
