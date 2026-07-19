@@ -135,10 +135,22 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 
 ### Approved AI model
 
-- `SARATHI_MODEL_PROVIDER=openai`
+Configure one OpenAI-compatible primary provider:
+
+- `SARATHI_MODEL_PROVIDER` (`openai`, `openrouter`, or `zai`)
 - `SARATHI_MODEL_API_KEY`
 - `SARATHI_MODEL_NAME`
 - optional `SARATHI_MODEL_BASE_URL`
+- optional `SARATHI_MODEL_TIMEOUT_MS`
+
+An explicitly approved fallback uses the corresponding
+`SARATHI_MODEL_FALLBACK_PROVIDER`, `SARATHI_MODEL_FALLBACK_API_KEY`,
+`SARATHI_MODEL_FALLBACK_NAME`, optional `SARATHI_MODEL_FALLBACK_BASE_URL`, and
+optional `SARATHI_MODEL_FALLBACK_TIMEOUT_MS` variables. Partial fallback
+configuration fails closed. Failover emits provider and outcome only; prompts,
+answers, evidence, identifiers, and credentials are excluded from diagnostics.
+Z.AI production integrations use its general API endpoint; its Coding Plan
+endpoint remains limited to the supported tool scenarios documented by Z.AI.
 
 The workspace projection must map only approved standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
 
