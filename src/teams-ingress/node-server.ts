@@ -4,6 +4,7 @@ import {
   type AuthConfiguration,
   authorizeJWT,
   CloudAdapter,
+  getAuthConfigWithDefaults,
   MemoryStorage,
   type TurnContext,
   type TurnState,
@@ -79,11 +80,14 @@ export const teamsIngressConfigurationFromEnvironment = (
   tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
 });
 
-const authConfiguration = (configuration: TeamsIngressConfiguration): AuthConfiguration => ({
-  clientId: configuration.appId,
-  clientSecret: configuration.appPassword,
-  tenantId: configuration.tenantId,
-});
+export const teamsIngressAuthConfiguration = (
+  configuration: TeamsIngressConfiguration,
+): AuthConfiguration =>
+  getAuthConfigWithDefaults({
+    clientId: configuration.appId,
+    clientSecret: configuration.appPassword,
+    tenantId: configuration.tenantId,
+  });
 
 const trustOrder: readonly TrustTier[] = ["guest", "member", "trusted", "maintainer", "admin"];
 
@@ -737,7 +741,8 @@ export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();
   const composition = hostedTeamsIngressCompositionFromEnvironment();
   const finance = hostedFinanceReminderCompositionFromEnvironment();
-  const adapter = new CloudAdapter(authConfiguration(configuration));
+  const auth = teamsIngressAuthConfiguration(configuration);
+  const adapter = new CloudAdapter(auth);
   const diagnostics = createPrivacySafeTeamsIngressDiagnosticSink();
   const application = createTeamsIngressApplication(composition.dependencies, adapter, diagnostics);
   const server = express();
@@ -777,7 +782,7 @@ export const startTeamsIngress = (): void => {
       });
       next();
     },
-    authorizeJWT(authConfiguration(configuration)),
+    authorizeJWT(auth),
     async (request, response) => {
       await adapter.process(request, response, async (context) => application.run(context));
     },
