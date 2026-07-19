@@ -1,8 +1,10 @@
+import { Activity } from "@microsoft/agents-activity";
 import { CloudAdapter } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createTeamsIngressApplication,
+  directTeamsMentionQuestion,
   financeReminderKindFromBody,
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
@@ -156,6 +158,49 @@ describe("Teams ingress configuration", () => {
     });
 
     expect(() => createTeamsIngressApplication(undefined, adapter)).not.toThrow();
+  });
+
+  it("normalizes the recipient mention using the visible Teams mention entity", () => {
+    const activity = Activity.fromObject({
+      type: "message",
+      text: "<at>Sarathi</at> hello",
+      recipient: { id: "28:sarathi-bot", name: "Sarathi" },
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Sarathi</at>",
+          mentioned: { id: "28:SARATHI-BOT", name: "Sarathi" },
+        },
+      ],
+    });
+
+    expect(directTeamsMentionQuestion(activity)).toBe("hello");
+  });
+
+  it("ignores text without a matching recipient mention entity", () => {
+    const activity = Activity.fromObject({
+      type: "message",
+      text: "<at>Someone Else</at> hello",
+      recipient: { id: "28:sarathi-bot", name: "Sarathi" },
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Someone Else</at>",
+          mentioned: { id: "29:someone-else", name: "Someone Else" },
+        },
+      ],
+    });
+
+    expect(directTeamsMentionQuestion(activity)).toBeUndefined();
+    expect(
+      directTeamsMentionQuestion(
+        Activity.fromObject({
+          type: "message",
+          text: "@Sarathi hello",
+          recipient: { id: "28:sarathi-bot", name: "Sarathi" },
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   it("builds an explicit same-thread reply without including private activity content", () => {

@@ -527,6 +527,47 @@ const hasCompleteCommand = (command: {
     command.question,
   ].every((value) => value.trim() !== "");
 
+type MentionActivity = {
+  readonly text?: string | undefined;
+  readonly recipient?: { readonly id?: string | undefined } | undefined;
+  readonly entities?: readonly unknown[] | undefined;
+};
+
+const recipientMentionText = (
+  entities: readonly unknown[] | undefined,
+  recipientId: string,
+): string | undefined => {
+  for (const entity of entities ?? []) {
+    if (typeof entity !== "object" || entity === null) continue;
+    const candidate = entity as {
+      readonly type?: unknown;
+      readonly text?: unknown;
+      readonly mentioned?: unknown;
+    };
+    if (typeof candidate.type !== "string" || candidate.type.toLowerCase() !== "mention") continue;
+    if (typeof candidate.mentioned !== "object" || candidate.mentioned === null) continue;
+    const mentioned = candidate.mentioned as { readonly id?: unknown };
+    if (
+      typeof mentioned.id === "string" &&
+      mentioned.id.toLowerCase() === recipientId.toLowerCase() &&
+      typeof candidate.text === "string" &&
+      candidate.text.trim() !== ""
+    ) {
+      return candidate.text;
+    }
+  }
+  return undefined;
+};
+
+export const directTeamsMentionQuestion = (activity: MentionActivity): string | undefined => {
+  const recipientId = activity.recipient?.id;
+  if (recipientId === undefined) return undefined;
+  const mentionText = recipientMentionText(activity.entities, recipientId);
+  if (mentionText === undefined) return undefined;
+  const question = stripSarathiMention(activity.text ?? "", mentionText);
+  return question === "" ? undefined : question;
+};
+
 export const createTeamsIngressApplication = (
   dependencies: TeamsMentionDependencies = failClosedDependencies,
   adapter?: CloudAdapter,
@@ -537,10 +578,8 @@ export const createTeamsIngressApplication = (
   });
   application.onActivity("message", async (context: TurnContext) => {
     const activity = context.activity;
-    const text = activity.text ?? "";
-    const recipientId = activity.recipient?.id;
-    const question = recipientId === undefined ? "" : stripSarathiMention(text, recipientId);
-    if (question === text || question === "") return;
+    const question = directTeamsMentionQuestion(activity);
+    if (question === undefined) return;
 
     const channelData = activity.channelData as
       | {

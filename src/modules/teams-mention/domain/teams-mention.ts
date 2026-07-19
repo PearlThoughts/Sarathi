@@ -69,10 +69,9 @@ export type TeamsMentionLease =
   | { readonly kind: "in-progress" }
   | { readonly kind: "terminal" };
 
-export const stripSarathiMention = (text: string, botId: string): string =>
+export const stripSarathiMention = (text: string, mentionText: string): string =>
   text
-    .replace(new RegExp(`<at>${escapeRegExp(botId)}</at>`, "gi"), "")
-    .replace(/@Sarathi\b/gi, "")
+    .replace(new RegExp(escapeRegExp(mentionText), "gi"), "")
     .replace(/\s+/g, " ")
     .trim();
 
