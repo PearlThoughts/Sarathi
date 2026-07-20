@@ -56,7 +56,7 @@
 - [x] KLG-508 Keep GitHub live and add connected Teams/project-email operations without per-record approval fields or unrelated mailbox access.
 - [x] KLG-509 Add deterministic and schema-constrained question planning over one validated grammar; reject arbitrary query operators and unbounded traversal.
 - [x] KLG-510 Fuse structured, knowledge, and live results with deduplication, completeness, conflict disclosure, citations, and finance isolation before model egress.
-- [ ] KLG-511 Wire a single delivery-assistant port into Teams and durable `delivery ingest|reconcile|query|status|rebuild` CLI operations.
+- [x] KLG-511 Wire a single delivery-assistant port into Teams and durable `delivery ingest|reconcile|query|status|rebuild` CLI operations.
 - [x] KLG-512 Replace evidence-led user-facing identity with `AI Delivery Assistant` while retaining internal provenance controls.
 - [ ] KLG-513 Add permanent architecture, migration, authorization, deletion, deduplication, conflict, citation, query-family, log-redaction, and latency regression tests.
 - [ ] KLG-514 Prove exact-branch CI, governed merge, backup, production migration/deployment, bounded synchronization, real Delivery Manager question coverage, sub-ten-second Teams reporting, and rollback.

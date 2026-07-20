@@ -186,6 +186,13 @@
       "description": "Pre-provider access checks plus live GitHub, Jira, Teams, and scoped project-email delivery query coverage."
     },
     {
+      "id": "delivery-cli",
+      "path": "tests/delivery-cli.test.ts",
+      "command": "bunx vitest run tests/delivery-cli.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Durable status/query/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild, and privacy-safe failures."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",

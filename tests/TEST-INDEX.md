@@ -194,3 +194,10 @@
 - Location: `tests/delivery-query-sources.test.ts`
 - Scope: Pre-provider workspace/actor checks, live GitHub PR/commit retrieval, Jira query projection, Teams channel reads, project-email scoping, assistant-prompt exclusion, finance exclusion, and resolvable source citations.
 - Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-cli
+
+- Command: `bunx vitest run tests/delivery-cli.test.ts`
+- Location: `tests/delivery-cli.test.ts`
+- Scope: Durable status/query/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Prerequisites: Bun dependencies installed with `bun install`.

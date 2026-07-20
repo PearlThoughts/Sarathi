@@ -49,6 +49,7 @@ import {
   workspaceIdForWorkspacePack,
 } from "../modules/workspace-packs/index.ts";
 import { runDurableAccountabilityCommand } from "./commands/accountability-runtime.ts";
+import { runDeliveryCommand } from "./commands/delivery-runtime.ts";
 import { runDurableIntentCommand } from "./commands/intent-runtime.ts";
 import { runKnowledgeCommand } from "./commands/knowledge-runtime.ts";
 import {
@@ -923,6 +924,7 @@ export const runReleaseCli = async (options: CliOptions): Promise<CliResult> => 
   const env = options.env ?? Bun.env;
   const fetcher = options.fetcher ?? fetch;
   if (args[0] === "knowledge") return runKnowledgeCommand(args.slice(1), env);
+  if (args[0] === "delivery") return runDeliveryCommand(args.slice(1), env);
   let runtimeResult: CliResult | undefined;
 
   try {

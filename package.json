@@ -15,6 +15,7 @@
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
     "knowledge": "bun run src/cli/commands/knowledge-runtime.ts",
+    "delivery": "bun run src/cli/release.ts delivery",
     "teams:ingress": "node --import tsx src/teams-ingress/node-server.ts",
     "teams:manifest:validate": "atk validate --manifest-file appPackage/manifest.json",
     "privacy:scan": "bun run src/cli/commands/private-data-scan.ts",
