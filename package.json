@@ -37,8 +37,6 @@
     "check": "bun run ci"
   },
   "dependencies": {
-    "@ai-sdk/openai": "4.0.16",
-    "@ai-sdk/openai-compatible": "3.0.12",
     "@effect/cli": "^0.76",
     "@effect/platform": "^0.97",
     "@effect/platform-node": "^0.108",

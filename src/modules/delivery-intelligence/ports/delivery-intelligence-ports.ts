@@ -56,11 +56,37 @@ export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt"> 
 
 export type DeliveryAssistantAnswer = {
   readonly text: string;
-  readonly citations: readonly { readonly label: string; readonly url: string }[];
+  readonly citations: readonly {
+    readonly label: string;
+    readonly url: string;
+  }[];
   readonly status: "ok" | "partial" | "empty";
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];
+};
+
+export type DeliveryAnswerCompositionInput = {
+  readonly workspaceId: string;
+  readonly question: string;
+  readonly requestedAt: string;
+  readonly plan: DeliveryQueryPlan;
+  readonly items: readonly DeliveryResultItem[];
+  readonly conflicts: readonly DeliveryConflict[];
+};
+
+export type DeliveryAnswerComposition = {
+  readonly text: string;
+  readonly citations: readonly {
+    readonly label: string;
+    readonly url: string;
+  }[];
+};
+
+export type DeliveryAnswerComposer = {
+  readonly compose: (
+    input: DeliveryAnswerCompositionInput,
+  ) => Effect.Effect<DeliveryAnswerComposition, RepositoryError>;
 };
 
 export type DeliveryAssistant = {

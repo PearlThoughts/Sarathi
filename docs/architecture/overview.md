@@ -9,8 +9,7 @@ Sarathi follows a domain-first hexagonal structure:
 - `src/domain`: shared policy primitives such as sensitivity and trust tiers.
 - `src/modules/*`: bounded contexts with a public `index.ts`, then `domain`, `application`, `ports`, and `api` layers only when needed.
 - `src/modules/boundary-policy`: the policy gate for trust tier, sensitivity, delegation stage, approval, and model egress.
-- `src/modules/delivery-assistant`: public role, team-profile, audience-scope, and policy-artifact contracts for the AI Delivery Assistant product.
-- `src/modules/delivery-intelligence`: project objects, relationships, observations, claims, metrics, conflicts, validated delivery queries, and concise cited results.
+- `src/modules/delivery-intelligence`: canonical project objects, relationships, observations, claims, metrics, conflicts, query grammar, product profile, and answer orchestration for the AI Delivery Assistant.
 - `src/modules/knowledge-layer`: versioned documents, passages, provenance, deletion reconciliation, full-text/vector retrieval, and citations supporting delivery intelligence.
 - `src/modules/follow-up`: generic due-item planning and exception digest primitives.
 - `src/modules/messaging`: Teams-ready message contracts and delivery ports.
@@ -41,18 +40,20 @@ Inferences are not enough. YAML overlays provide explicit corrections, boundary 
 
 The repository includes hosted Microsoft Teams ingress, Microsoft Graph, Jira, GitHub, Vault projection, model, Postgres audit, workspace-resolution, compliance-reminder, and context-assembly adapters. Their presence does not make every deployment ready: each capability still requires authorized private configuration, runtime composition, capability-specific readiness, and real acceptance evidence.
 
-The delivery-assistant contracts and Strategy Kernel define a broader product than the currently proven production paths. Delivery intelligence organizes project operating data so Sarathi can answer the ordinary questions directed to a PM or Delivery Manager while keeping actions and policy changes human-governed.
+The delivery-intelligence contracts and Strategy Kernel define a broader product than the currently proven production paths. Delivery intelligence organizes project operating data so Sarathi can answer the ordinary questions directed to a PM or Delivery Manager. Internal workspace reports are automatic; external publication and mutating actions remain human-governed.
 
-## Strategic Execution Extension
+## Strategic Execution Relationship
 
-The long-term product architecture adds a Strategy Kernel above the existing evidence and policy boundaries:
+The existing Strategy Kernel remains the command-side model for Sarathi-owned intent and follow-through. It does not sit above delivery intelligence as a second reporting graph. Its relevant records project into the same delivery object/relation/claim model used for Jira, Vault, Teams, email, and GitHub:
 
 - workspaces define project, product, client, initiative, or operating-unit boundaries inside one installed organization,
-- intent nodes store ratified goals, commitments, bets, decisions, risks, assumptions, KPIs, and capacity reservations,
-- evidence items store observed Teams, email, meeting, Jira, GitHub, CI, and vault artifacts,
-- intent edges connect goals to commitments, risks, decisions, and execution evidence,
+- intent nodes provide goals, commitments, decisions, risks, assumptions, policies, and capacity declarations,
+- connected source records provide observed Teams, email, meeting, Jira, GitHub, CI, and Vault activity,
+- delivery relationships connect goals and commitments to risks, decisions, ownership, dependencies, and execution work,
 - projections reconcile Sarathi-owned intent with systems such as Jira, Teams, GitHub, and vault notes,
-- accountability actions track accepted owner follow-through and escalation state.
+- accountability actions project as owned delivery actions and follow-through state.
+
+Reporting never requires ratification of every connected record. Source events are trusted as occurrences, statements remain attributed claims, conflicting claims stay visible, and only external publication or mutating actions require human review.
 
 This extension is documented in [Workspace Operating Model](./workspace-operating-model.md), [Intent And Evidence Graph](./intent-evidence-graph.md), and [Strategic Execution Loop](../implementation/strategic-execution-loop.md).
 

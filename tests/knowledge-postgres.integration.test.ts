@@ -231,12 +231,6 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         selector: "objects",
         citationUrl: "https://jira.example/browse/DEMO-635",
       }),
-      expect.objectContaining({
-        workspaceId: "workspace-example",
-        source: "jira",
-        selector: "objects",
-        citationUrl: "https://jira.example/browse/DEMO-635",
-      }),
     ]);
     for (const deniedContext of [
       { ...deliveryContext, actorId: "blocked-actor" },

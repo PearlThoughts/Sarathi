@@ -7,8 +7,16 @@ import {
   createTeamsDeliveryQuerySource,
 } from "../../infrastructure/graph/index.ts";
 import { createJiraDeliveryQuerySource } from "../../infrastructure/jira/index.ts";
+import { createDeliveryKnowledgeQuerySource } from "../../infrastructure/knowledge/index.ts";
+import {
+  createAiSdkDeliveryAnswerComposer,
+  createAiSdkKnowledgeEmbedding,
+  createGroundedAnswerGeneratorFromEnvironment,
+  knowledgeEmbeddingConfigurationFromEnvironment,
+} from "../../infrastructure/model/index.ts";
 import {
   createPostgresDeliveryQuerySource,
+  createPostgresKnowledgeRepository,
   openKnowledgePostgresDatabase,
   readKnowledgePostgresStatus,
 } from "../../infrastructure/postgres/index.ts";
@@ -21,7 +29,10 @@ import {
 } from "../../modules/delivery-intelligence/index.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
 
-type DeliveryCliResult = { readonly exitCode: number; readonly output: unknown };
+type DeliveryCliResult = {
+  readonly exitCode: number;
+  readonly output: unknown;
+};
 type DeliveryRuntimeEnvironment = Record<string, string | undefined>;
 type DeliveryCliDependencies = {
   readonly answer?:
@@ -200,13 +211,30 @@ const answerFromRuntime = async (
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
   );
   try {
+    const audienceIds = parseJson<readonly string[]>(
+      "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
+      environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
+    );
     return await Effect.runPromise(
       createDeliveryAssistant({
         sources: [
           createPostgresDeliveryQuerySource(opened.database),
+          createDeliveryKnowledgeQuerySource({
+            repository: createPostgresKnowledgeRepository(opened.database),
+            embeddings: createAiSdkKnowledgeEmbedding(
+              knowledgeEmbeddingConfigurationFromEnvironment(environment),
+            ),
+            workspaceId: request.workspaceId,
+            allowedActorIds: new Set([request.actorId]),
+            audienceIds,
+          }),
           ...liveSources(environment, request.actorId),
         ],
-        sourceTimeoutMs: 4_500,
+        answerComposer: createAiSdkDeliveryAnswerComposer(
+          createGroundedAnswerGeneratorFromEnvironment(environment),
+        ),
+        sourceTimeoutMs: 3_000,
+        compositionTimeoutMs: 2_500,
         totalBudgetMs: 6_500,
       }).answer(request),
     );

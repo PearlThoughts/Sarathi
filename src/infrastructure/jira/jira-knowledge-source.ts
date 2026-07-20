@@ -34,7 +34,10 @@ type JiraComment = {
   readonly body?: unknown;
   readonly created?: string;
   readonly updated?: string;
-  readonly author?: { readonly accountId?: string; readonly displayName?: string };
+  readonly author?: {
+    readonly accountId?: string;
+    readonly displayName?: string;
+  };
 };
 
 type JiraCommentPage = {
@@ -226,6 +229,8 @@ const structuredValue = (value: unknown): unknown => {
     "startDate",
     "endDate",
     "completeDate",
+    "releaseDate",
+    "released",
     "originalEstimateSeconds",
     "remainingEstimateSeconds",
     "timeSpentSeconds",
@@ -265,6 +270,24 @@ const objectReference = (kind: DeliveryObjectKind, externalKey: string): Deliver
   externalKey,
 });
 
+const jiraLifecycleState = (status: string): string | undefined => {
+  const normalized = status.toLowerCase();
+  if (/\b(?:blocked|impeded|stuck)\b/.test(normalized)) return "blocked";
+  if (/\b(?:done|closed|resolved|released|complete)\b/.test(normalized)) return "done";
+  if (/\b(?:in progress|implementing|review|testing|qa)\b/.test(normalized)) return "in_progress";
+  if (/\b(?:open|todo|to do|backlog|new|selected|ready)\b/.test(normalized)) return "planned";
+  return status === "" ? undefined : normalizedLabel(status);
+};
+
+const canonicalFieldValue = (
+  issue: JiraIssue,
+  fields: Readonly<Record<string, string>>,
+  pattern: RegExp,
+): string | undefined => {
+  const value = plainText(fieldWithLabel(issue, fields, pattern)).trim();
+  return value === "" ? undefined : value;
+};
+
 const deliveryProjection = (
   configuration: JiraKnowledgeSourceConfiguration,
   issue: JiraIssue,
@@ -274,16 +297,34 @@ const deliveryProjection = (
   const workItem = objectReference("work_item", issue.key);
   const project = objectReference("project", configuration.projectKey);
   const status = plainText(fieldWithLabel(issue, configuration.fields, /^status$/i));
+  const normalizedStatus = jiraLifecycleState(status);
   const issueType = plainText(fieldWithLabel(issue, configuration.fields, /issue type|type/i));
-  const attributes = Object.fromEntries(
-    Object.entries(configuration.fields).flatMap(([fieldId, label]) => {
-      if (/description|comment/i.test(label)) return [];
-      const value = structuredValue(issue.fields[fieldId]);
-      return value === undefined || value === null || value === ""
-        ? []
-        : [[normalizedLabel(label), value] as const];
-    }),
-  );
+  const attributes = {
+    ...Object.fromEntries(
+      Object.entries(configuration.fields).flatMap(([fieldId, label]) => {
+        if (/description|comment/i.test(label)) return [];
+        const value = structuredValue(issue.fields[fieldId]);
+        return value === undefined || value === null || value === ""
+          ? []
+          : [[normalizedLabel(label), value] as const];
+      }),
+    ),
+    ...(canonicalFieldValue(issue, configuration.fields, /^priority$/i) === undefined
+      ? {}
+      : {
+          priority: canonicalFieldValue(issue, configuration.fields, /^priority$/i),
+        }),
+    ...(canonicalFieldValue(issue, configuration.fields, /due date|duedate/i) === undefined
+      ? {}
+      : {
+          dueAt: canonicalFieldValue(issue, configuration.fields, /due date|duedate/i),
+        }),
+    ...(canonicalFieldValue(issue, configuration.fields, /start date/i) === undefined
+      ? {}
+      : {
+          startAt: canonicalFieldValue(issue, configuration.fields, /start date/i),
+        }),
+  };
   const objects: DeliveryObjectDraft[] = [
     {
       ...project,
@@ -295,7 +336,7 @@ const deliveryProjection = (
     {
       ...workItem,
       title: plainText(issue.fields.summary) || issue.key,
-      ...(status === "" ? {} : { lifecycleState: status }),
+      ...(normalizedStatus === undefined ? {} : { lifecycleState: normalizedStatus }),
       attributes,
       sensitivity,
     },
@@ -333,7 +374,13 @@ const deliveryProjection = (
       attributes: {},
       sensitivity,
     });
-    addRelation({ kind: "assigned_to", from: workItem, to: person, attributes: {}, sensitivity });
+    addRelation({
+      kind: "assigned_to",
+      from: workItem,
+      to: person,
+      attributes: {},
+      sensitivity,
+    });
   }
 
   for (const sprintValue of recordValues(fieldWithLabel(issue, configuration.fields, /sprint/i))) {
@@ -351,7 +398,13 @@ const deliveryProjection = (
         : {}),
       ...(typeof sprintValue.endDate === "string" ? { effectiveTo: sprintValue.endDate } : {}),
     });
-    addRelation({ kind: "contains", from: sprint, to: workItem, attributes: {}, sensitivity });
+    addRelation({
+      kind: "contains",
+      from: sprint,
+      to: workItem,
+      attributes: {},
+      sensitivity,
+    });
   }
 
   for (const componentValue of recordValues(
@@ -367,7 +420,13 @@ const deliveryProjection = (
       attributes: {},
       sensitivity,
     });
-    addRelation({ kind: "contains", from: module, to: workItem, attributes: {}, sensitivity });
+    addRelation({
+      kind: "contains",
+      from: module,
+      to: workItem,
+      attributes: {},
+      sensitivity,
+    });
   }
 
   for (const versionValue of recordValues(
@@ -398,7 +457,7 @@ const deliveryProjection = (
     addObject({
       ...requirement,
       title: plainText(issue.fields.summary) || issue.key,
-      ...(status === "" ? {} : { lifecycleState: status }),
+      ...(normalizedStatus === undefined ? {} : { lifecycleState: normalizedStatus }),
       attributes: { issueType },
       sensitivity,
     });
@@ -416,11 +475,21 @@ const deliveryProjection = (
     addObject({
       ...risk,
       title: plainText(issue.fields.summary) || issue.key,
-      ...(status === "" ? {} : { lifecycleState: status }),
-      attributes: { issueType, labels },
+      ...(normalizedStatus === undefined ? {} : { lifecycleState: normalizedStatus }),
+      attributes: {
+        issueType,
+        labels,
+        ...(attributes.priority === undefined ? {} : { severity: attributes.priority }),
+      },
       sensitivity,
     });
-    addRelation({ kind: "affects", from: risk, to: project, attributes: {}, sensitivity });
+    addRelation({
+      kind: "affects",
+      from: risk,
+      to: project,
+      attributes: {},
+      sensitivity,
+    });
   }
 
   const links = fieldWithLabel(issue, configuration.fields, /issue links?|dependencies/i);
@@ -468,7 +537,7 @@ const deliveryProjection = (
     return [
       {
         subject: workItem,
-        category: "delivery" as const,
+        category: /remaining estimate/i.test(label) ? ("capacity" as const) : ("delivery" as const),
         kind: metricKind,
         value: String(value),
         unit: metricKind === "estimate_story_points" ? "points" : "seconds",
@@ -478,19 +547,25 @@ const deliveryProjection = (
   });
   const assertedAt =
     typeof issue.fields.updated === "string" ? issue.fields.updated : new Date(0).toISOString();
-  const claims = Object.entries(attributes).map(([key, value]) => ({
-    subject: workItem,
-    subjectKey: issue.key,
-    predicate: `jira.${key}`,
-    value,
-    assertedAt,
-    citationUrl: new URL(
-      `/browse/${encodeURIComponent(issue.key)}`,
-      configuration.baseUrl,
-    ).toString(),
-    sensitivity,
-    authority: configuration.authority ?? 1,
-  }));
+  const claims = Object.entries(attributes).flatMap(([key, value]) =>
+    value === undefined
+      ? []
+      : [
+          {
+            subject: workItem,
+            subjectKey: issue.key,
+            predicate: `jira.${key}`,
+            value,
+            assertedAt,
+            citationUrl: new URL(
+              `/browse/${encodeURIComponent(issue.key)}`,
+              configuration.baseUrl,
+            ).toString(),
+            sensitivity,
+            authority: configuration.authority ?? 1,
+          },
+        ],
+  );
   const issueUrl = new URL(
     `/browse/${encodeURIComponent(issue.key)}`,
     configuration.baseUrl,

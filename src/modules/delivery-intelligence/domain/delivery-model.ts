@@ -5,6 +5,11 @@ export type DeliverySourceKind = "jira" | "vault" | "github" | "teams" | "email"
 
 export type DeliveryObjectKind =
   | "project"
+  | "goal"
+  | "commitment"
+  | "action"
+  | "assumption"
+  | "policy"
   | "person"
   | "team"
   | "module"
@@ -19,6 +24,9 @@ export type DeliveryObjectKind =
 
 export type DeliveryRelationKind =
   | "contains"
+  | "supports"
+  | "threatens"
+  | "part_of"
   | "owns"
   | "assigned_to"
   | "depends_on"

@@ -5,7 +5,10 @@ import type {
 } from "./delivery-model.ts";
 
 export type DeliveryQuestionIntent =
+  | "general"
   | "status"
+  | "goals"
+  | "commitments"
   | "scope"
   | "requirements"
   | "ownership"
@@ -16,6 +19,8 @@ export type DeliveryQuestionIntent =
   | "risks"
   | "recurring"
   | "decisions"
+  | "next_actions"
+  | "milestones"
   | "capacity"
   | "finance"
   | "activity"
@@ -33,6 +38,7 @@ export type DeliveryQuerySelector =
 
 export type DeliveryQueryField =
   | "kind"
+  | "title"
   | "externalKey"
   | "lifecycleState"
   | "priority"
@@ -46,7 +52,9 @@ export type DeliveryQueryField =
   | "metricCategory"
   | "metricKind"
   | "dedupeKey"
-  | "observedAt";
+  | "observedAt"
+  | "startAt"
+  | "dueAt";
 
 export type DeliveryQueryPredicate = {
   readonly field: DeliveryQueryField;
@@ -61,7 +69,11 @@ export type DeliveryRelationTraversal = {
 };
 
 export type DeliveryTimeConstraint =
-  | { readonly kind: "absolute"; readonly fromInclusive: string; readonly toExclusive: string }
+  | {
+      readonly kind: "absolute";
+      readonly fromInclusive: string;
+      readonly toExclusive: string;
+    }
   | { readonly kind: "workspace_day" }
   | { readonly kind: "workspace_week" }
   | { readonly kind: "jira_sprint"; readonly sprint: "current" | "previous" }
@@ -111,7 +123,10 @@ const selectors = new Set<DeliveryQuerySelector>([
   "github_live",
 ]);
 const purposes = new Set<DeliveryQuestionIntent>([
+  "general",
   "status",
+  "goals",
+  "commitments",
   "scope",
   "requirements",
   "ownership",
@@ -122,6 +137,8 @@ const purposes = new Set<DeliveryQuestionIntent>([
   "risks",
   "recurring",
   "decisions",
+  "next_actions",
+  "milestones",
   "capacity",
   "finance",
   "activity",
@@ -203,7 +220,11 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     operation: Omit<DeliveryQueryOperation, "id" | "purpose">,
   ) => {
     if (!intents.includes(intent)) intents.push(intent);
-    operations.push({ id: `${intent}-${operations.length + 1}`, purpose: intent, ...operation });
+    operations.push({
+      id: `${intent}-${operations.length + 1}`,
+      purpose: intent,
+      ...operation,
+    });
   };
   const top = Math.max(1, Math.min(Number(/\btop\s+(\d{1,2})\b/.exec(value)?.[1] ?? 5), 10));
   const sprintTime: DeliveryTimeConstraint | undefined = has(value, /\blast sprint\b/)
@@ -211,6 +232,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     : has(value, /\b(?:current|active|this) sprint\b/)
       ? { kind: "jira_sprint", sprint: "current" }
       : undefined;
+  const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
+  const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
+    .exec(question)?.[1]
+    ?.trim();
 
   if (has(value, /\b(?:scope|project boundary|in scope|out of scope)\b/))
     add("scope", {
@@ -218,20 +243,40 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       objectKinds: ["project", "module", "milestone", "deliverable"],
       limit: top,
     });
+  if (has(value, /\b(?:goal|goals|objective|objectives|outcome|outcomes)\b/))
+    add("goals", { select: "objects", objectKinds: ["goal"], limit: top });
+  if (has(value, /\b(?:commitment|commitments|promise|promises|committed)\b/))
+    add("commitments", {
+      select: "objects",
+      objectKinds: ["commitment", "deliverable"],
+      limit: top,
+    });
   if (has(value, /\b(?:requirement|requirements|acceptance criteria)\b/))
-    add("requirements", { select: "objects", objectKinds: ["requirement"], limit: top });
+    add("requirements", {
+      select: "objects",
+      objectKinds: ["requirement"],
+      limit: top,
+    });
   if (has(value, /\b(?:who owns|ownership|owner|who is working on what)\b/))
     add("ownership", {
       select: "relations",
       relationKinds: ["owns", "assigned_to"],
-      traversal: { kinds: ["owns", "assigned_to"], direction: "both", maximumDepth: 1 },
+      traversal: {
+        kinds: ["owns", "assigned_to"],
+        direction: "both",
+        maximumDepth: 1,
+      },
       limit: top,
     });
   if (has(value, /\b(?:waiting for whom|waits? on|dependenc(?:y|ies)|depends? on|blocked by)\b/))
     add("dependencies", {
       select: "relations",
       relationKinds: ["depends_on", "blocks"],
-      traversal: { kinds: ["depends_on", "blocks"], direction: "both", maximumDepth: 2 },
+      traversal: {
+        kinds: ["depends_on", "blocks"],
+        direction: "both",
+        maximumDepth: 2,
+      },
       time: sprintTime,
       limit: top,
     });
@@ -239,23 +284,41 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     add("blockers", {
       select: "objects",
       objectKinds: ["work_item"],
-      predicates: [{ field: "lifecycleState", operator: "in", value: ["blocked", "impeded"] }],
+      predicates: [
+        {
+          field: "lifecycleState",
+          operator: "in",
+          value: ["blocked", "impeded"],
+        },
+      ],
       time: sprintTime,
       limit: top,
     });
-  if (has(value, /\b(?:deliver(?:ed|y)?|completed|shipped|finished)\b/))
+  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/))
     add("delivered", {
       select: "objects",
       objectKinds: ["work_item", "deliverable"],
-      predicates: [{ field: "lifecycleState", operator: "in", value: ["done", "delivered"] }],
+      predicates: [
+        {
+          field: "lifecycleState",
+          operator: "in",
+          value: ["done", "delivered"],
+        },
+      ],
       time: sprintTime,
       limit: top,
     });
-  if (has(value, /\b(?:doing|working on|current work|in progress|this week|bandwidth)\b/))
+  if (has(value, /\b(?:doing|working on|current work|in progress|this week)\b/))
     add("current_work", {
       select: "objects",
       objectKinds: ["work_item"],
-      predicates: [{ field: "lifecycleState", operator: "in", value: ["in_progress", "active"] }],
+      predicates: [
+        {
+          field: "lifecycleState",
+          operator: "in",
+          value: ["in_progress", "active"],
+        },
+      ],
       time: has(value, /\bthis week\b/) ? { kind: "workspace_week" } : sprintTime,
       limit: top,
     });
@@ -276,16 +339,57 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       limit: top,
     });
   if (has(value, /\b(?:decision|decisions|decided|decision log)\b/))
-    add("decisions", { select: "objects", objectKinds: ["decision"], limit: top });
-  if (has(value, /\b(?:capacity|allocation|availability|bandwidth)\b/))
+    add("decisions", {
+      select: "objects",
+      objectKinds: ["decision"],
+      limit: top,
+    });
+  if (
+    has(
+      value,
+      /\b(?:next action|next actions|next step|next steps|follow[- ]?up|what (?:should|do) (?:we|they|the team) do next)\b/,
+    )
+  )
+    add("next_actions", {
+      select: "objects",
+      objectKinds: ["work_item", "deliverable", "milestone"],
+      predicates: [
+        {
+          field: "lifecycleState",
+          operator: "in",
+          value: ["planned", "ready", "active", "in_progress", "blocked", "impeded"],
+        },
+      ],
+      orderBy: { field: "dueAt", direction: "asc" },
+      limit: top,
+    });
+  if (has(value, /\b(?:milestone|milestones|deadline|deadlines|timeline|due date|due dates)\b/))
+    add("milestones", {
+      select: "objects",
+      objectKinds: ["milestone", "sprint", "deliverable"],
+      orderBy: { field: "dueAt", direction: "asc" },
+      limit: top,
+    });
+  if (has(value, /\b(?:capacity|allocation|availability|bandwidth)\b/)) {
     add("capacity", {
       select: "metrics",
       metricCategories: ["capacity"],
       time: has(value, /\bthis week\b/) ? { kind: "workspace_week" } : sprintTime,
       limit: top,
     });
+    add("capacity", {
+      select: "objects",
+      objectKinds: ["person", "team"],
+      predicates: [{ field: "label", operator: "equals", value: "capacity" }],
+      limit: top,
+    });
+  }
   if (has(value, /\b(?:budget|cost|rate|burn|revenue|margin)\b/))
-    add("finance", { select: "metrics", metricCategories: ["finance"], limit: top });
+    add("finance", {
+      select: "metrics",
+      metricCategories: ["finance"],
+      limit: top,
+    });
   if (
     has(
       value,
@@ -302,17 +406,53 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       limit: top,
     });
   if (
-    has(value, /\b(?:implementation|code|repository|pull request|commit|function|class|module)\b/)
+    has(
+      value,
+      /\b(?:implementation|implemented|code|repository|pull request|commit|function|class)\b/,
+    )
   )
     add("implementation", { select: "github_live", limit: top });
   if (has(value, /\b(?:current status|project status|status of|overall status)\b/))
     add("status", {
       select: "objects",
-      objectKinds: ["project", "milestone", "work_item"],
+      objectKinds: [
+        "project",
+        "module",
+        "milestone",
+        "sprint",
+        "work_item",
+        "deliverable",
+        "goal",
+        "commitment",
+        "action",
+        "risk",
+      ],
+      predicates:
+        exactKey !== undefined
+          ? [{ field: "externalKey", operator: "equals", value: exactKey }]
+          : statusTarget === undefined
+            ? undefined
+            : [{ field: "title", operator: "contains", value: statusTarget }],
       limit: top,
     });
+  if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
 
-  if (operations.length === 0) return undefined;
+  if (operations.length === 0) {
+    add("general", { select: "objects", limit: top });
+    add("general", { select: "relations", limit: top });
+    add("general", { select: "claims", limit: top });
+    add("general", {
+      select: "observations",
+      time: { kind: "lookback", days: 120 },
+      limit: top,
+    });
+    add("general", {
+      select: "metrics",
+      metricCategories: ["delivery", "capacity", "quality"],
+      limit: top,
+    });
+    add("general", { select: "knowledge", limit: top });
+  }
   return validateDeliveryQueryPlan({
     version: 1,
     intents,

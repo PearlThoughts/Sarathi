@@ -62,7 +62,10 @@ export const handleTeamsMention = (
       } as const;
     }
 
-    const deliveryQuestionPlan = planDeliveryQuestion(command.question);
+    const deliveryQuestionPlan =
+      dependencies.deliveryAssistant === undefined || dependencies.deliveryTimeZone === undefined
+        ? undefined
+        : planDeliveryQuestion(command.question);
     const authorizationResult = yield* Effect.either(
       deliveryQuestionPlan === undefined
         ? dependencies.authorizer.authorizeContext(command, resolved)

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RepositoryError } from "../src/domain/errors.ts";
 import {
   createDeliveryAssistant,
+  type DeliveryAnswerComposer,
   type DeliveryClaim,
   type DeliveryQuerySource,
   type DeliveryResultItem,
@@ -43,9 +44,18 @@ const item = (
 describe("delivery intelligence application", () => {
   it("rejects finance before any source call", async () => {
     const execute = vi.fn(() =>
-      Effect.succeed({ items: [], conflicts: [], unavailableSources: [], complete: true }),
+      Effect.succeed({
+        items: [],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
     );
-    const source: DeliveryQuerySource = { source: "projection", selectors: ["metrics"], execute };
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["metrics"],
+      execute,
+    };
     await expect(
       Effect.runPromise(
         createDeliveryAssistant({ sources: [source] }).answer({
@@ -65,7 +75,10 @@ describe("delivery intelligence application", () => {
         Effect.succeed({
           items: [
             item("github", "1", "Merged delivery report"),
-            { ...item("jira", "2", "Merged delivery report"), dedupeKey: "merged delivery report" },
+            {
+              ...item("jira", "2", "Merged delivery report"),
+              dedupeKey: "merged delivery report",
+            },
             item("teams", "3", "Team confirmed rollout"),
           ],
           conflicts: [],
@@ -153,8 +166,14 @@ describe("delivery intelligence application", () => {
       execute: () =>
         Effect.succeed({
           items: [
-            { ...item("jira", "other", "Other workspace"), workspaceId: "other" },
-            { ...item("jira", "restricted", "Restricted"), sensitivity: "restricted" },
+            {
+              ...item("jira", "other", "Other workspace"),
+              workspaceId: "other",
+            },
+            {
+              ...item("jira", "restricted", "Restricted"),
+              sensitivity: "restricted",
+            },
           ],
           conflicts: [],
           unavailableSources: [],
@@ -173,7 +192,12 @@ describe("delivery intelligence application", () => {
       source: "projection",
       selectors: ["observations"],
       execute: () =>
-        Effect.fail(new RepositoryError({ message: "test projection failure", operation: "test" })),
+        Effect.fail(
+          new RepositoryError({
+            message: "test projection failure",
+            operation: "test",
+          }),
+        ),
     };
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [source] }).answer(request),
@@ -181,5 +205,77 @@ describe("delivery intelligence application", () => {
     expect(answer.status).toBe("partial");
     expect(answer.unavailableSources).toEqual(["jira", "vault"]);
     expect(answer.text).toContain("Partial: Jira, Vault unavailable.");
+  });
+
+  it("synthesizes only authorized deduplicated records and validates model citations", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
+      Effect.succeed({
+        text: `Merged code and project activity. [Code](https://example.com/github/code)\nThe team confirmed the next step. [Team](https://example.com/teams/team)`,
+        citations: [
+          { label: "Code", url: "https://example.com/github/code" },
+          { label: "Team", url: "https://example.com/teams/team" },
+        ],
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            item("github", "code", "Merged code"),
+            item("teams", "team", "Confirmed next step"),
+            {
+              ...item("jira", "other", "Other workspace"),
+              workspaceId: "other",
+            },
+            {
+              ...item("jira", "restricted", "Restricted"),
+              sensitivity: "restricted",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+      }).answer(request),
+    );
+    const composition = compose.mock.calls[0]?.[0];
+    expect(composition?.items.map(({ id }) => id)).toEqual(["code", "team"]);
+    expect(answer.text).toContain("Merged code and project activity");
+    expect(answer.citations).toHaveLength(2);
+  });
+
+  it("falls back to the bounded deterministic answer for an invented model citation", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [item("github", "code", "Merged code"), item("teams", "team", "Team update")],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: {
+          compose: () =>
+            Effect.succeed({
+              text: "Invented [source](https://evil.example.test/x)",
+              citations: [{ label: "source", url: "https://evil.example.test/x" }],
+            }),
+        },
+      }).answer(request),
+    );
+    expect(answer.text).not.toContain("evil.example.test");
+    expect(answer.text).toContain("Merged code");
   });
 });

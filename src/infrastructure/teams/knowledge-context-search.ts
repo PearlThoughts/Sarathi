@@ -1,11 +1,11 @@
 import { Effect } from "effect";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
-  type ApprovedThreadEvidence,
   type KnowledgeEmbeddingPort,
   type KnowledgeLiveSearch,
   type KnowledgeRepository,
   queryKnowledgeAcrossSources,
+  type TeamsThreadContext,
 } from "../../modules/knowledge-layer/index.ts";
 import type {
   ContextEvidence,
@@ -20,9 +20,7 @@ export type KnowledgeTeamsContextConfiguration = {
   readonly topK: number;
 };
 
-const approvedThreadEvidence = (
-  evidence: readonly ContextEvidence[],
-): readonly ApprovedThreadEvidence[] =>
+const teamsThreadContext = (evidence: readonly ContextEvidence[]): readonly TeamsThreadContext[] =>
   evidence
     .filter(({ source }) => source === "teams")
     .map((record) => ({
@@ -55,7 +53,7 @@ export const createKnowledgeTeamsContextSearch = (
         },
         topK: configuration.topK,
       },
-      approvedThreadEvidence(threadEvidence),
+      teamsThreadContext(threadEvidence),
     ).pipe(
       Effect.map((results) =>
         results.map(

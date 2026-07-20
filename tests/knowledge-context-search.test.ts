@@ -7,7 +7,7 @@ import type {
 } from "../src/modules/knowledge-layer/index.ts";
 
 describe("Teams knowledge context search", () => {
-  test("projects resolved workspace, actor, sensitivity, and approved thread context into retrieval", async () => {
+  test("projects resolved workspace, actor, sensitivity, and thread context into retrieval", async () => {
     const seen: unknown[] = [];
     const repository: KnowledgeRepository = {
       reconcile: () => Effect.die("not used"),

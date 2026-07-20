@@ -22,7 +22,10 @@ describe("delivery intelligence domain", () => {
       "What did the team deliver last sprint, and what are they doing this week?",
     );
     expect(plan?.intents).toEqual(["delivered", "current_work"]);
-    expect(plan?.operations[0]?.time).toEqual({ kind: "jira_sprint", sprint: "previous" });
+    expect(plan?.operations[0]?.time).toEqual({
+      kind: "jira_sprint",
+      sprint: "previous",
+    });
     expect(plan?.operations[1]?.time).toEqual({ kind: "workspace_week" });
   });
 
@@ -37,16 +40,52 @@ describe("delivery intelligence domain", () => {
       direction: "both",
       maximumDepth: 2,
     });
-    expect(plan?.operations[1]?.time).toEqual({ kind: "jira_sprint", sprint: "current" });
+    expect(plan?.operations[1]?.time).toEqual({
+      kind: "jira_sprint",
+      sprint: "current",
+    });
+  });
+
+  it("models next actions and milestones without making time the aggregate root", () => {
+    const plan = planDeliveryQuestion(
+      "What are the next actions and upcoming milestones for the project?",
+    );
+    expect(plan?.intents).toEqual(["next_actions", "milestones"]);
+    expect(plan?.operations[0]).toMatchObject({
+      select: "objects",
+      objectKinds: ["work_item", "deliverable", "milestone"],
+      orderBy: { field: "dueAt", direction: "asc" },
+    });
+    expect(plan?.operations[0]?.time).toBeUndefined();
+    expect(plan?.operations[1]?.time).toBeUndefined();
+  });
+
+  it("targets named status questions instead of returning unrelated recent work", () => {
+    const named = planDeliveryQuestion("What is the current status of Modern Website Builder?");
+    expect(named?.operations[0]?.predicates).toEqual([
+      { field: "title", operator: "contains", value: "Modern Website Builder" },
+    ]);
+    expect(named?.operations.map(({ select }) => select)).toEqual(["objects", "knowledge"]);
+
+    const keyed = planDeliveryQuestion("What is the status of F1851-754?");
+    expect(keyed?.operations[0]?.predicates).toEqual([
+      { field: "externalKey", operator: "equals", value: "F1851-754" },
+    ]);
   });
 
   it("isolates finance plans and rejects finance attributes in shared objects", () => {
     expect(planDeliveryQuestion("What is the current project budget?")?.requiresFinance).toBe(true);
     expect(() =>
-      assertNonFinancialAttributes({ owner: "actor-example", budgetAmount: 100 }),
+      assertNonFinancialAttributes({
+        owner: "actor-example",
+        budgetAmount: 100,
+      }),
     ).toThrow("confidential finance metric boundary");
     expect(() =>
-      assertNonFinancialAttributes({ owner: "actor-example", status: "active" }),
+      assertNonFinancialAttributes({
+        owner: "actor-example",
+        status: "active",
+      }),
     ).not.toThrow();
   });
 
@@ -114,5 +153,19 @@ describe("delivery intelligence domain", () => {
       fromInclusive: "2026-07-19T18:30:00.000Z",
       toExclusive: "2026-07-20T18:30:00.000Z",
     });
+  });
+
+  it("routes unfamiliar delivery questions through bounded generic retrieval", () => {
+    const plan = planDeliveryQuestion("What should I know before the delivery standup?");
+    expect(plan?.intents).toEqual(["general"]);
+    expect(plan?.answerMode).toBe("model_assisted");
+    expect(plan?.operations.map(({ select }) => select)).toEqual([
+      "objects",
+      "relations",
+      "claims",
+      "observations",
+      "metrics",
+      "knowledge",
+    ]);
   });
 });

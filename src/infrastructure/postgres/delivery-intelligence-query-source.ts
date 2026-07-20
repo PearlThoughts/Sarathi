@@ -68,6 +68,48 @@ const matchesPredicates = (
 ): boolean =>
   predicates?.every((predicate) => matchValue(values[predicate.field], predicate)) ?? true;
 
+const severityRank: Readonly<Record<string, number>> = {
+  critical: 5,
+  highest: 5,
+  high: 4,
+  major: 4,
+  medium: 3,
+  moderate: 3,
+  low: 2,
+  minor: 2,
+  lowest: 1,
+};
+
+const comparableValue = (value: unknown): number | string => {
+  if (typeof value === "number") return value;
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  const severity = severityRank[text];
+  if (severity !== undefined) return severity;
+  const timestamp = Date.parse(text);
+  if (text !== "" && Number.isFinite(timestamp)) return timestamp;
+  const number = Number(text);
+  return text !== "" && Number.isFinite(number) ? number : text;
+};
+
+const orderForOperation = <Row>(
+  rows: readonly Row[],
+  operation: DeliveryQueryOperation,
+  values: (row: Row) => Readonly<Record<string, unknown>>,
+): readonly Row[] => {
+  if (operation.orderBy === undefined) return rows;
+  const { field, direction } = operation.orderBy;
+  const multiplier = direction === "asc" ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const leftValue = comparableValue(values(left)[field]);
+    const rightValue = comparableValue(values(right)[field]);
+    if (typeof leftValue === "number" && typeof rightValue === "number")
+      return (leftValue - rightValue) * multiplier;
+    return String(leftValue).localeCompare(String(rightValue)) * multiplier;
+  });
+};
+
 const operationWindow = (operation: DeliveryQueryOperation, context: DeliveryQueryContext) => {
   if (operation.time === undefined || operation.time.kind === "jira_sprint") return undefined;
   return resolveDeliveryTimeConstraint(operation.time, context.requestedAt, context.timeZone);
@@ -181,20 +223,28 @@ const queryObjects = async (
     )
     .orderBy(desc(deliveryObjectTable.observedAt), asc(deliveryObjectTable.externalKey))
     .limit(Math.min(operation.limit * 4, 80));
+  const filtered = rows.filter((row) =>
+    matchesPredicates(
+      {
+        kind: row.objectKind,
+        title: row.title,
+        externalKey: row.externalKey,
+        lifecycleState: row.lifecycleState,
+        source: row.sourceKind,
+        ...row.attributes,
+      },
+      operation.predicates,
+    ),
+  );
   return result(
-    rows
-      .filter((row) =>
-        matchesPredicates(
-          {
-            kind: row.objectKind,
-            externalKey: row.externalKey,
-            lifecycleState: row.lifecycleState,
-            source: row.sourceKind,
-            ...row.attributes,
-          },
-          operation.predicates,
-        ),
-      )
+    orderForOperation(filtered, operation, (row) => ({
+      kind: row.objectKind,
+      title: row.title,
+      externalKey: row.externalKey,
+      lifecycleState: row.lifecycleState,
+      source: row.sourceKind,
+      ...row.attributes,
+    }))
       .slice(0, operation.limit)
       .map((row) => ({
         id: row.id,
@@ -294,7 +344,11 @@ const queryRelations = async (
           objects.has(row.fromObjectId) &&
           objects.has(row.toObjectId) &&
           matchesPredicates(
-            { kind: row.relationKind, source: row.sourceKind, ...row.attributes },
+            {
+              kind: row.relationKind,
+              source: row.sourceKind,
+              ...row.attributes,
+            },
             operation.predicates,
           ),
       )

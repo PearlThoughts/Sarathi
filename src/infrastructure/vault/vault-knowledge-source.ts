@@ -109,6 +109,11 @@ const title = (markdown: string, path: string): string =>
 
 type VaultSectionTopic =
   | "status"
+  | "goal"
+  | "commitment"
+  | "assumption"
+  | "policy"
+  | "capacity"
   | "scope"
   | "requirement"
   | "risk"
@@ -122,6 +127,11 @@ type VaultSectionTopic =
 const sectionTopic = (heading: string): VaultSectionTopic => {
   const normalized = heading.toLowerCase();
   if (/\b(?:status|progress|current state)\b/.test(normalized)) return "status";
+  if (/\b(?:goals?|objectives?|outcomes?)\b/.test(normalized)) return "goal";
+  if (/\b(?:commitments?|promises?)\b/.test(normalized)) return "commitment";
+  if (/\b(?:assumptions?|constraints?)\b/.test(normalized)) return "assumption";
+  if (/\b(?:polic(?:y|ies)|working agreement|operating rule)\b/.test(normalized)) return "policy";
+  if (/\b(?:capacity|bandwidth|allocation|availability)\b/.test(normalized)) return "capacity";
   if (/\b(?:scope|boundar(?:y|ies)|in scope|out of scope)\b/.test(normalized)) return "scope";
   if (/\b(?:requirements?|acceptance criteria|definition of done)\b/.test(normalized))
     return "requirement";
@@ -138,6 +148,14 @@ const objectKindForTopic = (topic: VaultSectionTopic): DeliveryObjectKind => {
   switch (topic) {
     case "risk":
       return "risk";
+    case "goal":
+      return "goal";
+    case "commitment":
+      return "commitment";
+    case "assumption":
+      return "assumption";
+    case "policy":
+      return "policy";
     case "decision":
       return "decision";
     case "requirement":
@@ -147,7 +165,7 @@ const objectKindForTopic = (topic: VaultSectionTopic): DeliveryObjectKind => {
     case "scope":
       return "module";
     case "next_action":
-      return "deliverable";
+      return "action";
     case "ownership":
       return "team";
     default:
@@ -240,8 +258,16 @@ const deliveryProjection = (
           ? "active"
           : topic === "decision"
             ? "recorded"
-            : lifecycleState(passage.body),
-      attributes: { repository: root.repository, path, locator, topic },
+            : topic === "next_action"
+              ? (lifecycleState(passage.body) ?? "planned")
+              : lifecycleState(passage.body),
+      attributes: {
+        repository: root.repository,
+        path,
+        locator,
+        topic,
+        ...(topic === "capacity" ? { label: "capacity" } : {}),
+      },
       sensitivity: root.sensitivity,
     });
     relations.push({

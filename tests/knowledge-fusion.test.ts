@@ -44,7 +44,7 @@ describe("cross-source knowledge fusion", () => {
     expect(fused[0]?.componentRanks).toMatchObject({ indexed: 1, thread: 1 });
   });
 
-  test("combines indexed, live, and approved thread evidence after embedding the query", async () => {
+  test("combines indexed, live, and workspace thread context after embedding the query", async () => {
     const indexed = result("vault", "risk-note", "https://github.com/org/vault/blob/a/risk.md");
     const github = result("github", "repo:path", "https://github.com/org/repo/blob/a/src/x.ts");
     const repository: KnowledgeRepository = {

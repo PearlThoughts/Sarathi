@@ -30,7 +30,9 @@ describe("AI SDK knowledge embedding", () => {
       },
       async ({ values }) => {
         calls.push(values);
-        return { embeddings: values.map(() => Array.from({ length: 1536 }, () => 0.25)) };
+        return {
+          embeddings: values.map(() => Array.from({ length: 1536 }, () => 0.25)),
+        };
       },
     );
 
@@ -45,9 +47,9 @@ describe("AI SDK knowledge embedding", () => {
   test("fails closed on a provider shape mismatch", async () => {
     const embedding = createAiSdkKnowledgeEmbedding(
       {
-        provider: "zai",
+        provider: "openrouter",
         apiKey: "test-only",
-        model: "embedding-3",
+        model: "openai/text-embedding-3-small",
         baseUrl: "https://example.invalid/v1",
         dimensions: 1536,
         timeoutMs: 1_000,

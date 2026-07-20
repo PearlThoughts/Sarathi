@@ -178,14 +178,14 @@
 
 - Command: `bunx vitest run tests/delivery-intelligence-domain.test.ts`
 - Location: `tests/delivery-intelligence-domain.test.ts`
-- Scope: Delivery objects, relations, observations, claims, metrics, finance isolation, conflict derivation, safe query-plan validation, independent time constraints, and workspace-local time resolution.
+- Scope: Delivery objects, relations, observations, claims, metrics, goals, commitments, finance isolation, conflict derivation, safe generic query planning, independent time constraints, and workspace-local time resolution.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
 - Location: `tests/delivery-intelligence-application.test.ts`
-- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before composition, deduplication, conflict disclosure, citations, concise response limits, and partial-source behavior.
+- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before model composition, deduplication, conflict disclosure, citation validation, deterministic fallback, concise response limits, and partial-source behavior.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-live-sources
@@ -193,6 +193,13 @@
 - Command: `bunx vitest run tests/delivery-query-sources.test.ts`
 - Location: `tests/delivery-query-sources.test.ts`
 - Scope: Pre-provider workspace/actor checks, live GitHub PR/commit retrieval, Jira query projection, Teams channel reads, project-email scoping, assistant-prompt exclusion, finance exclusion, and resolvable source citations.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-capability-matrix
+
+- Command: `bunx vitest run tests/delivery-capability-matrix.test.ts tests/delivery-knowledge-query-source.test.ts`
+- Location: `tests/delivery-capability-matrix.test.ts`, `tests/delivery-knowledge-query-source.test.ts`
+- Scope: Reusable delivery-query coverage for PM question families plus actor/workspace/audience/sensitivity propagation into hybrid Jira/Vault retrieval.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-cli

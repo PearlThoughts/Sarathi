@@ -27,7 +27,7 @@ Use the shared component library.
 Finish QA and release the builder.`;
 
 describe("Vault knowledge source", () => {
-  it("indexes only Markdown below approved roots and preserves revision citations and ACL", async () => {
+  it("indexes only Markdown below configured roots and preserves revision citations and ACL", async () => {
     const requests: string[] = [];
     const fetcher = async (input: string | URL | Request): Promise<Response> => {
       const url = String(input);
@@ -119,7 +119,7 @@ describe("Vault knowledge source", () => {
         expect.objectContaining({ kind: "team", title: "Website team owns the builder module." }),
         expect.objectContaining({ kind: "decision", title: "Use the shared component library." }),
         expect.objectContaining({
-          kind: "deliverable",
+          kind: "action",
           title: "Finish QA and release the builder.",
         }),
         expect.objectContaining({ kind: "work_item", externalKey: "DEMO-8" }),

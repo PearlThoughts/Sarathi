@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  canPostWithoutAdditionalApproval,
   defaultTeamProfileFor,
   deliveryAssistantRole,
+  requiresHumanReview,
   storageLayerForPolicyArtifact,
-} from "../src/modules/delivery-assistant/index.ts";
+} from "../src/modules/delivery-intelligence/index.ts";
 
 describe("delivery assistant role contract", () => {
   it("models Sarathi as an assistant rather than a delivery manager replacement", () => {
     expect(deliveryAssistantRole.category).toBe("AI Delivery Assistant");
-    expect(deliveryAssistantRole.assists).toContain("weekly-status");
+    expect(deliveryAssistantRole.assists).toContain("delivery-status");
+    expect(deliveryAssistantRole.assists).toContain("next-action");
+    expect(deliveryAssistantRole.assists).toContain("capacity");
     expect(deliveryAssistantRole.assists).toContain("process-faq");
     expect(deliveryAssistantRole.never).toContain("client-account-voice");
     expect(deliveryAssistantRole.never).toContain("hidden-people-score");
@@ -29,15 +31,9 @@ describe("delivery assistant role contract", () => {
     expect(storageLayerForPolicyArtifact("process-faq")).toBe("policy-repo");
   });
 
-  it("does not allow PM-leadership scope to be posted as team-visible without approval", () => {
-    expect(
-      canPostWithoutAdditionalApproval({
-        audience: "pm-leadership",
-        requestedBy: "delivery-manager",
-        workspaceId: "acme",
-        surface: "teams-dm",
-        destination: "team-visible",
-      }),
-    ).toBe(false);
+  it("publishes internal workspace reporting automatically while reviewing external actions", () => {
+    expect(requiresHumanReview("internal-workspace-report")).toBe(false);
+    expect(requiresHumanReview("external-report")).toBe(true);
+    expect(requiresHumanReview("mutating-action")).toBe(true);
   });
 });

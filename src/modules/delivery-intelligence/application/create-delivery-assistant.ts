@@ -5,6 +5,7 @@ import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-mo
 import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delivery-query.ts";
 import { planDeliveryQuestion, validateDeliveryQueryPlan } from "../domain/delivery-query.ts";
 import type {
+  DeliveryAnswerComposer,
   DeliveryAssistant,
   DeliveryAssistantAnswer,
   DeliveryAssistantRequest,
@@ -17,7 +18,9 @@ import type {
 export type DeliveryAssistantConfiguration = {
   readonly sources: readonly DeliveryQuerySource[];
   readonly modelPlanner?: DeliveryModelPlanner | undefined;
+  readonly answerComposer?: DeliveryAnswerComposer | undefined;
   readonly sourceTimeoutMs?: number | undefined;
+  readonly compositionTimeoutMs?: number | undefined;
   readonly totalBudgetMs?: number | undefined;
   readonly now?: (() => Date) | undefined;
 };
@@ -31,7 +34,10 @@ const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
 };
 
 const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
+  general: "Delivery context",
   status: "Status",
+  goals: "Goals",
+  commitments: "Commitments",
   scope: "Scope",
   requirements: "Requirements",
   ownership: "Ownership",
@@ -42,6 +48,8 @@ const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
   risks: "Risks",
   recurring: "Recurring issues",
   decisions: "Decisions",
+  next_actions: "Next action",
+  milestones: "Milestones",
   capacity: "Capacity",
   finance: "Finance",
   activity: "Activity",
@@ -99,6 +107,21 @@ const uniqueConflicts = (conflicts: readonly DeliveryConflict[]): readonly Deliv
   });
 };
 
+const authorizedConflicts = (
+  conflicts: readonly DeliveryConflict[],
+  workspaceId: string,
+  maximumSensitivity: DeliveryAssistantRequest["maximumSensitivity"],
+): readonly DeliveryConflict[] =>
+  conflicts.flatMap((conflict) => {
+    if (conflict.workspaceId !== workspaceId) return [];
+    const claims = conflict.claims.filter(
+      (claim) =>
+        claim.workspaceId === workspaceId &&
+        isSensitivityAtOrBelow(claim.sensitivity, maximumSensitivity),
+    );
+    return claims.length < 2 ? [] : [{ ...conflict, claims }];
+  });
+
 const composeAnswer = (
   plan: DeliveryQueryPlan,
   result: DeliveryQueryResult,
@@ -115,8 +138,14 @@ const composeAnswer = (
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const groups = [
       { label: "Code", sources: new Set<DeliverySourceKind>(["github"]) },
-      { label: "Delivery tracking", sources: new Set<DeliverySourceKind>(["jira", "vault"]) },
-      { label: "Team updates", sources: new Set<DeliverySourceKind>(["teams", "email"]) },
+      {
+        label: "Delivery tracking",
+        sources: new Set<DeliverySourceKind>(["jira", "vault"]),
+      },
+      {
+        label: "Team updates",
+        sources: new Set<DeliverySourceKind>(["teams", "email"]),
+      },
     ];
     for (const group of groups) {
       const selected = items.filter((item) => group.sources.has(item.source)).slice(0, 2);
@@ -184,6 +213,72 @@ const composeAnswer = (
   };
 };
 
+const composeWithModel = (
+  composer: DeliveryAnswerComposer,
+  request: DeliveryAssistantRequest,
+  plan: DeliveryQueryPlan,
+  result: DeliveryQueryResult,
+  timeoutMs: number,
+): Effect.Effect<DeliveryAssistantAnswer> => {
+  const deterministic = composeAnswer(plan, result);
+  const items = uniqueRanked(result.items).slice(0, 12);
+  if (items.length < 2) return Effect.succeed(deterministic);
+  const allowedCitationUrls = new Set([
+    ...items.map((item) => item.citationUrl),
+    ...result.conflicts.flatMap((conflict) =>
+      conflict.claims.map((claim) => claim.source.citationUrl),
+    ),
+  ]);
+  return composer
+    .compose({
+      workspaceId: request.workspaceId,
+      question: request.question,
+      requestedAt: request.requestedAt,
+      plan,
+      items,
+      conflicts: result.conflicts,
+    })
+    .pipe(
+      Effect.timeoutFail({
+        duration: timeoutMs,
+        onTimeout: () =>
+          new RepositoryError({
+            message: "Delivery answer composition exceeded its response budget.",
+            operation: "delivery-answer-composition",
+          }),
+      }),
+      Effect.flatMap((composed) =>
+        Effect.try({
+          try: () => {
+            const lines = composed.text
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean);
+            if (lines.length < 1 || lines.length > plan.maximumLines)
+              throw new Error("Composed delivery answer has an invalid line count.");
+            if (
+              composed.citations.some(
+                ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
+              )
+            )
+              throw new Error("Composed delivery answer contains an unknown citation.");
+            return {
+              ...deterministic,
+              text: lines.join("\n"),
+              citations: composed.citations,
+            };
+          },
+          catch: () =>
+            new RepositoryError({
+              message: "Delivery answer composition was invalid.",
+              operation: "delivery-answer-composition-validation",
+            }),
+        }),
+      ),
+      Effect.catchAll(() => Effect.succeed(deterministic)),
+    );
+};
+
 const planQuestion = (
   request: DeliveryAssistantRequest,
   planner: DeliveryModelPlanner | undefined,
@@ -246,6 +341,10 @@ export const createDeliveryAssistant = (
           100,
           Math.min(configuration.sourceTimeoutMs ?? 4_500, totalBudgetMs),
         );
+        const compositionTimeoutMs = Math.max(
+          100,
+          Math.min(configuration.compositionTimeoutMs ?? 2_500, totalBudgetMs),
+        );
         const selectors = new Set(plan.operations.map((operation) => operation.select));
         const sources = configuration.sources.filter((source) =>
           source.selectors.some((selector) => selectors.has(selector)),
@@ -277,7 +376,7 @@ export const createDeliveryAssistant = (
           ),
           { concurrency: "unbounded" },
         ).pipe(
-          Effect.map((results) => {
+          Effect.flatMap((results) => {
             const failures = results.filter(({ result }) => result._tag === "Left");
             const successful = results.flatMap(({ result }) =>
               result._tag === "Right" ? [result.right] : [],
@@ -286,7 +385,7 @@ export const createDeliveryAssistant = (
               ...successful.flatMap((result) => result.unavailableSources),
               ...failures.flatMap(({ source }) => {
                 if (source.source === "projection") return ["jira", "vault"] as const;
-                if (source.source === "knowledge") return ["vault"] as const;
+                if (source.source === "knowledge") return ["jira", "vault"] as const;
                 return [source.source];
               }),
             ].filter(
@@ -301,12 +400,24 @@ export const createDeliveryAssistant = (
                     item.workspaceId === request.workspaceId &&
                     isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity),
                 ),
-              conflicts: successful.flatMap((result) => result.conflicts),
+              conflicts: authorizedConflicts(
+                successful.flatMap((result) => result.conflicts),
+                request.workspaceId,
+                request.maximumSensitivity,
+              ),
               unavailableSources,
               complete:
                 failures.length === 0 && successful.every((result) => result.complete === true),
             };
-            return composeAnswer(plan, merged);
+            return configuration.answerComposer === undefined
+              ? Effect.succeed(composeAnswer(plan, merged))
+              : composeWithModel(
+                  configuration.answerComposer,
+                  request,
+                  plan,
+                  merged,
+                  compositionTimeoutMs,
+                );
           }),
           Effect.timeoutFail({
             duration: totalBudgetMs,

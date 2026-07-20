@@ -15,7 +15,7 @@ Each bounded context lives under `src/modules/<capability>` and exposes one publ
 
 Do not create placeholder folders. A layer exists only when there is production code or a test-backed contract that belongs there.
 
-`src/modules/delivery-assistant` is currently a test-backed contract layer. It names the public product role, audience scopes, maturity dials, and storage split before the loops are implemented.
+`src/modules/delivery-intelligence` owns the public product role and the reusable delivery model. It names delivery objects, relations, observations, claims, metrics, query plans, audience semantics, team-profile dials, and the PostgreSQL/pgvector storage boundary. Reporting is a query over this model, not a separate temporal subsystem.
 
 `src/modules/delivery-intelligence` owns the reusable project operating model and safe delivery-query grammar. Time windows are optional query constraints, not a separate bounded context. `src/modules/knowledge-layer` supports it with versioned unstructured content, retrieval, provenance, citations, and reconciliation. Neither module may deep-import the other; cross-capability composition uses public ports and result contracts.
 

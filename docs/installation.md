@@ -133,28 +133,22 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON`
 - `SARATHI_VAULT_ALLOWLIST_JSON`
 
-### Approved AI model
+### AI model
 
-Configure one approved primary provider. Sarathi uses Vercel AI SDK as its
-in-process model boundary: OpenAI and OpenRouter use dedicated providers, while
-Z.AI uses the SDK's OpenAI-compatible Chat Completions provider.
+Configure OpenRouter as Sarathi's sole model and embedding provider. Sarathi uses
+the Vercel AI SDK provider abstraction in process and fails closed for every
+other provider value.
 
-- `SARATHI_MODEL_PROVIDER` (`openai`, `openrouter`, or `zai`)
+- `SARATHI_MODEL_PROVIDER` (`openrouter`)
 - `SARATHI_MODEL_API_KEY`
 - `SARATHI_MODEL_NAME`
 - optional `SARATHI_MODEL_BASE_URL`
 - optional `SARATHI_MODEL_TIMEOUT_MS`
 
-An explicitly approved fallback uses the corresponding
-`SARATHI_MODEL_FALLBACK_PROVIDER`, `SARATHI_MODEL_FALLBACK_API_KEY`,
-`SARATHI_MODEL_FALLBACK_NAME`, optional `SARATHI_MODEL_FALLBACK_BASE_URL`, and
-optional `SARATHI_MODEL_FALLBACK_TIMEOUT_MS` variables. Partial fallback
-configuration fails closed. Failover emits provider and outcome only; prompts,
-answers, verification, identifiers, and credentials are excluded from diagnostics.
-Z.AI production integrations use its general API endpoint; its Coding Plan
-endpoint remains limited to the supported tool scenarios documented by Z.AI.
-SDK-internal retries are disabled so Sarathi owns the explicit, observable
-single-primary/single-fallback policy.
+No fallback provider is configured. Provider diagnostics contain only the
+OpenRouter provider name and outcome; prompts, answers, identifiers, and
+credentials are excluded. SDK-internal retries remain disabled so the runtime
+stays inside the Teams response budget.
 
 The workspace projection must map only configured standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
 

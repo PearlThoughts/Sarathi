@@ -1,6 +1,25 @@
 export type { DeliveryAssistantConfiguration } from "./application/create-delivery-assistant.ts";
 export { createDeliveryAssistant } from "./application/create-delivery-assistant.ts";
 export type {
+  ChannelPreference,
+  CoachingDepth,
+  DeliveryAssistantCapability,
+  DeliveryAssistantNever,
+  DeliveryAudience,
+  DeliveryPublicationKind,
+  NudgeIntensity,
+  PolicyArtifactKind,
+  RuntimeStorageLayer,
+  SeniorityMix,
+  TeamProfile,
+} from "./domain/delivery-assistant-profile.ts";
+export {
+  defaultTeamProfileFor,
+  deliveryAssistantRole,
+  requiresHumanReview,
+  storageLayerForPolicyArtifact,
+} from "./domain/delivery-assistant-profile.ts";
+export type {
   DeliveryClaim,
   DeliveryClaimValue,
   DeliveryConflict,
@@ -41,10 +60,16 @@ export type {
   DeliveryRelationTraversal,
   DeliveryTimeConstraint,
 } from "./domain/delivery-query.ts";
-export { planDeliveryQuestion, validateDeliveryQueryPlan } from "./domain/delivery-query.ts";
+export {
+  planDeliveryQuestion,
+  validateDeliveryQueryPlan,
+} from "./domain/delivery-query.ts";
 export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
 export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {
+  DeliveryAnswerComposer,
+  DeliveryAnswerComposition,
+  DeliveryAnswerCompositionInput,
   DeliveryAssistant,
   DeliveryAssistantAnswer,
   DeliveryAssistantRequest,

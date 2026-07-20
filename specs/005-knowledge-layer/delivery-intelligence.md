@@ -44,7 +44,7 @@ A `DeliveryQuestionPlanner` compiles supported language into a `DeliveryQueryPla
 
 Common questions become plans over this grammar. Daily activity is one plan with an optional workspace-local day window. Dependency waits, stuck work, last-sprint delivery, current-week work, top risks, recurring issues, scope, ownership, capacity, and requirements use the same model.
 
-Unknown plans fail closed or fall through to authorized knowledge retrieval. A model may propose a plan through a schema-constrained boundary, but application code validates every operator before execution.
+Unrecognized wording compiles to a bounded generic plan over structured delivery records and authorized hybrid Jira/Vault retrieval. A model may synthesize only the filtered result envelope; application code still validates every selector, predicate, traversal, measure, limit, and citation before execution or delivery.
 
 ## Source Projection
 

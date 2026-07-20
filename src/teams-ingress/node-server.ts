@@ -32,7 +32,9 @@ import {
   createJiraDeliveryQuerySource,
   createJiraEvidenceReader,
 } from "../infrastructure/jira/index.ts";
+import { createDeliveryKnowledgeQuerySource } from "../infrastructure/knowledge/index.ts";
 import {
+  createAiSdkDeliveryAnswerComposer,
   createAiSdkKnowledgeEmbedding,
   createGroundedAnswerGeneratorFromEnvironment,
   knowledgeEmbeddingConfigurationFromEnvironment,
@@ -322,7 +324,10 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
         mode === "live"
           ? startComplianceReminderScheduler(schedule, run, (now) =>
               Effect.runPromise(
-                dependencies.audit.dueRetries({ workspaceId, now: now.toISOString() }),
+                dependencies.audit.dueRetries({
+                  workspaceId,
+                  now: now.toISOString(),
+                }),
               ),
             )
           : { stop: () => undefined },
@@ -388,8 +393,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                   !resolved.boundary.requiresHumanApproval,
               }),
           },
-          contextAssembler: { assemble: () => unavailable("Diagnostic-only composition") },
-          answerGenerator: { generate: () => unavailable("Diagnostic-only composition") },
+          contextAssembler: {
+            assemble: () => unavailable("Diagnostic-only composition"),
+          },
+          answerGenerator: {
+            generate: () => unavailable("Diagnostic-only composition"),
+          },
           delivery: { reply: () => Effect.void },
           audit: createPostgresTeamsMentionAudit(database),
           helloDiagnosticEnabled: true,
@@ -443,7 +452,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       {
         reader: createTeamsGraphThreadReader({
           tokenProvider: graphTokenProvider,
-          approvedStandardChannels: new Set(
+          allowedStandardChannels: new Set(
             projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
           ),
         }),
@@ -492,14 +501,22 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           ),
         ) as string[])
       : [];
-    const supplementalContext =
+    const knowledgeRepository =
       knowledgeDatabase === undefined
         ? undefined
+        : createPostgresKnowledgeRepository(knowledgeDatabase.database);
+    const knowledgeEmbeddings =
+      knowledgeDatabase === undefined
+        ? undefined
+        : createAiSdkKnowledgeEmbedding(
+            knowledgeEmbeddingConfigurationFromEnvironment(environment),
+          );
+    const supplementalContext =
+      knowledgeRepository === undefined || knowledgeEmbeddings === undefined
+        ? undefined
         : createKnowledgeTeamsContextSearch({
-            repository: createPostgresKnowledgeRepository(knowledgeDatabase.database),
-            embeddings: createAiSdkKnowledgeEmbedding(
-              knowledgeEmbeddingConfigurationFromEnvironment(environment),
-            ),
+            repository: knowledgeRepository,
+            embeddings: knowledgeEmbeddings,
             liveSearches: [
               createGitHubKnowledgeSearch({
                 token: githubToken,
@@ -554,6 +571,17 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               ...(knowledgeDatabase === undefined
                 ? []
                 : [createPostgresDeliveryQuerySource(knowledgeDatabase.database)]),
+              ...(knowledgeRepository === undefined || knowledgeEmbeddings === undefined
+                ? []
+                : [
+                    createDeliveryKnowledgeQuerySource({
+                      repository: knowledgeRepository,
+                      embeddings: knowledgeEmbeddings,
+                      workspaceId,
+                      allowedActorIds,
+                      audienceIds: knowledgeAudienceIds,
+                    }),
+                  ]),
               createGitHubDeliveryQuerySource({
                 token: githubToken,
                 workspaceId,
@@ -597,7 +625,13 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                     }),
                   ]),
             ],
-            sourceTimeoutMs: 4_500,
+            answerComposer: createAiSdkDeliveryAnswerComposer(
+              createGroundedAnswerGeneratorFromEnvironment(environment, (event) =>
+                console.info(JSON.stringify(event)),
+              ),
+            ),
+            sourceTimeoutMs: 3_000,
+            compositionTimeoutMs: 2_500,
             totalBudgetMs: 6_500,
           });
         })()
@@ -1021,7 +1055,10 @@ export const startTeamsIngress = (): void => {
       return;
     }
     try {
-      response.json({ ok: true, result: await finance.runShadowAcceptance(kind) });
+      response.json({
+        ok: true,
+        result: await finance.runShadowAcceptance(kind),
+      });
     } catch {
       response.status(503).json({ ok: false, mode: finance.mode });
     }

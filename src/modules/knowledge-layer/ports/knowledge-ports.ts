@@ -90,7 +90,7 @@ export type KnowledgeLiveSearch = {
   ) => Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError>;
 };
 
-export type ApprovedThreadEvidence = {
+export type TeamsThreadContext = {
   readonly sourceId: string;
   readonly title: string;
   readonly excerpt: string;
