@@ -10,6 +10,8 @@ Sarathi follows a domain-first hexagonal structure:
 - `src/modules/*`: bounded contexts with a public `index.ts`, then `domain`, `application`, `ports`, and `api` layers only when needed.
 - `src/modules/boundary-policy`: the policy gate for trust tier, sensitivity, delegation stage, approval, and model egress.
 - `src/modules/delivery-assistant`: public role, team-profile, audience-scope, and policy-artifact contracts for the AI Delivery Assistant product.
+- `src/modules/delivery-intelligence`: project objects, relationships, observations, claims, metrics, conflicts, validated delivery queries, and concise cited results.
+- `src/modules/knowledge-layer`: versioned documents, passages, provenance, deletion reconciliation, full-text/vector retrieval, and citations supporting delivery intelligence.
 - `src/modules/follow-up`: generic due-item planning and exception digest primitives.
 - `src/modules/messaging`: Teams-ready message contracts and delivery ports.
 - `src/modules/workspace-model`: source-system and YAML overlay compilation.
@@ -39,7 +41,7 @@ Inferences are not enough. YAML overlays provide explicit corrections, boundary 
 
 The repository includes hosted Microsoft Teams ingress, Microsoft Graph, Jira, GitHub, Vault projection, model, Postgres audit, workspace-resolution, compliance-reminder, and context-assembly adapters. Their presence does not make every deployment ready: each capability still requires authorized private configuration, runtime composition, capability-specific readiness, and real acceptance evidence.
 
-The delivery-assistant contracts and Strategy Kernel define a broader product than the currently proven production paths. Sarathi assists the PM or operating owner; it does not replace them.
+The delivery-assistant contracts and Strategy Kernel define a broader product than the currently proven production paths. Delivery intelligence organizes project operating data so Sarathi can answer the ordinary questions directed to a PM or Delivery Manager while keeping actions and policy changes human-governed.
 
 ## Strategic Execution Extension
 

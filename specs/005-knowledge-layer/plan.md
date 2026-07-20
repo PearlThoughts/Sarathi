@@ -1,118 +1,141 @@
-# Implementation Plan: example Knowledge Layer
+# Implementation Plan: AI Delivery Assistant Intelligence
 
-**Branch**: `feat/example-knowledge-layer` | **Date**: 2026-07-20 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feat/daily-activity-report` | **Date**: 2026-07-20 | **Spec**: [spec.md](./spec.md)
 
 ## 1. Execution Goal
 
-Deliver the the private capability task child capability from schema through observed production answers. The implementation ends only after live Jira/Vault ingestion, GitHub-backed retrieval, concise cited Teams answers, security boundaries, and rollback have been verified.
+Refactor the existing production-pilot child capability from a knowledge-led answer path into a reusable delivery-intelligence system. Complete the work through governed merge, non-destructive production migration, bounded connector synchronization, real Teams answers under ten seconds, confidentiality proof, and rollback evidence.
 
 ## 2. Technical Context
 
-- Language/runtime: strict TypeScript on Bun for CLI/application and the existing Node 22 Teams edge.
-- Domain/application composition: Effect and capability-owned ports.
-- Storage: existing Railway PostgreSQL with pgvector; Drizzle ORM, Drizzle Kit schema generation, and Drizzle migration journal.
-- Model and embeddings: Vercel AI SDK provider abstractions; Z.AI primary and OpenRouter fallback for answer generation; deterministic embedding adapter for tests.
-- Retrieval: exact identifiers, PostgreSQL full-text search, pgvector similarity, GitHub live search, reciprocal-rank fusion, source authority, and freshness.
-- Verification: Vitest, Bun-native integration tests, architecture fitness gates, privacy scan, `bun run check`, runtime smoke, and bounded production acceptance.
+- Runtime: strict TypeScript on Bun for domain, application, CLI, and tests; existing Node 22 Teams edge.
+- Composition: Effect-based application ports with pure domain rules.
+- Storage: existing Railway PostgreSQL, pgvector, Drizzle ORM, generated/versioned migrations, and Drizzle migration journal.
+- Providers: Vercel AI SDK abstractions with OpenRouter as the only production model and embedding provider; deterministic test adapters.
+- Sources: synchronized Jira and Vault, live GitHub, bounded Graph reads for Teams and scoped project email.
+- Retrieval: structured delivery queries first; exact/full-text/vector knowledge retrieval and GitHub live search as supporting operations.
+- Verification: Vitest, Bun integration tests, architecture fitness, privacy scan, `bun run check`, runtime smoke, production acceptance, and rollback proof.
 
 ## 3. Constitution and Architecture Check
 
-- Human-guided and evidence-gated: pass; source writes and autonomous actions are excluded.
-- Better Auth and Sarathi policy separation: pass; the new capability consumes resolved workspace/audience authorization and does not own identity.
-- YAML is intent, not enforcement: pass; PostgreSQL queries and application policies enforce workspace, ACL, sensitivity, active version, and deletion state.
-- Authorization before retrieval and model egress: pass; metadata-first filtering precedes body materialization, with a second egress check before composition.
-- Domain-first boundaries: pass; `src/modules/knowledge-layer` owns rules and ports, while adapters remain in `src/infrastructure`.
+- Authorization before retrieval/tool/model egress: required and test-backed.
+- One installed organization with isolated workspaces: preserved.
+- Non-financial workspace sharing: explicit serving policy for mapped members; not per-record approval.
+- Finance isolation: separate projection and entitlement; general queries fail closed.
+- Domain-first dependency direction: `delivery-intelligence` does not import infrastructure or knowledge implementation details.
+- Source authority: derived delivery state is rebuildable and never writes back in this capability.
+- Time: optional record/query dimension; no time-centric root aggregate or event-sourcing rewrite.
 
-## 4. Project Structure and Ownership
+## 4. Capability Ownership
 
 ```text
+src/modules/delivery-intelligence/
+  domain/       delivery objects, relations, observations, claims, metrics,
+                conflicts, safe plan vocabulary, result contracts
+  application/  question planning, query execution, fusion, completeness,
+                conflict evaluation, concise composition
+  ports/        projection repository, connected sources, live GitHub,
+                optional model planner/composer
+  index.ts      sole cross-capability public surface
+
 src/modules/knowledge-layer/
-  domain/                 canonical evidence, ACL, ranking, citation contracts
-  application/            ingestion, reconciliation, retrieval, fusion, answering
-  ports/                  repository, source, embedding, live search, answer ports
-  index.ts                sole public module surface
+  domain/       documents, versions, passages, authorization metadata,
+                ranking and citations
+  application/  ingestion, reconciliation, hybrid retrieval and cited context
+  ports/        repository, source, embedding, live-search contracts
+
 src/infrastructure/
-  postgres/               Drizzle schema, migration runner, repository/search adapter
-  jira/                   approved Jira ingestion adapter
-  vault/                  approved Vault ingestion adapter
-  github/                 live search adapter
-  model/                  AI SDK embedding and answer adapters
+  postgres/     Drizzle schema/migrations and repository implementations
+  jira/         Jira anti-corruption and projection adapters
+  vault/        Vault anti-corruption and projection adapters
+  github/       live repository activity/search adapters
+  graph/        connected Teams and scoped project-email adapters
+  model/        Vercel AI SDK OpenRouter adapters
+
 src/cli/commands/
-  knowledge-runtime.ts    durable operator command surface
-drizzle/                  generated/versioned PostgreSQL migrations and journal
-tests/                    permanent unit, integration, authorization, retrieval tests
+  delivery-runtime.ts  ingestion, reconcile, query, status, rebuild
 ```
 
-The existing Teams mention assembler receives a `KnowledgeAnswerPort` or authorized retrieval port through composition. It does not import infrastructure or provider types.
+Teams mention handling consumes one `DeliveryAssistant` port. It does not classify delivery questions, calculate time windows, query connectors, or compose delivery reports itself.
 
 ## 5. Delivery Slices
 
-### Slice A — Spec, Schema, and Migration Safety
+### Slice A — Ratified Model and Architecture Fitness
 
-1. Add Drizzle Kit configuration and PostgreSQL schema definitions.
-2. Establish the incremental Drizzle migration journal without claiming existing audit tables.
-3. Add the pgvector extension migration and canonical source/item/version/passage/ACL/projection/checkpoint tables.
-4. Add migration planning/status/rollback-safe CLI behavior and integration tests that prove existing audit tables remain intact.
+1. Replace the recent-activity sub-spec with the delivery-intelligence redesign and update ADR 0007.
+2. Add `delivery-intelligence` to the machine-readable architecture manifest and dependency fitness rules.
+3. Define the domain model and validated query grammar with time as an optional constraint.
+4. Add parity tests for the existing daily-report wording before removing `delivery-activity`.
 
-### Slice B — Canonical Ingestion
+### Slice B — Coherent Drizzle Schema and Migration
 
-1. Implement source-neutral ingestion and reconciliation application services.
-2. Implement Jira normalization for typed fields, description, and comments.
-3. Implement Vault Markdown heading normalization and citation anchors.
-4. Add deterministic embedding and transactional checkpoint/projection persistence.
-5. Prove replay dedupe, edit versioning, deletion/tombstone behavior, ACL change behavior, and redacted summaries.
+1. Replace unreleased intermediate delivery migrations with one generated delivery-intelligence migration.
+2. Add source-linked delivery object, relation, observation, claim, metric, finance-metric, and ACL/provenance tables.
+3. Keep knowledge source/item/version/passage/projection/checkpoint and all existing audit tables intact.
+4. Add indexes and constraints for workspace, stable source identity, active reconciliation, relation traversal, conflict grouping, dedupe, and bounded time filters.
+5. Prove upgrade, idempotence, existing-table preservation, failure behavior, and rollback/rebuild procedure.
 
-### Slice C — Authorized Hybrid Retrieval
+### Slice C — Projection and Reconciliation
 
-1. Implement metadata-first policy filtering, exact-ID lookup, PostgreSQL FTS, and vector search.
-2. Implement independent rank lists and deterministic RRF with authority/freshness adjustment.
-3. Implement GitHub live search with bounded repository scopes and no body persistence.
-4. Fuse Teams thread evidence with indexed and live results while suppressing duplicates.
+1. Move delivery projection contracts out of `knowledge-layer` into `delivery-intelligence`.
+2. Reconcile knowledge and delivery projections transactionally from one source version without duplicating bodies.
+3. Normalize Jira into objects, relations, observations, claims, and non-financial metrics over the configured project boundary.
+4. Normalize Vault project metadata and claims while retaining heading passages in the knowledge subsystem.
+5. Reconcile edits, deletions, scope changes, ACL changes, and conflict convergence.
 
-### Slice D — Concise Cited Answers and Operations
+### Slice D — Query Planning and Execution
 
-1. Extend the AI SDK edge for embedding and concise answer composition.
-2. Add `knowledge ingest|reconcile|query|status` durable CLI commands.
-3. Wire the knowledge capability into the existing Teams mention path and readiness surface.
-4. Enforce two- or three-line normal responses and resolvable citations.
+1. Replace the view enum with a whitelisted composable plan: selectors, predicates, traversals, grouping, measures, ordering, limit, source needs, and optional time boundary.
+2. Implement repository reads for ownership, dependencies, blockers, requirements, scope, current work, delivery, risks, decisions, capacity, recurring patterns, claims, and conflicts.
+3. Add live GitHub operations only when the validated plan requires repository truth.
+4. Add bounded Teams and project-email observations/claims without record approval fields.
+5. Fuse structured, knowledge, and live results into a cited `DeliveryResult` with completeness and conflict metadata.
 
-### Slice E — Governed Integration and Production Acceptance
+### Slice E — Product Composition and Durable Operations
 
-1. Run focused tests after every slice, then `bun run check` and `bun run runtime:smoke` on the final branch revision.
-2. Resolve the correct Jira issue, self-review, open the governed PR, merge through GitHub, and synchronize canonical `main`.
-3. Rotate the previously exposed OpenRouter key without printing either provider key.
-4. Confirm backup/restore and rollback, apply the additive production migration, deploy the merged revision, and ingest bounded approved Jira/Vault scopes.
-5. Verify the three real questions and the security/deletion/deduplication acceptance matrix.
+1. Implement deterministic two- or three-line composition for common delivery reports.
+2. Add schema-constrained OpenRouter planning/synthesis only for questions not handled deterministically.
+3. Wire the single delivery-assistant port into Teams after identity and boundary authorization.
+4. Add durable `delivery ingest|reconcile|query|status|rebuild` commands with privacy-safe summaries.
+5. Remove evidence-led product copy and obsolete delivery-activity module/runtime configuration.
+
+### Slice F — Governed Integration and Production Acceptance
+
+1. Run focused tests after each slice and full `bun run check` plus runtime smoke on the exact final branch revision.
+2. Update the existing Jira issue, self-review, open the governed PR, merge through GitHub, synchronize canonical main, and clean the worktree.
+3. Verify OpenRouter-only secret configuration without printing the key.
+4. Confirm backup/restore and application rollback, apply the additive migration, deploy the merged revision, and synchronize bounded Jira/Vault data.
+5. Verify real Teams answers for project status, ownership/dependencies, blockers, previous sprint/current week, top risks, recurring issues, daily activity, and a GitHub implementation question.
 
 ## 6. Data and Migration Strategy
 
-Drizzle schema definitions are the source of truth for new tables and constraints. Generated migrations and the Drizzle journal replace further table-by-table runtime SQL migration logic for this capability. The database-native `vector` extension enablement is isolated in the versioned migration package; application/runtime code does not issue DDL.
+Drizzle schema definitions are authoritative for new tables. Because delivery migrations `0002` and `0003` have not been deployed and exist only on this feature branch, regenerate them into one coherent migration rather than carrying an abandoned intermediate design into production. The deployed knowledge migration and existing audit tables remain immutable sentinels.
 
-The migration is additive and separately observable: plan, backup marker, apply, schema/extension verification, and rollback evidence. Existing `compliance_reminder_audit`, `compliance_reminder_dry_run_evidence`, and `teams_mention_audit` tables are verification sentinels and must survive with counts and definitions intact.
+Delivery projections reference their source and source version. Reconciliation writes the knowledge version, passages, delivery rows, ACLs, tombstones, and checkpoint in one transaction. A delivery rebuild truncates or deactivates only the rebuildable delivery projection inside a bounded workspace/source scope; it never deletes source documents, audit history, or GitHub content.
 
-## 7. Retrieval Design
+Finance uses separate confidential storage and repository operations. General delivery rows must reject finance-like attribute keys and finance metrics.
 
-Each backend emits a ranked list of authorized candidates with stable identity and resolvable citation metadata. Exact identifier matches, keyword matches, vector matches, and GitHub live matches retain their component ranks. RRF combines them using default `k=60`; authority and freshness can adjust ordering within bounded weights but cannot introduce or reveal an unauthorized candidate. Default output is the top 10 candidates before bounded answer selection.
+## 7. Query and Answer Strategy
 
-## 8. Test and Evidence Strategy
+A question becomes a validated plan. Deterministic classifiers cover high-frequency questions; a schema-constrained model planner may propose the same plan vocabulary for broader language. The executor authorizes the plan, runs independent reads concurrently, caps traversal depth and result volume, materializes content only after policy checks, then fuses results by stable identity and citation.
 
-- Domain tests: ACL precedence, sensitivity ceilings, stable identity, hashes, chunking, exact matching, RRF, authority/freshness, citation eligibility, answer length.
-- Application tests: transaction/checkpoint ordering, dedupe, edits, deletion, scope removal, cross-workspace exclusion, pre-egress filtering, partial-source behavior.
-- Adapter tests: Jira typed payloads, Vault Markdown headings, GitHub live result normalization, AI SDK provider selection, deterministic embeddings, Drizzle migration and pgvector queries.
-- Integration tests: real PostgreSQL/pgvector container or repository-owned test service, migration upgrade from current baseline, restart persistence, existing audit-table preservation.
-- Production evidence: deployment ID/SHA, migration journal IDs, extension version, safe counts/checksums, query source mix, citation URLs, concise answer shape, privacy-safe logs, and rollback commands/results.
+Time boundaries are optional predicates resolved from workspace configuration or Jira sprint metadata. They are used for daily, weekly, sprint, historical, and trend questions but do not affect ownership, scope, requirement, or dependency modeling when no time boundary is requested.
 
-## 9. Risks and Recovery
+## 8. Test Strategy
 
-- Migration drift or extension privilege failure: stop before application promotion; preserve backup and current deployment.
-- Embedding dimension/model change: reject writes before transaction; version projection model/dimension and rebuild only approved source scope.
-- Permission leakage from post-retrieval filtering: prohibited; query candidate metadata first and materialize bodies only after policy pass.
-- Jira/Vault deletion lag: checkpoint reconciliation tombstones missing authorized items and excludes them in the same committed transaction.
-- Provider or GitHub outage: state partial availability; do not silently substitute unapproved sources or stale GitHub copies.
-- Credential exposure: rotate affected credential, stop deployment, scan logs and artifacts, and record only redacted incident evidence.
+- Domain: plan validation, relation direction, conflict grouping, dedupe keys, finance classification, time-boundary semantics, citation eligibility.
+- Application: query planning, authorization ordering, completeness, partial sources, conflict disclosure, deterministic composition, model-envelope limits.
+- Persistence: generated migration, existing-table preservation, constraints, transaction/checkpoint ordering, replay, edits, deletion, scope removal, rebuild.
+- Sources: full configured Jira projection, Vault heading/metadata projection, live GitHub guards, Teams/email connected-scope guards, no connector call before authorization.
+- Capability: equivalent wording produces equivalent plans; all Delivery Manager question families use the shared model; unsupported operators fail closed.
+- Production: exact SHA, migration journal, safe counts/checksums, real citations, response latency, log scan, app rollback, and database recovery evidence.
+
+## 9. Stop Conditions
+
+Stop on migration drift, backup failure, unresolved architecture violation, incorrect source scope, arbitrary-plan execution, finance leakage, cross-workspace exposure, message/email body logging, missing citation resolution, provider-secret exposure, or real-answer latency/relevance regression.
 
 ## 10. Dependency and Completion Gates
 
-`Schema -> ingestion -> embeddings -> hybrid retrieval -> GitHub fusion -> answer composition -> CLI/runtime wiring -> exact-branch CI -> governed merge -> key rotation/backup -> migration/deploy -> bounded ingestion -> real answers/security proof`.
+`spec/ADR -> domain and architecture fitness -> coherent migration -> projection reconciliation -> safe query execution -> product composition/CLI -> focused tests -> exact-branch CI -> governed merge -> backup -> migration/deploy -> bounded sync -> real Teams answers -> rollback proof`.
 
-No gate is satisfied by schema creation, mock queries, HTTP readiness, deployment alone, or ingestion counts alone. Completion requires observed real example answers and rollback evidence.
+Schema creation, mocked queries, readiness HTTP 200, deployment, ingestion counts, or one daily report do not independently complete the capability.

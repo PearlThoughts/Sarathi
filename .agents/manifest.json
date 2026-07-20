@@ -33,6 +33,16 @@
       "responsibility": "Evaluate trust, sensitivity, delegation stage, approval, and model-egress decisions before retrieval, tool invocation, or model egress."
     },
     {
+      "name": "delivery-intelligence",
+      "path": "src/modules/delivery-intelligence",
+      "responsibility": "Model project objects, relationships, observations, claims, metrics, conflicts, safe delivery queries, and concise cited results."
+    },
+    {
+      "name": "knowledge-layer",
+      "path": "src/modules/knowledge-layer",
+      "responsibility": "Synchronize versioned documents and passages, enforce retrieval boundaries, and provide cited full-text and vector knowledge retrieval."
+    },
+    {
       "name": "follow-up",
       "path": "src/modules/follow-up",
       "responsibility": "Format generic due-item planning and exception digests from approved source-system context."

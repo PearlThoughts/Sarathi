@@ -17,6 +17,8 @@ Do not create placeholder folders. A layer exists only when there is production 
 
 `src/modules/delivery-assistant` is currently a test-backed contract layer. It names the public product role, audience scopes, maturity dials, and storage split before the loops are implemented.
 
+`src/modules/delivery-intelligence` owns the reusable project operating model and safe delivery-query grammar. Time windows are optional query constraints, not a separate bounded context. `src/modules/knowledge-layer` supports it with versioned unstructured content, retrieval, provenance, citations, and reconciliation. Neither module may deep-import the other; cross-capability composition uses public ports and result contracts.
+
 ## Cross-Boundary Rules
 
 - Platform and app composition import modules through `src/modules/*/index.ts`.

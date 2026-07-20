@@ -1,4 +1,4 @@
-# Tasks: example Knowledge Layer
+# Tasks: AI Delivery Assistant Intelligence
 
 **Input**: [spec.md](./spec.md) and [plan.md](./plan.md)
 **Execution Bead**: the private capability task
@@ -44,16 +44,22 @@
 - [ ] KLG-406 Prove duplicate suppression, pre-model permission filtering, restricted/cross-workspace exclusion, source edit/deletion reconciliation, privacy-safe logs, application rollback, and database recovery evidence.
 - [ ] KLG-407 Update and close the private capability task only with merged PR/SHA, exact test evidence, live answer evidence, deployment/migration/rollback evidence; commit Dolt state and run `gt ready` after each completed task.
 
-## Recent Delivery Activity Report
+## Delivery Intelligence Redesign
 
-- [ ] KLG-501 Add explicit recent-activity intent and workspace-local date-window contracts.
-- [ ] KLG-502 Add authorized, bounded live GitHub pull-request and commit activity retrieval.
-- [ ] KLG-503 Add authorized, bounded live Jira update and changelog retrieval.
-- [ ] KLG-504 Add authorized, bounded live Teams standard-channel activity retrieval.
-- [ ] KLG-505 Add deterministic cross-source deduplication and at-most-three-line cited composition.
-- [ ] KLG-506 Wire the fast path before generic semantic retrieval and model generation.
-- [ ] KLG-507 Replace evidence-led user-facing identity with “AI Delivery Assistant” while retaining internal provenance controls.
-- [ ] KLG-508 Prove exact-branch CI, production deployment, sub-ten-second real Teams delivery, relevant same-day content, and rollback.
+- [x] KLG-501 Replace the recent-activity framing with the delivery-intelligence spec and ADR; record time as an optional record/query dimension.
+- [ ] KLG-502 Add the `delivery-intelligence` bounded context and architecture fitness rules; remove the obsolete `delivery-activity` boundary after parity tests pass.
+- [ ] KLG-503 Define delivery objects, relations, observations, claims, metrics, conflicts, results, and a whitelisted composable query plan.
+- [ ] KLG-504 Regenerate the unreleased intermediate delivery migrations into one coherent Drizzle migration while preserving deployed audit and knowledge tables.
+- [ ] KLG-505 Move delivery projection contracts out of `knowledge-layer` and reconcile source versions, knowledge, delivery rows, ACLs, tombstones, and checkpoints transactionally.
+- [ ] KLG-506 Project the configured Jira and Vault boundaries into reusable delivery objects, relations, observations, claims, and non-financial metrics.
+- [ ] KLG-507 Implement authorized repository queries for scope, requirements, ownership, dependencies, blockers, delivery, current work, risks, decisions, capacity, recurring patterns, claims, and conflicts.
+- [ ] KLG-508 Keep GitHub live and add connected Teams/project-email operations without per-record approval fields or unrelated mailbox access.
+- [ ] KLG-509 Add deterministic and schema-constrained question planning over one validated grammar; reject arbitrary query operators and unbounded traversal.
+- [ ] KLG-510 Fuse structured, knowledge, and live results with deduplication, completeness, conflict disclosure, citations, and finance isolation before model egress.
+- [ ] KLG-511 Wire a single delivery-assistant port into Teams and durable `delivery ingest|reconcile|query|status|rebuild` CLI operations.
+- [ ] KLG-512 Replace evidence-led user-facing identity with `AI Delivery Assistant` while retaining internal provenance controls.
+- [ ] KLG-513 Add permanent architecture, migration, authorization, deletion, deduplication, conflict, citation, query-family, log-redaction, and latency regression tests.
+- [ ] KLG-514 Prove exact-branch CI, governed merge, backup, production migration/deployment, bounded synchronization, real Delivery Manager question coverage, sub-ten-second Teams reporting, and rollback.
 
 ## Dependency Order
 

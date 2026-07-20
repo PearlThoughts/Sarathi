@@ -1,152 +1,159 @@
-# Feature Specification: example Knowledge Layer
+# Feature Specification: AI Delivery Assistant Intelligence
 
-**Feature Branch**: `feat/knowledge-layer`
+**Feature Branch**: `feat/daily-activity-report`
 **Created**: 2026-07-20
 **Status**: Approved for implementation
 **Parent Specification**: [Teams Mention Production](../002-teams-mention-production/spec.md)
-**Execution State**: private delivery tracker
+**Execution State**: existing production-pilot child capability
 
 ## 1. Purpose
 
-Extend the accepted example production pilot with a durable, policy-bounded knowledge capability. Sarathi indexes approved Jira and example Vault evidence, retrieves GitHub evidence live, combines those sources with the already approved Teams thread context, and returns a normally two- or three-line answer with resolvable citations.
+Extend the accepted production pilot into an AI Delivery Assistant that can answer the ordinary operating questions asked of a Delivery Manager or Project Manager. Sarathi organizes connected project data into a reusable delivery model, queries live systems when current authority matters, and returns concise answers with resolvable citations.
 
-This is a child capability of the existing production pilot. It is not a new product plan, runtime, workspace, epic, or convoy.
+The existing knowledge layer remains the supporting document, provenance, search, and deletion-reconciliation capability. It is not the product identity or the owner of delivery-management semantics.
+
+This remains one child capability of the existing production pilot. It does not create another product plan, epic, convoy, deployment, or datastore.
 
 ## 2. Problem and Objective
 
-The current production path proves bounded retrieval with narrow exemplars. It does not provide enough example coverage for real delivery questions, durable source synchronization, semantic retrieval, source edits and deletions, or coherent ranking across indexed and live sources.
+The current production path can retrieve narrow cited context, but it cannot reliably answer questions about scope, ownership, dependency waits, blockers, sprint work, delivered outcomes, capacity, risks, recurring issues, requirements, decisions, or next actions. Semantic passages alone do not provide stable joins, lifecycle state, aggregation, conflict detection, or predictable latency.
 
-The objective is to answer real example delivery and implementation questions from authorized evidence while preserving workspace, audience, ACL, sensitivity, source authority, version, provenance, and deletion boundaries before any evidence reaches a model.
+The objective is to maintain a policy-bounded delivery representation once and reuse it across delivery questions. A new wording must compile to existing safe query operations rather than require a new adapter, table, or question-specific code path.
 
 ## 3. Principles
 
-1. **Authorization precedes content access.** Candidate metadata is filtered before passage bodies are loaded, composed, logged, or sent to a model.
-2. **Sources retain authority.** Jira and Vault remain canonical; PostgreSQL stores retrieval projections and checkpoints. GitHub remains a live retrieval backend.
-3. **Versions and deletions are first-class.** Every indexed body belongs to an immutable source version; reconciliation retires superseded or deleted passages deterministically.
-4. **Hybrid evidence beats a single score.** Exact identifiers, PostgreSQL full-text search, vector similarity, source authority, freshness, and reciprocal-rank fusion contribute independently and remain inspectable.
-5. **Provider and framework code stay at the edge.** Domain and application code depend on ports, not Drizzle, PostgreSQL, pgvector, Jira, GitHub, Vault, Teams, or AI SDK types.
-6. **Concise answers remain auditable.** Normal answers use two or three lines and compact resolvable citations; unavailable or stale sources are stated without leaking restricted content.
+1. **Delivery concepts organize the system.** Projects, work, people, ownership, dependencies, requirements, risks, decisions, activity, claims, and metrics are first-class.
+2. **Time is a dimension, not the architecture.** Occurrence, observation, validity, sprint, and reporting windows qualify delivery records and queries; no temporal aggregate owns the system.
+3. **Observation and assertion remain distinct.** A commit, transition, or message is trusted as an event that occurred. Statements inside a source are attributed claims and may conflict.
+4. **Connected scope replaces record approval.** Read-only reporting uses every record available through configured project connectors. There is no per-message or per-record approval state.
+5. **Workspace and finance boundaries precede content access.** Mapped workspace members may query non-financial project data. Finance is isolated and denied without an explicit confidential audience.
+6. **Sources retain authority and provenance.** Jira and Vault are synchronized; GitHub remains live; Teams and project email are bounded by configured project connections. Derived state never overwrites its source.
+7. **Knowledge retrieval supports delivery reasoning.** Versioned documents, passages, full-text search, vectors, citations, and deletion reconciliation enrich structured delivery queries.
+8. **Frameworks remain at the edge.** Domain and application code do not depend on Drizzle, PostgreSQL, Graph, Jira, GitHub, Vault, Railway, or model-provider SDK types.
+9. **Answers are concise and auditable.** Normal Teams answers use two or three lines, disclose conflicts and unavailable required sources, and cite material claims.
 
 ## 4. Capability Architecture
 
 ```mermaid
 flowchart LR
-  J[Jira approved scope] --> N[Normalize and authorize]
-  V[Vault approved scope] --> N
-  N --> I[Item and immutable version]
-  I --> P[Heading or typed-field passages]
-  P --> E[AI SDK embedding port]
-  E --> D[(PostgreSQL plus pgvector)]
-  Q[Authorized question plus Teams thread] --> R[Policy-filtered hybrid retrieval]
-  D --> R
-  G[GitHub live search API] --> R
-  R --> F[Exact, FTS, vector, authority and freshness fusion]
-  F --> A[AI SDK answer composition]
-  A --> C[Two or three lines plus citations]
+  J[Jira] --> C[Connected-source adapters]
+  V[Vault] --> C
+  T[Teams] --> C
+  M[Project email] --> C
+  C --> K[Versioned source records and knowledge passages]
+  C --> D[Delivery objects, relations, observations, claims, metrics]
+  K --> Q[Authorized query execution]
+  D --> Q
+  G[GitHub live API] --> Q
+  U[Delivery question] --> P[Validated delivery query plan]
+  P --> Q
+  Q --> X[Conflict and completeness evaluation]
+  X --> A[Two or three cited lines]
 ```
 
-The `knowledge-layer` bounded context owns canonical evidence vocabulary, ingestion and reconciliation rules, authorization-aware retrieval, result fusion, and cited-answer contracts. Infrastructure adapters own source APIs, filesystem access, Drizzle/PostgreSQL, pgvector, and model/embedding providers. Teams mention composition imports the capability only through its public module surface.
+`delivery-intelligence` owns the delivery vocabulary, normalized query plan, conflict rules, result model, and concise report composition. `knowledge-layer` owns source items, immutable versions, passages, ACL metadata, embeddings, hybrid retrieval, citations, checkpoints, and deletion reconciliation. `boundary-policy` and identity capabilities authorize the request before either capability retrieves content. Infrastructure adapters translate external APIs and PostgreSQL rows into capability ports.
 
 ## 5. User Scenarios and Acceptance
 
-### Story 1 — Delivery Status and Risk Answers (P0)
+### Story 1 — Project State and Ownership
 
-A mapped example participant asks about delivery status, approved risks, or next action and receives a concise synthesis from current authorized Jira, Vault, and Teams evidence.
+A mapped workspace member asks about current scope, requirements, milestones, ownership, who is working on what, capacity, or next actions and receives a concise synthesis from the reusable delivery model.
 
-**Independent test**: the two required delivery questions return two or three lines with at least one resolvable Jira or Vault citation, no duplicate facts, and no evidence above the caller's boundary.
+**Independent test**: multiple wordings compile to the same safe query operators and return equivalent cited facts without adding question-specific persistence or adapters.
 
-### Story 2 — Implementation Answer With Live GitHub Evidence (P0)
+### Story 2 — Dependencies, Blockers, and Risks
 
-A mapped participant asks an implementation question that cannot be answered from Jira or Vault alone. Sarathi queries the approved GitHub repositories live and cites the exact repository resource instead of storing a codebase copy.
+A member asks who is waiting for whom, whether anyone is stuck, or for the top risks. Sarathi traverses relationships, work state, risk records, and recent claims while preserving unresolved disagreements.
 
-**Independent test**: a controlled implementation question produces a resolvable GitHub citation and the database contains no duplicated repository body or embedding.
+**Independent test**: dependency direction, blocked state, risk ordering, workspace exclusion, finance exclusion, and competing claims are asserted with resolvable citations.
 
-### Story 3 — Source Change and Deletion Reconciliation (P0)
+### Story 3 — Delivery and Activity Reports
 
-An approved Jira issue or Vault document changes, moves out of scope, loses permission, or is deleted. The next bounded sync creates the new version or tombstone and makes stale passages unretrievable.
+A member asks what the team delivered last sprint, is doing this week, or did today. Sarathi applies the requested sprint or calendar window as a filter over work, observations, and live activity.
 
-**Independent test**: edit, delete, ACL-revoke, and replay fixtures prove version history, deduplication, checkpoint advancement, and immediate retrieval exclusion.
+**Independent test**: today, week, current-sprint, and previous-sprint questions use the same domain model with different optional boundaries and return in less than ten seconds.
 
-### Edge Cases
+### Story 4 — Recurring Problems
 
-- Exact Jira keys and repository identifiers outrank semantically similar prose.
-- A source item may be visible while one comment or Vault section is restricted; passage-level ACL is the effective boundary.
-- Embedding or GitHub outages produce an explicit partial answer only when remaining authorized evidence is sufficient; authorization and workspace failures fail closed.
-- A citation without an approved resolvable URL is not eligible for answer composition.
-- Repeated ingestion of the same version changes neither active passage count nor checksum.
+A member asks what keeps going wrong. Sarathi groups repeated issue categories, blocker reasons, failed checks, reopened work, and recurring claims without treating lexical similarity alone as proof.
+
+**Independent test**: a recurring pattern requires multiple distinct occurrences, retains contributing citations, and does not duplicate one event across sources.
+
+### Story 5 — Implementation Questions
+
+A member asks a question that requires repository truth. Sarathi uses GitHub's live API or search within configured repositories and cites the current resource without persisting repository bodies or embeddings.
+
+**Independent test**: the answer contains a resolvable GitHub citation and the database contains no copied codebase body.
 
 ## 6. Functional Requirements
 
-- **FR-001**: Model canonical `source -> item -> version -> passage -> retrieval projection`, plus ACL bindings and source checkpoints, in PostgreSQL.
-- **FR-002**: Use Drizzle ORM schema definitions and versioned Drizzle migrations for new production tables; retain existing audit tables and incrementally coexist with unapplied legacy Strategy Kernel definitions.
-- **FR-003**: Install and verify the `vector` extension in the existing Railway PostgreSQL service through the versioned migration path.
-- **FR-004**: Normalize approved Jira issues from typed fields, description, and approved comments while preserving keys, URLs, field/comment identity, versions, timestamps, authorship where allowed, authority, ACL, and provenance.
-- **FR-005**: Normalize approved example Vault documents primarily by Markdown headings while preserving path, heading anchor, content hash, source version, sensitivity, ACL, and resolvable Vault citation metadata.
-- **FR-006**: Query approved GitHub repositories live through GitHub search/API with repository, path, symbol or line context, current revision metadata, and resolvable URLs; do not persist repository bodies or embeddings.
-- **FR-007**: Provide an AI SDK embedding port with configured model and dimension validation plus a deterministic, non-semantic test implementation.
-- **FR-008**: Retrieve by exact identifiers, PostgreSQL full-text search, and vector similarity with workspace, audience, ACL, sensitivity, source, active-version, and deletion filters applied before bodies reach application or model code.
-- **FR-009**: Fuse per-backend ranks with reciprocal-rank fusion using configurable defaults `top-k=10` and `rrf-k=60`, then apply explicit source-authority and freshness signals without allowing them to bypass authorization.
-- **FR-010**: Suppress duplicate passages and duplicate facts using stable source identity, content hashes, active versions, and deterministic fusion keys.
-- **FR-011**: Compose normally two- or three-line answers that distinguish fact from inference, cite every material claim, and expose only approved resolvable links.
-- **FR-012**: Provide durable `knowledge ingest`, `knowledge reconcile`, `knowledge query`, and `knowledge status` CLI operations with safe JSON summaries containing counts, checksums, checkpoint IDs, and no private bodies.
-- **FR-013**: Reconcile edits, deletions, scope removal, and ACL changes so inactive or unauthorized passages are excluded before model egress.
-- **FR-014**: Preserve current Z.AI primary and OpenRouter fallback model ordering through Vercel AI SDK provider abstractions; never log provider credentials.
-- **FR-015**: Index only explicitly approved Jira and Vault scopes. This slice excludes email, broad private Teams history, cross-workspace synthesis, and full codebase indexing.
+- **FR-001**: Model workspace-scoped delivery objects, relationships, observations, claims, metrics, conflicts, and source links independently of any reporting period.
+- **FR-002**: Represent time only through optional occurrence, observation, effective, sprint, milestone, and query-window fields.
+- **FR-003**: Compile delivery questions into a validated `DeliveryQueryPlan` composed from whitelisted selectors, relation traversals, predicates, groupings, measures, ordering, limits, source needs, and an optional time boundary.
+- **FR-004**: Reject arbitrary database queries and unknown plan operators before executing a source or loading content.
+- **FR-005**: Use Drizzle schema definitions and generated, versioned migrations for all new production tables. Do not replace existing audit or knowledge tables.
+- **FR-006**: Enable and verify pgvector in the existing PostgreSQL service and retain full-text/vector retrieval for unstructured knowledge.
+- **FR-007**: Synchronize the full configured Jira project boundary, including hierarchy, sprint, status, assignee, reporter, priority, components, versions, estimates, time tracking, links, changelog, descriptions, and comments.
+- **FR-008**: Synchronize configured Vault project roots by heading and project metadata rather than exemplar documents.
+- **FR-009**: Read configured Teams surfaces and scoped project email without per-record approval. Exclude assistant prompts and bot replies from team-progress observations.
+- **FR-010**: Query configured GitHub repositories live for pull requests, commits, reviews, checks, issues, and code search. Do not persist repository bodies or embeddings.
+- **FR-011**: Treat source-native events as observations; represent statements as attributed claims with subject, predicate, value, source, author, authority, citation, and observation metadata.
+- **FR-012**: Preserve simultaneously active conflicting claims and disclose disagreement. Authority and recency may rank claims but must not silently erase conflict.
+- **FR-013**: Make non-financial project data visible to mapped workspace members. Store finance metrics and finance-classified content in an isolated confidential boundary that fails closed for general queries.
+- **FR-014**: Reconcile edits, deletions, scope removal, and connector changes so stale projections become inactive before retrieval or model egress.
+- **FR-015**: Suppress duplicate observations and claims using stable source identity, version, content hashes, and cross-source equivalence keys.
+- **FR-016**: Use Vercel AI SDK provider abstractions with OpenRouter as the only production model/embedding provider. Tests use deterministic implementations.
+- **FR-017**: Answer deterministic delivery queries without a model when possible. Model-assisted planning or synthesis receives only an authorized, bounded result envelope.
+- **FR-018**: Produce normally two or three cited lines and complete the Teams response path in less than ten seconds for supported delivery questions.
+- **FR-019**: Provide durable ingestion, reconciliation, query, status, and projection-rebuild CLI operations with counts, checksums, checkpoints, and no private bodies in logs.
 
-## 7. Key Entities and Data Contracts
+## 7. Core Data Contracts
 
-- **KnowledgeSource**: workspace-scoped adapter identity, authority class, approved scope, synchronization policy, and status.
-- **KnowledgeItem**: stable external identity and canonical URL for one Jira issue or Vault document without mutable body ownership.
-- **KnowledgeVersion**: immutable source revision, checksum, observed timestamps, provenance, and active/tombstone state.
-- **KnowledgePassage**: addressable typed-field, comment, or heading passage with ordinal, citation locator, checksum, sensitivity, and body.
-- **KnowledgeAclBinding**: audience or principal rule attached to item, version, or passage; the most restrictive applicable rule wins.
-- **KnowledgeProjection**: full-text vector and embedding metadata for an active passage; projection rows never relax source ACL.
-- **KnowledgeCheckpoint**: per-source cursor, scope checksum, last successful observation, counts, and failure state.
-- **RetrievalCandidate**: authorized citation metadata plus independently inspectable exact, keyword, vector, authority, freshness, and fused ranks.
-
-Provider SDK types, Drizzle rows, and source payloads terminate at infrastructure anti-corruption boundaries.
+- **DeliveryObject**: a project, person, team, module, requirement, milestone, sprint, work item, deliverable, risk, decision, or configured extension with stable workspace and source identity.
+- **DeliveryRelation**: a typed directed edge such as owns, assigned-to, contains, depends-on, blocks, contributes-to, implements, affects, or supersedes.
+- **DeliveryObservation**: an immutable normalized event or state observation from a connected source.
+- **DeliveryClaim**: an attributed statement about a subject and predicate; claims may coexist and conflict.
+- **DeliveryMetric**: a typed numeric or categorical measurement. Financial kinds are physically and logically isolated.
+- **DeliveryConflict**: a derived result over incompatible active claims; it is not an independent source of truth.
+- **DeliveryQueryPlan**: an authorized, whitelisted plan over objects, relations, observations, claims, metrics, knowledge, and live backends, optionally constrained by time.
+- **DeliveryResult**: cited facts, grouped measures, conflicts, completeness, and unavailable-source metadata suitable for deterministic or model-assisted composition.
+- **KnowledgeRecord**: versioned source item, passage, ACL/provenance metadata, search projection, and deletion state supporting unstructured retrieval.
+- **SyncCheckpoint**: connector cursor, scope checksum, completion state, counts, and safe failure metadata.
 
 ## 8. Operational and Security Standards
 
-- Production PostgreSQL migration requires a pre-change backup or verified restore point and a documented rollback command before apply.
-- The exposed OpenRouter key must be rotated before deployment. Neither Z.AI nor OpenRouter credentials may appear in console output, logs, Beads, Git, PRs, checksums, or evidence artifacts.
-- Ingestion logs expose only source key, workspace, counts, hashes, duration, checkpoint, and redacted failure class.
-- Checkpoint advancement occurs only after the item/version/passage/ACL/projection transaction commits.
-- A failed source is retriable from the previous checkpoint without duplicating active passages.
-- Production migration is additive. Destructive table replacement, bulk evidence deletion without a reconciled tombstone plan, and source writes are stop conditions.
+- Authorization resolves the installed organization, workspace, mapped actor, maximum sensitivity, connected sources, and finance entitlement before source access.
+- Original source audience metadata is retained for provenance. The configured serving policy may project connected non-financial records to the whole workspace; cross-workspace access remains denied.
+- Project-email connectors require explicit mailbox, participant, thread, label, or project-identifier routing and must not scan unrelated mail.
+- Logs contain identifiers, counts, hashes, timing, checkpoints, and redacted error classes only. They never contain provider keys, message bodies, email bodies, document bodies, or model prompts.
+- Checkpoints advance only after the source record, knowledge projection, delivery projection, ACLs, and tombstones commit together.
+- Production migration requires a verified backup/restore point and recorded application rollback revision before apply.
 
-## 9. Verification and Acceptance Matrix
+## 9. Verification
 
-Permanent tests cover migrations and rollback ordering, extension readiness, schema constraints, deterministic embeddings, Jira and Vault normalization, heading and typed-field chunking, version dedupe, edits, deletions, ACL revocation, cross-workspace exclusion, sensitivity filtering, exact/keyword/vector retrieval, reciprocal-rank fusion, GitHub live adapter boundaries, citation resolution, concise answer length, log redaction, and restart-safe checkpoints.
+Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, and concise response shape.
 
-Final acceptance requires the exact branch `bun run check`, `bun run runtime:smoke`, a verified production backup, non-destructive migration, bounded real ingestion with counts and checksums only, and observed answers to:
+Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, bounded connector synchronization, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint delivery, current work, recurring issues, and a daily summary under ten seconds.
 
-1. “What is the current status of Example Delivery Portal?”
-2. “What are the approved example delivery risks and next action?”
-3. One implementation question whose answer requires GitHub live search.
+## 10. Non-Goals
 
-## 10. Success Criteria
-
-- The live PostgreSQL service reports pgvector installed and the new Drizzle migration journal at the deployed revision without replacing the three existing audit tables.
-- Bounded Jira and Vault ingestion records nonzero authorized items, versions, and passages with stable replay checksums and no private bodies in logs.
-- All three real questions produce coherent, normally two- or three-line answers with resolvable source citations.
-- Duplicate suppression, pre-egress permission filtering, restricted/cross-workspace exclusion, source edit/deletion reconciliation, and credential/private-content log scans are proven with permanent tests and live bounded evidence.
-- Rollback is executable and evidenced for both application revision and database changes.
+- No separate graph or vector database.
+- No copied GitHub codebase.
+- No cross-workspace synthesis.
+- No autonomous source-system writes or external publication in this capability.
+- No unrestricted mailbox or personal-message search.
+- No generic SQL or connector query generated by a model.
+- No time-centric event-sourcing rewrite of the complete application.
 
 ## 11. Rollback and Stop Conditions
 
-Stop deployment or ingestion on backup failure, migration drift, extension failure, dimension mismatch, authorization ambiguity, restricted evidence exposure, missing citation resolution, unexpected source writes, credential leakage, or live-answer regression. Roll back the application to the recorded Railway deployment, stop ingestion, restore or reverse only the additive migration using the verified recovery procedure, and preserve redacted audit/checkpoint evidence for diagnosis.
+Stop on backup failure, migration drift, connector-scope ambiguity, unauthorized source access, finance leakage, missing citation resolution, private-body logging, or real-answer regression. Roll back the application to the recorded Railway revision, stop synchronization, leave additive tables unused, and use the verified PostgreSQL recovery path if database restoration is required. Do not drop or replace existing audit or knowledge tables as part of application rollback.
 
-## 12. Explicit Non-Goals
+## 12. References
 
-- No Pinecone, Weaviate, LanceDB, Neo4j, Azure AI Search, or additional datastore.
-- No email indexing, broad Teams-history indexing, cross-workspace search, source-system writes, autonomous delivery actions, or generic enterprise search product.
-- No copy or inspection of CodeCompass internals; only its evidence-oriented file/symbol/snippet precedent informs the public design.
-
-## 13. References
-
-- [example Teams Mention Production](../002-example-teams-mention-production/spec.md)
-- [Production Pilot Readiness](../001-production-pilot-readiness/spec.md)
+- [Implementation Plan](./plan.md)
+- [Delivery Intelligence Redesign](./delivery-intelligence.md)
 - [ADR 0006](../../docs/adr/0006-postgres-knowledge-retrieval-stack.md)
+- [ADR 0007](../../docs/adr/0007-delivery-intelligence-projection.md)
 - [Module Boundaries](../../docs/architecture/module-boundaries.md)
-- [Private Workspace Packs](../../docs/implementation/private-workspace-packs.md)
+- [Workspace and Capability Model](../../docs/architecture/workspace-capability-model.md)
