@@ -1,10 +1,10 @@
-# Implementation Plan: 1851 Knowledge Layer
+# Implementation Plan: example Knowledge Layer
 
-**Branch**: `feat/1851-knowledge-layer` | **Date**: 2026-07-20 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feat/example-knowledge-layer` | **Date**: 2026-07-20 | **Spec**: [spec.md](./spec.md)
 
 ## 1. Execution Goal
 
-Deliver the `sar-2du.11` child capability from schema through observed production answers. The implementation ends only after live Jira/Vault ingestion, GitHub-backed retrieval, concise cited Teams answers, security boundaries, and rollback have been verified.
+Deliver the the private capability task child capability from schema through observed production answers. The implementation ends only after live Jira/Vault ingestion, GitHub-backed retrieval, concise cited Teams answers, security boundaries, and rollback have been verified.
 
 ## 2. Technical Context
 
@@ -115,4 +115,4 @@ Each backend emits a ranked list of authorized candidates with stable identity a
 
 `Schema -> ingestion -> embeddings -> hybrid retrieval -> GitHub fusion -> answer composition -> CLI/runtime wiring -> exact-branch CI -> governed merge -> key rotation/backup -> migration/deploy -> bounded ingestion -> real answers/security proof`.
 
-No gate is satisfied by schema creation, mock queries, HTTP readiness, deployment alone, or ingestion counts alone. Completion requires observed real 1851 answers and rollback evidence.
+No gate is satisfied by schema creation, mock queries, HTTP readiness, deployment alone, or ingestion counts alone. Completion requires observed real example answers and rollback evidence.

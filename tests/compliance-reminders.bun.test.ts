@@ -85,7 +85,7 @@ describe("compliance reminders", () => {
   test("rejects items from another workspace", async () => {
     const result = Effect.runPromise(
       runComplianceReminder(request, {
-        source: source([{ ...item, workspaceId: "1851" }]),
+        source: source([{ ...item, workspaceId: "example" }]),
         delivery: delivery(),
         audit: auditStore(undefined, []),
       }),

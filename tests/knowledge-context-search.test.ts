@@ -17,10 +17,10 @@ describe("Teams knowledge context search", () => {
           {
             id: "jira-1",
             source: "jira",
-            sourceId: "F1851-635",
+            sourceId: "DEMO-635",
             title: "Status",
             excerpt: "Approved status",
-            citationUrl: "https://jira.example/browse/F1851-635",
+            citationUrl: "https://jira.example/browse/DEMO-635",
             sourceUpdatedAt: "2026-07-20T00:00:00.000Z",
             sensitivity: "internal",
             authority: 0.9,
@@ -47,7 +47,7 @@ describe("Teams knowledge context search", () => {
       search.search(
         { question: "status" } as never,
         {
-          workspaceId: "workspace-1851",
+          workspaceId: "workspace-example",
           callerId: "actor-1",
           channelSensitivity: "internal",
         } as never,
@@ -57,7 +57,7 @@ describe("Teams knowledge context search", () => {
     expect(seen).toEqual([
       expect.objectContaining({
         audience: {
-          workspaceId: "workspace-1851",
+          workspaceId: "workspace-example",
           actorId: "actor-1",
           audienceIds: ["delivery"],
           maximumSensitivity: "internal",
@@ -67,7 +67,7 @@ describe("Teams knowledge context search", () => {
     expect(results).toEqual([
       expect.objectContaining({
         source: "jira",
-        sourceUrl: "https://jira.example/browse/F1851-635",
+        sourceUrl: "https://jira.example/browse/DEMO-635",
       }),
     ]);
   });

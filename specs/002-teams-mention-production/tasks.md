@@ -1,4 +1,4 @@
-# Tasks: 1851 Teams Mention Production
+# Tasks: example Teams Mention Production
 
 ## Foundation
 
@@ -33,7 +33,7 @@
 
 - [ ] TM-301 Provision Railway/Postgres and configure GitHub-source deployment.
 - [ ] TM-302 Provision Entra/Bot registration and team-scoped RSC consent.
-- [ ] TM-303 Install the package in 1851 Delivery Team and execute the real
+- [ ] TM-303 Install the package in example Delivery Team and execute the real
   acceptance matrix.
 - [ ] TM-304 Record private runbook/rollback/uninstall evidence without adding
   identifiers or secrets to this repository.

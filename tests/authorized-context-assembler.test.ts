@@ -111,7 +111,7 @@ describe("authorized context assembler", () => {
   it("fails closed instead of returning a partial envelope when a reader fails", async () => {
     const assembler = createAuthorizedContextAssembler([
       {
-        sourceKey: () => "jira:F1851-754",
+        sourceKey: () => "jira:DEMO-754",
         reader: { readEvidence: async () => Promise.reject(new Error("unavailable")) },
       },
     ]);

@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import { createJiraKnowledgeSource } from "../src/infrastructure/jira/jira-knowledge-source.ts";
 
 const configuration = (fetcher: typeof fetch) => ({
-  sourceId: "jira-1851",
-  workspaceId: "1851",
+  sourceId: "jira-example",
+  workspaceId: "example",
   baseUrl: "https://jira.example.test",
   email: "synthetic@example.test",
   apiToken: "synthetic-token",
-  projectKey: "F1851",
+  projectKey: "DEMO",
   approvedJql: "statusCategory != Done",
   fields: {
     summary: "Summary",
@@ -35,9 +35,9 @@ describe("Jira knowledge source", () => {
           issues: [
             {
               id: "100",
-              key: "F1851-100",
+              key: "DEMO-100",
               fields: {
-                summary: "Modern Website Builder",
+                summary: "Example Delivery Portal",
                 status: { name: "In Progress" },
                 description: {
                   type: "doc",
@@ -76,17 +76,20 @@ describe("Jira knowledge source", () => {
     };
 
     const snapshot = await Effect.runPromise(
-      createJiraKnowledgeSource(configuration(fetcher as typeof fetch)).readSnapshot("1851"),
+      createJiraKnowledgeSource(configuration(fetcher as typeof fetch)).readSnapshot("example"),
     );
 
     const searchBody = JSON.parse(String(requests[0]?.init?.body)) as { readonly jql: string };
-    expect(searchBody.jql).toContain('project = "F1851"');
+    expect(searchBody.jql).toContain('project = "DEMO"');
     expect(searchBody.jql).toContain("statusCategory != Done");
-    expect(snapshot).toMatchObject({ sourceId: "jira-1851", cursor: "2026-07-20T01:00:00.000Z" });
+    expect(snapshot).toMatchObject({
+      sourceId: "jira-example",
+      cursor: "2026-07-20T01:00:00.000Z",
+    });
     expect(snapshot.documents[0]).toMatchObject({
-      externalId: "F1851-100",
-      title: "Modern Website Builder",
-      canonicalUrl: "https://jira.example.test/browse/F1851-100",
+      externalId: "DEMO-100",
+      title: "Example Delivery Portal",
+      canonicalUrl: "https://jira.example.test/browse/DEMO-100",
       acl: [{ subjectId: "delivery" }],
     });
     expect(snapshot.documents[0]?.passages).toEqual(

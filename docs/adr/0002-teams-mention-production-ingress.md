@@ -8,7 +8,7 @@ Accepted
 
 ADR 0001 deferred Teams bot work while the first private evidence loop was
 proved. That evidence loop now exists, and the next approved product milestone
-is a direct `@Sarathi` question answered safely inside a mapped 1851 Teams
+is a direct `@Sarathi` question answered safely inside a mapped example Teams
 thread.
 
 The Microsoft 365 Agents SDK is the supported JavaScript activity lifecycle

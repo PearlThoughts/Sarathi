@@ -34,8 +34,8 @@ describe("cross-source knowledge fusion", () => {
   test("suppresses the same resolvable citation across independently ranked lists", () => {
     const fused = fuseKnowledgeResults(
       {
-        indexed: [result("jira", "F1851-635", "https://jira.example/browse/F1851-635")],
-        thread: [result("teams", "thread-1", "https://jira.example/browse/F1851-635#comment-1")],
+        indexed: [result("jira", "DEMO-635", "https://jira.example/browse/DEMO-635")],
+        thread: [result("teams", "thread-1", "https://jira.example/browse/DEMO-635#comment-1")],
         github: [result("github", "repo#1", "https://github.com/org/repo/issues/1")],
       },
       10,
@@ -68,7 +68,7 @@ describe("cross-source knowledge fusion", () => {
         {
           question: "what changed",
           audience: {
-            workspaceId: "workspace-1851",
+            workspaceId: "workspace-example",
             audienceIds: ["delivery"],
             maximumSensitivity: "internal",
           },

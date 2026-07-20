@@ -1,11 +1,11 @@
-# Tasks: 1851 Knowledge Layer
+# Tasks: example Knowledge Layer
 
 **Input**: [spec.md](./spec.md) and [plan.md](./plan.md)
-**Execution Bead**: `sar-2du.11`
+**Execution Bead**: the private capability task
 
 ## Phase 1 — Specification and Migration Foundation
 
-- [x] KLG-001 Bind the child capability to `sar-2du.11` and existing convoy `hq-cv-fixy7`; create this scoped Spec Kit package and ADR 0006.
+- [x] KLG-001 Bind the child capability to the existing private delivery tracker; create this scoped Spec Kit package and ADR 0006.
 - [x] KLG-002 Add `drizzle.config.ts`, PostgreSQL schema modules, generated/versioned migration artifacts, and migration runner under `src/infrastructure/postgres/`.
 - [x] KLG-003 Add the pgvector extension migration and canonical source/item/version/passage/ACL/projection/checkpoint tables without altering or replacing existing audit tables.
 - [x] KLG-004 Add migration plan/status/apply verification and rollback-safe tests against the current production-table baseline.
@@ -40,9 +40,9 @@
 - [ ] KLG-402 Rotate the exposed OpenRouter key without printing either provider key; confirm Z.AI remains primary and OpenRouter fallback.
 - [ ] KLG-403 Confirm production backup/restore and rollback, apply the non-destructive migration, verify pgvector/journal/audit tables, and deploy the merged revision.
 - [ ] KLG-404 Run bounded approved Jira/Vault ingestion and record only counts, checksums, checkpoints, source scope identifiers, and timing.
-- [ ] KLG-405 Verify the Modern Website Builder status question, approved risks/next-action question, and one GitHub-required implementation question with concise resolvable citations.
+- [ ] KLG-405 Verify the Example Delivery Portal status question, approved risks/next-action question, and one GitHub-required implementation question with concise resolvable citations.
 - [ ] KLG-406 Prove duplicate suppression, pre-model permission filtering, restricted/cross-workspace exclusion, source edit/deletion reconciliation, privacy-safe logs, application rollback, and database recovery evidence.
-- [ ] KLG-407 Update and close `sar-2du.11` only with merged PR/SHA, exact test evidence, live answer evidence, deployment/migration/rollback evidence; commit Dolt state and run `gt ready` after each completed task.
+- [ ] KLG-407 Update and close the private capability task only with merged PR/SHA, exact test evidence, live answer evidence, deployment/migration/rollback evidence; commit Dolt state and run `gt ready` after each completed task.
 
 ## Dependency Order
 

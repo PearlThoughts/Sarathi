@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The accepted 1851 Teams mention workflow currently assembles narrow source exemplars at request time. Production knowledge coverage requires canonical Jira and Vault synchronization, versioning, passage-level policy, semantic retrieval, deterministic deletion reconciliation, live GitHub evidence, concise citations, and recovery on the existing Railway deployment.
+The accepted example Teams mention workflow currently assembles narrow source exemplars at request time. Production knowledge coverage requires canonical Jira and Vault synchronization, versioning, passage-level policy, semantic retrieval, deterministic deletion reconciliation, live GitHub evidence, concise citations, and recovery on the existing Railway deployment.
 
 The decision affects domain contracts, ingestion, authorization, storage, search, provider composition, CLI operations, deployment, and rollback. The production service already owns PostgreSQL, while existing migration code contains hand-written runtime DDL and the live database contains audit tables that must not be replaced.
 
@@ -45,7 +45,7 @@ Expose embeddings and answer generation through Vercel AI SDK-backed infrastruct
 
 ## References
 
-- [1851 Knowledge Layer Spec](../../specs/005-1851-knowledge-layer/spec.md)
-- [1851 Knowledge Layer Plan](../../specs/005-1851-knowledge-layer/plan.md)
+- [example Knowledge Layer Spec](../../specs/005-example-knowledge-layer/spec.md)
+- [example Knowledge Layer Plan](../../specs/005-example-knowledge-layer/plan.md)
 - [ADR 0004: Vault Allowlist Runtime Retrieval](./0004-vault-allowlist-runtime-retrieval.md)
 - [ADR 0005: Single Runtime With Private Organization Overlays](./0005-single-runtime-private-overlays.md)

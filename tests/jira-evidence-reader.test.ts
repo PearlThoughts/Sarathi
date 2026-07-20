@@ -24,8 +24,8 @@ describe("Jira evidence reader", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
-          key: "F1851-1",
-          self: "https://jira.example.test/rest/api/3/issue/F1851-1",
+          key: "DEMO-1",
+          self: "https://jira.example.test/rest/api/3/issue/DEMO-1",
           fields: {
             summary: "Synthetic delivery issue",
             updated: "2026-07-11T00:00:00Z",
@@ -42,13 +42,13 @@ describe("Jira evidence reader", () => {
       fetcher: fetcher as unknown as typeof fetch,
     });
     await expect(
-      reader.readEvidence({ workspaceId: "workspace", sourceKey: "jira:F1851-1" }),
+      reader.readEvidence({ workspaceId: "workspace", sourceKey: "jira:DEMO-1" }),
     ).resolves.toMatchObject({
       records: [
         {
           sourceSystem: "jira",
-          externalId: "F1851-1",
-          externalUrl: "https://jira.example.test/browse/F1851-1",
+          externalId: "DEMO-1",
+          externalUrl: "https://jira.example.test/browse/DEMO-1",
           bodyExcerpt:
             "Status: In Review. Jira issue metadata retrieved through approved read adapter.",
         },

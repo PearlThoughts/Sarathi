@@ -15,14 +15,14 @@ describe("Vault knowledge source", () => {
           sha: "tree-sha",
           truncated: false,
           tree: [
-            { path: "Projects/1851/Risks.md", type: "blob", sha: "note-sha" },
+            { path: "Projects/example/Risks.md", type: "blob", sha: "note-sha" },
             {
-              path: "Projects/1851/Customer Emails/private.md",
+              path: "Projects/example/Excluded Communications/private.md",
               type: "blob",
               sha: "private-sha",
             },
             { path: "Projects/Other/Private.md", type: "blob", sha: "other-sha" },
-            { path: "Projects/1851/image.png", type: "blob", sha: "image-sha" },
+            { path: "Projects/example/image.png", type: "blob", sha: "image-sha" },
           ],
         });
       }
@@ -43,14 +43,14 @@ describe("Vault knowledge source", () => {
       return new Response("not found", { status: 404 });
     };
     const source = createVaultKnowledgeSource({
-      sourceId: "vault-1851",
-      workspaceId: "1851",
+      sourceId: "vault-example",
+      workspaceId: "example",
       token: "synthetic-token",
       roots: [
         {
           repository: "example/Approved-Vault",
-          pathPrefix: "Projects/1851",
-          excludePathPrefixes: ["Projects/1851/Customer Emails"],
+          pathPrefix: "Projects/example",
+          excludePathPrefixes: ["Projects/example/Excluded Communications"],
           sensitivity: "internal",
           acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
         },
@@ -58,15 +58,15 @@ describe("Vault knowledge source", () => {
       fetcher: fetcher as typeof fetch,
     });
 
-    const snapshot = await Effect.runPromise(source.readSnapshot("1851"));
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
 
     expect(snapshot.documents).toHaveLength(1);
     expect(snapshot.documents[0]).toMatchObject({
-      externalId: "example/Approved-Vault:Projects/1851/Risks.md",
+      externalId: "example/Approved-Vault:Projects/example/Risks.md",
       sourceVersion: "note-sha",
       title: "Delivery Risks",
       canonicalUrl:
-        "https://github.com/example/Approved-Vault/blob/commit-sha/Projects/1851/Risks.md",
+        "https://github.com/example/Approved-Vault/blob/commit-sha/Projects/example/Risks.md",
       acl: [{ subjectId: "delivery" }],
     });
     expect(snapshot.documents[0]?.passages.map(({ locator }) => locator)).toEqual([
@@ -79,15 +79,15 @@ describe("Vault knowledge source", () => {
 
   it("fails on a truncated tree instead of silently claiming complete deletion reconciliation", async () => {
     const source = createVaultKnowledgeSource({
-      sourceId: "vault-1851",
-      workspaceId: "1851",
+      sourceId: "vault-example",
+      workspaceId: "example",
       token: "synthetic-token",
       roots: [
         {
           repository: "example/Approved-Vault",
-          pathPrefix: "Projects/1851",
+          pathPrefix: "Projects/example",
           sensitivity: "internal",
-          acl: [{ effect: "allow", subjectType: "workspace", subjectId: "1851" }],
+          acl: [{ effect: "allow", subjectType: "workspace", subjectId: "example" }],
         },
       ],
       fetcher: (async (input: string | URL | Request) =>
@@ -99,7 +99,7 @@ describe("Vault knowledge source", () => {
             })) as typeof fetch,
     });
 
-    await expect(Effect.runPromise(source.readSnapshot("1851"))).rejects.toThrow(
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
       "Approved Vault knowledge synchronization failed",
     );
   });
