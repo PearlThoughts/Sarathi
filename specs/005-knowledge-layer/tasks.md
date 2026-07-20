@@ -44,6 +44,17 @@
 - [ ] KLG-406 Prove duplicate suppression, pre-model permission filtering, restricted/cross-workspace exclusion, source edit/deletion reconciliation, privacy-safe logs, application rollback, and database recovery evidence.
 - [ ] KLG-407 Update and close the private capability task only with merged PR/SHA, exact test evidence, live answer evidence, deployment/migration/rollback evidence; commit Dolt state and run `gt ready` after each completed task.
 
+## Recent Delivery Activity Report
+
+- [ ] KLG-501 Add explicit recent-activity intent and workspace-local date-window contracts.
+- [ ] KLG-502 Add authorized, bounded live GitHub pull-request and commit activity retrieval.
+- [ ] KLG-503 Add authorized, bounded live Jira update and changelog retrieval.
+- [ ] KLG-504 Add authorized, bounded live Teams standard-channel activity retrieval.
+- [ ] KLG-505 Add deterministic cross-source deduplication and at-most-three-line cited composition.
+- [ ] KLG-506 Wire the fast path before generic semantic retrieval and model generation.
+- [ ] KLG-507 Replace evidence-led user-facing identity with “AI Delivery Assistant” while retaining internal provenance controls.
+- [ ] KLG-508 Prove exact-branch CI, production deployment, sub-ten-second real Teams delivery, relevant same-day content, and rollback.
+
 ## Dependency Order
 
 KLG-002 through KLG-004 block ingestion. KLG-101 and KLG-102 block source adapters. Jira/Vault ingestion and embedding projections block PostgreSQL hybrid retrieval. Retrieval and GitHub live search block fusion and answer composition. All implementation and permanent tests block exact-branch CI and governed merge. Merge, key rotation, and verified backup block production migration/deployment. Live ingestion blocks real-answer and reconciliation acceptance.
