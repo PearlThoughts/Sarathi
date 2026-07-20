@@ -46,6 +46,58 @@ const safeQuestion = (question: string): string =>
     .trim()
     .slice(0, 240);
 
+const conversationalSearchWords = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "code",
+  "codebase",
+  "command",
+  "did",
+  "do",
+  "does",
+  "explain",
+  "for",
+  "from",
+  "how",
+  "implementation",
+  "in",
+  "is",
+  "me",
+  "method",
+  "of",
+  "on",
+  "or",
+  "repository",
+  "repo",
+  "show",
+  "stack",
+  "tell",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "with",
+]);
+
+const githubSearchTerms = (question: string): string => {
+  const safe = safeQuestion(question);
+  const terms = safe.match(/[A-Za-z0-9][A-Za-z0-9._/#-]*/g) ?? [];
+  const significant = terms.filter(
+    (term) => term.length > 1 && !conversationalSearchWords.has(term.toLowerCase()),
+  );
+  return (significant.length > 0 ? significant.slice(-5).join(" ") : safe).slice(0, 120);
+};
+
 const repositoryFromApiUrl = (value: string | undefined): string | undefined =>
   value?.match(/^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)$/)?.[1];
 
@@ -139,7 +191,7 @@ export const createGitHubKnowledgeSearch = (
           configuration.allowedRepositories.length > 10
         )
           return [];
-        const question = safeQuestion(query.question);
+        const question = githubSearchTerms(query.question);
         if (question === "") return [];
         const perRepositoryLimit = Math.max(
           1,
