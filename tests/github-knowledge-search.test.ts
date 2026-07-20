@@ -40,6 +40,7 @@ describe("GitHub live knowledge search", () => {
                     title: "Delivery status",
                     updated_at: "2026-07-19T00:00:00.000Z",
                     body: "Approved risks and next action",
+                    text_matches: [{ fragment: "Delivery status" }],
                     repository_url: "https://api.github.com/repos/example-org/delivery-pulse",
                   },
             ],
@@ -62,6 +63,10 @@ describe("GitHub live knowledge search", () => {
     expect(results.every(({ citationUrl }) => citationUrl.startsWith("https://github.com/"))).toBe(
       true,
     );
+    expect(results.map(({ excerpt }) => excerpt)).toEqual([
+      "Approved risks and next action",
+      "Example Delivery Portal status aggregation",
+    ]);
     expect(JSON.stringify(results)).not.toContain("secret-test-token");
   });
 

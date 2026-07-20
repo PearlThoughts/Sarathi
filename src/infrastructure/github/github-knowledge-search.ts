@@ -103,6 +103,7 @@ const repositoryFromApiUrl = (value: string | undefined): string | undefined =>
 
 const excerpt = (item: GitHubSearchItem): string =>
   (
+    (item.path === undefined ? item.body : undefined) ??
     item.text_matches?.map(({ fragment }) => fragment).find(Boolean) ??
     item.body ??
     item.title ??
