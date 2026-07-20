@@ -184,13 +184,6 @@ const composeAnswer = (
   };
 };
 
-const emptyResult: DeliveryQueryResult = {
-  items: [],
-  conflicts: [],
-  unavailableSources: [],
-  complete: true,
-};
-
 const planQuestion = (
   request: DeliveryAssistantRequest,
   planner: DeliveryModelPlanner | undefined,
@@ -291,11 +284,11 @@ export const createDeliveryAssistant = (
             );
             const unavailableSources = [
               ...successful.flatMap((result) => result.unavailableSources),
-              ...failures.flatMap(({ source }) =>
-                source.source === "projection" || source.source === "knowledge"
-                  ? []
-                  : [source.source],
-              ),
+              ...failures.flatMap(({ source }) => {
+                if (source.source === "projection") return ["jira", "vault"] as const;
+                if (source.source === "knowledge") return ["vault"] as const;
+                return [source.source];
+              }),
             ].filter(
               (source, index, values): source is DeliverySourceKind =>
                 values.indexOf(source) === index,
@@ -327,5 +320,3 @@ export const createDeliveryAssistant = (
       }),
     ),
 });
-
-export const emptyDeliveryQueryResult = (): DeliveryQueryResult => emptyResult;

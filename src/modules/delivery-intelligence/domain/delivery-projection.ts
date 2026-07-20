@@ -71,11 +71,3 @@ export type DeliveryProjection = {
   readonly metrics: readonly DeliveryMetricDraft[];
   readonly claims: readonly DeliveryClaimDraft[];
 };
-
-export const emptyDeliveryProjection = (): DeliveryProjection => ({
-  objects: [],
-  relations: [],
-  observations: [],
-  metrics: [],
-  claims: [],
-});

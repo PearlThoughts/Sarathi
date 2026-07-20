@@ -1,7 +1,7 @@
 import { stableSha256 } from "../../../domain/hash.ts";
 import { isSensitivityAtOrBelow, type SensitivityTier } from "../../../domain/policy.ts";
 
-export type KnowledgeSourceKind = "jira" | "vault" | "github" | "teams";
+export type KnowledgeSourceKind = "jira" | "vault" | "github" | "teams" | "email";
 export type KnowledgeAclEffect = "allow" | "deny";
 export type KnowledgeAclSubjectType = "workspace" | "audience" | "actor";
 

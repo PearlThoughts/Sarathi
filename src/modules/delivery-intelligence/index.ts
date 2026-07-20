@@ -1,8 +1,5 @@
 export type { DeliveryAssistantConfiguration } from "./application/create-delivery-assistant.ts";
-export {
-  createDeliveryAssistant,
-  emptyDeliveryQueryResult,
-} from "./application/create-delivery-assistant.ts";
+export { createDeliveryAssistant } from "./application/create-delivery-assistant.ts";
 export type {
   DeliveryClaim,
   DeliveryClaimValue,
@@ -24,7 +21,6 @@ export {
   assertNonFinancialAttributes,
   deliveryClaimValueHash,
   findDeliveryConflicts,
-  isFinanceAttributeKey,
 } from "./domain/delivery-model.ts";
 export type {
   DeliveryClaimDraft,
@@ -34,7 +30,6 @@ export type {
   DeliveryProjection,
   DeliveryRelationDraft,
 } from "./domain/delivery-projection.ts";
-export { emptyDeliveryProjection } from "./domain/delivery-projection.ts";
 export type {
   DeliveryQueryField,
   DeliveryQueryMeasure,
@@ -46,11 +41,7 @@ export type {
   DeliveryRelationTraversal,
   DeliveryTimeConstraint,
 } from "./domain/delivery-query.ts";
-export {
-  DeliveryQueryPlanValidationError,
-  planDeliveryQuestion,
-  validateDeliveryQueryPlan,
-} from "./domain/delivery-query.ts";
+export { planDeliveryQuestion, validateDeliveryQueryPlan } from "./domain/delivery-query.ts";
 export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
 export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {

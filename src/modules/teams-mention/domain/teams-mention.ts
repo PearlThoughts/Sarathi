@@ -26,7 +26,7 @@ export type ResolvedTeamsMention = {
 };
 
 export type ContextEvidence = {
-  readonly source: "teams" | "jira" | "github" | "vault" | "intent";
+  readonly source: "teams" | "jira" | "github" | "vault" | "email" | "intent";
   readonly sourceId: string;
   readonly sourceUrl: string;
   readonly title: string;

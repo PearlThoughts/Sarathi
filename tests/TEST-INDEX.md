@@ -187,3 +187,10 @@
 - Location: `tests/delivery-intelligence-application.test.ts`
 - Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before composition, deduplication, conflict disclosure, citations, concise response limits, and partial-source behavior.
 - Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-intelligence-live-sources
+
+- Command: `bunx vitest run tests/delivery-query-sources.test.ts`
+- Location: `tests/delivery-query-sources.test.ts`
+- Scope: Pre-provider workspace/actor checks, live GitHub PR/commit retrieval, Jira query projection, Teams channel reads, project-email scoping, assistant-prompt exclusion, finance exclusion, and resolvable source citations.
+- Prerequisites: Bun dependencies installed with `bun install`.

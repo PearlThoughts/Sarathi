@@ -31,6 +31,7 @@ export type GitHubKnowledgeSearchConfiguration = {
   readonly fetcher?: Fetcher | undefined;
   readonly now?: (() => Date) | undefined;
   readonly perRepositoryLimit?: number | undefined;
+  readonly timeoutMs?: number | undefined;
 };
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -145,6 +146,7 @@ const readSearch = async (
         Accept: "application/vnd.github.text-match+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
+      signal: AbortSignal.timeout(configuration.timeoutMs ?? 4_000),
     },
   );
   if (!response.ok) throw new Error("GitHub search failed.");
@@ -228,7 +230,7 @@ export const createGitHubKnowledgeSearch = (
       },
       catch: () =>
         new RepositoryError({
-          message: "Approved GitHub live search is unavailable.",
+          message: "Connected GitHub live search is unavailable.",
           operation: "knowledge-github-search",
         }),
     }),

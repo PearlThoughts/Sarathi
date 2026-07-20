@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { RepositoryError } from "../src/domain/errors.ts";
 import {
   createDeliveryAssistant,
   type DeliveryClaim,
@@ -165,5 +166,20 @@ describe("delivery intelligence application", () => {
     );
     expect(answer.status).toBe("empty");
     expect(answer.citations).toEqual([]);
+  });
+
+  it("reports indexed Jira and Vault as partial when the projection store fails", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.fail(new RepositoryError({ message: "test projection failure", operation: "test" })),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer(request),
+    );
+    expect(answer.status).toBe("partial");
+    expect(answer.unavailableSources).toEqual(["jira", "vault"]);
+    expect(answer.text).toContain("Partial: Jira, Vault unavailable.");
   });
 });

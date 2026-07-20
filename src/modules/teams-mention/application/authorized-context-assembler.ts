@@ -51,7 +51,8 @@ const asContextEvidence = (
       record.sourceSystem === "teams" ||
       record.sourceSystem === "jira" ||
       record.sourceSystem === "github" ||
-      record.sourceSystem === "vault"
+      record.sourceSystem === "vault" ||
+      record.sourceSystem === "email"
         ? record.sourceSystem
         : "intent",
     sourceId: record.externalId,

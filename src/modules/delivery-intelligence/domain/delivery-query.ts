@@ -128,7 +128,7 @@ const purposes = new Set<DeliveryQuestionIntent>([
   "implementation",
 ]);
 
-export class DeliveryQueryPlanValidationError extends Error {
+class DeliveryQueryPlanValidationError extends Error {
   readonly name = "DeliveryQueryPlanValidationError";
 }
 

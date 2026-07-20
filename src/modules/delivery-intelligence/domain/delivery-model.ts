@@ -128,7 +128,7 @@ export type DeliveryConflict = {
 const financeAttributePattern =
   /(?:^|[_-])(budget|cost|rate|burn|revenue|margin|salary|compensation|payroll)(?:$|[_-])/i;
 
-export const isFinanceAttributeKey = (key: string): boolean =>
+const isFinanceAttributeKey = (key: string): boolean =>
   financeAttributePattern.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 
 export const assertNonFinancialAttributes = (
