@@ -65,6 +65,39 @@ describe("GitHub live knowledge search", () => {
     expect(JSON.stringify(results)).not.toContain("secret-test-token");
   });
 
+  test("reduces a conversational question to bounded GitHub search terms", async () => {
+    const requests: string[] = [];
+    const search = createGitHubKnowledgeSearch({
+      token: "secret-test-token",
+      workspaceId: "workspace-example",
+      allowedAudienceIds: new Set(["delivery"]),
+      allowedRepositories: ["example-org/delivery-pulse"],
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return new Response(JSON.stringify({ incomplete_results: false, items: [] }), {
+          status: 200,
+        });
+      },
+    });
+
+    await Effect.runPromise(
+      search.search({
+        question: "Which CLI command generated the fresh weekly activity pulse report?",
+        audience,
+        topK: 10,
+      }),
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(
+      requests.every(
+        (request) =>
+          new URL(request).searchParams.get("q") ===
+          "fresh weekly activity pulse report repo:example-org/delivery-pulse",
+      ),
+    ).toBe(true);
+  });
+
   test("filters an unauthorized workspace before any GitHub request", async () => {
     let requested = false;
     const search = createGitHubKnowledgeSearch({
