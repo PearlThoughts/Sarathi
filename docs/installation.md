@@ -1,6 +1,6 @@
 # Organization Installation And Activation
 
-This guide explains how an organization can introduce Sarathi as a controlled internal pilot, connect approved work systems, install the Microsoft Teams app, and promote capabilities only after real acceptance.
+This guide explains how an organization can introduce Sarathi as a controlled internal pilot, connect configured work systems, install the Microsoft Teams app, and promote capabilities only after real acceptance.
 
 Sarathi is not yet a one-click marketplace installation. Activation currently requires an organizational sponsor, a technical operator, and a Microsoft 365 or Teams administrator.
 
@@ -15,18 +15,18 @@ Choose:
 - the sources Sarathi may read;
 - what a successful four-week pilot would change.
 
-Good first pilots include evidence-linked Teams questions, a weekly delivery health review, or a narrow reminder workflow. Avoid beginning with organization-wide monitoring.
+Good first pilots include source-linked Teams questions, a weekly delivery health review, or a narrow reminder workflow. Avoid beginning with organization-wide monitoring.
 
 ## 2. Decide The Trust Boundary
 
-One Sarathi deployment serves one organization. Inside it, each workspace is an isolated boundary for goals, evidence, people, actions, and reports.
+One Sarathi deployment serves one organization. Inside it, each workspace is an isolated boundary for goals, verification, people, actions, and reports.
 
 Document before activation:
 
-- approved Microsoft Teams teams and standard channels;
-- approved Jira projects or filters;
-- approved GitHub repositories;
-- approved policy or documentation files;
+- configured Microsoft Teams teams and standard channels;
+- configured Jira projects or filters;
+- configured GitHub repositories;
+- configured policy or documentation files;
 - actor identities and access levels;
 - the highest sensitivity allowed in each destination;
 - whether model processing is allowed for that workspace;
@@ -86,7 +86,7 @@ In the organization's Microsoft tenant:
 5. Record the tenant ID, application ID, and client credential in the secret manager.
 6. Review the requested team-scoped permission with the Teams administrator.
 
-The initial Teams package requests `ChannelMessage.Read.Group` resource-specific consent so Sarathi can read the approved team's channel context. Grant only the permissions required for the selected pilot.
+The initial Teams package requests `ChannelMessage.Read.Group` resource-specific consent so Sarathi can read the configured team's channel context. Grant only the permissions required for the selected pilot.
 
 ## 6. Prepare And Validate The Teams Package
 
@@ -105,7 +105,7 @@ bun run teams:manifest:validate
 
 Package the manifest and icons, upload the package through the Teams admin-approved process, grant the requested resource-specific consent, and install Sarathi only in the selected pilot team.
 
-## 7. Connect Approved Sources
+## 7. Connect Work Systems
 
 Store secret values in the hosting platform. The current hosted Teams composition uses these configuration groups:
 
@@ -127,7 +127,7 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `JIRA_EMAIL`
 - `JIRA_API_TOKEN`
 
-### GitHub and approved documentation
+### GitHub and configured documentation
 
 - `GITHUB_TOKEN`
 - `SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON`
@@ -150,13 +150,13 @@ An explicitly approved fallback uses the corresponding
 `SARATHI_MODEL_FALLBACK_NAME`, optional `SARATHI_MODEL_FALLBACK_BASE_URL`, and
 optional `SARATHI_MODEL_FALLBACK_TIMEOUT_MS` variables. Partial fallback
 configuration fails closed. Failover emits provider and outcome only; prompts,
-answers, evidence, identifiers, and credentials are excluded from diagnostics.
+answers, verification, identifiers, and credentials are excluded from diagnostics.
 Z.AI production integrations use its general API endpoint; its Coding Plan
 endpoint remains limited to the supported tool scenarios documented by Z.AI.
 SDK-internal retries are disabled so Sarathi owns the explicit, observable
 single-primary/single-fallback policy.
 
-The workspace projection must map only approved standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
+The workspace projection must map only configured standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
 
 Additional reminder configuration is needed only when that capability is part of the pilot. Keep it disabled otherwise.
 
@@ -168,7 +168,7 @@ Confirm:
 2. `/health` returns success.
 3. `/ready` returns success for the enabled capability.
 4. Unmapped channels and users are denied.
-5. Restricted or cross-workspace evidence cannot appear.
+5. Restricted or cross-workspace verification cannot appear.
 6. Logs contain no source content or credentials.
 7. Duplicate message delivery does not produce duplicate answers.
 8. The disable and rollback paths work.
@@ -187,10 +187,10 @@ Before proactive messages or broad team use:
 
 - review proposed findings privately with the sponsor;
 - correct workspace boundaries and source mappings;
-- record false positives and missing evidence;
+- record false positives and missing validation;
 - agree which actions Sarathi may request;
 - explain to pilot participants what is and is not tracked;
-- keep human approval for external or team-visible outputs.
+- keep human review for external/customer-visible outputs and mutating actions; internal delivery reports do not require per-report approval.
 
 For proactive capabilities, use the progression `disabled -> shadow -> live`. Adding a mapping or credential must not silently activate delivery.
 
@@ -198,13 +198,13 @@ For proactive capabilities, use the progression `disabled -> shadow -> live`. Ad
 
 For a Teams delivery-assistant pilot, acceptance should include:
 
-- an authorized person mentions `@Sarathi` in an approved standard channel;
+- a mapped workspace member mentions `@Sarathi` in a configured standard channel;
 - Sarathi resolves the correct workspace, person, channel, and thread;
-- the answer uses only approved context;
-- evidence links are valid;
+- the answer uses only connected, authorized workspace context;
+- citation links are valid;
 - the response appears in the originating conversation;
 - duplicate delivery does not produce another answer;
-- restricted and cross-workspace evidence remain excluded;
+- restricted and cross-workspace verification remain excluded;
 - the pilot sponsor accepts or corrects the result.
 
 For a reminder pilot, first approve a dry-run preview, then perform one controlled delivery and verify idempotency, audit, retry, disable, and rollback behavior.
@@ -214,9 +214,9 @@ For a reminder pilot, first approve a dry-run preview, then perform one controll
 After the first pilot proves value:
 
 - add one workspace or capability at a time;
-- keep raw evidence isolated;
-- share only approved policies, templates, or portfolio summaries across workspaces;
-- measure coordination time saved, drift closure time, evidence-backed completion, and stakeholder surprises;
+- keep raw source data isolated;
+- share only explicitly configured policies, templates, or portfolio summaries across workspaces;
+- measure coordination time saved, drift closure time, source-backed completion, and stakeholder surprises;
 - periodically review whether Sarathi is helping decisions or merely creating more notifications.
 
 ## Current Limitation

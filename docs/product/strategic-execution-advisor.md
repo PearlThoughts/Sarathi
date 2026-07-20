@@ -1,6 +1,6 @@
 # Strategic Execution Advisor
 
-This document defines Sarathi's long-term product requirement: a strategic execution advisor that helps one organization keep delivery work aligned with declared intent, verified evidence, and accountable follow-through.
+This document defines Sarathi's long-term product requirement: a strategic execution advisor that helps one organization keep delivery work aligned with declared intent, verified work signals, and accountable follow-through.
 
 ## Product Thesis
 
@@ -14,7 +14,7 @@ Sarathi should answer questions such as:
 - Which execution work supports those goals?
 - Which goals have no visible work?
 - Which Jira issues, PRs, or chat decisions are not linked to an accepted goal or commitment?
-- Which commitments are aging without evidence?
+- Which commitments are aging without verification?
 - Which people or teams have accepted actions that are now silent, blocked, or overdue?
 - Which strategy changes were made in conversation but never ratified in the durable record?
 - What should the PM or operating owner correct, renegotiate, drop, or escalate?
@@ -53,14 +53,14 @@ Sarathi should provide these long-term capabilities:
 
    The Strategy Kernel is not just the organization's mission, vision, quarterly goals, or OKRs. Those can be represented as intent nodes when they matter to a workspace, but the kernel is broader: it is the current accepted setpoint Sarathi uses to decide whether observed work is aligned or drifting.
 
-2. **Evidence Graph**
+2. **Delivery Context Graph**
    - Ingest or reference Teams messages, emails, meeting transcripts, Jira issues, GitHub PRs, commits, CI results, and vault notes.
    - Preserve provenance for every extracted claim.
    - Treat inferred claims as candidates, not truth.
 
 3. **Ratification Loop**
    - Ask the PM, operating owner, or authorized lead to accept, edit, reject, reassign, or scope inferred intent.
-   - Keep rejected and edited candidates as audit evidence.
+   - Keep rejected and edited candidates as audit history.
    - Avoid requiring teams to author goals from scratch when the work stream already contains intent signals.
 
 4. **Projection And Reconciliation**
@@ -69,21 +69,21 @@ Sarathi should provide these long-term capabilities:
    - Report drift when source systems contradict the Strategy Kernel.
 
 5. **Accountability Loop**
-   - Use interactive Teams cards or equivalent surfaces to confirm ownership, due dates, blockers, and evidence.
+   - Use interactive Teams cards or equivalent surfaces to confirm ownership, due dates, blockers, and verification.
    - Record silence as a signal instead of retrying indefinitely.
    - Escalate according to explicit workspace policy.
    - Treat card interactions as events against accepted commitments, not as unstructured chat replies.
 
 6. **Advisor Layer**
    - Recommend keep, renegotiate, drop, escalate, reallocate, or clarify actions.
-   - Produce daily delivery briefs, weekly drift reviews, client-safe update drafts, and leadership reviews from the same evidence graph.
+   - Produce daily delivery briefs, weekly drift reviews, client-safe update drafts, and leadership reviews from the same work signals graph.
 
 ## Product Success Criteria
 
 Sarathi succeeds when:
 
 - PMs spend less time manually chasing status.
-- Accepted commitments have visible evidence or an explicit blocker.
+- Accepted commitments have visible verification or an explicit blocker.
 - Goals without execution and execution without goals are surfaced automatically.
 - Jira and team systems become more trustworthy because Sarathi asks owners to correct them.
 - Strategy pivots become explicit decisions rather than silent drift.

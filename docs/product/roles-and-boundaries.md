@@ -22,7 +22,7 @@ Inference may narrow scope, never broaden it. If Sarathi is unsure whether the c
 Examples:
 
 - weekly plan and delivery status,
-- blockers and missing evidence,
+- blockers and missing validation,
 - process FAQ,
 - definition of done,
 - access routes,

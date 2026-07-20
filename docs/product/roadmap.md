@@ -18,17 +18,17 @@ First useful product loop:
 - load a versioned workspace pack for source mappings and policies,
 - maintain a small Strategy Kernel of ratified goals, commitments, decisions, risks, and bets,
 - generate an initial delivery review over existing work signals,
-- identify goals without work, work without goals, stale commitments, missing evidence, and projection drift,
+- identify goals without work, work without goals, stale commitments, missing validation, and projection drift,
 - draft a weekly status report,
 - produce a daily delivery brief when the workspace needs active chasing,
 - answer process FAQ from policy,
-- chase missing updates/evidence in DM,
+- chase missing updates/verification in DM,
 - surface blockers, stale work, and missing QA,
-- ask the PM to approve before posting.
+- post internal delivery reports automatically within workspace policy; require review for external publication or mutating actions.
 
 Kill metric:
 
-> The PM can approve a delivery review with minimal edits, use it to correct Jira/Vault/Teams, and spend materially less time chasing updates.
+> The PM can use the delivery review with minimal edits to correct Jira/Vault/Teams and spend materially less time chasing updates.
 
 ## Next: Delivery Alignment Loops
 
@@ -46,8 +46,8 @@ Kill metric:
 ## Next: Strategic Execution Advisor
 
 - goals, commitments, bets, risks, decisions, KPIs, and capacity reservations as typed intent nodes,
-- graph edges from intent to Jira, Teams, GitHub, CI, meeting, and vault evidence,
-- drift detection for goals without work, work without goals, stale commitments, missing evidence, and projection conflicts,
+- graph edges from intent to Jira, Teams, GitHub, CI, meeting, and vault verification,
+- drift detection for goals without work, work without goals, stale commitments, missing validation, and projection conflicts,
 - weekly drift review with keep, renegotiate, drop, escalate, and publish decisions,
 - optional engineering telemetry import inspired by Apache DevLake-style SDLC models without making DevLake a v1 runtime dependency.
 

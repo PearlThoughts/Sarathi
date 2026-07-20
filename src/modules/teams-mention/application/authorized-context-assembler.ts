@@ -110,7 +110,7 @@ export const createAuthorizedContextAssembler = (
       },
       catch: () =>
         new RepositoryError({
-          message: "Approved context retrieval failed; Sarathi will not use partial evidence.",
+          message: "Connected context retrieval failed; Sarathi will not use partial context.",
         }),
     }),
 });

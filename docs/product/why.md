@@ -11,7 +11,7 @@ Common symptoms:
 - Engineers or interns ask the PM the same routine process questions.
 - Jira says work is in progress, but nobody knows whether it is blocked.
 - A Teams thread contains the real decision, but the ticket is stale.
-- A PR says a feature is done, but QA evidence is missing.
+- A PR says a feature is done, but QA validation is missing.
 - A project direction changes in conversation, but the durable goal or client-facing commitment is never updated.
 - Leadership sees delivery drift only in weekly or monthly review.
 - The PM has to chase people manually because trusting people to post timely updates has not worked.
@@ -30,7 +30,7 @@ That means Sarathi should produce drafts the PM can approve:
 - gaps between intent and visible work,
 - weekly status,
 - open blockers,
-- missing evidence,
+- missing validation,
 - stale items,
 - risks,
 - proposed next actions.
