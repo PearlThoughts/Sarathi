@@ -2,7 +2,11 @@ import type { Effect } from "effect";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
-import type { DeliveryQueryPlan, DeliveryQuerySelector } from "../domain/delivery-query.ts";
+import type {
+  DeliveryQueryPlan,
+  DeliveryQuerySelector,
+  DeliveryQuestionIntent,
+} from "../domain/delivery-query.ts";
 
 export type DeliveryQueryContext = {
   readonly workspaceId: string;
@@ -17,9 +21,10 @@ export type DeliveryQueryContext = {
 
 export type DeliveryResultItem = {
   readonly id: string;
+  readonly workspaceId: string;
   readonly source: DeliverySourceKind;
   readonly selector: DeliveryQuerySelector;
-  readonly purpose: string;
+  readonly intent: DeliveryQuestionIntent;
   readonly title: string;
   readonly summary: string;
   readonly citationUrl: string;

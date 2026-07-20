@@ -1,3 +1,8 @@
+export type { DeliveryAssistantConfiguration } from "./application/create-delivery-assistant.ts";
+export {
+  createDeliveryAssistant,
+  emptyDeliveryQueryResult,
+} from "./application/create-delivery-assistant.ts";
 export type {
   DeliveryClaim,
   DeliveryClaimValue,

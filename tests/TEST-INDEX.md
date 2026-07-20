@@ -180,3 +180,10 @@
 - Location: `tests/delivery-intelligence-domain.test.ts`
 - Scope: Delivery objects, relations, observations, claims, metrics, finance isolation, conflict derivation, safe query-plan validation, independent time constraints, and workspace-local time resolution.
 - Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-intelligence-application
+
+- Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
+- Location: `tests/delivery-intelligence-application.test.ts`
+- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before composition, deduplication, conflict disclosure, citations, concise response limits, and partial-source behavior.
+- Prerequisites: Bun dependencies installed with `bun install`.

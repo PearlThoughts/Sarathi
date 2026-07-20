@@ -172,6 +172,13 @@
       "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, and optional time-constraint coverage."
     },
     {
+      "id": "delivery-intelligence-application",
+      "path": "tests/delivery-intelligence-application.test.ts",
+      "command": "bunx vitest run tests/delivery-intelligence-application.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Bounded planning, pre-source finance authorization, workspace and sensitivity filtering, deduplication, conflict disclosure, citations, and concise answer coverage."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",
