@@ -50,6 +50,7 @@ import {
 } from "../modules/workspace-packs/index.ts";
 import { runDurableAccountabilityCommand } from "./commands/accountability-runtime.ts";
 import { runDurableIntentCommand } from "./commands/intent-runtime.ts";
+import { runKnowledgeCommand } from "./commands/knowledge-runtime.ts";
 import {
   type DurableOperatorRuntimeSelection,
   OperatorRuntimeSelectionError,
@@ -921,6 +922,7 @@ export const runReleaseCli = async (options: CliOptions): Promise<CliResult> => 
   const args = options.args.filter((arg) => arg !== "--ci" && arg !== "--json");
   const env = options.env ?? Bun.env;
   const fetcher = options.fetcher ?? fetch;
+  if (args[0] === "knowledge") return runKnowledgeCommand(args.slice(1), env);
   let runtimeResult: CliResult | undefined;
 
   try {
