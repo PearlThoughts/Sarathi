@@ -9,25 +9,25 @@ import {
 } from "../src/modules/knowledge-layer/index.ts";
 
 const snapshot: KnowledgeSourceSnapshot = {
-  sourceId: "jira-1851",
+  sourceId: "jira-example",
   source: "jira",
-  workspaceId: "1851",
+  workspaceId: "example",
   cursor: "cursor-1",
   scopeHash: "scope-1",
   documents: [
     {
       source: "jira",
-      sourceId: "jira-1851",
-      workspaceId: "1851",
-      externalId: "F1851-100",
+      sourceId: "jira-example",
+      workspaceId: "example",
+      externalId: "DEMO-100",
       sourceType: "issue",
       sourceVersion: "version-1",
-      canonicalUrl: "https://jira.example.test/browse/F1851-100",
+      canonicalUrl: "https://jira.example.test/browse/DEMO-100",
       title: "Synthetic delivery status",
       sourceUpdatedAt: "2026-07-20T00:00:00.000Z",
       sensitivity: "internal",
       authority: 1,
-      provenance: { project: "F1851" },
+      provenance: { project: "DEMO" },
       acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
       passages: [
         {
@@ -44,8 +44,8 @@ const snapshot: KnowledgeSourceSnapshot = {
 };
 
 const summary = {
-  sourceId: "jira-1851",
-  workspaceId: "1851",
+  sourceId: "jira-example",
+  workspaceId: "example",
   cursor: "cursor-1",
   scopeHash: "scope-1",
   documentsObserved: 1,
@@ -73,7 +73,7 @@ describe("knowledge application service", () => {
           { readSnapshot: () => Effect.succeed({ ...snapshot, workspaceId: "finance" }) },
           repository,
           embeddings,
-          "1851",
+          "example",
         ),
       ),
     ).rejects.toThrow("cross-workspace snapshot");
@@ -89,7 +89,7 @@ describe("knowledge application service", () => {
           },
           repository,
           embeddings,
-          "1851",
+          "example",
         ),
       ),
     ).rejects.toThrow("explicit ACL");
@@ -113,7 +113,7 @@ describe("knowledge application service", () => {
           { readSnapshot: () => Effect.succeed(snapshot) },
           repository,
           embeddings,
-          "1851",
+          "example",
         ),
       ),
     ).resolves.toEqual(summary);
@@ -137,7 +137,7 @@ describe("knowledge application service", () => {
     const query = {
       question: "What is the current status?",
       audience: {
-        workspaceId: "1851",
+        workspaceId: "example",
         audienceIds: ["delivery"],
         maximumSensitivity: "internal" as const,
       },

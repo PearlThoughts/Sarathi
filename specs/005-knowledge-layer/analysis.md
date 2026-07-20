@@ -1,8 +1,8 @@
-# Consistency Analysis: 1851 Knowledge Layer
+# Consistency Analysis: example Knowledge Layer
 
 ## Result
 
-The specification, plan, task map, Sarathi constitution, existing 1851 Teams mention contract, and user-approved architecture are consistent enough to begin implementation. No unresolved product or architecture clarification remains.
+The specification, plan, task map, Sarathi constitution, existing example Teams mention contract, and user-approved architecture are consistent enough to begin implementation. No unresolved product or architecture clarification remains.
 
 ## Coverage
 
@@ -23,4 +23,4 @@ Implementation must stop on CodeCompass discovery failure, divergent authoritati
 
 ## Anti-Completion Checks
 
-The following are intermediate evidence only and cannot close `sar-2du.11`: schema generation, local migration success, test-only ingestion, mock search results, readiness 200, Railway deployment, or nonzero ingestion counts. Closure requires three observed real answers plus the permission, dedupe, deletion, privacy, and rollback acceptance evidence.
+The following are intermediate evidence only and cannot close the private capability task: schema generation, local migration success, test-only ingestion, mock search results, readiness 200, Railway deployment, or nonzero ingestion counts. Closure requires three observed real answers plus the permission, dedupe, deletion, privacy, and rollback acceptance evidence.

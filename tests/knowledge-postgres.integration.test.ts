@@ -14,25 +14,25 @@ const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
 
 const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
-  sourceId: "jira-1851-test",
+  sourceId: "jira-example-test",
   source: "jira",
-  workspaceId: "workspace-1851",
+  workspaceId: "workspace-example",
   cursor: `cursor-${version}`,
   scopeHash: "sha256-scope",
   documents: [
     {
       source: "jira",
-      sourceId: "jira-1851-test",
-      workspaceId: "workspace-1851",
-      externalId: "F1851-635",
+      sourceId: "jira-example-test",
+      workspaceId: "workspace-example",
+      externalId: "DEMO-635",
       sourceType: "issue",
       sourceVersion: version,
-      canonicalUrl: "https://jira.example/browse/F1851-635",
-      title: "Modern Website Builder",
+      canonicalUrl: "https://jira.example/browse/DEMO-635",
+      title: "Example Delivery Portal",
       sourceUpdatedAt: "2026-07-20T00:00:00.000Z",
       sensitivity: "internal",
       authority: 1,
-      provenance: { projectKey: "F1851" },
+      provenance: { projectKey: "DEMO" },
       acl: [
         { subjectType: "audience", subjectId: "delivery", effect: "allow" },
         { subjectType: "audience", subjectId: "blocked", effect: "deny" },
@@ -99,9 +99,9 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const authorized = await Effect.runPromise(
       repository.search(
         {
-          question: "F1851-635 Modern Website Builder",
+          question: "DEMO-635 Example Delivery Portal",
           audience: {
-            workspaceId: "workspace-1851",
+            workspaceId: "workspace-example",
             audienceIds: ["delivery"],
             maximumSensitivity: "internal",
           },
@@ -110,12 +110,12 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         (await Effect.runPromise(embeddings.embed(["builder status"])))[0] ?? [],
       ),
     );
-    expect(authorized[0]).toMatchObject({ source: "jira", sourceId: "F1851-635" });
-    expect(authorized[0]?.citationUrl).toBe("https://jira.example/browse/F1851-635#description");
+    expect(authorized[0]).toMatchObject({ source: "jira", sourceId: "DEMO-635" });
+    expect(authorized[0]?.citationUrl).toBe("https://jira.example/browse/DEMO-635#description");
 
     for (const audience of [
       {
-        workspaceId: "workspace-1851",
+        workspaceId: "workspace-example",
         audienceIds: ["blocked"],
         maximumSensitivity: "internal" as const,
       },
@@ -128,7 +128,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       await expect(
         Effect.runPromise(
           repository.search(
-            { question: "F1851-635", audience, topK: 10 },
+            { question: "DEMO-635", audience, topK: 10 },
             (await Effect.runPromise(embeddings.embed(["status"])))[0] ?? [],
           ),
         ),
@@ -175,9 +175,9 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const deleted = await Effect.runPromise(
       repository.reconcile(
         {
-          sourceId: "jira-1851-test",
+          sourceId: "jira-example-test",
           source: "jira",
-          workspaceId: "workspace-1851",
+          workspaceId: "workspace-example",
           cursor: "cursor-deleted",
           scopeHash: "sha256-scope",
           documents: [],
@@ -197,9 +197,9 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const afterDelete = await Effect.runPromise(
       repository.search(
         {
-          question: "F1851-635",
+          question: "DEMO-635",
           audience: {
-            workspaceId: "workspace-1851",
+            workspaceId: "workspace-example",
             audienceIds: ["delivery"],
             maximumSensitivity: "internal",
           },
@@ -221,7 +221,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           appliedMigrationCount: 2,
           checkpoints: [
             expect.objectContaining({
-              sourceId: "jira-1851-test",
+              sourceId: "jira-example-test",
               documentsObserved: 0,
               itemsDeleted: 1,
             }),

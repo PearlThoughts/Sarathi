@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Make the one public Sarathi runtime safe to operate for Finance and 1851 without
+Make the one public Sarathi runtime safe to operate for Finance and example without
 embedding PearlThoughts configuration or enabling a delivery merely because a
 variable is present.
 
@@ -31,7 +31,7 @@ variable is present.
 
 ## Non-Goals
 
-- Storing Finance or 1851 mappings, recipients, evidence, or secrets in the
+- Storing Finance or example mappings, recipients, evidence, or secrets in the
   public repository.
 - Promoting Finance live without a separately reviewed private projection and
   explicit SenG approval.

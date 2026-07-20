@@ -1,4 +1,4 @@
-# Feature Specification: 1851 Teams Mention Production
+# Feature Specification: example Teams Mention Production
 
 **Feature Branch**: `feat/teams-production-vertical-slice`  
 **Created**: 2026-07-11  
@@ -9,7 +9,7 @@
 
 Deliver Sarathi's first team-facing production workflow. A member of a mapped
 Teams channel asks `@Sarathi <question>` and receives a concise, grounded,
-same-thread answer built only from policy-authorized 1851 evidence.
+same-thread answer built only from policy-authorized example evidence.
 
 ## 2. Objective and Scope
 
@@ -20,7 +20,7 @@ egress, retrieve a bounded evidence envelope, and send a cited reply to the
 originating thread.
 
 Included: direct mentions, Teams thread context, explicit actor aliases,
-mapped 1851 workspace resolution, read-only Teams/Jira/GitHub/Vault adapters,
+mapped example workspace resolution, read-only Teams/Jira/GitHub/Vault adapters,
 Postgres hosting, Railway operations, Teams package validation, and real-team
 verification.
 
@@ -71,7 +71,7 @@ been proven.
 
 ### Story 1 — Direct Mention Answer (P1)
 
-A mapped 1851 Delivery Team member directly mentions Sarathi in a mapped
+A mapped example Delivery Team member directly mentions Sarathi in a mapped
 channel or reply, and receives a concise cited answer in the same thread.
 
 **Independent test**: an authenticated synthetic Teams activity with a direct
@@ -154,7 +154,7 @@ context, Jira/GitHub/Vault citation selection, identity/workspace resolution,
 unknown/mapped denial, restricted-data isolation, source-outage partial answers,
 prompt-injection resistance, non-mention silence, idempotency, and restart
 persistence. Final acceptance additionally requires these scenarios in the real
-1851 Delivery Team with safe private evidence retained outside the repository.
+example Delivery Team with safe private evidence retained outside the repository.
 
 ## 10. Stop and Rollback Conditions
 

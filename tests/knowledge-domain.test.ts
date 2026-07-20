@@ -11,14 +11,14 @@ describe("knowledge domain", () => {
   it("fails closed before content retrieval for wrong workspace, sensitivity, deletion, and ACL", () => {
     const base = {
       id: "passage-1",
-      workspaceId: "1851",
+      workspaceId: "example",
       sensitivity: "internal" as const,
       active: true,
       deleted: false,
       acl: [{ effect: "allow" as const, subjectType: "audience" as const, subjectId: "delivery" }],
     };
     const audience = {
-      workspaceId: "1851",
+      workspaceId: "example",
       actorId: "actor-1",
       audienceIds: ["delivery"],
       maximumSensitivity: "internal" as const,

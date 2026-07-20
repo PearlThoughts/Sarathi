@@ -11,16 +11,16 @@ const allowlist = () =>
         {
           workspaceId: "workspace",
           sourceKey: "vault:delivery",
-          repository: "PearlThoughts/SenG-Vault",
-          path: "Workspaces/1851/approved-note.md",
+          repository: "example-org/approved-vault",
+          path: "Workspaces/example/approved-note.md",
           ref: "main",
           sensitivity: "internal",
-          consentScope: "1851-delivery",
+          consentScope: "example-delivery",
         },
         {
           workspaceId: "other",
           sourceKey: "vault:delivery",
-          repository: "PearlThoughts/SenG-Vault",
+          repository: "example-org/approved-vault",
           path: "Workspaces/other/excluded.md",
           sensitivity: "internal",
         },
@@ -46,7 +46,7 @@ describe("GitHub Vault allowlist reader", () => {
                 "base64",
               ),
               sha: "commit",
-              html_url: "https://github.example.test/PearlThoughts/SenG-Vault/blob/main/note.md",
+              html_url: "https://github.example.test/example-org/approved-vault/blob/main/note.md",
             }),
             { status: 200 },
           );
@@ -63,11 +63,11 @@ describe("GitHub Vault allowlist reader", () => {
       records: [
         expect.objectContaining({
           sourceSystem: "vault",
-          externalId: "PearlThoughts/SenG-Vault:Workspaces/1851/approved-note.md@commit",
+          externalId: "example-org/approved-vault:Workspaces/example/approved-note.md@commit",
           title: "Approved note",
           bodyExcerpt: "Approved note Evidence for the delivery team.",
           sensitivity: "internal",
-          consent: expect.objectContaining({ scope: "1851-delivery" }),
+          consent: expect.objectContaining({ scope: "example-delivery" }),
         }),
       ],
     });
@@ -105,8 +105,8 @@ describe("GitHub Vault allowlist reader", () => {
             {
               workspaceId: "workspace",
               sourceKey: "vault:delivery",
-              repository: "PearlThoughts/SenG-Vault",
-              path: "Workspaces/1851/approved-note.md",
+              repository: "example-org/approved-vault",
+              path: "Workspaces/example/approved-note.md",
               sensitivity: "internal",
               body: "confidential note text",
             },

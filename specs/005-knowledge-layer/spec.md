@@ -1,22 +1,22 @@
-# Feature Specification: 1851 Knowledge Layer
+# Feature Specification: example Knowledge Layer
 
-**Feature Branch**: `feat/1851-knowledge-layer`
+**Feature Branch**: `feat/knowledge-layer`
 **Created**: 2026-07-20
 **Status**: Approved for implementation
-**Parent Specification**: [1851 Teams Mention Production](../002-1851-teams-mention-production/spec.md)
-**Execution State**: epic `sar-2du`, child `sar-2du.11`, convoy `hq-cv-fixy7`
+**Parent Specification**: [Teams Mention Production](../002-teams-mention-production/spec.md)
+**Execution State**: private delivery tracker
 
 ## 1. Purpose
 
-Extend the accepted 1851 production pilot with a durable, policy-bounded knowledge capability. Sarathi indexes approved Jira and 1851 Vault evidence, retrieves GitHub evidence live, combines those sources with the already approved Teams thread context, and returns a normally two- or three-line answer with resolvable citations.
+Extend the accepted example production pilot with a durable, policy-bounded knowledge capability. Sarathi indexes approved Jira and example Vault evidence, retrieves GitHub evidence live, combines those sources with the already approved Teams thread context, and returns a normally two- or three-line answer with resolvable citations.
 
 This is a child capability of the existing production pilot. It is not a new product plan, runtime, workspace, epic, or convoy.
 
 ## 2. Problem and Objective
 
-The current production path proves bounded retrieval with narrow exemplars. It does not provide enough 1851 coverage for real delivery questions, durable source synchronization, semantic retrieval, source edits and deletions, or coherent ranking across indexed and live sources.
+The current production path proves bounded retrieval with narrow exemplars. It does not provide enough example coverage for real delivery questions, durable source synchronization, semantic retrieval, source edits and deletions, or coherent ranking across indexed and live sources.
 
-The objective is to answer real 1851 delivery and implementation questions from authorized evidence while preserving workspace, audience, ACL, sensitivity, source authority, version, provenance, and deletion boundaries before any evidence reaches a model.
+The objective is to answer real example delivery and implementation questions from authorized evidence while preserving workspace, audience, ACL, sensitivity, source authority, version, provenance, and deletion boundaries before any evidence reaches a model.
 
 ## 3. Principles
 
@@ -51,7 +51,7 @@ The `knowledge-layer` bounded context owns canonical evidence vocabulary, ingest
 
 ### Story 1 — Delivery Status and Risk Answers (P0)
 
-A mapped 1851 participant asks about delivery status, approved risks, or next action and receives a concise synthesis from current authorized Jira, Vault, and Teams evidence.
+A mapped example participant asks about delivery status, approved risks, or next action and receives a concise synthesis from current authorized Jira, Vault, and Teams evidence.
 
 **Independent test**: the two required delivery questions return two or three lines with at least one resolvable Jira or Vault citation, no duplicate facts, and no evidence above the caller's boundary.
 
@@ -81,7 +81,7 @@ An approved Jira issue or Vault document changes, moves out of scope, loses perm
 - **FR-002**: Use Drizzle ORM schema definitions and versioned Drizzle migrations for new production tables; retain existing audit tables and incrementally coexist with unapplied legacy Strategy Kernel definitions.
 - **FR-003**: Install and verify the `vector` extension in the existing Railway PostgreSQL service through the versioned migration path.
 - **FR-004**: Normalize approved Jira issues from typed fields, description, and approved comments while preserving keys, URLs, field/comment identity, versions, timestamps, authorship where allowed, authority, ACL, and provenance.
-- **FR-005**: Normalize approved 1851 Vault documents primarily by Markdown headings while preserving path, heading anchor, content hash, source version, sensitivity, ACL, and resolvable Vault citation metadata.
+- **FR-005**: Normalize approved example Vault documents primarily by Markdown headings while preserving path, heading anchor, content hash, source version, sensitivity, ACL, and resolvable Vault citation metadata.
 - **FR-006**: Query approved GitHub repositories live through GitHub search/API with repository, path, symbol or line context, current revision metadata, and resolvable URLs; do not persist repository bodies or embeddings.
 - **FR-007**: Provide an AI SDK embedding port with configured model and dimension validation plus a deterministic, non-semantic test implementation.
 - **FR-008**: Retrieve by exact identifiers, PostgreSQL full-text search, and vector similarity with workspace, audience, ACL, sensitivity, source, active-version, and deletion filters applied before bodies reach application or model code.
@@ -121,8 +121,8 @@ Permanent tests cover migrations and rollback ordering, extension readiness, sch
 
 Final acceptance requires the exact branch `bun run check`, `bun run runtime:smoke`, a verified production backup, non-destructive migration, bounded real ingestion with counts and checksums only, and observed answers to:
 
-1. “What is the current status of Modern Website Builder?”
-2. “What are the approved 1851 delivery risks and next action?”
+1. “What is the current status of Example Delivery Portal?”
+2. “What are the approved example delivery risks and next action?”
 3. One implementation question whose answer requires GitHub live search.
 
 ## 10. Success Criteria
@@ -145,7 +145,7 @@ Stop deployment or ingestion on backup failure, migration drift, extension failu
 
 ## 13. References
 
-- [1851 Teams Mention Production](../002-1851-teams-mention-production/spec.md)
+- [example Teams Mention Production](../002-example-teams-mention-production/spec.md)
 - [Production Pilot Readiness](../001-production-pilot-readiness/spec.md)
 - [ADR 0006](../../docs/adr/0006-postgres-knowledge-retrieval-stack.md)
 - [Module Boundaries](../../docs/architecture/module-boundaries.md)

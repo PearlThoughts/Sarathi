@@ -118,7 +118,7 @@ describe("AI SDK grounded answer generator", () => {
 
   it("sends bounded evidence through the SDK and returns only evidence citations", async () => {
     const model = successfulModel(
-      "Delivery is approved. [Delivery](https://jira.example.test/F1851-754)\nNext action is QA. [Delivery](https://jira.example.test/F1851-754)",
+      "Delivery is approved. [Delivery](https://jira.example.test/DEMO-754)\nNext action is QA. [Delivery](https://jira.example.test/DEMO-754)",
     );
     const generator = createFailoverGroundedAnswerGenerator(
       { primary: { ...primaryConfiguration, provider: "openai" } },
@@ -133,8 +133,8 @@ describe("AI SDK grounded answer generator", () => {
           evidence: [
             {
               source: "jira",
-              sourceId: "F1851-754",
-              sourceUrl: "https://jira.example.test/F1851-754",
+              sourceId: "DEMO-754",
+              sourceUrl: "https://jira.example.test/DEMO-754",
               title: "Delivery",
               excerpt: "Approved detail",
               occurredAt: "2026-07-11T00:00:00.000Z",
@@ -146,8 +146,8 @@ describe("AI SDK grounded answer generator", () => {
         }),
       ),
     ).resolves.toMatchObject({
-      text: "Delivery is approved. [Delivery](https://jira.example.test/F1851-754)\nNext action is QA. [Delivery](https://jira.example.test/F1851-754)",
-      citations: [{ url: "https://jira.example.test/F1851-754" }],
+      text: "Delivery is approved. [Delivery](https://jira.example.test/DEMO-754)\nNext action is QA. [Delivery](https://jira.example.test/DEMO-754)",
+      citations: [{ url: "https://jira.example.test/DEMO-754" }],
     });
     expect(JSON.stringify(model.doGenerateCalls)).toContain("Approved detail");
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
@@ -160,8 +160,8 @@ describe("AI SDK grounded answer generator", () => {
       evidence: [
         {
           source: "jira" as const,
-          sourceId: "F1851-754",
-          sourceUrl: "https://jira.example.test/F1851-754",
+          sourceId: "DEMO-754",
+          sourceUrl: "https://jira.example.test/DEMO-754",
           title: "Delivery",
           excerpt: "Approved detail",
           occurredAt: "2026-07-11T00:00:00.000Z",
@@ -174,7 +174,7 @@ describe("AI SDK grounded answer generator", () => {
     for (const text of [
       "Uncited answer.\nStill uncited.",
       "Claim. [Unknown](https://evil.example.test/x)\nNext. [Unknown](https://evil.example.test/x)",
-      "One [Delivery](https://jira.example.test/F1851-754)\nTwo [Delivery](https://jira.example.test/F1851-754)\nThree [Delivery](https://jira.example.test/F1851-754)\nFour [Delivery](https://jira.example.test/F1851-754)",
+      "One [Delivery](https://jira.example.test/DEMO-754)\nTwo [Delivery](https://jira.example.test/DEMO-754)\nThree [Delivery](https://jira.example.test/DEMO-754)\nFour [Delivery](https://jira.example.test/DEMO-754)",
     ]) {
       const generator = createFailoverGroundedAnswerGenerator(
         { primary: primaryConfiguration },

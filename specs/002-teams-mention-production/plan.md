@@ -1,4 +1,4 @@
-# Implementation Plan: 1851 Teams Mention Production
+# Implementation Plan: example Teams Mention Production
 
 **Branch**: `feat/teams-production-vertical-slice` | **Date**: 2026-07-11 | **Spec**: [spec.md](./spec.md)
 
@@ -47,7 +47,7 @@ approved-model port configuration, `/ready` probes, and production redaction.
 ### Phase D — Hosted Acceptance
 
 Provision Railway Postgres/service, Azure Bot/Entra app, RSC consent, and the
-Teams application. Install only in 1851 Delivery Team, run the real acceptance
+Teams application. Install only in example Delivery Team, run the real acceptance
 matrix, document rollback/uninstall, and keep private evidence external.
 
 ## 4. File Ownership and Dependency Direction

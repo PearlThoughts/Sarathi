@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createGitHubKnowledgeSearch } from "../src/infrastructure/github/github-knowledge-search.ts";
 
 const audience = {
-  workspaceId: "workspace-1851",
+  workspaceId: "workspace-example",
   audienceIds: ["delivery"],
   maximumSensitivity: "internal",
 } as const;
@@ -13,9 +13,9 @@ describe("GitHub live knowledge search", () => {
     const requests: string[] = [];
     const search = createGitHubKnowledgeSearch({
       token: "secret-test-token",
-      workspaceId: "workspace-1851",
+      workspaceId: "workspace-example",
       allowedAudienceIds: new Set(["delivery"]),
-      allowedRepositories: ["senguttuvang/1851-Pulse"],
+      allowedRepositories: ["example-org/delivery-pulse"],
       now: () => new Date("2026-07-20T00:00:00.000Z"),
       fetcher: async (input) => {
         const url = String(input);
@@ -28,19 +28,19 @@ describe("GitHub live knowledge search", () => {
               isCode
                 ? {
                     html_url:
-                      "https://github.com/senguttuvang/1851-Pulse/blob/abc/src/report.ts#L10",
+                      "https://github.com/example-org/delivery-pulse/blob/abc/src/report.ts#L10",
                     name: "report.ts",
                     path: "src/report.ts",
-                    repository_url: "https://api.github.com/repos/senguttuvang/1851-Pulse",
-                    text_matches: [{ fragment: "Modern Website Builder status aggregation" }],
+                    repository_url: "https://api.github.com/repos/example-org/delivery-pulse",
+                    text_matches: [{ fragment: "Example Delivery Portal status aggregation" }],
                   }
                 : {
-                    html_url: "https://github.com/senguttuvang/1851-Pulse/issues/1",
+                    html_url: "https://github.com/example-org/delivery-pulse/issues/1",
                     number: 1,
                     title: "Delivery status",
                     updated_at: "2026-07-19T00:00:00.000Z",
                     body: "Approved risks and next action",
-                    repository_url: "https://api.github.com/repos/senguttuvang/1851-Pulse",
+                    repository_url: "https://api.github.com/repos/example-org/delivery-pulse",
                   },
             ],
           }),
@@ -50,14 +50,14 @@ describe("GitHub live knowledge search", () => {
     });
 
     const results = await Effect.runPromise(
-      search.search({ question: "Modern Website Builder", audience, topK: 10 }),
+      search.search({ question: "Example Delivery Portal", audience, topK: 10 }),
     );
 
     expect(requests).toHaveLength(2);
-    expect(requests.every((url) => url.includes("repo%3Asenguttuvang%2F1851-Pulse"))).toBe(true);
+    expect(requests.every((url) => url.includes("repo%3Aexample-org%2Fdelivery-pulse"))).toBe(true);
     expect(results.map(({ sourceId }) => sourceId)).toEqual([
-      "senguttuvang/1851-Pulse#1",
-      "senguttuvang/1851-Pulse:src/report.ts",
+      "example-org/delivery-pulse#1",
+      "example-org/delivery-pulse:src/report.ts",
     ]);
     expect(results.every(({ citationUrl }) => citationUrl.startsWith("https://github.com/"))).toBe(
       true,
@@ -69,9 +69,9 @@ describe("GitHub live knowledge search", () => {
     let requested = false;
     const search = createGitHubKnowledgeSearch({
       token: "secret-test-token",
-      workspaceId: "workspace-1851",
+      workspaceId: "workspace-example",
       allowedAudienceIds: new Set(["delivery"]),
-      allowedRepositories: ["senguttuvang/1851-Pulse"],
+      allowedRepositories: ["example-org/delivery-pulse"],
       fetcher: async () => {
         requested = true;
         return new Response("{}", { status: 200 });
