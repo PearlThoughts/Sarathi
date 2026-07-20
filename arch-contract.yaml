@@ -78,6 +78,7 @@ ruleset:
       - module-application
       - module-domain
       - module-ports
+      - module-public
       - shared
   composition-root:
     mayDependOn:

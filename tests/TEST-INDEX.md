@@ -173,3 +173,10 @@
 - Location: `tests/knowledge-postgres.integration.test.ts`
 - Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, deny and cross-workspace filtering, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
+
+## delivery-intelligence-domain
+
+- Command: `bunx vitest run tests/delivery-intelligence-domain.test.ts`
+- Location: `tests/delivery-intelligence-domain.test.ts`
+- Scope: Delivery objects, relations, observations, claims, metrics, finance isolation, conflict derivation, safe query-plan validation, independent time constraints, and workspace-local time resolution.
+- Prerequisites: Bun dependencies installed with `bun install`.

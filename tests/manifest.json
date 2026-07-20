@@ -165,6 +165,13 @@
       "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL/cross-workspace filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
     },
     {
+      "id": "delivery-intelligence-domain",
+      "path": "tests/delivery-intelligence-domain.test.ts",
+      "command": "bunx vitest run tests/delivery-intelligence-domain.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, and optional time-constraint coverage."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",
