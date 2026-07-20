@@ -55,6 +55,15 @@ describe("knowledge domain", () => {
     expect(new Set(passages.map((passage) => passage.locator)).size).toBe(passages.length);
   });
 
+  it("disambiguates repeated Vault headings with resolvable GitHub-style anchors", () => {
+    const passages = chunkVaultMarkdown(
+      "# Status\nFirst update.\n\n## Status\nSecond update.\n\n## Status\nThird update.",
+    );
+
+    expect(passages.map(({ locator }) => locator)).toEqual(["#status", "#status-1", "#status-2"]);
+    expect(new Set(passages.map(({ locator }) => locator)).size).toBe(passages.length);
+  });
+
   it("creates stable typed Jira passages and omits empty fields", () => {
     expect(createTypedPassage("field", "status", 0, "Status", "  In   Progress ")).toMatchObject({
       locator: "status",

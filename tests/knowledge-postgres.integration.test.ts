@@ -230,4 +230,46 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       },
     });
   });
+
+  test("rejects duplicate source locators before persistence", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const base = snapshot("duplicate-locators", "First status section.");
+    const document = base.documents[0];
+    if (document === undefined) throw new Error("Synthetic snapshot document is required.");
+
+    await expect(
+      Effect.runPromise(
+        repository.reconcile(
+          {
+            ...base,
+            cursor: "cursor-duplicate-locators",
+            documents: [
+              {
+                ...document,
+                externalId: "DEMO-636",
+                sourceVersion: "duplicate-locators",
+                passages: [
+                  ...document.passages,
+                  {
+                    kind: "description",
+                    locator: "#description",
+                    ordinal: 1,
+                    title: "Status",
+                    body: "Second status section.",
+                    contentHash: "sha256-duplicate-locator-2",
+                  },
+                ],
+              },
+            ],
+          },
+          embeddings,
+        ),
+      ),
+    ).rejects.toThrow("unique locators");
+    const stored = await pool.query<{ readonly passage_count: string }>(
+      "select count(distinct p.id) as passage_count from knowledge_passage p join knowledge_item i on i.id = p.item_id where i.external_id = 'DEMO-636' and p.active",
+    );
+    expect(stored.rows).toEqual([{ passage_count: "0" }]);
+  });
 });
