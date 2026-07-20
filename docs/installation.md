@@ -115,7 +115,6 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `MICROSOFT_APP_PASSWORD`
 - `MICROSOFT_APP_TENANT_ID`
 - `SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON`
-- `SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON`
 
 ### Runtime state
 
@@ -127,11 +126,25 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `JIRA_EMAIL`
 - `JIRA_API_TOKEN`
 
-### GitHub and configured documentation
+### Connected delivery sources
 
 - `GITHUB_TOKEN`
-- `SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON`
-- `SARATHI_VAULT_ALLOWLIST_JSON`
+- `SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON` (optional exact repositories)
+- `SARATHI_GITHUB_REPOSITORY_SCOPES_JSON` (bounded owner and repository-name scopes)
+- `SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON`
+- `SARATHI_KNOWLEDGE_VAULT_SOURCE_ID`
+- `SARATHI_KNOWLEDGE_VAULT_ROOTS_JSON`
+- `SARATHI_PROJECT_MAIL_SCOPES_JSON` (empty until a project-mail boundary is configured)
+
+### Delivery intelligence
+
+- `SARATHI_KNOWLEDGE_ENABLED`
+- `SARATHI_KNOWLEDGE_WORKSPACE_ID`
+- `SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON`
+- `SARATHI_WORKSPACE_TIMEZONE`
+- `SARATHI_EMBEDDING_PROVIDER` (`openrouter`)
+- `SARATHI_EMBEDDING_MODEL`
+- `SARATHI_EMBEDDING_API_KEY`
 
 ### AI model
 
@@ -162,7 +175,7 @@ Confirm:
 2. `/health` returns success.
 3. `/ready` returns success for the enabled capability.
 4. Unmapped channels and users are denied.
-5. Restricted or cross-workspace verification cannot appear.
+5. Finance, restricted, or cross-workspace data cannot appear.
 6. Logs contain no source content or credentials.
 7. Duplicate message delivery does not produce duplicate answers.
 8. The disable and rollback paths work.

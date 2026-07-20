@@ -122,10 +122,26 @@ const liveSources = (
     "SARATHI_KNOWLEDGE_WORKSPACE_ID",
     environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
   );
-  const repositories = parseJson<readonly string[]>(
-    "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-  );
+  const repositories =
+    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+      ? []
+      : parseJson<readonly string[]>(
+          "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+          environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+        );
+  const repositoryScopes =
+    environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON === undefined
+      ? []
+      : parseJson<
+          readonly {
+            readonly owner: string;
+            readonly ownerType: "org" | "user";
+            readonly repositoryNamePrefix?: string | undefined;
+          }[]
+        >(
+          "SARATHI_GITHUB_REPOSITORY_SCOPES_JSON",
+          environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON,
+        );
   const token = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
   const jira = parseJson<JiraProjection>(
     "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON",
@@ -138,6 +154,7 @@ const liveSources = (
       workspaceId,
       allowedActorIds,
       allowedRepositories: repositories,
+      repositoryScopes,
       timeoutMs: 4_000,
     }),
     createJiraDeliveryQuerySource({

@@ -424,69 +424,78 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     }
   }
   try {
-    const sourceKeys = JSON.parse(
-      required(
-        "SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON",
-        environment.SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON,
-      ),
-    ) as { jira: string; github: string; vault: string };
+    const knowledgeEnabled = enabled(environment.SARATHI_KNOWLEDGE_ENABLED);
     const graphTokenProvider = createEntraClientCredentialsTokenProvider({
       tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
       clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
       clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
     });
     const githubToken = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
-    const allowedRepositories = JSON.parse(
-      required(
-        "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-        environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-      ),
-    ) as string[];
+    const allowedRepositories =
+      environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+        ? []
+        : (JSON.parse(environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON) as string[]);
+    const repositoryScopes =
+      environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON === undefined
+        ? []
+        : (JSON.parse(environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON) as readonly {
+            readonly owner: string;
+            readonly ownerType: "org" | "user";
+            readonly repositoryNamePrefix?: string | undefined;
+          }[]);
     const databaseUrl = required(
       "SARATHI_STRATEGY_DATABASE_URL",
       environment.SARATHI_STRATEGY_DATABASE_URL,
     );
     const projection = workspaceProjectionFromEnvironment(environment);
     const resolver = createWorkspaceProjectionResolver(projection);
-    const contextSources = [
-      {
-        reader: createTeamsGraphThreadReader({
-          tokenProvider: graphTokenProvider,
-          allowedStandardChannels: new Set(
-            projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
-          ),
-        }),
-        sourceKey: (command: TeamsMentionCommand) =>
-          teamsThreadSourceKey({
-            teamId: command.graphTeamId,
-            channelId: command.channelId,
-            rootId: command.rootActivityId,
-          }),
-      },
-      {
-        reader: createJiraEvidenceReader({
-          baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
-          email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
-          apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
-        }),
-        sourceKey: () => sourceKeys.jira,
-      },
-      {
-        reader: createGitHubEvidenceReader({
-          token: githubToken,
-          allowedRepositories: new Set(allowedRepositories),
-        }),
-        sourceKey: () => sourceKeys.github,
-      },
-      {
-        reader: createGitHubVaultAllowlistReader({
-          token: githubToken,
-          allowlist: vaultAllowlistFromEnvironment(environment),
-        }),
-        sourceKey: () => sourceKeys.vault,
-      },
-    ] as const;
-    const knowledgeEnabled = enabled(environment.SARATHI_KNOWLEDGE_ENABLED);
+    const contextSources = knowledgeEnabled
+      ? []
+      : (() => {
+          const sourceKeys = JSON.parse(
+            required("SARATHI_TEAMS_SOURCE_KEYS_JSON", environment.SARATHI_TEAMS_SOURCE_KEYS_JSON),
+          ) as { jira: string; github: string; vault: string };
+          return [
+            {
+              reader: createTeamsGraphThreadReader({
+                tokenProvider: graphTokenProvider,
+                allowedStandardChannels: new Set(
+                  projection.channels.map(
+                    (channel) => `${channel.graphTeamId}:${channel.channelId}`,
+                  ),
+                ),
+              }),
+              sourceKey: (command: TeamsMentionCommand) =>
+                teamsThreadSourceKey({
+                  teamId: command.graphTeamId,
+                  channelId: command.channelId,
+                  rootId: command.rootActivityId,
+                }),
+            },
+            {
+              reader: createJiraEvidenceReader({
+                baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
+                email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
+                apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
+              }),
+              sourceKey: () => sourceKeys.jira,
+            },
+            {
+              reader: createGitHubEvidenceReader({
+                token: githubToken,
+                allowedRepositories: new Set(allowedRepositories),
+              }),
+              sourceKey: () => sourceKeys.github,
+            },
+            {
+              reader: createGitHubVaultAllowlistReader({
+                token: githubToken,
+                allowlist: vaultAllowlistFromEnvironment(environment),
+              }),
+              sourceKey: () => sourceKeys.vault,
+            },
+          ] as const;
+        })();
     const knowledgeWorkspaceId = knowledgeEnabled
       ? required("SARATHI_KNOWLEDGE_WORKSPACE_ID", environment.SARATHI_KNOWLEDGE_WORKSPACE_ID)
       : undefined;
@@ -523,6 +532,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 workspaceId: knowledgeWorkspaceId ?? "",
                 allowedAudienceIds: new Set(knowledgeAudienceIds),
                 allowedRepositories,
+                repositoryScopes,
               }),
             ],
             audienceIds: knowledgeAudienceIds,
@@ -587,6 +597,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 workspaceId,
                 allowedActorIds,
                 allowedRepositories,
+                repositoryScopes,
                 timeoutMs: 4_000,
               }),
               createJiraDeliveryQuerySource({

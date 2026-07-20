@@ -152,10 +152,26 @@ const query = async (
     "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
     environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
   );
-  const repositories = parseJson<readonly string[]>(
-    "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-  );
+  const repositories =
+    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+      ? []
+      : parseJson<readonly string[]>(
+          "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+          environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+        );
+  const repositoryScopes =
+    environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON === undefined
+      ? []
+      : parseJson<
+          readonly {
+            readonly owner: string;
+            readonly ownerType: "org" | "user";
+            readonly repositoryNamePrefix?: string | undefined;
+          }[]
+        >(
+          "SARATHI_GITHUB_REPOSITORY_SCOPES_JSON",
+          environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON,
+        );
   const token = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
   const results = await withKnowledgeDatabase(environment, (repository) =>
     Effect.runPromise(
@@ -168,6 +184,7 @@ const query = async (
             workspaceId: workspace,
             allowedAudienceIds: new Set(audienceIds),
             allowedRepositories: repositories,
+            repositoryScopes,
           }),
         ],
         {

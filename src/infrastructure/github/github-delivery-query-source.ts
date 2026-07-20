@@ -10,6 +10,15 @@ import {
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
 import { createGitHubKnowledgeSearch } from "./github-knowledge-search.ts";
+import {
+  type GitHubRepositoryScope,
+  githubRepositoryAllowed,
+  githubScopeQualifier,
+  repositoryFromGitHubApiUrl,
+  repositoryFromGitHubHtmlUrl,
+  validGitHubRepository,
+  validGitHubRepositoryScope,
+} from "./github-repository-scope.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 type GitHubPull = {
@@ -30,12 +39,22 @@ type GitHubCommit = {
     readonly committer?: { readonly date?: string };
   };
 };
+type GitHubSearchPull = GitHubPull & {
+  readonly repository_url?: string;
+  readonly pull_request?: { readonly merged_at?: string | null };
+};
+type GitHubSearchCommit = GitHubCommit & { readonly repository?: { readonly full_name?: string } };
+type GitHubSearchResponse<Value> = {
+  readonly incomplete_results?: boolean;
+  readonly items?: readonly Value[];
+};
 
 export type GitHubDeliveryQueryConfiguration = {
   readonly token: string;
   readonly workspaceId: string;
   readonly allowedActorIds: ReadonlySet<string>;
-  readonly allowedRepositories: readonly string[];
+  readonly allowedRepositories?: readonly string[] | undefined;
+  readonly repositoryScopes?: readonly GitHubRepositoryScope[] | undefined;
   readonly sensitivity?: SensitivityTier | undefined;
   readonly authority?: number | undefined;
   readonly timeoutMs?: number | undefined;
@@ -182,14 +201,138 @@ const readRepositoryActivity = async (
     .slice(0, operation.limit);
 };
 
+const dateRangeQualifier = (
+  field: "updated" | "committer-date",
+  window: { readonly fromInclusive: string; readonly toExclusive: string } | undefined,
+): string => {
+  if (window === undefined) return "";
+  const from = window.fromInclusive.slice(0, 10);
+  const inclusiveEnd = new Date(Date.parse(window.toExclusive) - 1).toISOString().slice(0, 10);
+  return ` ${field}:${from}..${inclusiveEnd}`;
+};
+
+const readScopedActivity = async (
+  configuration: GitHubDeliveryQueryConfiguration,
+  scope: GitHubRepositoryScope,
+  context: DeliveryQueryContext,
+  operation: DeliveryQueryOperation,
+): Promise<readonly DeliveryResultItem[]> => {
+  const allowedRepositories = configuration.allowedRepositories ?? [];
+  const repositoryScopes = configuration.repositoryScopes ?? [];
+  const window = operationWindow(operation, context);
+  const qualifier = githubScopeQualifier(scope);
+  const stateQualifier =
+    operation.purpose === "delivered"
+      ? " is:merged"
+      : operation.purpose === "current_work"
+        ? " is:open"
+        : "";
+  const pullsUrl = new URL("https://api.github.com/search/issues");
+  pullsUrl.searchParams.set(
+    "q",
+    `${qualifier} is:pr${stateQualifier}${dateRangeQualifier("updated", window)}`,
+  );
+  pullsUrl.searchParams.set("sort", "updated");
+  pullsUrl.searchParams.set("order", "desc");
+  pullsUrl.searchParams.set("per_page", String(operation.limit));
+
+  const commitsUrl = new URL("https://api.github.com/search/commits");
+  commitsUrl.searchParams.set("q", `${qualifier}${dateRangeQualifier("committer-date", window)}`);
+  commitsUrl.searchParams.set("sort", "committer-date");
+  commitsUrl.searchParams.set("order", "desc");
+  commitsUrl.searchParams.set("per_page", String(operation.limit));
+
+  const [pullResponse, commitResponse] = await Promise.all([
+    requestJson<GitHubSearchResponse<GitHubSearchPull>>(configuration, pullsUrl),
+    operation.purpose === "current_work"
+      ? Promise.resolve({ items: [] } as GitHubSearchResponse<GitHubSearchCommit>)
+      : requestJson<GitHubSearchResponse<GitHubSearchCommit>>(configuration, commitsUrl),
+  ]);
+  const sensitivity = configuration.sensitivity ?? "internal";
+  const authority = configuration.authority ?? 0.9;
+  const pullItems = (pullResponse.items ?? []).flatMap((pull): readonly DeliveryResultItem[] => {
+    const repository =
+      repositoryFromGitHubApiUrl(pull.repository_url) ??
+      (pull.html_url === undefined ? undefined : repositoryFromGitHubHtmlUrl(pull.html_url));
+    const mergedAt = pull.pull_request?.merged_at ?? pull.merged_at;
+    const observedAt = mergedAt ?? pull.updated_at;
+    if (
+      repository === undefined ||
+      !githubRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
+      pull.number === undefined ||
+      pull.title === undefined ||
+      pull.html_url === undefined ||
+      observedAt === undefined
+    )
+      return [];
+    const action = mergedAt == null ? "updated" : "merged";
+    return [
+      {
+        id: `github:${repository}:pull:${pull.number}`,
+        workspaceId: context.workspaceId,
+        source: "github",
+        selector: "observations",
+        intent: operation.purpose,
+        title: pull.title,
+        summary: `PR #${pull.number} ${action}: ${pull.title}`,
+        citationUrl: pull.html_url,
+        sensitivity,
+        authority: authority + 0.05,
+        observedAt,
+        dedupeKey: `github:${repository}:pull:${pull.number}:${action}`,
+      },
+    ];
+  });
+  const commitItems = (commitResponse.items ?? []).flatMap(
+    (commit): readonly DeliveryResultItem[] => {
+      const repository =
+        commit.repository?.full_name ??
+        (commit.html_url === undefined ? undefined : repositoryFromGitHubHtmlUrl(commit.html_url));
+      const observedAt = commit.commit?.committer?.date ?? commit.commit?.author?.date;
+      const summary = firstLine(commit.commit?.message);
+      if (
+        repository === undefined ||
+        !githubRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
+        commit.sha === undefined ||
+        commit.html_url === undefined ||
+        observedAt === undefined ||
+        /^Merge pull request\b/i.test(summary)
+      )
+        return [];
+      return [
+        {
+          id: `github:${repository}:commit:${commit.sha}`,
+          workspaceId: context.workspaceId,
+          source: "github",
+          selector: "observations",
+          intent: operation.purpose,
+          title: summary,
+          summary: `${commit.sha.slice(0, 7)} ${summary}`,
+          citationUrl: commit.html_url,
+          sensitivity,
+          authority,
+          observedAt,
+          dedupeKey: `github:${repository}:commit:${commit.sha}`,
+        },
+      ];
+    },
+  );
+  return [...pullItems, ...commitItems]
+    .sort((left, right) => Date.parse(right.observedAt ?? "") - Date.parse(left.observedAt ?? ""))
+    .slice(0, operation.limit);
+};
+
 export const createGitHubDeliveryQuerySource = (
   configuration: GitHubDeliveryQueryConfiguration,
 ): DeliveryQuerySource => {
+  const allowedRepositories = configuration.allowedRepositories ?? [];
+  const repositoryScopes = configuration.repositoryScopes ?? [];
   const liveSearch = createGitHubKnowledgeSearch({
     token: configuration.token,
     workspaceId: configuration.workspaceId,
     allowedAudienceIds: configuration.allowedActorIds,
-    allowedRepositories: configuration.allowedRepositories,
+    allowedRepositories,
+    repositoryScopes,
     fetcher: configuration.fetcher,
     timeoutMs: configuration.timeoutMs,
   });
@@ -204,11 +347,11 @@ export const createGitHubDeliveryQuerySource = (
             context.workspaceId !== configuration.workspaceId ||
             !configuration.allowedActorIds.has(context.actorId) ||
             !isSensitivityAtOrBelow(sourceSensitivity, context.maximumSensitivity) ||
-            configuration.allowedRepositories.length === 0 ||
-            configuration.allowedRepositories.length > 10 ||
-            configuration.allowedRepositories.some(
-              (repository) => !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository),
-            )
+            (allowedRepositories.length === 0 && repositoryScopes.length === 0) ||
+            allowedRepositories.length > 50 ||
+            repositoryScopes.length > 10 ||
+            allowedRepositories.some((repository) => !validGitHubRepository(repository)) ||
+            repositoryScopes.some((scope) => !validGitHubRepositoryScope(scope))
           )
             return emptyResult();
           const selected = plan.operations.filter(
@@ -247,11 +390,14 @@ export const createGitHubDeliveryQuerySource = (
                 );
               }
               return (
-                await Promise.all(
-                  configuration.allowedRepositories.map((repository) =>
+                await Promise.all([
+                  ...allowedRepositories.map((repository) =>
                     readRepositoryActivity(configuration, repository, context, operation),
                   ),
-                )
+                  ...repositoryScopes.map((scope) =>
+                    readScopedActivity(configuration, scope, context, operation),
+                  ),
+                ])
               ).flat();
             }),
           );

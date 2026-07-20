@@ -87,6 +87,63 @@ describe("delivery intelligence live query sources", () => {
     expect(requests).toBe(0);
   });
 
+  it("reads organization-scoped activity and excludes repositories outside the configured prefix", async () => {
+    const requests: string[] = [];
+    const source = createGitHubDeliveryQuerySource({
+      token: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      repositoryScopes: [
+        { owner: "example-org", ownerType: "org", repositoryNamePrefix: "delivery-" },
+      ],
+      fetcher: async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/search/issues"))
+          return Response.json({
+            items: [
+              {
+                number: 12,
+                title: "Ship scoped report",
+                html_url: "https://github.com/example-org/delivery-ui/pull/12",
+                repository_url: "https://api.github.com/repos/example-org/delivery-ui",
+                updated_at: "2026-07-20T10:00:00.000Z",
+                pull_request: { merged_at: "2026-07-20T10:00:00.000Z" },
+              },
+              {
+                number: 2,
+                title: "Finance-only work",
+                html_url: "https://github.com/example-org/finance-ui/pull/2",
+                repository_url: "https://api.github.com/repos/example-org/finance-ui",
+                updated_at: "2026-07-20T09:00:00.000Z",
+              },
+            ],
+          });
+        return Response.json({
+          items: [
+            {
+              sha: "abcdef123456",
+              html_url: "https://github.com/example-org/delivery-api/commit/abcdef123456",
+              repository: { full_name: "example-org/delivery-api" },
+              commit: {
+                message: "Add scoped delivery query",
+                committer: { date: "2026-07-20T09:00:00.000Z" },
+              },
+            },
+          ],
+        });
+      },
+    });
+
+    const result = await Effect.runPromise(source.execute(context, activityPlan));
+    expect(requests).toHaveLength(2);
+    expect(result.items.map(({ title }) => title)).toEqual([
+      "Ship scoped report",
+      "Add scoped delivery query",
+    ]);
+    expect(result.items.some(({ title }) => title === "Finance-only work")).toBe(false);
+  });
+
   it("reads date-bounded Jira transitions from connected project scope", async () => {
     const requests: string[] = [];
     const source = createJiraDeliveryQuerySource({

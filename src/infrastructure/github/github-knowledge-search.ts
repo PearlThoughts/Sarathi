@@ -5,6 +5,14 @@ import type {
   KnowledgeQuery,
   KnowledgeSearchResult,
 } from "../../modules/knowledge-layer/index.ts";
+import {
+  type GitHubRepositoryScope,
+  githubRepositoryAllowed,
+  githubScopeQualifier,
+  repositoryFromGitHubApiUrl,
+  validGitHubRepository,
+  validGitHubRepositoryScope,
+} from "./github-repository-scope.ts";
 
 type GitHubSearchItem = {
   readonly html_url: string;
@@ -27,7 +35,8 @@ export type GitHubKnowledgeSearchConfiguration = {
   readonly token: string;
   readonly workspaceId: string;
   readonly allowedAudienceIds: ReadonlySet<string>;
-  readonly allowedRepositories: readonly string[];
+  readonly allowedRepositories?: readonly string[] | undefined;
+  readonly repositoryScopes?: readonly GitHubRepositoryScope[] | undefined;
   readonly fetcher?: Fetcher | undefined;
   readonly now?: (() => Date) | undefined;
   readonly perRepositoryLimit?: number | undefined;
@@ -99,9 +108,6 @@ const githubSearchTerms = (question: string): string => {
   return (significant.length > 0 ? significant.slice(-5).join(" ") : safe).slice(0, 120);
 };
 
-const repositoryFromApiUrl = (value: string | undefined): string | undefined =>
-  value?.match(/^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)$/)?.[1];
-
 const excerpt = (item: GitHubSearchItem): string =>
   (
     (item.path === undefined ? item.body : undefined) ??
@@ -117,11 +123,11 @@ const excerpt = (item: GitHubSearchItem): string =>
 const searchUrl = (
   kind: "issues" | "code",
   question: string,
-  repository: string,
+  qualifier: string,
   limit: number,
 ): string => {
   const url = new URL(`https://api.github.com/search/${kind}`);
-  url.searchParams.set("q", `${question} repo:${repository}`);
+  url.searchParams.set("q", `${question} ${qualifier}`);
   url.searchParams.set("per_page", String(limit));
   return url.toString();
 };
@@ -134,12 +140,12 @@ const freshness = (updatedAt: string, now: Date): number => {
 const readSearch = async (
   configuration: GitHubKnowledgeSearchConfiguration,
   kind: "issues" | "code",
-  repository: string,
+  qualifier: string,
   question: string,
   limit: number,
 ): Promise<GitHubSearchResponse> => {
   const response = await (configuration.fetcher ?? fetch)(
-    searchUrl(kind, question, repository, limit),
+    searchUrl(kind, question, qualifier, limit),
     {
       headers: {
         Authorization: `Bearer ${configuration.token}`,
@@ -187,11 +193,16 @@ export const createGitHubKnowledgeSearch = (
   search: (query: KnowledgeQuery) =>
     Effect.tryPromise({
       try: async () => {
+        const allowedRepositories = configuration.allowedRepositories ?? [];
+        const repositoryScopes = configuration.repositoryScopes ?? [];
         if (
           query.audience.workspaceId !== configuration.workspaceId ||
           !query.audience.audienceIds.some((id) => configuration.allowedAudienceIds.has(id)) ||
-          configuration.allowedRepositories.length === 0 ||
-          configuration.allowedRepositories.length > 10
+          (allowedRepositories.length === 0 && repositoryScopes.length === 0) ||
+          allowedRepositories.length > 50 ||
+          repositoryScopes.length > 10 ||
+          allowedRepositories.some((repository) => !validGitHubRepository(repository)) ||
+          repositoryScopes.some((scope) => !validGitHubRepositoryScope(scope))
         )
           return [];
         const question = githubSearchTerms(query.question);
@@ -200,13 +211,16 @@ export const createGitHubKnowledgeSearch = (
           1,
           Math.min(configuration.perRepositoryLimit ?? query.topK, 20),
         );
-        const searches = configuration.allowedRepositories.flatMap((repository) =>
+        const targets = [
+          ...allowedRepositories.map((repository) => ({ qualifier: `repo:${repository}` })),
+          ...repositoryScopes.map((scope) => ({ qualifier: githubScopeQualifier(scope) })),
+        ];
+        const searches = targets.flatMap(({ qualifier }) =>
           (["issues", "code"] as const).map(async (kind) => ({
-            repository,
             response: await readSearch(
               configuration,
               kind,
-              repository,
+              qualifier,
               question,
               perRepositoryLimit,
             ),
@@ -216,11 +230,15 @@ export const createGitHubKnowledgeSearch = (
         const responses = await Promise.all(searches);
         const seen = new Set<string>();
         return responses
-          .flatMap(({ repository, response }) =>
+          .flatMap(({ response }) =>
             response.items.flatMap((item, index) => {
-              const resolvedRepository = repositoryFromApiUrl(item.repository_url) ?? repository;
-              if (resolvedRepository !== repository) return [];
-              const result = resultFromItem(item, repository, now, index + 1);
+              const resolvedRepository = repositoryFromGitHubApiUrl(item.repository_url);
+              if (
+                resolvedRepository === undefined ||
+                !githubRepositoryAllowed(resolvedRepository, allowedRepositories, repositoryScopes)
+              )
+                return [];
+              const result = resultFromItem(item, resolvedRepository, now, index + 1);
               if (result === undefined || seen.has(result.citationUrl)) return [];
               seen.add(result.citationUrl);
               return [result];

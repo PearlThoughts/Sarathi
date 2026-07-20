@@ -27,7 +27,7 @@ A capability is reusable product behavior enabled and configured per workspace. 
 - its required secrets by reference;
 - its readiness and acceptance criteria.
 
-Examples include `delivery-context-assistant`, `compliance-reminders`, `drift-review`, and `accountability-actions`.
+Examples include `ai-delivery-assistant`, `compliance-reminders`, `drift-review`, and `accountability-actions`.
 
 The same capability code may run in many workspaces, but its evidence, state, identities, and policy remain workspace-scoped.
 

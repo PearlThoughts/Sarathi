@@ -103,6 +103,52 @@ describe("GitHub live knowledge search", () => {
     ).toBe(true);
   });
 
+  test("searches a configured repository scope and rejects similarly named repositories outside it", async () => {
+    const requests: string[] = [];
+    const search = createGitHubKnowledgeSearch({
+      token: "secret-test-token",
+      workspaceId: "workspace-example",
+      allowedAudienceIds: new Set(["delivery"]),
+      repositoryScopes: [
+        { owner: "example-org", ownerType: "org", repositoryNamePrefix: "delivery-" },
+      ],
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return Response.json({
+          incomplete_results: false,
+          items: [
+            {
+              html_url: "https://github.com/example-org/delivery-api/issues/9",
+              number: 9,
+              title: "Scoped result",
+              body: "Current implementation status",
+              updated_at: "2026-07-20T00:00:00.000Z",
+              repository_url: "https://api.github.com/repos/example-org/delivery-api",
+            },
+            {
+              html_url: "https://github.com/example-org/finance-api/issues/1",
+              number: 1,
+              title: "Out of scope",
+              body: "Must not leave the configured delivery boundary",
+              updated_at: "2026-07-20T00:00:00.000Z",
+              repository_url: "https://api.github.com/repos/example-org/finance-api",
+            },
+          ],
+        });
+      },
+    });
+
+    const results = await Effect.runPromise(
+      search.search({ question: "implementation status", audience, topK: 10 }),
+    );
+
+    expect(requests).toHaveLength(2);
+    expect(
+      requests.every((url) => new URL(url).searchParams.get("q")?.includes("org:example-org")),
+    ).toBe(true);
+    expect(results.map(({ sourceId }) => sourceId)).toEqual(["example-org/delivery-api#9"]);
+  });
+
   test("filters an unauthorized workspace before any GitHub request", async () => {
     let requested = false;
     const search = createGitHubKnowledgeSearch({
