@@ -2,7 +2,29 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { createVaultKnowledgeSource } from "../src/infrastructure/vault/vault-knowledge-source.ts";
 
-const markdown = "# Delivery Risks\nApproved risk and next action.\n\n## Status\nIn progress.";
+const markdown = `# Delivery Risks
+Hosting delay threatens launch and affects DEMO-7.
+
+## Status
+In progress.
+
+## Scope
+Modern Website Builder and Admin Portal are in scope.
+
+## Requirements
+Responsive templates must pass QA.
+
+## Ownership
+Website team owns the builder module.
+
+## Dependencies
+Release waits on DEMO-8.
+
+## Decisions
+Use the shared component library.
+
+## Next Action
+Finish QA and release the builder.`;
 
 describe("Vault knowledge source", () => {
   it("indexes only Markdown below approved roots and preserves revision citations and ACL", async () => {
@@ -48,7 +70,7 @@ describe("Vault knowledge source", () => {
       token: "synthetic-token",
       roots: [
         {
-          repository: "example/Approved-Vault",
+          repository: "example/Connected-Vault",
           pathPrefix: "Projects/example",
           excludePathPrefixes: ["Projects/example/Excluded Communications"],
           sensitivity: "internal",
@@ -62,17 +84,58 @@ describe("Vault knowledge source", () => {
 
     expect(snapshot.documents).toHaveLength(1);
     expect(snapshot.documents[0]).toMatchObject({
-      externalId: "example/Approved-Vault:Projects/example/Risks.md",
+      externalId: "example/Connected-Vault:Projects/example/Risks.md",
       sourceVersion: "note-sha",
       title: "Delivery Risks",
       canonicalUrl:
-        "https://github.com/example/Approved-Vault/blob/commit-sha/Projects/example/Risks.md",
+        "https://github.com/example/Connected-Vault/blob/commit-sha/Projects/example/Risks.md",
       acl: [{ subjectId: "delivery" }],
     });
     expect(snapshot.documents[0]?.passages.map(({ locator }) => locator)).toEqual([
       "#delivery-risks",
       "#status",
+      "#scope",
+      "#requirements",
+      "#ownership",
+      "#dependencies",
+      "#decisions",
+      "#next-action",
     ]);
+    expect(snapshot.documents[0]?.deliveryProjection).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({ kind: "project", lifecycleState: "in_progress" }),
+        expect.objectContaining({
+          kind: "risk",
+          title: "Hosting delay threatens launch and affects DEMO-7.",
+        }),
+        expect.objectContaining({
+          kind: "module",
+          title: "Modern Website Builder and Admin Portal are in scope.",
+        }),
+        expect.objectContaining({
+          kind: "requirement",
+          title: "Responsive templates must pass QA.",
+        }),
+        expect.objectContaining({ kind: "team", title: "Website team owns the builder module." }),
+        expect.objectContaining({ kind: "decision", title: "Use the shared component library." }),
+        expect.objectContaining({
+          kind: "deliverable",
+          title: "Finish QA and release the builder.",
+        }),
+        expect.objectContaining({ kind: "work_item", externalKey: "DEMO-8" }),
+      ]),
+      relations: expect.arrayContaining([
+        expect.objectContaining({ kind: "owns" }),
+        expect.objectContaining({
+          kind: "depends_on",
+          to: { kind: "work_item", externalKey: "DEMO-8" },
+        }),
+      ]),
+      claims: expect.arrayContaining([
+        expect.objectContaining({ predicate: "vault.status", value: "In progress." }),
+        expect.objectContaining({ predicate: "vault.risk" }),
+      ]),
+    });
     expect(requests.some((url) => url.includes("Projects/Other"))).toBe(false);
     expect(requests.some((url) => url.includes("private.md"))).toBe(false);
   });
@@ -84,7 +147,7 @@ describe("Vault knowledge source", () => {
       token: "synthetic-token",
       roots: [
         {
-          repository: "example/Approved-Vault",
+          repository: "example/Connected-Vault",
           pathPrefix: "Projects/example",
           sensitivity: "internal",
           acl: [{ effect: "allow", subjectType: "workspace", subjectId: "example" }],
@@ -100,7 +163,7 @@ describe("Vault knowledge source", () => {
     });
 
     await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
-      "Approved Vault knowledge synchronization failed",
+      "Configured Vault knowledge synchronization failed",
     );
   });
 });

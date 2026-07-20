@@ -164,7 +164,7 @@
 
 - Command: `bun run test`
 - Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-search.test.ts`
-- Scope: Canonical Jira/Vault ingestion, explicit exclusions, AI SDK and deterministic embeddings, ACL-first exact/full-text/vector retrieval, live GitHub search, RRF fusion, concise cited answer validation, Teams composition, CLI, and privacy-safe failures.
+- Scope: Canonical Jira/Vault ingestion and delivery projections, explicit exclusions, AI SDK and deterministic embeddings, ACL-first exact/full-text/vector retrieval, live GitHub search, RRF fusion, concise cited answer validation, Teams composition, CLI, and privacy-safe failures.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## knowledge-postgres-integration

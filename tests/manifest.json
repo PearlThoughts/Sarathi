@@ -152,7 +152,7 @@
       "path": "tests/knowledge-*.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Canonical Jira/Vault evidence, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
+      "description": "Canonical Jira/Vault knowledge and delivery projections, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
     },
     {
       "id": "knowledge-postgres-integration",

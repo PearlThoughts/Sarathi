@@ -51,7 +51,7 @@
 - [x] KLG-503 Define delivery objects, relations, observations, claims, metrics, conflicts, results, and a whitelisted composable query plan.
 - [x] KLG-504 Regenerate the unreleased intermediate delivery migrations into one coherent Drizzle migration while preserving deployed audit and knowledge tables.
 - [x] KLG-505 Move delivery projection contracts out of `knowledge-layer` and reconcile source versions, knowledge, delivery rows, ACLs, tombstones, and checkpoints transactionally.
-- [ ] KLG-506 Project the configured Jira and Vault boundaries into reusable delivery objects, relations, observations, claims, and non-financial metrics.
+- [x] KLG-506 Project the configured Jira and Vault boundaries into reusable delivery objects, relations, observations, claims, and non-financial metrics.
 - [ ] KLG-507 Implement authorized repository queries for scope, requirements, ownership, dependencies, blockers, delivery, current work, risks, decisions, capacity, recurring patterns, claims, and conflicts.
 - [x] KLG-508 Keep GitHub live and add connected Teams/project-email operations without per-record approval fields or unrelated mailbox access.
 - [x] KLG-509 Add deterministic and schema-constrained question planning over one validated grammar; reject arbitrary query operators and unbounded traversal.
