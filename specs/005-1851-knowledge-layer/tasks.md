@@ -1,6 +1,6 @@
 # Tasks: 1851 Knowledge Layer
 
-**Input**: [spec.md](./spec.md) and [plan.md](./plan.md)  
+**Input**: [spec.md](./spec.md) and [plan.md](./plan.md)
 **Execution Bead**: `sar-2du.11`
 
 ## Phase 1 — Specification and Migration Foundation

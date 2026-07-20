@@ -1,9 +1,9 @@
 # Feature Specification: 1851 Knowledge Layer
 
-**Feature Branch**: `feat/1851-knowledge-layer`  
-**Created**: 2026-07-20  
-**Status**: Approved for implementation  
-**Parent Specification**: [1851 Teams Mention Production](../002-1851-teams-mention-production/spec.md)  
+**Feature Branch**: `feat/1851-knowledge-layer`
+**Created**: 2026-07-20
+**Status**: Approved for implementation
+**Parent Specification**: [1851 Teams Mention Production](../002-1851-teams-mention-production/spec.md)
 **Execution State**: epic `sar-2du`, child `sar-2du.11`, convoy `hq-cv-fixy7`
 
 ## 1. Purpose
