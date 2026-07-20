@@ -57,6 +57,7 @@
     "@types/pg": "^8.20.0",
     "arch-contract": "^0.3.0",
     "dependency-cruiser": "^17.0.1",
+    "drizzle-kit": "^0.31.10",
     "knip": "^5.61.3",
     "oxlint": "^0.16.12",
     "tsx": "4.20.5",

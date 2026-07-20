@@ -117,7 +117,9 @@ describe("AI SDK grounded answer generator", () => {
   });
 
   it("sends bounded evidence through the SDK and returns only evidence citations", async () => {
-    const model = successfulModel("Known fact.");
+    const model = successfulModel(
+      "Delivery is approved. [Delivery](https://jira.example.test/F1851-754)\nNext action is QA. [Delivery](https://jira.example.test/F1851-754)",
+    );
     const generator = createFailoverGroundedAnswerGenerator(
       { primary: { ...primaryConfiguration, provider: "openai" } },
       undefined,
@@ -144,11 +146,45 @@ describe("AI SDK grounded answer generator", () => {
         }),
       ),
     ).resolves.toMatchObject({
-      text: "Known fact.",
+      text: "Delivery is approved. [Delivery](https://jira.example.test/F1851-754)\nNext action is QA. [Delivery](https://jira.example.test/F1851-754)",
       citations: [{ url: "https://jira.example.test/F1851-754" }],
     });
     expect(JSON.stringify(model.doGenerateCalls)).toContain("Approved detail");
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
+  });
+
+  it("rejects verbose, uncited, and invented-citation answers before delivery", async () => {
+    const envelope = {
+      workspaceId: "workspace",
+      question: "What changed?",
+      evidence: [
+        {
+          source: "jira" as const,
+          sourceId: "F1851-754",
+          sourceUrl: "https://jira.example.test/F1851-754",
+          title: "Delivery",
+          excerpt: "Approved detail",
+          occurredAt: "2026-07-11T00:00:00.000Z",
+          updatedAt: "2026-07-11T00:00:00.000Z",
+          sensitivity: "internal" as const,
+          freshness: "current" as const,
+        },
+      ],
+    };
+    for (const text of [
+      "Uncited answer.\nStill uncited.",
+      "Claim. [Unknown](https://evil.example.test/x)\nNext. [Unknown](https://evil.example.test/x)",
+      "One [Delivery](https://jira.example.test/F1851-754)\nTwo [Delivery](https://jira.example.test/F1851-754)\nThree [Delivery](https://jira.example.test/F1851-754)\nFour [Delivery](https://jira.example.test/F1851-754)",
+    ]) {
+      const generator = createFailoverGroundedAnswerGenerator(
+        { primary: primaryConfiguration },
+        undefined,
+        () => successfulModel(text),
+      );
+      await expect(Effect.runPromise(generator.generate(envelope))).rejects.toThrow(
+        "Approved answer generation is unavailable",
+      );
+    }
   });
 
   it("uses the fallback once and emits only privacy-safe provider diagnostics", async () => {

@@ -16,6 +16,14 @@ type AuthorizedContextSource = {
   readonly sourceKey: (command: TeamsMentionCommand, resolved: ResolvedTeamsMention) => string;
 };
 
+export type TeamsMentionSupplementalContext = {
+  readonly search: (
+    command: TeamsMentionCommand,
+    resolved: ResolvedTeamsMention,
+    approvedEvidence: readonly ContextEvidence[],
+  ) => Effect.Effect<readonly ContextEvidence[], RepositoryError>;
+};
+
 const validEvidenceUrl = (value: string | undefined): value is string => {
   if (value === undefined) return false;
   try {
@@ -63,6 +71,7 @@ const asContextEvidence = (
 
 export const createAuthorizedContextAssembler = (
   sources: readonly AuthorizedContextSource[],
+  supplementalContext?: TeamsMentionSupplementalContext,
 ): TeamsMentionContextAssembler => ({
   assemble: (command, resolved) =>
     Effect.tryPromise({
@@ -75,10 +84,27 @@ export const createAuthorizedContextAssembler = (
             }),
           ),
         );
-        const evidence = results
+        const sourceEvidence = results
           .flatMap((result) => result.records)
           .map((record) => asContextEvidence(record, resolved.channelSensitivity))
           .filter((record): record is ContextEvidence => record !== undefined);
+        const supplementalEvidence =
+          supplementalContext === undefined
+            ? []
+            : await Effect.runPromise(
+                supplementalContext.search(command, resolved, sourceEvidence),
+              );
+        const seen = new Set<string>();
+        const evidence = [...sourceEvidence, ...supplementalEvidence].filter((record) => {
+          if (
+            !validEvidenceUrl(record.sourceUrl) ||
+            !isSensitivityAtOrBelow(record.sensitivity, resolved.channelSensitivity) ||
+            seen.has(record.sourceUrl)
+          )
+            return false;
+          seen.add(record.sourceUrl);
+          return true;
+        });
         return { workspaceId: resolved.workspaceId, question: command.question, evidence };
       },
       catch: () =>
