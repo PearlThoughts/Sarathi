@@ -476,6 +476,18 @@ export const createPostgresKnowledgeRepository = (
         }),
       );
     }
+    const containsDuplicateLocators = snapshot.documents.some((document) => {
+      const locators = document.passages.map(({ locator }) => locator);
+      return new Set(locators).size !== locators.length;
+    });
+    if (containsDuplicateLocators) {
+      return Effect.fail(
+        new RepositoryError({
+          message: "Knowledge source passages require unique locators within each version.",
+          operation: "knowledge-reconcile",
+        }),
+      );
+    }
     const passageBodies = snapshot.documents.flatMap((document) =>
       document.passages.map(({ body }) => body),
     );

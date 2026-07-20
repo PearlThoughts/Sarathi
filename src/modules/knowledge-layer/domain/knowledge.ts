@@ -114,13 +114,21 @@ export const chunkVaultMarkdown = (
 ): readonly KnowledgePassageDraft[] => {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const sections: { title: string; anchor: string; lines: string[] }[] = [];
+  const headingOccurrences = new Map<string, number>();
   let current = { title: "Document", anchor: "document", lines: [] as string[] };
   for (const line of lines) {
     const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (heading?.[2] !== undefined) {
       if (current.lines.some((entry) => entry.trim() !== "")) sections.push(current);
       const title = normalizeWhitespace(heading[2]);
-      current = { title, anchor: slug(title) || "section", lines: [] };
+      const baseAnchor = slug(title) || "section";
+      const occurrence = headingOccurrences.get(baseAnchor) ?? 0;
+      headingOccurrences.set(baseAnchor, occurrence + 1);
+      current = {
+        title,
+        anchor: occurrence === 0 ? baseAnchor : `${baseAnchor}-${occurrence}`,
+        lines: [],
+      };
       continue;
     }
     current.lines.push(line);
