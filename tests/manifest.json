@@ -162,7 +162,7 @@
         "bun install",
         "PostgreSQL with pgvector available at the explicit test URL"
       ],
-      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL/cross-workspace filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
+      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL-first delivery query and finance separation, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
     },
     {
       "id": "delivery-intelligence-domain",

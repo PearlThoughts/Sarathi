@@ -171,7 +171,7 @@
 
 - Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
 - Location: `tests/knowledge-postgres.integration.test.ts`
-- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, deny and cross-workspace filtering, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
 
 ## delivery-intelligence-domain

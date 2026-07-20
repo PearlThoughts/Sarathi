@@ -6,6 +6,7 @@ import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
   applyKnowledgePostgresMigrations,
+  createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   openKnowledgePostgresDatabase,
 } from "../src/infrastructure/postgres/index.ts";
@@ -17,6 +18,7 @@ import {
   deliveryObservationTable,
   deliveryRelationTable,
 } from "../src/infrastructure/postgres/knowledge-schema.ts";
+import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index.ts";
 import type { KnowledgeSourceSnapshot } from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
@@ -43,6 +45,8 @@ const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
       authority: 1,
       provenance: { projectKey: "DEMO" },
       acl: [
+        { subjectType: "workspace", subjectId: "workspace-example", effect: "allow" },
+        { subjectType: "actor", subjectId: "blocked-actor", effect: "deny" },
         { subjectType: "audience", subjectId: "delivery", effect: "allow" },
         { subjectType: "audience", subjectId: "blocked", effect: "deny" },
       ],
@@ -202,6 +206,65 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ]),
     ).toEqual([2, 1, 1, 1, 1, 1]);
 
+    const deliverySource = createPostgresDeliveryQuerySource(opened.database);
+    const statusPlan = planDeliveryQuestion("What is the current status of DEMO-635?");
+    const financePlan = planDeliveryQuestion("What is the project budget?");
+    if (statusPlan === undefined || financePlan === undefined)
+      throw new Error("Expected deterministic delivery query plans");
+    const deliveryContext = {
+      workspaceId: "workspace-example",
+      actorId: "delivery-member",
+      maximumSensitivity: "internal",
+      financeAccess: false,
+      requestedAt: "2026-07-20T12:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      deadlineAt: "2026-07-20T12:00:08.000Z",
+      question: "What is the current status of DEMO-635?",
+    } as const;
+    const deliveryStatus = await Effect.runPromise(
+      deliverySource.execute(deliveryContext, statusPlan),
+    );
+    expect(deliveryStatus.items).toEqual([
+      expect.objectContaining({
+        workspaceId: "workspace-example",
+        source: "jira",
+        selector: "objects",
+        citationUrl: "https://jira.example/browse/DEMO-635",
+      }),
+      expect.objectContaining({
+        workspaceId: "workspace-example",
+        source: "jira",
+        selector: "objects",
+        citationUrl: "https://jira.example/browse/DEMO-635",
+      }),
+    ]);
+    for (const deniedContext of [
+      { ...deliveryContext, actorId: "blocked-actor" },
+      { ...deliveryContext, workspaceId: "other-workspace" },
+      { ...deliveryContext, maximumSensitivity: "public" as const },
+    ]) {
+      const denied = await Effect.runPromise(deliverySource.execute(deniedContext, statusPlan));
+      expect(denied.items).toEqual([]);
+    }
+    const finance = await Effect.runPromise(
+      deliverySource.execute(
+        {
+          ...deliveryContext,
+          maximumSensitivity: "confidential",
+          financeAccess: true,
+          question: "What is the project budget?",
+        },
+        financePlan,
+      ),
+    );
+    expect(finance.items).toEqual([
+      expect.objectContaining({
+        selector: "metrics",
+        title: "budget",
+        sensitivity: "confidential",
+      }),
+    ]);
+
     const authorized = await Effect.runPromise(
       repository.search(
         {
@@ -325,6 +388,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     );
     expect(afterDelete).toEqual([]);
+    const deliveryAfterDelete = await Effect.runPromise(
+      deliverySource.execute(deliveryContext, statusPlan),
+    );
+    expect(deliveryAfterDelete.items).toEqual([]);
 
     const cliStatus = await runKnowledgeCommand(["status"], {
       SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
