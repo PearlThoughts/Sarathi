@@ -10,6 +10,7 @@ import {
 
 const snapshot: KnowledgeSourceSnapshot = {
   sourceId: "jira-1851",
+  source: "jira",
   workspaceId: "1851",
   cursor: "cursor-1",
   scopeHash: "scope-1",

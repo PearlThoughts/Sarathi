@@ -15,6 +15,7 @@ const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
 
 const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
   sourceId: "jira-1851-test",
+  source: "jira",
   workspaceId: "workspace-1851",
   cursor: `cursor-${version}`,
   scopeHash: "sha256-scope",
@@ -109,7 +110,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         (await Effect.runPromise(embeddings.embed(["builder status"])))[0] ?? [],
       ),
     );
-    expect(authorized[0]).toMatchObject({ source: "jira", sourceId: "jira-1851-test" });
+    expect(authorized[0]).toMatchObject({ source: "jira", sourceId: "F1851-635" });
     expect(authorized[0]?.citationUrl).toBe("https://jira.example/browse/F1851-635#description");
 
     for (const audience of [
@@ -148,10 +149,34 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "The builder passed QA and awaits release approval.",
     ]);
 
+    const changedModel = { ...embeddings, model: "deterministic-test-v2" };
+    const restored = await Effect.runPromise(
+      repository.reconcile(
+        snapshot("v1", "The builder is in QA with approved rollout risk."),
+        changedModel,
+      ),
+    );
+    expect(restored.versionsCreated).toBe(0);
+    const restoredState = await pool.query<{
+      readonly body: string;
+      readonly embedding_model: string;
+      readonly active_versions: string;
+    }>(
+      "select p.body, projection.embedding_model, (select count(*) from knowledge_version where active) as active_versions from knowledge_passage p join knowledge_projection projection on projection.passage_id = p.id where p.active",
+    );
+    expect(restoredState.rows).toEqual([
+      {
+        body: "The builder is in QA with approved rollout risk.",
+        embedding_model: "deterministic-test-v2",
+        active_versions: "1",
+      },
+    ]);
+
     const deleted = await Effect.runPromise(
       repository.reconcile(
         {
           sourceId: "jira-1851-test",
+          source: "jira",
           workspaceId: "workspace-1851",
           cursor: "cursor-deleted",
           scopeHash: "sha256-scope",

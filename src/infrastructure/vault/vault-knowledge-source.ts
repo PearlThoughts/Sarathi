@@ -62,6 +62,18 @@ const validPrefix = (value: string): boolean =>
 const isExcluded = (path: string, prefixes: readonly string[]): boolean =>
   prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
+const mapBounded = async <Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  transform: (value: Input) => Promise<Output>,
+): Promise<readonly Output[]> => {
+  const results: Output[] = [];
+  for (let offset = 0; offset < values.length; offset += concurrency) {
+    results.push(...(await Promise.all(values.slice(offset, offset + concurrency).map(transform))));
+  }
+  return results;
+};
+
 const headers = (token: string): HeadersInit => ({
   Authorization: `Bearer ${token}`,
   Accept: "application/vnd.github+json",
@@ -128,38 +140,35 @@ const rootDocuments = async (
     .map((entry) => ({ path: entry.path as string, sha: entry.sha ?? "" }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
-  return Promise.all(
-    paths.map(async ({ path, sha }) => {
-      const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-      const content = await requestJson<GitContent>(
-        configuration,
-        `/repos/${root.repository}/contents/${encodedPath}?ref=${encodeURIComponent(commit.sha)}`,
-      );
-      const markdown = decodeMarkdown(content);
-      const passages = chunkVaultMarkdown(markdown);
-      if (passages.length === 0)
-        throw new Error(`Approved Vault path ${path} produced no passages.`);
-      return {
-        source: "vault",
-        sourceId: configuration.sourceId,
-        workspaceId: configuration.workspaceId,
-        externalId: `${root.repository}:${path}`,
-        sourceType: "note",
-        sourceVersion: content.sha ?? sha,
-        canonicalUrl: `https://github.com/${root.repository}/blob/${commit.sha}/${path
-          .split("/")
-          .map(encodeURIComponent)
-          .join("/")}`,
-        title: title(markdown, path),
-        sourceUpdatedAt: updatedAt,
-        sensitivity: root.sensitivity,
-        authority: root.authority ?? 0.9,
-        provenance: { repository: root.repository, path, revision: commit.sha },
-        acl: root.acl,
-        passages,
-      } satisfies KnowledgeSourceDocument;
-    }),
-  );
+  return mapBounded(paths, 6, async ({ path, sha }) => {
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    const content = await requestJson<GitContent>(
+      configuration,
+      `/repos/${root.repository}/contents/${encodedPath}?ref=${encodeURIComponent(commit.sha)}`,
+    );
+    const markdown = decodeMarkdown(content);
+    const passages = chunkVaultMarkdown(markdown);
+    if (passages.length === 0) throw new Error(`Approved Vault path ${path} produced no passages.`);
+    return {
+      source: "vault",
+      sourceId: configuration.sourceId,
+      workspaceId: configuration.workspaceId,
+      externalId: `${root.repository}:${path}`,
+      sourceType: "note",
+      sourceVersion: content.sha ?? sha,
+      canonicalUrl: `https://github.com/${root.repository}/blob/${commit.sha}/${path
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`,
+      title: title(markdown, path),
+      sourceUpdatedAt: updatedAt,
+      sensitivity: root.sensitivity,
+      authority: root.authority ?? 0.9,
+      provenance: { repository: root.repository, path, revision: commit.sha },
+      acl: root.acl,
+      passages,
+    } satisfies KnowledgeSourceDocument;
+  });
 };
 
 export const createVaultKnowledgeSource = (
@@ -180,6 +189,7 @@ export const createVaultKnowledgeSource = (
         );
         return {
           sourceId: configuration.sourceId,
+          source: "vault",
           workspaceId,
           cursor:
             ordered

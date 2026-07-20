@@ -1,4 +1,4 @@
-import { and, cosineDistance, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, cosineDistance, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
@@ -29,6 +29,7 @@ type SearchRow = {
   readonly id: string;
   readonly source: KnowledgeSourceKind;
   readonly source_id: string;
+  readonly external_id: string;
   readonly title: string;
   readonly body: string;
   readonly canonical_url: string;
@@ -122,7 +123,6 @@ const authorizedPassages = (
       s.kind as source,
       s.id as source_id,
       p.title,
-      p.body,
       p.canonical_url,
       p.source_updated_at,
       p.sensitivity,
@@ -212,7 +212,7 @@ const reconcileSnapshot = async (
       .values({
         id: snapshot.sourceId,
         workspaceId: snapshot.workspaceId,
-        kind: firstDocument?.source ?? "vault",
+        kind: snapshot.source,
         authority: firstDocument?.authority ?? 0,
         scopeHash: snapshot.scopeHash,
         active: true,
@@ -357,12 +357,59 @@ const reconcileSnapshot = async (
       } else {
         await transaction
           .update(knowledgeVersionTable)
+          .set({ active: false })
+          .where(
+            and(
+              eq(knowledgeVersionTable.itemId, documentItemId),
+              ne(knowledgeVersionTable.id, versionId),
+            ),
+          );
+        await transaction
+          .update(knowledgePassageTable)
+          .set({ active: false })
+          .where(eq(knowledgePassageTable.itemId, documentItemId));
+        await transaction
+          .update(knowledgeVersionTable)
           .set({ active: true, tombstone: false, observedAt: now })
           .where(eq(knowledgeVersionTable.id, versionId));
         await transaction
           .update(knowledgePassageTable)
           .set({ active: true })
           .where(eq(knowledgePassageTable.versionId, versionId));
+        const restoredPassages = await transaction
+          .select({
+            id: knowledgePassageTable.id,
+            ordinal: knowledgePassageTable.ordinal,
+            contentHash: knowledgePassageTable.contentHash,
+          })
+          .from(knowledgePassageTable)
+          .where(eq(knowledgePassageTable.versionId, versionId));
+        for (const passage of restoredPassages) {
+          const vector = passageVectors[passage.ordinal];
+          if (vector === undefined || vector.length !== embeddings.dimensions)
+            throw new Error("Embedding result count or dimensions did not match passages.");
+          await transaction
+            .insert(knowledgeProjectionTable)
+            .values({
+              passageId: passage.id,
+              workspaceId: document.workspaceId,
+              embeddingModel: embeddings.model,
+              embeddingDimensions: embeddings.dimensions,
+              embedding: [...vector],
+              contentHash: passage.contentHash,
+              createdAt: now,
+            })
+            .onConflictDoUpdate({
+              target: knowledgeProjectionTable.passageId,
+              set: {
+                embeddingModel: embeddings.model,
+                embeddingDimensions: embeddings.dimensions,
+                embedding: [...vector],
+                contentHash: passage.contentHash,
+                createdAt: now,
+              },
+            });
+        }
       }
       const activePassages = await transaction
         .select({ id: knowledgePassageTable.id })
@@ -464,25 +511,29 @@ export const createPostgresKnowledgeRepository = (
         const limit = Math.max(1, Math.min(query.topK, 50));
         const [exactResult, keywordResult, vectorResult] = await Promise.all([
           database.execute(sql`
-            with authorized as (${authorized})
-            select * from authorized
-            where position(lower(external_id) in lower(${query.question})) > 0
-               or position(lower(replace(locator, '#', '')) in lower(${query.question})) > 0
-            order by length(external_id) desc, source_updated_at desc
+            with authorized as materialized (${authorized})
+            select authorized.*, content.body from authorized
+            join ${knowledgePassageTable} content on content.id = authorized.id
+            where position(lower(authorized.external_id) in lower(${query.question})) > 0
+               or position(lower(replace(authorized.locator, '#', '')) in lower(${query.question})) > 0
+            order by length(authorized.external_id) desc, authorized.source_updated_at desc
             limit ${limit}`),
           database.execute(sql`
-            with authorized as (${authorized}), query as (
+            with authorized as materialized (${authorized}), query as (
               select websearch_to_tsquery('english', ${query.question}) as value
             )
-            select authorized.* from authorized, query
-            where to_tsvector('english', title || ' ' || body) @@ query.value
-            order by ts_rank_cd(to_tsvector('english', title || ' ' || body), query.value) desc,
-                     source_updated_at desc
+            select authorized.*, content.body from authorized
+            join ${knowledgePassageTable} content on content.id = authorized.id
+            cross join query
+            where to_tsvector('english', authorized.title || ' ' || content.body) @@ query.value
+            order by ts_rank_cd(to_tsvector('english', authorized.title || ' ' || content.body), query.value) desc,
+                     authorized.source_updated_at desc
             limit ${limit}`),
           database.execute(sql`
-            with authorized as (${authorized})
-            select authorized.* from authorized
+            with authorized as materialized (${authorized})
+            select authorized.*, content.body from authorized
             join ${knowledgeProjectionTable} projection on projection.passage_id = authorized.id
+            join ${knowledgePassageTable} content on content.id = authorized.id
             order by ${cosineDistance(sql`projection.embedding`, [...queryEmbedding])}
             limit ${limit}`),
         ]);
@@ -508,7 +559,7 @@ export const createPostgresKnowledgeRepository = (
                   {
                     id: row.id,
                     source: row.source,
-                    sourceId: row.source_id,
+                    sourceId: row.external_id,
                     title: row.title,
                     excerpt: row.body.replace(/\s+/g, " ").trim().slice(0, 1200),
                     citationUrl: row.canonical_url,

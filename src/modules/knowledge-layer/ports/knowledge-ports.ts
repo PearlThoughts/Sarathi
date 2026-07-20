@@ -27,6 +27,7 @@ export type KnowledgeSourceDocument = {
 
 export type KnowledgeSourceSnapshot = {
   readonly sourceId: string;
+  readonly source: KnowledgeSourceKind;
   readonly workspaceId: string;
   readonly cursor: string;
   readonly scopeHash: string;

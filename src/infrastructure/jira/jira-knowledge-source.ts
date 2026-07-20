@@ -150,6 +150,18 @@ const readComments = async (
   return comments;
 };
 
+const mapBounded = async <Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  transform: (value: Input) => Promise<Output>,
+): Promise<readonly Output[]> => {
+  const results: Output[] = [];
+  for (let offset = 0; offset < values.length; offset += concurrency) {
+    results.push(...(await Promise.all(values.slice(offset, offset + concurrency).map(transform))));
+  }
+  return results;
+};
+
 const issuePassages = (
   issue: JiraIssue,
   comments: readonly JiraComment[],
@@ -229,10 +241,8 @@ export const createJiraKnowledgeSource = (
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Jira knowledge source was requested for another workspace.");
         const issues = await readIssues(configuration);
-        const documents = await Promise.all(
-          issues.map(async (issue) =>
-            asDocument(configuration, issue, await readComments(configuration, issue.key)),
-          ),
+        const documents = await mapBounded(issues, 4, async (issue) =>
+          asDocument(configuration, issue, await readComments(configuration, issue.key)),
         );
         const cursor =
           documents
@@ -241,6 +251,7 @@ export const createJiraKnowledgeSource = (
             .at(-1) ?? new Date(0).toISOString();
         return {
           sourceId: configuration.sourceId,
+          source: "jira",
           workspaceId,
           cursor,
           scopeHash: stableSha256(
