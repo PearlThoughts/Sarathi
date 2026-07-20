@@ -152,7 +152,7 @@
       "path": "tests/knowledge-*.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Canonical Jira/Vault evidence, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
+      "description": "Canonical Jira/Vault knowledge and delivery projections, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
     },
     {
       "id": "knowledge-postgres-integration",
@@ -162,7 +162,42 @@
         "bun install",
         "PostgreSQL with pgvector available at the explicit test URL"
       ],
-      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL/cross-workspace filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
+      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL-first delivery query and finance separation, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
+    },
+    {
+      "id": "delivery-intelligence-domain",
+      "path": "tests/delivery-intelligence-domain.test.ts",
+      "command": "bunx vitest run tests/delivery-intelligence-domain.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, and optional time-constraint coverage."
+    },
+    {
+      "id": "delivery-intelligence-application",
+      "path": "tests/delivery-intelligence-application.test.ts",
+      "command": "bunx vitest run tests/delivery-intelligence-application.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Bounded planning, pre-source finance authorization, workspace and sensitivity filtering, deduplication, conflict disclosure, citations, and concise answer coverage."
+    },
+    {
+      "id": "delivery-capability-matrix",
+      "path": "tests/delivery-capability-matrix.test.ts",
+      "command": "bunx vitest run tests/delivery-capability-matrix.test.ts tests/delivery-knowledge-query-source.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Reusable PM-question planning plus actor/workspace/audience/sensitivity propagation into bounded hybrid delivery retrieval."
+    },
+    {
+      "id": "delivery-intelligence-live-sources",
+      "path": "tests/delivery-query-sources.test.ts",
+      "command": "bunx vitest run tests/delivery-query-sources.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Pre-provider access checks plus live GitHub, Jira, Teams, and scoped project-email delivery query coverage."
+    },
+    {
+      "id": "delivery-cli",
+      "path": "tests/delivery-cli.test.ts",
+      "command": "bunx vitest run tests/delivery-cli.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Durable status/query/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild, and privacy-safe failures."
     },
     {
       "id": "local-ci",

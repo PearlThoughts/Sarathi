@@ -33,7 +33,7 @@ type IngestSource = "jira" | "vault" | "all";
 type JiraSourceProjection = {
   readonly sourceId: string;
   readonly projectKey: string;
-  readonly approvedJql: string;
+  readonly jql: string;
   readonly fields: Readonly<Record<string, string>>;
   readonly acl: readonly KnowledgeAclRule[];
   readonly sensitivity: "public" | "internal" | "confidential" | "restricted";
@@ -58,7 +58,7 @@ const parseJson = <Value>(name: string, value: string | undefined): Value => {
   try {
     return JSON.parse(required(name, value)) as Value;
   } catch {
-    throw new Error(`${name} must contain valid approved JSON configuration.`);
+    throw new Error(`${name} must contain valid connected-source JSON configuration.`);
   }
 };
 
@@ -152,10 +152,26 @@ const query = async (
     "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
     environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
   );
-  const repositories = parseJson<readonly string[]>(
-    "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-  );
+  const repositories =
+    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+      ? []
+      : parseJson<readonly string[]>(
+          "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+          environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+        );
+  const repositoryScopes =
+    environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON === undefined
+      ? []
+      : parseJson<
+          readonly {
+            readonly owner: string;
+            readonly ownerType: "org" | "user";
+            readonly repositoryNamePrefix?: string | undefined;
+          }[]
+        >(
+          "SARATHI_GITHUB_REPOSITORY_SCOPES_JSON",
+          environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON,
+        );
   const token = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
   const results = await withKnowledgeDatabase(environment, (repository) =>
     Effect.runPromise(
@@ -168,6 +184,7 @@ const query = async (
             workspaceId: workspace,
             allowedAudienceIds: new Set(audienceIds),
             allowedRepositories: repositories,
+            repositoryScopes,
           }),
         ],
         {

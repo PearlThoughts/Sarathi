@@ -1,16 +1,38 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json",
   "manifestVersion": "1.22",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "id": "c8a0a18e-0ab0-43ec-87f6-674c16014e13",
-  "developer": { "name": "PearlThoughts", "websiteUrl": "https://pearlthoughts.com", "privacyUrl": "https://pearlthoughts.com/privacy", "termsOfUseUrl": "https://pearlthoughts.com/terms" },
-  "name": { "short": "Sarathi", "full": "Sarathi Delivery Assistant" },
-  "description": { "short": "Grounded delivery context for approved Teams threads.", "full": "Sarathi answers direct mentions with policy-authorized, evidence-linked delivery context." },
+  "developer": {
+    "name": "PearlThoughts",
+    "websiteUrl": "https://pearlthoughts.com",
+    "privacyUrl": "https://pearlthoughts.com/privacy",
+    "termsOfUseUrl": "https://pearlthoughts.com/terms"
+  },
+  "name": { "short": "Sarathi", "full": "Sarathi AI Delivery Assistant" },
+  "description": {
+    "short": "AI Delivery Assistant",
+    "full": "Sarathi helps delivery teams understand progress, risks, decisions, dependencies, and next actions across connected work systems."
+  },
   "icons": { "outline": "outline.png", "color": "color.png" },
   "accentColor": "#21165F",
-  "bots": [{ "botId": "c8a0a18e-0ab0-43ec-87f6-674c16014e13", "scopes": ["team"], "isNotificationOnly": false, "supportsFiles": false }],
+  "bots": [
+    {
+      "botId": "c8a0a18e-0ab0-43ec-87f6-674c16014e13",
+      "scopes": ["team"],
+      "isNotificationOnly": false,
+      "supportsFiles": false
+    }
+  ],
   "permissions": ["identity", "messageTeamMembers"],
-  "webApplicationInfo": { "id": "c8a0a18e-0ab0-43ec-87f6-674c16014e13", "resource": "api://botid-c8a0a18e-0ab0-43ec-87f6-674c16014e13" },
-  "authorization": { "permissions": { "resourceSpecific": [{ "name": "ChannelMessage.Read.Group", "type": "Application" }] } },
+  "webApplicationInfo": {
+    "id": "c8a0a18e-0ab0-43ec-87f6-674c16014e13",
+    "resource": "api://botid-c8a0a18e-0ab0-43ec-87f6-674c16014e13"
+  },
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [{ "name": "ChannelMessage.Read.Group", "type": "Application" }]
+    }
+  },
   "validDomains": ["sarathi-production-98f5.up.railway.app"]
 }

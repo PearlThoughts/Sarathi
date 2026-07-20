@@ -11,7 +11,7 @@ The wedge is not generic search or generic task delegation. The wedge is PM-supe
 - capture project intent and delivery rhythm,
 - run an initial delivery review over existing work signals,
 - answer team process questions from ratified knowledge,
-- chase missing updates and evidence without spending PM time,
+- chase missing updates and verification without spending PM time,
 - surface drift, blockers, risks, and weak handoffs,
 - draft PM-reviewed weekly or monthly status,
 - preserve delivery memory as readable policy files,
@@ -27,7 +27,7 @@ That simplicity is valuable. Sarathi should learn from it.
 
 Sarathi's intended difference is not "chat bot versus chat bot." Sarathi is designed around delivery coordination operations:
 
-- customer-managed evidence and policy plane rather than a single vendor's assistant runtime,
+- customer-managed context and policy plane rather than a single vendor's assistant runtime,
 - Teams/Jira/GitHub as the first operating surface for software delivery teams,
 - PM-ratified project intent, commitments, process FAQ, escalation rules, and learned preferences,
 - per-workspace boundaries for client/project/team isolation,
@@ -73,7 +73,7 @@ Sarathi's intended difference is narrower:
 
 Sarathi should not out-platform Jira or Linear. Its intended difference is cross-surface delivery assistance:
 
-- Teams conversations are first-class delivery evidence, not only comments mirrored into a tracker;
+- Teams conversations are first-class delivery activity, not only comments mirrored into a tracker;
 - Jira, GitHub, docs, and future helpdesk/CRM data can be bound into one workspace;
 - the PM can codify local delivery behavior that may not match any one tool's hierarchy;
 - services teams can isolate client workspaces even when the same humans work across clients;
@@ -87,7 +87,7 @@ Sarathi is adjacent but different. It starts after there is work to deliver:
 
 - Are the team, tickets, PRs, risks, and status aligned with the PM-approved plan?
 - Are interns and engineers blocked on process questions?
-- Did "done" include QA, deployment, and evidence?
+- Did "done" include QA, deployment, and verification?
 - What drift should the PM see before the review meeting?
 
 Sarathi may read roadmap or product intent as an input, but it is not primarily a product-discovery tool.
@@ -111,7 +111,7 @@ Sarathi's product thesis is more operational and channel-native:
 
 Sarathi overlaps on status collection, but the intended center is different:
 
-- observe Jira/GitHub/CI evidence before asking humans,
+- observe Jira/GitHub/CI signals before asking humans,
 - ask specific delivery questions instead of generic "what did you do?",
 - preserve PM-approved answers and rules in a readable policy repo,
 - escalate unresolved delivery loops deterministically,
@@ -119,7 +119,7 @@ Sarathi overlaps on status collection, but the intended center is different:
 
 ### AI SRE Products
 
-AI SRE products such as [Resolve AI](https://resolve.ai/product/ai-sre), [Cleric](https://cleric.ai/), [Datadog Bits AI SRE](https://www.datadoghq.com/product/ai/bits-investigation/), and [incident.io's AI SRE writing](https://incident.io/blog/what-is-ai-sre-complete-guide-2026) show a useful pattern: the agent investigates live signals, forms hypotheses, links conclusions to evidence, recommends action, and keeps humans in the decision loop.
+AI SRE products such as [Resolve AI](https://resolve.ai/product/ai-sre), [Cleric](https://cleric.ai/), [Datadog Bits AI SRE](https://www.datadoghq.com/product/ai/bits-investigation/), and [incident.io's AI SRE writing](https://incident.io/blog/what-is-ai-sre-complete-guide-2026) show a useful pattern: the agent investigates live signals, forms hypotheses, links conclusions to source records, recommends action, and keeps humans in the decision loop.
 
 That category is a good analogy, not a direct competitor.
 
@@ -141,9 +141,9 @@ Sarathi is worth building only if these bets hold:
 1. Small software teams will self-host an agent if it saves PM coordination time.
 2. Delivery managers need an assistant more than they need another dashboard.
 3. Team process knowledge should be readable, versioned, and ratified instead of hidden in opaque model memory.
-4. Work context should stay in the customer's chosen systems where possible; Sarathi should store only the configured evidence/cache/policy it needs.
+4. Work context should stay in the customer's chosen systems where possible; Sarathi should store only the configured context/cache/policy it needs.
 5. Model calls should be configurable and visible, not silently tied to one provider.
-6. Proactive help can be useful without becoming invasive when it is scoped, disclosed, PM-guided, and evidence-linked.
+6. Proactive help can be useful without becoming invasive when it is scoped, disclosed, PM-guided, and source-linked.
 7. Coding agents become more useful when they inherit rich delivery context instead of asking developers to paste the same Teams/Jira/PR history every session.
 
 ## The Coding-Agent Bridge Thesis
@@ -152,8 +152,8 @@ Sarathi's future MCP or agent-bridge surface should make delivery context portab
 
 - `get_work_context(issue_or_branch)` returns PM-approved intent, relevant decisions, current risks, owners, and source links.
 - `current_intent(workspace)` returns the ratified project mission, milestone, budget or delivery target when configured.
-- `search_delivery_memory(query)` searches policy, decisions, retros, and scoped evidence.
-- `report_work_event(event)` lets coding agents deposit useful session signals back into the evidence plane.
+- `search_delivery_memory(query)` searches policy, decisions, retros, and scoped work context.
+- `report_work_event(event)` lets coding agents deposit useful session signals back into the source records plane.
 
 The bridge should start with human-run terminal agents. Later it can support cloud coding runs if the deployment has stronger controls for service identity, audit, code access, prompt injection, and disclosure.
 

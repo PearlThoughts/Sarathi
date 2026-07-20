@@ -3,7 +3,7 @@ import type { GraphAccessTokenProvider } from "./entra-token-provider.ts";
 
 export type TeamsGraphThreadReaderConfiguration = {
   readonly tokenProvider: GraphAccessTokenProvider;
-  readonly approvedStandardChannels: ReadonlySet<string>;
+  readonly allowedStandardChannels: ReadonlySet<string>;
   readonly fetcher?: typeof fetch | undefined;
   readonly pageSize?: number | undefined;
 };
@@ -20,7 +20,13 @@ type TeamsMessage = {
 
 const parseSourceKey = (
   sourceKey: string,
-): { readonly teamId: string; readonly channelId: string; readonly rootId: string } | undefined => {
+):
+  | {
+      readonly teamId: string;
+      readonly channelId: string;
+      readonly rootId: string;
+    }
+  | undefined => {
   const parts = sourceKey.split(":");
   if (parts.length !== 4 || parts[0] !== "teams" || parts.some((part) => part.trim() === ""))
     return undefined;
@@ -67,7 +73,7 @@ export const createTeamsGraphThreadReader = (
     const scope = parseSourceKey(sourceKey);
     if (
       scope === undefined ||
-      !configuration.approvedStandardChannels.has(`${scope.teamId}:${scope.channelId}`)
+      !configuration.allowedStandardChannels.has(`${scope.teamId}:${scope.channelId}`)
     ) {
       return { records: [] };
     }
@@ -85,7 +91,9 @@ export const createTeamsGraphThreadReader = (
     rootUrl.search = "";
     const [rootResponse, repliesResponse] = await Promise.all([
       fetcher(rootUrl, { headers: { Authorization: `Bearer ${accessToken}` } }),
-      fetcher(repliesUrl, { headers: { Authorization: `Bearer ${accessToken}` } }),
+      fetcher(repliesUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }),
     ]);
     if (!rootResponse.ok)
       throw new Error(`Graph thread root read failed with HTTP ${rootResponse.status}.`);
@@ -93,7 +101,9 @@ export const createTeamsGraphThreadReader = (
       throw new Error(`Graph thread replies read failed with HTTP ${repliesResponse.status}.`);
     const [root, payload] = (await Promise.all([
       rootResponse.json() as Promise<TeamsMessage>,
-      repliesResponse.json() as Promise<{ readonly value?: readonly TeamsMessage[] }>,
+      repliesResponse.json() as Promise<{
+        readonly value?: readonly TeamsMessage[];
+      }>,
     ])) as [TeamsMessage, { readonly value?: readonly TeamsMessage[] }];
     const records = [root, ...(payload.value ?? [])].flatMap((message) => {
       if (message.id === undefined || message.createdDateTime === undefined) return [];

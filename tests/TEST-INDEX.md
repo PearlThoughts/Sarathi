@@ -164,12 +164,47 @@
 
 - Command: `bun run test`
 - Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-search.test.ts`
-- Scope: Canonical Jira/Vault ingestion, explicit exclusions, AI SDK and deterministic embeddings, ACL-first exact/full-text/vector retrieval, live GitHub search, RRF fusion, concise cited answer validation, Teams composition, CLI, and privacy-safe failures.
+- Scope: Canonical Jira/Vault ingestion and delivery projections, explicit exclusions, AI SDK and deterministic embeddings, ACL-first exact/full-text/vector retrieval, live GitHub search, RRF fusion, concise cited answer validation, Teams composition, CLI, and privacy-safe failures.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## knowledge-postgres-integration
 
 - Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
 - Location: `tests/knowledge-postgres.integration.test.ts`
-- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, deny and cross-workspace filtering, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
+
+## delivery-intelligence-domain
+
+- Command: `bunx vitest run tests/delivery-intelligence-domain.test.ts`
+- Location: `tests/delivery-intelligence-domain.test.ts`
+- Scope: Delivery objects, relations, observations, claims, metrics, goals, commitments, finance isolation, conflict derivation, safe generic query planning, independent time constraints, and workspace-local time resolution.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-intelligence-application
+
+- Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
+- Location: `tests/delivery-intelligence-application.test.ts`
+- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before model composition, deduplication, conflict disclosure, citation validation, deterministic fallback, concise response limits, and partial-source behavior.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-intelligence-live-sources
+
+- Command: `bunx vitest run tests/delivery-query-sources.test.ts`
+- Location: `tests/delivery-query-sources.test.ts`
+- Scope: Pre-provider workspace/actor checks, live GitHub PR/commit retrieval, Jira query projection, Teams channel reads, project-email scoping, assistant-prompt exclusion, finance exclusion, and resolvable source citations.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-capability-matrix
+
+- Command: `bunx vitest run tests/delivery-capability-matrix.test.ts tests/delivery-knowledge-query-source.test.ts`
+- Location: `tests/delivery-capability-matrix.test.ts`, `tests/delivery-knowledge-query-source.test.ts`
+- Scope: Reusable delivery-query coverage for PM question families plus actor/workspace/audience/sensitivity propagation into hybrid Jira/Vault retrieval.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-cli
+
+- Command: `bunx vitest run tests/delivery-cli.test.ts`
+- Location: `tests/delivery-cli.test.ts`
+- Scope: Durable status/query/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Prerequisites: Bun dependencies installed with `bun install`.

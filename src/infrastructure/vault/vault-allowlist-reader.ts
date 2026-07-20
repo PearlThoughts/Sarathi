@@ -95,7 +95,7 @@ const asDocument = (candidate: unknown): VaultAllowlistDocument => {
 };
 
 /**
- * Deployment configuration contains only references to approved Vault notes.
+ * Deployment configuration contains only references to workspace-scoped Vault notes.
  * The note body is read at request time and never embedded in the overlay or
  * Railway variables.
  */

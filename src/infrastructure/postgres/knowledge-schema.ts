@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
+  decimal,
   index,
   integer,
   jsonb,
@@ -186,6 +188,324 @@ export const knowledgeSyncCheckpointTable = pgTable(
   ],
 );
 
+export const deliveryObjectTable = pgTable(
+  "delivery_object",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    objectKind: text("object_kind").notNull(),
+    externalKey: text("external_key").notNull(),
+    title: text("title").notNull(),
+    lifecycleState: text("lifecycle_state"),
+    attributes: jsonb("attributes").$type<Readonly<Record<string, unknown>>>().notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    effectiveFrom: timestampColumn("effective_from"),
+    effectiveTo: timestampColumn("effective_to"),
+    observedAt: timestampColumn("observed_at").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_object_workspace_source_kind_key").on(
+      table.workspaceId,
+      table.sourceId,
+      table.objectKind,
+      table.externalKey,
+    ),
+    index("delivery_object_workspace_kind_active").on(
+      table.workspaceId,
+      table.objectKind,
+      table.active,
+      table.deletedAt,
+    ),
+    index("delivery_object_source_version").on(table.sourceVersionId),
+  ],
+);
+
+export const deliveryRelationTable = pgTable(
+  "delivery_relation",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    relationKind: text("relation_kind").notNull(),
+    fromObjectId: text("from_object_id")
+      .notNull()
+      .references(() => deliveryObjectTable.id),
+    toObjectId: text("to_object_id")
+      .notNull()
+      .references(() => deliveryObjectTable.id),
+    attributes: jsonb("attributes").$type<Readonly<Record<string, unknown>>>().notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    effectiveFrom: timestampColumn("effective_from"),
+    effectiveTo: timestampColumn("effective_to"),
+    observedAt: timestampColumn("observed_at").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_relation_workspace_edge").on(
+      table.workspaceId,
+      table.sourceId,
+      table.relationKind,
+      table.fromObjectId,
+      table.toObjectId,
+      table.sourceVersionId,
+    ),
+    index("delivery_relation_workspace_kind_active").on(
+      table.workspaceId,
+      table.relationKind,
+      table.active,
+      table.deletedAt,
+    ),
+    index("delivery_relation_from_object").on(table.fromObjectId),
+    index("delivery_relation_to_object").on(table.toObjectId),
+  ],
+);
+
+export const deliveryObservationTable = pgTable(
+  "delivery_observation",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    observationKind: text("observation_kind").notNull(),
+    externalId: text("external_id").notNull(),
+    subjectObjectId: text("subject_object_id").references(() => deliveryObjectTable.id),
+    actorExternalKey: text("actor_external_key"),
+    summary: text("summary").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    occurredAt: timestampColumn("occurred_at").notNull(),
+    observedAt: timestampColumn("observed_at").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    authority: real("authority").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    citationUrl: text("citation_url").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_observation_workspace_source_external").on(
+      table.workspaceId,
+      table.sourceId,
+      table.externalId,
+    ),
+    index("delivery_observation_workspace_kind_active").on(
+      table.workspaceId,
+      table.observationKind,
+      table.active,
+      table.deletedAt,
+    ),
+    index("delivery_observation_workspace_dedupe").on(
+      table.workspaceId,
+      table.dedupeKey,
+      table.active,
+    ),
+    index("delivery_observation_occurred").on(table.workspaceId, table.occurredAt),
+  ],
+);
+
+export const deliveryMetricTable = pgTable(
+  "delivery_metric",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    subjectObjectId: text("subject_object_id")
+      .notNull()
+      .references(() => deliveryObjectTable.id),
+    metricCategory: text("metric_category").notNull(),
+    metricKind: text("metric_kind").notNull(),
+    value: decimal("value", { precision: 24, scale: 6 }).notNull(),
+    unit: text("unit").notNull(),
+    effectiveFrom: timestampColumn("effective_from"),
+    effectiveTo: timestampColumn("effective_to"),
+    sensitivity: text("sensitivity").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    observedAt: timestampColumn("observed_at").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_metric_workspace_subject_kind_effective").on(
+      table.workspaceId,
+      table.subjectObjectId,
+      table.metricKind,
+      table.effectiveFrom,
+      table.sourceVersionId,
+    ),
+    index("delivery_metric_workspace_category_kind_active").on(
+      table.workspaceId,
+      table.metricCategory,
+      table.metricKind,
+      table.active,
+      table.deletedAt,
+    ),
+    check("delivery_metric_excludes_finance", sql`${table.metricCategory} <> 'finance'`),
+  ],
+);
+
+export const deliveryFinanceMetricTable = pgTable(
+  "delivery_finance_metric",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    subjectObjectId: text("subject_object_id")
+      .notNull()
+      .references(() => deliveryObjectTable.id),
+    metricKind: text("metric_kind").notNull(),
+    value: decimal("value", { precision: 24, scale: 6 }).notNull(),
+    unit: text("unit").notNull(),
+    effectiveFrom: timestampColumn("effective_from"),
+    effectiveTo: timestampColumn("effective_to"),
+    sensitivity: text("sensitivity").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    observedAt: timestampColumn("observed_at").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_finance_metric_workspace_subject_kind_effective").on(
+      table.workspaceId,
+      table.subjectObjectId,
+      table.metricKind,
+      table.effectiveFrom,
+      table.sourceVersionId,
+    ),
+    index("delivery_finance_metric_workspace_kind_active").on(
+      table.workspaceId,
+      table.metricKind,
+      table.active,
+      table.deletedAt,
+    ),
+    check(
+      "delivery_finance_metric_confidential",
+      sql`${table.sensitivity} in ('confidential', 'restricted')`,
+    ),
+  ],
+);
+
+export const deliveryClaimTable = pgTable(
+  "delivery_claim",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    subjectObjectId: text("subject_object_id").references(() => deliveryObjectTable.id),
+    subjectKey: text("subject_key").notNull(),
+    predicate: text("predicate").notNull(),
+    value: jsonb("value").$type<unknown>().notNull(),
+    valueHash: text("value_hash").notNull(),
+    assertedBy: text("asserted_by"),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    sourceItemId: text("source_item_id")
+      .notNull()
+      .references(() => knowledgeItemTable.id),
+    sourceVersionId: text("source_version_id")
+      .notNull()
+      .references(() => knowledgeVersionTable.id),
+    citationUrl: text("citation_url").notNull(),
+    assertedAt: timestampColumn("asserted_at").notNull(),
+    observedAt: timestampColumn("observed_at").notNull(),
+    effectiveFrom: timestampColumn("effective_from"),
+    effectiveTo: timestampColumn("effective_to"),
+    sensitivity: text("sensitivity").notNull(),
+    authority: real("authority").notNull(),
+    active: boolean("active").notNull().default(true),
+    deletedAt: timestampColumn("deleted_at"),
+  },
+  (table) => [
+    uniqueIndex("delivery_claim_source_value").on(
+      table.sourceVersionId,
+      table.subjectKey,
+      table.predicate,
+      table.valueHash,
+    ),
+    index("delivery_claim_workspace_subject_predicate").on(
+      table.workspaceId,
+      table.subjectKey,
+      table.predicate,
+      table.active,
+      table.deletedAt,
+    ),
+    index("delivery_claim_subject_object").on(table.subjectObjectId),
+  ],
+);
+
+export const deliveryAclBindingTable = pgTable(
+  "delivery_acl_binding",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    effect: text("effect").notNull(),
+    createdAt: timestampColumn("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("delivery_acl_target_subject").on(
+      table.targetType,
+      table.targetId,
+      table.subjectType,
+      table.subjectId,
+      table.effect,
+    ),
+    index("delivery_acl_workspace_subject").on(
+      table.workspaceId,
+      table.subjectType,
+      table.subjectId,
+    ),
+  ],
+);
+
 export const knowledgePostgresSchema = {
   knowledgeSourceTable,
   knowledgeItemTable,
@@ -194,4 +514,11 @@ export const knowledgePostgresSchema = {
   knowledgeAclBindingTable,
   knowledgeProjectionTable,
   knowledgeSyncCheckpointTable,
+  deliveryObjectTable,
+  deliveryRelationTable,
+  deliveryObservationTable,
+  deliveryMetricTable,
+  deliveryFinanceMetricTable,
+  deliveryClaimTable,
+  deliveryAclBindingTable,
 };

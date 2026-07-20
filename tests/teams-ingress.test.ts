@@ -107,7 +107,7 @@ describe("Teams ingress configuration", () => {
           receivedAt: "2026-07-11T00:00:00.000Z",
         }),
       ),
-    ).rejects.toThrow("Approved Teams workspace configuration is unavailable");
+    ).rejects.toThrow("Connected Teams workspace configuration is unavailable");
   });
 
   it("fails closed when the private workspace projection is absent", async () => {
@@ -129,7 +129,7 @@ describe("Teams ingress configuration", () => {
           receivedAt: "2026-07-11T00:00:00.000Z",
         }),
       ),
-    ).rejects.toThrow("Approved Teams workspace configuration is unavailable");
+    ).rejects.toThrow("Connected Teams workspace configuration is unavailable");
   });
 
   it("composes hello from only the approved projection and persistent audit configuration", async () => {

@@ -2,7 +2,6 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { reciprocalRankFusion } from "../domain/knowledge.ts";
 import type {
-  ApprovedThreadEvidence,
   KnowledgeEmbeddingPort,
   KnowledgeIngestionSummary,
   KnowledgeLiveSearch,
@@ -10,6 +9,7 @@ import type {
   KnowledgeRepository,
   KnowledgeSearchResult,
   KnowledgeSourceReader,
+  TeamsThreadContext,
 } from "../ports/knowledge-ports.ts";
 
 export const ingestKnowledgeSource = (
@@ -81,7 +81,12 @@ export const fuseKnowledgeResults = (
   const resultsByCanonicalKey = new Map<string, KnowledgeSearchResult>();
   const candidateLists: Record<
     string,
-    { id: string; source: KnowledgeSearchResult["source"]; authority: number; freshness: number }[]
+    {
+      id: string;
+      source: KnowledgeSearchResult["source"];
+      authority: number;
+      freshness: number;
+    }[]
   > = {};
   for (const [component, results] of Object.entries(rankedLists)) {
     const seen = new Set<string>();
@@ -107,14 +112,17 @@ export const fuseKnowledgeResults = (
       const result = resultsByCanonicalKey.get(candidate.id);
       return result === undefined
         ? []
-        : [{ ...result, componentRanks: candidate.componentRanks, score: candidate.fusedScore }];
+        : [
+            {
+              ...result,
+              componentRanks: candidate.componentRanks,
+              score: candidate.fusedScore,
+            },
+          ];
     });
 };
 
-const asThreadResult = (
-  evidence: ApprovedThreadEvidence,
-  index: number,
-): KnowledgeSearchResult => ({
+const asThreadResult = (evidence: TeamsThreadContext, index: number): KnowledgeSearchResult => ({
   id: `teams:${evidence.sourceId}`,
   source: "teams",
   sourceId: evidence.sourceId,
@@ -134,7 +142,7 @@ export const queryKnowledgeAcrossSources = (
   embeddings: KnowledgeEmbeddingPort,
   liveSearches: readonly KnowledgeLiveSearch[],
   query: KnowledgeQuery,
-  approvedThreadEvidence: readonly ApprovedThreadEvidence[] = [],
+  teamsThreadContext: readonly TeamsThreadContext[] = [],
 ): Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError> =>
   Effect.all(
     [
@@ -146,7 +154,7 @@ export const queryKnowledgeAcrossSources = (
     Effect.map(([indexed = [], ...live]) => {
       const rankedLists: Record<string, readonly KnowledgeSearchResult[]> = {
         indexed,
-        teams: approvedThreadEvidence.map(asThreadResult),
+        teams: teamsThreadContext.map(asThreadResult),
       };
       liveSearches.forEach((backend, index) => {
         rankedLists[`live:${backend.source}:${index}`] = live[index] ?? [];

@@ -117,7 +117,7 @@ describe("authorized context assembler", () => {
     ]);
 
     await expect(Effect.runPromise(assembler.assemble(command, resolved))).rejects.toThrow(
-      "Approved context retrieval failed",
+      "Connected context retrieval failed",
     );
   });
 });

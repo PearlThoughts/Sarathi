@@ -1,10 +1,10 @@
 # Sarathi
 
-> 🧭 An open-source AI Delivery Assistant that helps software organizations keep promises, priorities, people, and delivery evidence aligned.
+> 🧭 An open-source AI Delivery Assistant that helps software organizations keep promises, priorities, people, and delivery activity aligned.
 
 Software delivery rarely goes off track because teams lack another task tracker. It goes off track because the real picture is spread across meetings, chat, Jira, code, documents, and people's memory.
 
-Important messages are forgotten. Commitments lose owners. Priorities change without being renegotiated. "Done" lacks evidence. Leaders and clients discover the drift after it has become expensive.
+Important messages are forgotten. Commitments lose owners. Priorities change without being renegotiated. "Done" lacks verification. Leaders and clients discover the drift after it has become expensive.
 
 Sarathi helps teams see that gap earlier and turn it into a clear human decision.
 
@@ -15,7 +15,7 @@ Sarathi gives a delivery leader a continuously updated view of:
 - what the organization said it would achieve;
 - what teams and individuals committed to do;
 - what is actually happening across delivery systems;
-- where evidence, ownership, or follow-through is missing;
+- where verification, ownership, or follow-through is missing;
 - which decisions need clarification, renegotiation, or escalation.
 
 It works alongside the tools a team already uses. It does not replace Jira, Microsoft Teams, GitHub, project managers, or engineering leaders.
@@ -31,7 +31,7 @@ Sarathi is intended for organizations experiencing patterns such as:
 - projects consuming attention without a clear link to business goals;
 - blockers and quality gaps surfacing late;
 - delivery managers spending most of their time chasing updates;
-- confident progress claims that cannot be supported with evidence.
+- confident progress claims that cannot be supported with source records.
 
 These are not merely reporting problems. They are coordination and accountability problems.
 
@@ -42,12 +42,12 @@ flowchart LR
     A["🎯 Goals & commitments"] --> S
     B["💬 Team conversations"] --> S
     C["📋 Delivery work"] --> S
-    D["💻 Engineering evidence"] --> S
+    D["💻 Engineering activity"] --> S
     E["📚 Decisions & policies"] --> S
 
     subgraph S["🧭 Sarathi"]
       S1["Understand context"] --> S2["Compare promise with reality"]
-      S2 --> S3["Explain gaps with evidence"]
+      S2 --> S3["Explain gaps with source records"]
       S3 --> S4["Recommend the next decision"]
     end
 
@@ -59,9 +59,9 @@ flowchart LR
 
 Sarathi follows a simple operating loop:
 
-1. **Listen:** understand approved context from the systems where work happens.
+1. **Listen:** understand connected project context from the systems where work happens.
 2. **Compare:** identify gaps between agreed intent and observed delivery.
-3. **Explain:** show the evidence and distinguish facts from inference.
+3. **Explain:** show the source records and distinguish facts from inference.
 4. **Ask:** put a clear choice in front of the responsible human.
 5. **Follow through:** remind, record the response, and verify the outcome.
 
@@ -74,14 +74,14 @@ Sarathi proposes and remembers. Humans decide. Existing work systems retain thei
 - See whether delivery attention matches business priorities.
 - Discover silent strategic changes before they become client surprises.
 - Separate genuine progress from unsupported confidence.
-- Make capacity and course-correction decisions with better evidence.
+- Make capacity and course-correction decisions with better verification.
 
 ### For delivery managers
 
 - Spend less time reconstructing status and chasing routine updates.
 - Turn scattered conversations into explicit commitments and decisions.
-- Produce delivery reviews and stakeholder updates from the same evidence.
-- Escalate silence, blockers, and missing evidence consistently.
+- Produce delivery reviews and stakeholder updates from the same work signals.
+- Escalate silence, blockers, and missing validation consistently.
 
 ### For delivery teams
 
@@ -92,13 +92,13 @@ Sarathi proposes and remembers. Humans decide. Existing work systems retain thei
 
 ## ✨ What Sarathi Is Designed To Support
 
-- Evidence-linked answers inside Microsoft Teams.
+- Source-linked answers inside Microsoft Teams.
 - Delivery health and alignment reviews over existing work signals.
 - Goal, commitment, decision, risk, and dependency tracking.
 - Follow-up and accountability workflows for accepted actions.
 - Operational and compliance reminders.
 - Daily delivery briefs and weekly drift reviews.
-- Human-approved stakeholder and leadership updates.
+- Automatic internal delivery reports and human-reviewed external updates.
 - Isolated workspaces for different projects, products, clients, or operating units.
 
 Capabilities are enabled per workspace. Sensitive Finance, leadership, client, and team context remain separated by policy.
@@ -108,7 +108,7 @@ Capabilities are enabled per workspace. Sensitive Finance, leadership, client, a
 Sarathi is designed to be a work partner, not a hidden employee-scoring system or autonomous manager.
 
 - Inferred goals or commitments remain proposals until an authorized person accepts them.
-- Important answers should link back to their evidence.
+- Important answers should link back to their verification.
 - Sensitive information is filtered before it is retrieved or sent to an AI model.
 - Silence and missed commitments can be recorded without endlessly nagging people.
 - Teams can correct, reject, renegotiate, reassign, or escalate an action.
@@ -116,7 +116,7 @@ Sarathi is designed to be a work partner, not a hidden employee-scoring system o
 
 ## 🌍 Why Open Source
 
-Sarathi touches an organization's goals, conversations, delivery evidence, and operating memory. Leaders and teams should be able to inspect the system influencing those decisions.
+Sarathi touches an organization's goals, conversations, delivery activity, and operating memory. Leaders and teams should be able to inspect the system influencing those decisions.
 
 Open source allows an organization to:
 
@@ -135,18 +135,18 @@ Sarathi is currently best introduced as a controlled internal pilot rather than 
 
 1. Choose one delivery problem and one accountable sponsor.
 2. Select a bounded pilot workspace, such as one project or operating team.
-3. Connect only the approved Teams, Jira, GitHub, and documentation sources.
+3. Connect the configured Teams, Jira, GitHub, and documentation boundaries.
 4. Run Sarathi in observation or shadow mode and review its findings privately.
-5. Install the Teams app and prove one real, evidence-linked workflow.
+5. Install the Teams app and prove one real, source-linked workflow.
 6. Expand capabilities only after the team accepts the value and boundaries.
 
 The technical operator and Microsoft 365 administrator should follow the [Organization Installation And Activation Guide](docs/installation.md).
 
 ## 🏗️ Current Maturity
 
-Sarathi is under active development. The repository contains working foundations for Teams-based questions, delivery evidence, workspace intent, reports, reminders, and hosted operation. It is not yet a one-click enterprise installation.
+Sarathi is under active development. The repository contains working foundations for Teams-based questions, delivery activity, workspace intent, reports, reminders, and hosted operation. It is not yet a one-click enterprise installation.
 
-Production use should be treated capability by capability. A successful deployment is not the same as a useful or trusted organizational rollout. Start small, verify the evidence boundaries, measure whether it reduces coordination work, and keep a manual override.
+Production use should be treated capability by capability. A successful deployment is not the same as a useful or trusted organizational rollout. Start small, verify the source records boundaries, measure whether it reduces coordination work, and keep a manual override.
 
 ## 📚 Learn More
 
@@ -162,7 +162,7 @@ We are especially interested in feedback from delivery managers, engineering lea
 
 - Which coordination failures cost you the most time or client trust?
 - Which decisions should an assistant prepare but never make?
-- What evidence would make you trust a delivery warning?
+- Which source signals would make you trust a delivery warning?
 - What would your security or leadership team require before adoption?
 
 ## License

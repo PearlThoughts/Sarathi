@@ -1,12 +1,10 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { type EmbeddingModel, embedMany } from "ai";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import type { KnowledgeEmbeddingPort } from "../../modules/knowledge-layer/index.ts";
 
-export type KnowledgeEmbeddingProvider = "openai" | "openrouter" | "zai";
+export type KnowledgeEmbeddingProvider = "openrouter";
 
 export type KnowledgeEmbeddingConfiguration = {
   readonly provider: KnowledgeEmbeddingProvider;
@@ -26,11 +24,7 @@ type EmbedManyRunner = (input: {
   readonly experimental_telemetry: { readonly isEnabled: false };
 }) => Promise<{ readonly embeddings: readonly (readonly number[])[] }>;
 
-const defaults: Readonly<Record<KnowledgeEmbeddingProvider, string>> = {
-  openai: "https://api.openai.com/v1",
-  openrouter: "https://openrouter.ai/api/v1",
-  zai: "https://api.z.ai/api/paas/v4",
-};
+const defaultBaseUrl = "https://openrouter.ai/api/v1";
 
 const required = (key: string, value: string | undefined): string => {
   if (value === undefined || value.trim() === "") throw new Error(`${key} is required.`);
@@ -49,8 +43,7 @@ export const knowledgeEmbeddingConfigurationFromEnvironment = (
 ): KnowledgeEmbeddingConfiguration => {
   try {
     const provider = required("SARATHI_EMBEDDING_PROVIDER", environment.SARATHI_EMBEDDING_PROVIDER);
-    if (provider !== "openai" && provider !== "openrouter" && provider !== "zai")
-      throw new Error("Unsupported embedding provider.");
+    if (provider !== "openrouter") throw new Error("Unsupported embedding provider.");
     const dimensions = positiveInteger(
       "SARATHI_EMBEDDING_DIMENSIONS",
       environment.SARATHI_EMBEDDING_DIMENSIONS,
@@ -61,7 +54,7 @@ export const knowledgeEmbeddingConfigurationFromEnvironment = (
       provider,
       apiKey: required("SARATHI_EMBEDDING_API_KEY", environment.SARATHI_EMBEDDING_API_KEY),
       model: required("SARATHI_EMBEDDING_MODEL", environment.SARATHI_EMBEDDING_MODEL),
-      baseUrl: environment.SARATHI_EMBEDDING_BASE_URL ?? defaults[provider],
+      baseUrl: environment.SARATHI_EMBEDDING_BASE_URL ?? defaultBaseUrl,
       dimensions,
       timeoutMs: positiveInteger(
         "SARATHI_EMBEDDING_TIMEOUT_MS",
@@ -82,27 +75,12 @@ export const knowledgeEmbeddingConfigurationFromEnvironment = (
   }
 };
 
-const resolveEmbeddingModel = (configuration: KnowledgeEmbeddingConfiguration): EmbeddingModel => {
-  switch (configuration.provider) {
-    case "openai":
-      return createOpenAI({
-        apiKey: configuration.apiKey,
-        baseURL: configuration.baseUrl,
-      }).embeddingModel(configuration.model);
-    case "openrouter":
-      return createOpenRouter({
-        apiKey: configuration.apiKey,
-        baseURL: configuration.baseUrl,
-        compatibility: "strict",
-      }).textEmbeddingModel(configuration.model);
-    case "zai":
-      return createOpenAICompatible({
-        name: "zai",
-        apiKey: configuration.apiKey,
-        baseURL: configuration.baseUrl,
-      }).embeddingModel(configuration.model);
-  }
-};
+const resolveEmbeddingModel = (configuration: KnowledgeEmbeddingConfiguration): EmbeddingModel =>
+  createOpenRouter({
+    apiKey: configuration.apiKey,
+    baseURL: configuration.baseUrl,
+    compatibility: "strict",
+  }).textEmbeddingModel(configuration.model);
 
 export const createAiSdkKnowledgeEmbedding = (
   configuration: KnowledgeEmbeddingConfiguration,

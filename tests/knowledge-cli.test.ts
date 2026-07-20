@@ -12,7 +12,11 @@ describe("knowledge CLI", () => {
         operation: "migrate-plan",
         knowledgeMigrationPlan: {
           additive: true,
-          migrations: ["0000_enable-pgvector", "0001_knowledge-layer"],
+          migrations: [
+            "0000_enable-pgvector",
+            "0001_knowledge-layer",
+            "0002_delivery-intelligence-core",
+          ],
           protectedTables: [
             "compliance_reminder_audit",
             "compliance_reminder_dry_run_evidence",

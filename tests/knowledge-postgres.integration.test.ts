@@ -1,3 +1,4 @@
+import { count, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -5,9 +6,19 @@ import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
   applyKnowledgePostgresMigrations,
+  createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   openKnowledgePostgresDatabase,
 } from "../src/infrastructure/postgres/index.ts";
+import {
+  deliveryClaimTable,
+  deliveryFinanceMetricTable,
+  deliveryMetricTable,
+  deliveryObjectTable,
+  deliveryObservationTable,
+  deliveryRelationTable,
+} from "../src/infrastructure/postgres/knowledge-schema.ts";
+import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index.ts";
 import type { KnowledgeSourceSnapshot } from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
@@ -34,6 +45,8 @@ const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
       authority: 1,
       provenance: { projectKey: "DEMO" },
       acl: [
+        { subjectType: "workspace", subjectId: "workspace-example", effect: "allow" },
+        { subjectType: "actor", subjectId: "blocked-actor", effect: "deny" },
         { subjectType: "audience", subjectId: "delivery", effect: "allow" },
         { subjectType: "audience", subjectId: "blocked", effect: "deny" },
       ],
@@ -47,6 +60,78 @@ const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
           contentHash: `sha256-${version}`,
         },
       ],
+      deliveryProjection: {
+        objects: [
+          {
+            kind: "project",
+            externalKey: "DEMO",
+            title: "Example Project",
+            lifecycleState: "active",
+            attributes: {},
+            sensitivity: "internal",
+          },
+          {
+            kind: "work_item",
+            externalKey: "DEMO-635",
+            title: "Example Delivery Portal",
+            lifecycleState: version === "v1" ? "in_progress" : "done",
+            attributes: { priority: "high" },
+            sensitivity: "internal",
+          },
+        ],
+        relations: [
+          {
+            kind: "contains",
+            from: { kind: "project", externalKey: "DEMO" },
+            to: { kind: "work_item", externalKey: "DEMO-635" },
+            attributes: {},
+            sensitivity: "internal",
+          },
+        ],
+        observations: [
+          {
+            kind: "state",
+            externalId: `DEMO-635:${version}`,
+            subject: { kind: "work_item", externalKey: "DEMO-635" },
+            summary: `DEMO-635 state observed at ${version}`,
+            dedupeKey: `jira:DEMO-635:state:${version}`,
+            occurredAt: "2026-07-20T00:00:00.000Z",
+            citationUrl: "https://jira.example/browse/DEMO-635",
+            sensitivity: "internal",
+            authority: 1,
+          },
+        ],
+        metrics: [
+          {
+            subject: { kind: "work_item", externalKey: "DEMO-635" },
+            category: "delivery",
+            kind: "estimate_story_points",
+            value: "5",
+            unit: "points",
+            sensitivity: "internal",
+          },
+          {
+            subject: { kind: "project", externalKey: "DEMO" },
+            category: "finance",
+            kind: "budget",
+            value: "1000",
+            unit: "USD",
+            sensitivity: "confidential",
+          },
+        ],
+        claims: [
+          {
+            subject: { kind: "work_item", externalKey: "DEMO-635" },
+            subjectKey: "DEMO-635",
+            predicate: "jira.status",
+            value: version === "v1" ? "in_progress" : "done",
+            assertedAt: "2026-07-20T00:00:00.000Z",
+            citationUrl: "https://jira.example/browse/DEMO-635",
+            sensitivity: "internal",
+            authority: 1,
+          },
+        ],
+      },
     },
   ],
 });
@@ -63,6 +148,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     );
     const verification = await Effect.runPromise(applyKnowledgePostgresMigrations(databaseUrl));
     expect(verification.knowledgeTableCount).toBe(7);
+    expect(verification.deliveryTableCount).toBe(7);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
       "compliance_reminder_dry_run_evidence",
@@ -95,6 +181,83 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(first).toMatchObject({ versionsCreated: 1, passagesActive: 1, itemsDeleted: 0 });
     expect(replay).toMatchObject({ versionsCreated: 0, passagesActive: 1, itemsDeleted: 0 });
     expect(replay.checksum).toBe(first.checksum);
+    const activeCount = async (
+      table:
+        | typeof deliveryObjectTable
+        | typeof deliveryRelationTable
+        | typeof deliveryObservationTable
+        | typeof deliveryMetricTable
+        | typeof deliveryFinanceMetricTable
+        | typeof deliveryClaimTable,
+    ): Promise<number> =>
+      Number(
+        (
+          await opened.database.select({ value: count() }).from(table).where(eq(table.active, true))
+        )[0]?.value ?? 0,
+      );
+    expect(
+      await Promise.all([
+        activeCount(deliveryObjectTable),
+        activeCount(deliveryRelationTable),
+        activeCount(deliveryObservationTable),
+        activeCount(deliveryMetricTable),
+        activeCount(deliveryFinanceMetricTable),
+        activeCount(deliveryClaimTable),
+      ]),
+    ).toEqual([2, 1, 1, 1, 1, 1]);
+
+    const deliverySource = createPostgresDeliveryQuerySource(opened.database);
+    const statusPlan = planDeliveryQuestion("What is the current status of DEMO-635?");
+    const financePlan = planDeliveryQuestion("What is the project budget?");
+    if (statusPlan === undefined || financePlan === undefined)
+      throw new Error("Expected deterministic delivery query plans");
+    const deliveryContext = {
+      workspaceId: "workspace-example",
+      actorId: "delivery-member",
+      maximumSensitivity: "internal",
+      financeAccess: false,
+      requestedAt: "2026-07-20T12:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      deadlineAt: "2026-07-20T12:00:08.000Z",
+      question: "What is the current status of DEMO-635?",
+    } as const;
+    const deliveryStatus = await Effect.runPromise(
+      deliverySource.execute(deliveryContext, statusPlan),
+    );
+    expect(deliveryStatus.items).toEqual([
+      expect.objectContaining({
+        workspaceId: "workspace-example",
+        source: "jira",
+        selector: "objects",
+        citationUrl: "https://jira.example/browse/DEMO-635",
+      }),
+    ]);
+    for (const deniedContext of [
+      { ...deliveryContext, actorId: "blocked-actor" },
+      { ...deliveryContext, workspaceId: "other-workspace" },
+      { ...deliveryContext, maximumSensitivity: "public" as const },
+    ]) {
+      const denied = await Effect.runPromise(deliverySource.execute(deniedContext, statusPlan));
+      expect(denied.items).toEqual([]);
+    }
+    const finance = await Effect.runPromise(
+      deliverySource.execute(
+        {
+          ...deliveryContext,
+          maximumSensitivity: "confidential",
+          financeAccess: true,
+          question: "What is the project budget?",
+        },
+        financePlan,
+      ),
+    );
+    expect(finance.items).toEqual([
+      expect.objectContaining({
+        selector: "metrics",
+        title: "budget",
+        sensitivity: "confidential",
+      }),
+    ]);
 
     const authorized = await Effect.runPromise(
       repository.search(
@@ -194,6 +357,16 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "select bool_and(i.deleted_at is not null) as deleted, count(distinct p.id) filter (where p.active) as active_passages, count(distinct v.id) filter (where v.tombstone) as tombstones from knowledge_item i left join knowledge_passage p on p.item_id = i.id left join knowledge_version v on v.item_id = i.id",
     );
     expect(state.rows[0]).toMatchObject({ deleted: true, active_passages: "0", tombstones: "2" });
+    expect(
+      await Promise.all([
+        activeCount(deliveryObjectTable),
+        activeCount(deliveryRelationTable),
+        activeCount(deliveryObservationTable),
+        activeCount(deliveryMetricTable),
+        activeCount(deliveryFinanceMetricTable),
+        activeCount(deliveryClaimTable),
+      ]),
+    ).toEqual([0, 0, 0, 0, 0, 0]);
     const afterDelete = await Effect.runPromise(
       repository.search(
         {
@@ -209,6 +382,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     );
     expect(afterDelete).toEqual([]);
+    const deliveryAfterDelete = await Effect.runPromise(
+      deliverySource.execute(deliveryContext, statusPlan),
+    );
+    expect(deliveryAfterDelete.items).toEqual([]);
 
     const cliStatus = await runKnowledgeCommand(["status"], {
       SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
@@ -218,7 +395,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 7,
-          appliedMigrationCount: 2,
+          appliedMigrationCount: 3,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",

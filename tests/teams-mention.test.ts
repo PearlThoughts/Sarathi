@@ -218,6 +218,88 @@ describe("teams mention", () => {
     expect(fixture.calls.delivered()).toBe(1);
   });
 
+  it("routes delivery-manager questions through delivery intelligence without the legacy context path", async () => {
+    const fixture = dependencies();
+    let reporterCalls = 0;
+    let contextCalls = 0;
+    let modelCalls = 0;
+    let genericAuthorizationCalls = 0;
+    const deliveryDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      authorizer: {
+        authorizeContext: () => {
+          genericAuthorizationCalls += 1;
+          return Effect.succeed({ allowed: false });
+        },
+      },
+      deliveryTimeZone: "Asia/Kolkata",
+      deliveryAssistant: {
+        answer: (request) => {
+          reporterCalls += 1;
+          if (request.plan === undefined) throw new Error("Expected compiled delivery plan");
+          expect(request).toMatchObject({
+            workspaceId: "workspace-1",
+            actorId: "actor-1",
+            requestedAt: command.receivedAt,
+            question: "Sarathi post team work summary",
+            plan: { intents: ["activity"], maximumLines: 3, requiresFinance: false },
+          });
+          return Effect.succeed({
+            text: "GitHub: shipped.\nJira: advanced.\nTeams: decided.",
+            citations: [],
+            unavailableSources: [],
+            status: "ok",
+            plan: request.plan,
+            conflicts: [],
+          });
+        },
+      },
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          return fixture.dependencies.contextAssembler.assemble(command, {
+            workspaceId: "workspace-1",
+            callerId: "actor-1",
+            callerTrustTier: "trusted",
+            channelSensitivity: "internal",
+            boundary: {
+              sensitivity: "internal",
+              minimumTrustTier: "member",
+              allowedDelegationStages: ["answer"],
+              modelEgress: "allow",
+              requiresHumanApproval: false,
+              requiresPreRetrievalAuthorization: true,
+              requiresToolAuthorization: true,
+            },
+          });
+        },
+      },
+      answerGenerator: {
+        generate: (envelope) => {
+          modelCalls += 1;
+          return fixture.dependencies.answerGenerator.generate(envelope);
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention(
+          { ...command, question: "Sarathi post team work summary" },
+          deliveryDependencies,
+        ),
+      ),
+    ).resolves.toMatchObject({
+      kind: "answered",
+      answer: { text: "GitHub: shipped.\nJira: advanced.\nTeams: decided." },
+    });
+    expect(reporterCalls).toBe(1);
+    expect(contextCalls).toBe(0);
+    expect(modelCalls).toBe(0);
+    expect(genericAuthorizationCalls).toBe(0);
+    expect(fixture.calls.delivered()).toBe(1);
+  });
+
   it("records retryable failure without recording delivery", async () => {
     const fixture = dependencies({ deliveryFails: true });
     await expect(

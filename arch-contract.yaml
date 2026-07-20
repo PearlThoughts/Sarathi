@@ -78,6 +78,7 @@ ruleset:
       - module-application
       - module-domain
       - module-ports
+      - module-public
       - shared
   composition-root:
     mayDependOn:
@@ -116,6 +117,7 @@ ruleset:
     mayDependOn:
       - domain-kernel
       - module-domain
+      - module-public
       - shared
   release-cli:
     mayDependOn:

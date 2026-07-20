@@ -1,6 +1,6 @@
 # How Sarathi Works
 
-Sarathi combines one visible bot with scoped policy and evidence behind it.
+Sarathi combines one visible bot with scoped policy and work context behind it.
 
 ## Workspace
 
@@ -31,7 +31,7 @@ Ratified delivery knowledge lives in a git-backed policy repo as Markdown/YAML:
 
 Obsidian can edit this repo, but Obsidian is not a hard dependency. VS Code, GitHub, or any Markdown editor should work.
 
-## Evidence Plane
+## Work Signals
 
 Observed work events live in runtime storage:
 
@@ -42,6 +42,10 @@ Observed work events live in runtime storage:
 - source links and citations.
 
 This data is not stored in the policy repo because it is high-volume, access-controlled, and transactional.
+
+Connected Jira records, Teams channel messages, project-email records, and GitHub activity do not need per-record approval before they contribute to an internal delivery answer. Sarathi trusts that the source event occurred, attributes interpretations as claims, and exposes conflicts instead of silently choosing a winner.
+
+Non-financial project context is visible to mapped workspace members within the configured sensitivity ceiling. Finance remains a separate confidential boundary and fails closed without an explicit entitlement.
 
 ## Learning
 
@@ -58,8 +62,8 @@ The loop is:
 ## Storage Split
 
 - **Ratified policy and intent:** Markdown/YAML in a git-backed policy repo and queryable Strategy Kernel state.
-- **Evidence and events:** SQLite for local operation; Postgres for the hosted single-tenant runtime.
+- **Delivery objects, relations, claims, metrics, and events:** SQLite for local operation; Postgres for the hosted single-tenant runtime.
 - **Loop state, timers, audit, and idempotency:** transactional SQLite or Postgres state according to deployment mode.
-- **Retrieval memory:** rebuildable full-text or vector indexes derived from canonical evidence.
+- **Retrieval memory:** rebuildable full-text or vector indexes derived from canonical source records.
 
 Glean is a competing lookup category, not Sarathi's memory layer. Opaque memory blobs weaken the product's trust story. A hosted Postgres database does not imply SaaS multi-tenancy; one deployment still serves one organization.

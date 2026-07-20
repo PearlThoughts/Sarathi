@@ -2,7 +2,7 @@
 
 Sarathi is a self-hosted AI Delivery Assistant for software teams.
 
-It helps a PM, delivery manager, or operating owner coordinate delivery, compare accepted intent with observed work evidence, decide what needs correction, and drive accountable follow-through. The visible Teams bot is one interface to that system. It does not replace the human owner.
+It helps a PM, delivery manager, or operating owner coordinate delivery, compare accepted intent with observed work activity, decide what needs correction, and drive accountable follow-through. The visible Teams bot is one interface to that system. It does not replace the human owner.
 
 ## Responsibilities
 
@@ -10,10 +10,10 @@ Sarathi should help with:
 
 - initial delivery reviews over existing Teams, Jira, GitHub, email, and docs,
 - maintaining a ratified workspace record of goals, commitments, decisions, risks, bets, KPIs, and policies,
-- finding goals without work, work without goals, stale commitments, and missing evidence,
+- finding goals without work, work without goals, stale commitments, and missing validation,
 - answering team delivery/process questions,
 - drafting weekly plans and status reports,
-- chasing missing updates and evidence,
+- chasing missing updates and verification,
 - routing blockers to the right human,
 - surfacing delivery drift and risk,
 - drafting incident follow-up and retrospectives,

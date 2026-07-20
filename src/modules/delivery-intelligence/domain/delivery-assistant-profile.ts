@@ -1,13 +1,18 @@
 export type DeliveryAssistantCapability =
-  | "process-faq"
-  | "weekly-status"
-  | "chase-follow-up"
-  | "blocker-routing"
-  | "drift-detection"
-  | "incident-follow-up"
-  | "retro-pulse"
-  | "leadership-pack"
-  | "agent-context-bridge";
+  | "project-scope"
+  | "requirements"
+  | "delivery-status"
+  | "ownership"
+  | "capacity"
+  | "dependency-analysis"
+  | "blocker-detection"
+  | "risk-reporting"
+  | "recurring-issue-analysis"
+  | "decision-context"
+  | "next-action"
+  | "implementation-context"
+  | "activity-reporting"
+  | "process-faq";
 
 export type DeliveryAssistantNever =
   | "client-account-voice"
@@ -15,7 +20,8 @@ export type DeliveryAssistantNever =
   | "decision-owner"
   | "hidden-people-score"
   | "scope-bypass"
-  | "opaque-policy-memory";
+  | "opaque-policy-memory"
+  | "unentitled-finance-disclosure";
 
 export type DeliveryAudience = "team-visible" | "pm-leadership" | "personal-dm" | "agent-session";
 
@@ -47,30 +53,32 @@ export type PolicyArtifactKind =
 
 export type RuntimeStorageLayer =
   | "policy-repo"
-  | "sqlite-evidence"
-  | "sqlite-loop-state"
-  | "lancedb-index";
+  | "postgres-delivery-model"
+  | "postgres-knowledge-projection"
+  | "postgres-pgvector";
 
-export type EffectiveDeliveryScope = {
-  readonly audience: DeliveryAudience;
-  readonly requestedBy: string;
-  readonly workspaceId: string;
-  readonly surface: "teams-channel" | "teams-thread" | "teams-dm" | "mcp-session";
-  readonly destination: DeliveryAudience;
-};
+export type DeliveryPublicationKind =
+  | "internal-workspace-report"
+  | "external-report"
+  | "mutating-action";
 
 export const deliveryAssistantRole = {
   category: "AI Delivery Assistant",
   assists: [
+    "project-scope",
+    "requirements",
+    "delivery-status",
+    "ownership",
+    "capacity",
+    "dependency-analysis",
+    "blocker-detection",
+    "risk-reporting",
+    "recurring-issue-analysis",
+    "decision-context",
+    "next-action",
+    "implementation-context",
+    "activity-reporting",
     "process-faq",
-    "weekly-status",
-    "chase-follow-up",
-    "blocker-routing",
-    "drift-detection",
-    "incident-follow-up",
-    "retro-pulse",
-    "leadership-pack",
-    "agent-context-bridge",
   ] satisfies readonly DeliveryAssistantCapability[],
   never: [
     "client-account-voice",
@@ -79,6 +87,7 @@ export const deliveryAssistantRole = {
     "hidden-people-score",
     "scope-bypass",
     "opaque-policy-memory",
+    "unentitled-finance-disclosure",
   ] satisfies readonly DeliveryAssistantNever[],
 } as const;
 
@@ -132,5 +141,5 @@ export const storageLayerForPolicyArtifact = (
   }
 };
 
-export const canPostWithoutAdditionalApproval = (scope: EffectiveDeliveryScope): boolean =>
-  scope.audience === "team-visible" && scope.destination === "team-visible";
+export const requiresHumanReview = (publication: DeliveryPublicationKind): boolean =>
+  publication !== "internal-workspace-report";

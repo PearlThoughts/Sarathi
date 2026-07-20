@@ -15,26 +15,33 @@ import { RepositoryError } from "../domain/errors.ts";
 import { stableSha256 } from "../domain/hash.ts";
 import type { TrustTier } from "../domain/policy.ts";
 import {
+  createGitHubDeliveryQuerySource,
   createGitHubEvidenceReader,
   createGitHubKnowledgeSearch,
 } from "../infrastructure/github/index.ts";
 import {
+  createEmailDeliveryQuerySource,
   createEntraClientCredentialsTokenProvider,
+  createTeamsDeliveryQuerySource,
   createTeamsGraphThreadReader,
   createTeamsProactiveReminderDelivery,
   teamsThreadSourceKey,
 } from "../infrastructure/graph/index.ts";
 import {
   createJiraComplianceReminderSource,
+  createJiraDeliveryQuerySource,
   createJiraEvidenceReader,
 } from "../infrastructure/jira/index.ts";
+import { createDeliveryKnowledgeQuerySource } from "../infrastructure/knowledge/index.ts";
 import {
+  createAiSdkDeliveryAnswerComposer,
   createAiSdkKnowledgeEmbedding,
   createGroundedAnswerGeneratorFromEnvironment,
   knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../infrastructure/model/index.ts";
 import {
   createPostgresComplianceReminderAudit,
+  createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   createPostgresTeamsMentionAudit,
   openKnowledgePostgresDatabase,
@@ -56,6 +63,7 @@ import {
   runComplianceReminderShadowAcceptance,
   startComplianceReminderScheduler,
 } from "../modules/compliance-reminders/index.ts";
+import { createDeliveryAssistant } from "../modules/delivery-intelligence/index.ts";
 import {
   createAuthorizedContextAssembler,
   handleTeamsMention,
@@ -316,7 +324,10 @@ export const hostedFinanceReminderCompositionFromEnvironment = (
         mode === "live"
           ? startComplianceReminderScheduler(schedule, run, (now) =>
               Effect.runPromise(
-                dependencies.audit.dueRetries({ workspaceId, now: now.toISOString() }),
+                dependencies.audit.dueRetries({
+                  workspaceId,
+                  now: now.toISOString(),
+                }),
               ),
             )
           : { stop: () => undefined },
@@ -382,8 +393,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                   !resolved.boundary.requiresHumanApproval,
               }),
           },
-          contextAssembler: { assemble: () => unavailable("Diagnostic-only composition") },
-          answerGenerator: { generate: () => unavailable("Diagnostic-only composition") },
+          contextAssembler: {
+            assemble: () => unavailable("Diagnostic-only composition"),
+          },
+          answerGenerator: {
+            generate: () => unavailable("Diagnostic-only composition"),
+          },
           delivery: { reply: () => Effect.void },
           audit: createPostgresTeamsMentionAudit(database),
           helloDiagnosticEnabled: true,
@@ -401,7 +416,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     } catch {
       return {
         dependencies: unavailableDependencies(
-          "Approved Teams diagnostic configuration is unavailable; Sarathi will not process this mention.",
+          "Connected Teams diagnostic configuration is unavailable; Sarathi will not process this mention.",
         ),
         ready: false,
         checkReadiness: async () => false,
@@ -409,69 +424,81 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     }
   }
   try {
-    const sourceKeys = JSON.parse(
-      required(
-        "SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON",
-        environment.SARATHI_TEAMS_EVIDENCE_SOURCE_KEYS_JSON,
-      ),
-    ) as { jira: string; github: string; vault: string };
+    const knowledgeEnabled = enabled(environment.SARATHI_KNOWLEDGE_ENABLED);
     const graphTokenProvider = createEntraClientCredentialsTokenProvider({
       tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
       clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
       clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
     });
     const githubToken = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
-    const allowedRepositories = JSON.parse(
-      required(
-        "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-        environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-      ),
-    ) as string[];
+    const allowedRepositories =
+      environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+        ? []
+        : (JSON.parse(environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON) as string[]);
+    const repositoryScopes =
+      environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON === undefined
+        ? []
+        : (JSON.parse(environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON) as readonly {
+            readonly owner: string;
+            readonly ownerType: "org" | "user";
+            readonly repositoryNamePrefix?: string | undefined;
+          }[]);
     const databaseUrl = required(
       "SARATHI_STRATEGY_DATABASE_URL",
       environment.SARATHI_STRATEGY_DATABASE_URL,
     );
     const projection = workspaceProjectionFromEnvironment(environment);
     const resolver = createWorkspaceProjectionResolver(projection);
-    const contextSources = [
-      {
-        reader: createTeamsGraphThreadReader({
-          tokenProvider: graphTokenProvider,
-          approvedStandardChannels: new Set(
-            projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
-          ),
-        }),
-        sourceKey: (command: TeamsMentionCommand) =>
-          teamsThreadSourceKey({
-            teamId: command.graphTeamId,
-            channelId: command.channelId,
-            rootId: command.rootActivityId,
-          }),
-      },
-      {
-        reader: createJiraEvidenceReader({
-          baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
-          email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
-          apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
-        }),
-        sourceKey: () => sourceKeys.jira,
-      },
-      {
-        reader: createGitHubEvidenceReader({
-          token: githubToken,
-          allowedRepositories: new Set(allowedRepositories),
-        }),
-        sourceKey: () => sourceKeys.github,
-      },
-      {
-        reader: createGitHubVaultAllowlistReader({
-          token: githubToken,
-          allowlist: vaultAllowlistFromEnvironment(environment),
-        }),
-        sourceKey: () => sourceKeys.vault,
-      },
-    ] as const;
-    const knowledgeEnabled = enabled(environment.SARATHI_KNOWLEDGE_ENABLED);
+    const contextSources = knowledgeEnabled
+      ? []
+      : (() => {
+          const sourceKeys = JSON.parse(
+            required("SARATHI_TEAMS_SOURCE_KEYS_JSON", environment.SARATHI_TEAMS_SOURCE_KEYS_JSON),
+          ) as { jira: string; github: string; vault: string };
+          return [
+            {
+              reader: createTeamsGraphThreadReader({
+                tokenProvider: graphTokenProvider,
+                allowedStandardChannels: new Set(
+                  projection.channels.map(
+                    (channel) => `${channel.graphTeamId}:${channel.channelId}`,
+                  ),
+                ),
+              }),
+              sourceKey: (command: TeamsMentionCommand) =>
+                teamsThreadSourceKey({
+                  teamId: command.graphTeamId,
+                  channelId: command.channelId,
+                  rootId: command.rootActivityId,
+                }),
+            },
+            {
+              reader: createJiraEvidenceReader({
+                baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
+                email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
+                apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
+              }),
+              sourceKey: () => sourceKeys.jira,
+            },
+            {
+              reader: createGitHubEvidenceReader({
+                token: githubToken,
+                allowedRepositories: new Set(allowedRepositories),
+              }),
+              sourceKey: () => sourceKeys.github,
+            },
+            {
+              reader: createGitHubVaultAllowlistReader({
+                token: githubToken,
+                allowlist: vaultAllowlistFromEnvironment(environment),
+              }),
+              sourceKey: () => sourceKeys.vault,
+            },
+          ] as const;
+        })();
+    const knowledgeWorkspaceId = knowledgeEnabled
+      ? required("SARATHI_KNOWLEDGE_WORKSPACE_ID", environment.SARATHI_KNOWLEDGE_WORKSPACE_ID)
+      : undefined;
     const knowledgeDatabase = knowledgeEnabled
       ? openKnowledgePostgresDatabase(databaseUrl)
       : undefined;
@@ -483,28 +510,143 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           ),
         ) as string[])
       : [];
-    const supplementalContext =
+    const knowledgeRepository =
       knowledgeDatabase === undefined
         ? undefined
+        : createPostgresKnowledgeRepository(knowledgeDatabase.database);
+    const knowledgeEmbeddings =
+      knowledgeDatabase === undefined
+        ? undefined
+        : createAiSdkKnowledgeEmbedding(
+            knowledgeEmbeddingConfigurationFromEnvironment(environment),
+          );
+    const supplementalContext =
+      knowledgeRepository === undefined || knowledgeEmbeddings === undefined
+        ? undefined
         : createKnowledgeTeamsContextSearch({
-            repository: createPostgresKnowledgeRepository(knowledgeDatabase.database),
-            embeddings: createAiSdkKnowledgeEmbedding(
-              knowledgeEmbeddingConfigurationFromEnvironment(environment),
-            ),
+            repository: knowledgeRepository,
+            embeddings: knowledgeEmbeddings,
             liveSearches: [
               createGitHubKnowledgeSearch({
                 token: githubToken,
-                workspaceId: required(
-                  "SARATHI_KNOWLEDGE_WORKSPACE_ID",
-                  environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
-                ),
+                workspaceId: knowledgeWorkspaceId ?? "",
                 allowedAudienceIds: new Set(knowledgeAudienceIds),
                 allowedRepositories,
+                repositoryScopes,
               }),
             ],
             audienceIds: knowledgeAudienceIds,
             topK: 10,
           });
+    const deliveryIntelligenceEnabled = knowledgeEnabled;
+    const deliveryTimeZone = deliveryIntelligenceEnabled
+      ? required(
+          "SARATHI_WORKSPACE_TIMEZONE",
+          environment.SARATHI_WORKSPACE_TIMEZONE ?? environment.SARATHI_REMINDER_TIMEZONE,
+        )
+      : undefined;
+    const deliveryAssistant = deliveryIntelligenceEnabled
+      ? (() => {
+          const workspaceId = required(
+            "SARATHI_KNOWLEDGE_WORKSPACE_ID",
+            knowledgeWorkspaceId ?? environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
+          );
+          const jiraProjection = JSON.parse(
+            required(
+              "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON",
+              environment.SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON,
+            ),
+          ) as { readonly projectKey?: string };
+          const projectKey = required(
+            "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON.projectKey",
+            jiraProjection.projectKey,
+          );
+          const workspaceChannels = projection.channels.filter(
+            (channel) => channel.workspaceId === workspaceId,
+          );
+          const allowedActorIds = new Set(
+            workspaceChannels.flatMap((channel) => channel.actors.map((actor) => actor.actorId)),
+          );
+          const mailScopes =
+            environment.SARATHI_PROJECT_MAIL_SCOPES_JSON === undefined
+              ? []
+              : (JSON.parse(environment.SARATHI_PROJECT_MAIL_SCOPES_JSON) as readonly {
+                  readonly mailboxId: string;
+                  readonly mode: "dedicated-mailbox" | "matched";
+                  readonly routingTerms?: readonly string[] | undefined;
+                  readonly participantAddresses?: readonly string[] | undefined;
+                }[]);
+          return createDeliveryAssistant({
+            sources: [
+              ...(knowledgeDatabase === undefined
+                ? []
+                : [createPostgresDeliveryQuerySource(knowledgeDatabase.database)]),
+              ...(knowledgeRepository === undefined || knowledgeEmbeddings === undefined
+                ? []
+                : [
+                    createDeliveryKnowledgeQuerySource({
+                      repository: knowledgeRepository,
+                      embeddings: knowledgeEmbeddings,
+                      workspaceId,
+                      allowedActorIds,
+                      audienceIds: knowledgeAudienceIds,
+                    }),
+                  ]),
+              createGitHubDeliveryQuerySource({
+                token: githubToken,
+                workspaceId,
+                allowedActorIds,
+                allowedRepositories,
+                repositoryScopes,
+                timeoutMs: 4_000,
+              }),
+              createJiraDeliveryQuerySource({
+                baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
+                email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
+                apiToken: required("JIRA_API_TOKEN", environment.JIRA_API_TOKEN),
+                workspaceId,
+                allowedActorIds,
+                projectKeys: [projectKey],
+                timeoutMs: 4_000,
+              }),
+              createTeamsDeliveryQuerySource({
+                tokenProvider: graphTokenProvider,
+                botApplicationId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
+                channels: workspaceChannels.map((channel) => ({
+                  teamId: channel.graphTeamId,
+                  channelId: channel.channelId,
+                  workspaceId: channel.workspaceId,
+                  sensitivity: channel.sensitivity,
+                  allowedActorIds: new Set(channel.actors.map((actor) => actor.actorId)),
+                })),
+                timeoutMs: 4_000,
+              }),
+              ...(mailScopes.length === 0
+                ? []
+                : [
+                    createEmailDeliveryQuerySource({
+                      tokenProvider: graphTokenProvider,
+                      mailScopes: mailScopes.map((scope) => ({
+                        ...scope,
+                        workspaceId,
+                        allowedActorIds,
+                        sensitivity: "internal" as const,
+                      })),
+                      timeoutMs: 4_000,
+                    }),
+                  ]),
+            ],
+            answerComposer: createAiSdkDeliveryAnswerComposer(
+              createGroundedAnswerGeneratorFromEnvironment(environment, (event) =>
+                console.info(JSON.stringify(event)),
+              ),
+            ),
+            sourceTimeoutMs: 3_000,
+            compositionTimeoutMs: 2_500,
+            totalBudgetMs: 6_500,
+          });
+        })()
+      : undefined;
     const contextAssembler = createAuthorizedContextAssembler(contextSources, supplementalContext);
     return {
       dependencies: {
@@ -526,6 +668,13 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         delivery: { reply: () => Effect.void },
         audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
         helloDiagnosticEnabled: enabled(environment.SARATHI_TEAMS_HELLO_DIAGNOSTIC_ENABLED),
+        ...(deliveryAssistant === undefined || deliveryTimeZone === undefined
+          ? {}
+          : {
+              deliveryAssistant,
+              deliveryTimeZone,
+              deliveryAnswerTimeoutMs: 7_000,
+            }),
       },
       ready: true,
       checkReadiness: async () => {
@@ -546,7 +695,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
   } catch {
     return {
       dependencies: unavailableDependencies(
-        "Approved Teams workspace configuration is unavailable; Sarathi will not process this mention.",
+        "Connected Teams workspace configuration is unavailable; Sarathi will not process this mention.",
       ),
       ready: false,
       checkReadiness: async () => false,
@@ -917,7 +1066,10 @@ export const startTeamsIngress = (): void => {
       return;
     }
     try {
-      response.json({ ok: true, result: await finance.runShadowAcceptance(kind) });
+      response.json({
+        ok: true,
+        result: await finance.runShadowAcceptance(kind),
+      });
     } catch {
       response.status(503).json({ ok: false, mode: finance.mode });
     }

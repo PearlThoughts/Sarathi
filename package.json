@@ -15,6 +15,7 @@
     "runtime:smoke": "bun run src/cli/release.ts runtime smoke",
     "runtime:verify-railpack": "bun run src/cli/release.ts runtime verify-railpack",
     "knowledge": "bun run src/cli/commands/knowledge-runtime.ts",
+    "delivery": "bun run src/cli/release.ts delivery",
     "teams:ingress": "node --import tsx src/teams-ingress/node-server.ts",
     "teams:manifest:validate": "atk validate --manifest-file appPackage/manifest.json",
     "privacy:scan": "bun run src/cli/commands/private-data-scan.ts",
@@ -36,8 +37,6 @@
     "check": "bun run ci"
   },
   "dependencies": {
-    "@ai-sdk/openai": "4.0.16",
-    "@ai-sdk/openai-compatible": "3.0.12",
     "@effect/cli": "^0.76",
     "@effect/platform": "^0.97",
     "@effect/platform-node": "^0.108",

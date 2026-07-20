@@ -5,12 +5,22 @@
   "ignoreDependencies": ["@effect/typeclass"],
   "ignoreIssues": {
     "src/infrastructure/github/github-knowledge-search.ts": ["types"],
+    "src/infrastructure/github/github-delivery-query-source.ts": ["types"],
+    "src/infrastructure/graph/email-delivery-query-source.ts": ["types"],
+    "src/infrastructure/graph/teams-delivery-query-source.ts": ["types"],
     "src/infrastructure/jira/jira-knowledge-source.ts": ["types"],
+    "src/infrastructure/jira/jira-delivery-query-source.ts": ["types"],
     "src/infrastructure/model/ai-sdk-knowledge-embedding.ts": ["types"],
     "src/infrastructure/postgres/knowledge-migrations.ts": ["types"],
     "src/infrastructure/teams/knowledge-context-search.ts": ["types"],
     "src/infrastructure/vault/vault-knowledge-source.ts": ["types"],
     "src/modules/knowledge-layer/domain/knowledge.ts": ["types"],
-    "src/modules/knowledge-layer/index.ts": ["exports", "types"]
+    "src/modules/knowledge-layer/index.ts": ["exports", "types"],
+    "src/modules/delivery-intelligence/application/create-delivery-assistant.ts": ["types"],
+    "src/modules/delivery-intelligence/domain/delivery-model.ts": ["types"],
+    "src/modules/delivery-intelligence/domain/delivery-projection.ts": ["types"],
+    "src/modules/delivery-intelligence/domain/delivery-query.ts": ["types"],
+    "src/modules/delivery-intelligence/domain/delivery-time.ts": ["types"],
+    "src/modules/delivery-intelligence/index.ts": ["exports", "types"]
   }
 }

@@ -2,6 +2,11 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
+import type {
+  DeliveryObjectDraft,
+  DeliveryObjectKind,
+  DeliveryProjection,
+} from "../../modules/delivery-intelligence/index.ts";
 import {
   chunkVaultMarkdown,
   type KnowledgeAclRule,
@@ -93,7 +98,7 @@ const requestJson = async <Value>(
 
 const decodeMarkdown = (content: GitContent): string => {
   if (content.type !== "file" || content.encoding !== "base64" || content.content === undefined)
-    throw new Error("Approved Vault path did not resolve to a Markdown file.");
+    throw new Error("Configured Vault path did not resolve to a Markdown file.");
   return Buffer.from(content.content.replace(/\n/g, ""), "base64").toString("utf8");
 };
 
@@ -102,17 +107,247 @@ const title = (markdown: string, path: string): string =>
   path.split("/").at(-1)?.replace(/\.md$/i, "") ??
   "Vault document";
 
+type VaultSectionTopic =
+  | "status"
+  | "goal"
+  | "commitment"
+  | "assumption"
+  | "policy"
+  | "capacity"
+  | "scope"
+  | "requirement"
+  | "risk"
+  | "decision"
+  | "dependency"
+  | "ownership"
+  | "next_action"
+  | "milestone"
+  | "context";
+
+const sectionTopic = (heading: string): VaultSectionTopic => {
+  const normalized = heading.toLowerCase();
+  if (/\b(?:status|progress|current state)\b/.test(normalized)) return "status";
+  if (/\b(?:goals?|objectives?|outcomes?)\b/.test(normalized)) return "goal";
+  if (/\b(?:commitments?|promises?)\b/.test(normalized)) return "commitment";
+  if (/\b(?:assumptions?|constraints?)\b/.test(normalized)) return "assumption";
+  if (/\b(?:polic(?:y|ies)|working agreement|operating rule)\b/.test(normalized)) return "policy";
+  if (/\b(?:capacity|bandwidth|allocation|availability)\b/.test(normalized)) return "capacity";
+  if (/\b(?:scope|boundar(?:y|ies)|in scope|out of scope)\b/.test(normalized)) return "scope";
+  if (/\b(?:requirements?|acceptance criteria|definition of done)\b/.test(normalized))
+    return "requirement";
+  if (/\b(?:risks?|raid|concerns?|threats?)\b/.test(normalized)) return "risk";
+  if (/\b(?:decisions?|decided|agreements?)\b/.test(normalized)) return "decision";
+  if (/\b(?:dependency|dependencies|blocked by|waiting)\b/.test(normalized)) return "dependency";
+  if (/\b(?:owner|ownership|responsib|team)\b/.test(normalized)) return "ownership";
+  if (/\b(?:next actions?|next steps?|action items?)\b/.test(normalized)) return "next_action";
+  if (/\b(?:milestones?|releases?|phases?)\b/.test(normalized)) return "milestone";
+  return "context";
+};
+
+const objectKindForTopic = (topic: VaultSectionTopic): DeliveryObjectKind => {
+  switch (topic) {
+    case "risk":
+      return "risk";
+    case "goal":
+      return "goal";
+    case "commitment":
+      return "commitment";
+    case "assumption":
+      return "assumption";
+    case "policy":
+      return "policy";
+    case "decision":
+      return "decision";
+    case "requirement":
+      return "requirement";
+    case "milestone":
+      return "milestone";
+    case "scope":
+      return "module";
+    case "next_action":
+      return "action";
+    case "ownership":
+      return "team";
+    default:
+      return "extension";
+  }
+};
+
+const firstSummary = (body: string, fallback: string): string =>
+  body
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/, 1)[0]
+    ?.slice(0, 180) || fallback;
+
+const lifecycleState = (value: string): string | undefined => {
+  const normalized = value.toLowerCase();
+  if (/\b(?:blocked|stuck|impeded)\b/.test(normalized)) return "blocked";
+  if (/\b(?:done|complete|delivered|released)\b/.test(normalized)) return "done";
+  if (/\b(?:in progress|active|underway|ongoing)\b/.test(normalized)) return "in_progress";
+  if (/\b(?:planned|not started|todo)\b/.test(normalized)) return "planned";
+  return undefined;
+};
+
+const deliveryProjection = (
+  root: VaultKnowledgeRoot,
+  path: string,
+  documentTitle: string,
+  passages: KnowledgeSourceDocument["passages"],
+  updatedAt: string,
+  canonicalUrl: string,
+): DeliveryProjection => {
+  const projectRef = {
+    kind: "project" as const,
+    externalKey: `vault:${root.repository}:${root.pathPrefix}`,
+  };
+  const documentRef = {
+    kind: "extension" as const,
+    externalKey: `vault:${root.repository}:${path}`,
+  };
+  const sections = passages.filter(
+    (passage, index, values) =>
+      values.findIndex(
+        (candidate) =>
+          candidate.locator.split(":part-", 1)[0] === passage.locator.split(":part-", 1)[0],
+      ) === index,
+  );
+  const status = sections.find((passage) => sectionTopic(passage.title) === "status");
+  const objects: DeliveryObjectDraft[] = [
+    {
+      ...projectRef,
+      title: root.pathPrefix.split("/").at(-1) ?? root.repository,
+      lifecycleState: status === undefined ? "active" : (lifecycleState(status.body) ?? "active"),
+      attributes: { repository: root.repository, pathPrefix: root.pathPrefix },
+      sensitivity: root.sensitivity,
+    },
+    {
+      ...documentRef,
+      title: documentTitle,
+      lifecycleState: status === undefined ? undefined : lifecycleState(status.body),
+      attributes: { repository: root.repository, path },
+      sensitivity: root.sensitivity,
+    },
+  ];
+  const relations: DeliveryProjection["relations"][number][] = [
+    {
+      kind: "contains",
+      from: projectRef,
+      to: documentRef,
+      attributes: {},
+      sensitivity: root.sensitivity,
+    },
+  ];
+  const claims: DeliveryProjection["claims"][number][] = [];
+  const observations: DeliveryProjection["observations"][number][] = [];
+  const seenJiraKeys = new Set<string>();
+  for (const passage of sections) {
+    const topic = sectionTopic(passage.title);
+    const locator = passage.locator.split(":part-", 1)[0] ?? passage.locator;
+    const sectionRef = {
+      kind: objectKindForTopic(topic),
+      externalKey: `vault:${root.repository}:${path}${locator}`,
+    };
+    const summary = firstSummary(passage.body, passage.title);
+    objects.push({
+      ...sectionRef,
+      title: topic === "context" || topic === "status" ? passage.title : summary,
+      lifecycleState:
+        topic === "risk"
+          ? "active"
+          : topic === "decision"
+            ? "recorded"
+            : topic === "next_action"
+              ? (lifecycleState(passage.body) ?? "planned")
+              : lifecycleState(passage.body),
+      attributes: {
+        repository: root.repository,
+        path,
+        locator,
+        topic,
+        ...(topic === "capacity" ? { label: "capacity" } : {}),
+      },
+      sensitivity: root.sensitivity,
+    });
+    relations.push({
+      kind: "contains",
+      from: documentRef,
+      to: sectionRef,
+      attributes: {},
+      sensitivity: root.sensitivity,
+    });
+    if (topic === "ownership")
+      relations.push({
+        kind: "owns",
+        from: sectionRef,
+        to: documentRef,
+        attributes: { locator },
+        sensitivity: root.sensitivity,
+      });
+    if (topic === "next_action")
+      relations.push({
+        kind: "contributes_to",
+        from: sectionRef,
+        to: projectRef,
+        attributes: { locator },
+        sensitivity: root.sensitivity,
+      });
+    claims.push({
+      subject: sectionRef,
+      subjectKey: sectionRef.externalKey,
+      predicate: `vault.${topic}`,
+      value: summary,
+      assertedAt: updatedAt,
+      citationUrl: `${canonicalUrl}${locator}`,
+      sensitivity: root.sensitivity,
+      authority: root.authority ?? 0.9,
+    });
+    observations.push({
+      kind: topic === "decision" ? "decision" : "change",
+      externalId: `${path}:${locator}:${updatedAt}`,
+      subject: sectionRef,
+      summary: `Vault ${topic.replaceAll("_", " ")} updated: ${passage.title}`,
+      dedupeKey: `vault:${root.repository}:${path}:${locator}`,
+      occurredAt: updatedAt,
+      citationUrl: `${canonicalUrl}${locator}`,
+      sensitivity: root.sensitivity,
+      authority: root.authority ?? 0.9,
+    });
+    for (const jiraKey of new Set(passage.body.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? [])) {
+      const jiraRef = { kind: "work_item" as const, externalKey: jiraKey };
+      if (!seenJiraKeys.has(jiraKey)) {
+        seenJiraKeys.add(jiraKey);
+        objects.push({
+          ...jiraRef,
+          title: jiraKey,
+          attributes: { referencedBy: path },
+          sensitivity: root.sensitivity,
+        });
+      }
+      relations.push({
+        kind: topic === "dependency" ? "depends_on" : "relates_to",
+        from: sectionRef,
+        to: jiraRef,
+        attributes: { locator },
+        sensitivity: root.sensitivity,
+      });
+    }
+  }
+  return { objects, relations, observations, metrics: [], claims };
+};
+
 const rootDocuments = async (
   configuration: VaultKnowledgeSourceConfiguration,
   root: VaultKnowledgeRoot,
 ): Promise<readonly KnowledgeSourceDocument[]> => {
   if (!repositoryPattern.test(root.repository) || !validPrefix(root.pathPrefix))
-    throw new Error("Vault knowledge root must use an approved repository and relative prefix.");
+    throw new Error("Vault knowledge root must use a configured repository and relative prefix.");
   if (root.acl.length === 0)
     throw new Error("Vault knowledge root requires explicit ACL bindings.");
   const excluded = root.excludePathPrefixes ?? [];
   if (excluded.some((prefix) => !validPrefix(prefix) || !prefix.startsWith(root.pathPrefix)))
-    throw new Error("Vault knowledge exclusions must remain within the approved root.");
+    throw new Error("Vault knowledge exclusions must remain within the configured root.");
   const ref = root.ref ?? "HEAD";
   const [tree, commit] = await Promise.all([
     requestJson<GitTree>(
@@ -125,9 +360,9 @@ const rootDocuments = async (
     ),
   ]);
   if (tree.truncated === true)
-    throw new Error("Approved Vault tree was truncated; narrow the configured root.");
+    throw new Error("Configured Vault tree was truncated; narrow the configured root.");
   const updatedAt = commit.commit?.committer?.date ?? commit.commit?.author?.date;
-  if (updatedAt === undefined) throw new Error("Approved Vault revision has no timestamp.");
+  if (updatedAt === undefined) throw new Error("Configured Vault revision has no timestamp.");
   const paths = (tree.tree ?? [])
     .filter(
       (entry) =>
@@ -148,7 +383,13 @@ const rootDocuments = async (
     );
     const markdown = decodeMarkdown(content);
     const passages = chunkVaultMarkdown(markdown);
-    if (passages.length === 0) throw new Error(`Approved Vault path ${path} produced no passages.`);
+    if (passages.length === 0)
+      throw new Error(`Configured Vault path ${path} produced no passages.`);
+    const documentTitle = title(markdown, path);
+    const canonicalUrl = `https://github.com/${root.repository}/blob/${commit.sha}/${path
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}`;
     return {
       source: "vault",
       sourceId: configuration.sourceId,
@@ -156,17 +397,22 @@ const rootDocuments = async (
       externalId: `${root.repository}:${path}`,
       sourceType: "note",
       sourceVersion: content.sha ?? sha,
-      canonicalUrl: `https://github.com/${root.repository}/blob/${commit.sha}/${path
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}`,
-      title: title(markdown, path),
+      canonicalUrl,
+      title: documentTitle,
       sourceUpdatedAt: updatedAt,
       sensitivity: root.sensitivity,
       authority: root.authority ?? 0.9,
       provenance: { repository: root.repository, path, revision: commit.sha },
       acl: root.acl,
       passages,
+      deliveryProjection: deliveryProjection(
+        root,
+        path,
+        documentTitle,
+        passages,
+        updatedAt,
+        canonicalUrl,
+      ),
     } satisfies KnowledgeSourceDocument;
   });
 };
@@ -180,7 +426,7 @@ export const createVaultKnowledgeSource = (
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Vault knowledge source was requested for another workspace.");
         if (configuration.roots.length === 0)
-          throw new Error("At least one approved Vault knowledge root is required.");
+          throw new Error("At least one configured Vault knowledge root is required.");
         const documents = (
           await Promise.all(configuration.roots.map((root) => rootDocuments(configuration, root)))
         ).flat();
@@ -215,7 +461,7 @@ export const createVaultKnowledgeSource = (
       },
       catch: () =>
         new RepositoryError({
-          message: "Approved Vault knowledge synchronization failed.",
+          message: "Configured Vault knowledge synchronization failed.",
           operation: "vault-knowledge-sync",
         }),
     }),

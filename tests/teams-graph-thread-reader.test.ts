@@ -10,17 +10,20 @@ describe("Teams Graph thread reader", () => {
     const fetcher = vi.fn<typeof fetch>();
     const configuration: TeamsGraphThreadReaderConfiguration = {
       tokenProvider: { getAccessToken: async () => "synthetic" },
-      approvedStandardChannels: new Set(),
+      allowedStandardChannels: new Set(),
       fetcher: fetcher as unknown as typeof fetch,
     };
     const reader = createTeamsGraphThreadReader(configuration);
     await expect(
-      reader.readEvidence({ workspaceId: "workspace", sourceKey: "teams:team:channel:root" }),
+      reader.readEvidence({
+        workspaceId: "workspace",
+        sourceKey: "teams:team:channel:root",
+      }),
     ).resolves.toEqual({ records: [] });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("reads a bounded approved thread and removes markup from evidence", async () => {
+  it("reads a bounded workspace thread and removes markup from message context", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -51,7 +54,7 @@ describe("Teams Graph thread reader", () => {
       );
     const reader = createTeamsGraphThreadReader({
       tokenProvider: { getAccessToken: async () => "synthetic" },
-      approvedStandardChannels: new Set(["team:19:channel@thread.tacv2"]),
+      allowedStandardChannels: new Set(["team:19:channel@thread.tacv2"]),
       fetcher: fetcher as unknown as typeof fetch,
       pageSize: 1,
     });

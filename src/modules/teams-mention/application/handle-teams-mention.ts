@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { RepositoryError } from "../../../domain/errors.ts";
+import { type DeliveryAssistant, planDeliveryQuestion } from "../../delivery-intelligence/index.ts";
 import type { TeamsMentionCommand, TeamsMentionOutcome } from "../domain/teams-mention.ts";
 import type {
   GroundedAnswerGenerator,
@@ -17,6 +19,10 @@ export type TeamsMentionDependencies = {
   readonly delivery: TeamsMentionDelivery;
   readonly audit: TeamsMentionAudit;
   readonly helloDiagnosticEnabled?: boolean;
+  readonly deliveryAssistant?: DeliveryAssistant | undefined;
+  readonly deliveryTimeZone?: string | undefined;
+  readonly deliveryAnswerTimeoutMs?: number | undefined;
+  readonly deliveryFinanceActorIds?: ReadonlySet<string> | undefined;
 };
 
 const isHelloDiagnostic = (question: string): boolean => question.trim().toLowerCase() === "hello";
@@ -42,7 +48,7 @@ export const handleTeamsMention = (
         .pipe(Effect.orElseSucceed(() => undefined));
       return {
         kind: "denied",
-        reason: "Sarathi cannot resolve the approved workspace right now.",
+        reason: "Sarathi cannot resolve the connected workspace right now.",
       } as const;
     }
     const resolved = resolvedResult.right;
@@ -56,8 +62,14 @@ export const handleTeamsMention = (
       } as const;
     }
 
+    const deliveryQuestionPlan =
+      dependencies.deliveryAssistant === undefined || dependencies.deliveryTimeZone === undefined
+        ? undefined
+        : planDeliveryQuestion(command.question);
     const authorizationResult = yield* Effect.either(
-      dependencies.authorizer.authorizeContext(command, resolved),
+      deliveryQuestionPlan === undefined
+        ? dependencies.authorizer.authorizeContext(command, resolved)
+        : Effect.succeed({ allowed: true }),
     );
     if (authorizationResult._tag === "Left") {
       yield* dependencies.audit
@@ -101,6 +113,81 @@ export const handleTeamsMention = (
       return { kind: "answered", answer } as const;
     }
 
+    if (deliveryQuestionPlan !== undefined) {
+      if (
+        dependencies.deliveryAssistant === undefined ||
+        dependencies.deliveryTimeZone === undefined
+      ) {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return {
+          kind: "denied",
+          reason: "Sarathi's delivery intelligence is not configured here.",
+        } as const;
+      }
+      const financeAccess = dependencies.deliveryFinanceActorIds?.has(resolved.callerId) === true;
+      if (deliveryQuestionPlan.requiresFinance && !financeAccess) {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return {
+          kind: "denied",
+          reason: "Finance delivery information is confidential.",
+        } as const;
+      }
+      const reportResult = yield* Effect.either(
+        dependencies.deliveryAssistant
+          .answer({
+            workspaceId: resolved.workspaceId,
+            actorId: resolved.callerId,
+            maximumSensitivity: resolved.channelSensitivity,
+            financeAccess,
+            requestedAt: command.receivedAt,
+            timeZone: dependencies.deliveryTimeZone,
+            question: command.question,
+            plan: deliveryQuestionPlan,
+          })
+          .pipe(
+            Effect.timeoutFail({
+              duration: Math.max(
+                100,
+                Math.min(dependencies.deliveryAnswerTimeoutMs ?? 7_000, 8_000),
+              ),
+              onTimeout: () =>
+                new RepositoryError({
+                  message: "Delivery answer exceeded its response budget.",
+                  operation: "teams-delivery-answer",
+                }),
+            }),
+          ),
+      );
+      if (reportResult._tag === "Left") {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return {
+          kind: "denied",
+          reason: "Sarathi could not answer this delivery question within 10 seconds.",
+        } as const;
+      }
+      const answer = reportResult.right;
+      const deliveryResult = yield* Effect.either(dependencies.delivery.reply(command, answer));
+      if (deliveryResult._tag === "Left") {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return {
+          kind: "denied",
+          reason: "Sarathi could not deliver the response; retry safely.",
+        } as const;
+      }
+      yield* dependencies.audit
+        .markDelivered(command.activityId, resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return { kind: "answered", answer } as const;
+    }
+
     const envelopeResult = yield* Effect.either(
       dependencies.contextAssembler.assemble(command, resolved),
     );
@@ -110,7 +197,7 @@ export const handleTeamsMention = (
         .pipe(Effect.orElseSucceed(() => undefined));
       return {
         kind: "denied",
-        reason: "Sarathi cannot retrieve the approved context right now.",
+        reason: "Sarathi cannot retrieve the connected context right now.",
       } as const;
     }
     const answerResult = yield* Effect.either(

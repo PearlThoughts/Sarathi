@@ -9,21 +9,38 @@ const configuration = (fetcher: typeof fetch) => ({
   email: "synthetic@example.test",
   apiToken: "synthetic-token",
   projectKey: "DEMO",
-  approvedJql: "statusCategory != Done",
+  jql: "statusCategory != Done",
   fields: {
     summary: "Summary",
     status: "Status",
     description: "Description",
     updated: "Updated",
+    issuetype: "Issue Type",
+    assignee: "Assignee",
+    sprint: "Sprint",
+    components: "Components",
+    issuelinks: "Issue Links",
+    priority: "Priority",
+    duedate: "Due Date",
+    timeestimate: "Remaining Estimate",
   },
-  acl: [{ effect: "allow" as const, subjectType: "audience" as const, subjectId: "delivery" }],
+  acl: [
+    {
+      effect: "allow" as const,
+      subjectType: "audience" as const,
+      subjectId: "delivery",
+    },
+  ],
   sensitivity: "internal" as const,
   fetcher,
 });
 
 describe("Jira knowledge source", () => {
   it("uses bounded enhanced JQL, paginates comments, and emits typed cited passages", async () => {
-    const requests: { readonly url: string; readonly init: RequestInit | undefined }[] = [];
+    const requests: {
+      readonly url: string;
+      readonly init: RequestInit | undefined;
+    }[] = [];
     const fetcher = async (
       input: string | URL | Request,
       init?: RequestInit,
@@ -42,10 +59,40 @@ describe("Jira knowledge source", () => {
                 description: {
                   type: "doc",
                   content: [
-                    { type: "paragraph", content: [{ type: "text", text: "Build active." }] },
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Build active." }],
+                    },
                   ],
                 },
                 updated: "2026-07-20T01:00:00.000Z",
+                issuetype: { name: "Story" },
+                assignee: {
+                  accountId: "owner-1",
+                  displayName: "Synthetic Owner",
+                },
+                sprint: [
+                  {
+                    id: 7,
+                    name: "Sprint 7",
+                    state: "active",
+                    startDate: "2026-07-14T00:00:00.000Z",
+                    endDate: "2026-07-27T00:00:00.000Z",
+                  },
+                ],
+                components: [{ id: "component-1", name: "Delivery Portal" }],
+                priority: { name: "High" },
+                duedate: "2026-07-25",
+                timeestimate: 7200,
+                issuelinks: [
+                  {
+                    type: { inward: "is blocked by", outward: "blocks" },
+                    inwardIssue: {
+                      key: "DEMO-99",
+                      fields: { summary: "Platform dependency" },
+                    },
+                  },
+                ],
               },
             },
           ],
@@ -60,7 +107,10 @@ describe("Jira knowledge source", () => {
               body: {
                 type: "doc",
                 content: [
-                  { type: "paragraph", content: [{ type: "text", text: "Next action approved." }] },
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Next action approved." }],
+                  },
                 ],
               },
               updated: "2026-07-20T02:00:00.000Z",
@@ -79,7 +129,9 @@ describe("Jira knowledge source", () => {
       createJiraKnowledgeSource(configuration(fetcher as typeof fetch)).readSnapshot("example"),
     );
 
-    const searchBody = JSON.parse(String(requests[0]?.init?.body)) as { readonly jql: string };
+    const searchBody = JSON.parse(String(requests[0]?.init?.body)) as {
+      readonly jql: string;
+    };
     expect(searchBody.jql).toContain('project = "DEMO"');
     expect(searchBody.jql).toContain("statusCategory != Done");
     expect(snapshot).toMatchObject({
@@ -94,10 +146,56 @@ describe("Jira knowledge source", () => {
     });
     expect(snapshot.documents[0]?.passages).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ locator: "#field-status", body: "In Progress" }),
-        expect.objectContaining({ locator: "#comment-900", body: "Next action approved." }),
+        expect.objectContaining({
+          locator: "#field-status",
+          body: "In Progress",
+        }),
+        expect.objectContaining({
+          locator: "#comment-900",
+          body: "Next action approved.",
+        }),
       ]),
     );
+    expect(snapshot.documents[0]?.deliveryProjection).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({ kind: "project", externalKey: "DEMO" }),
+        expect.objectContaining({
+          kind: "work_item",
+          externalKey: "DEMO-100",
+          lifecycleState: "in_progress",
+          attributes: expect.objectContaining({
+            priority: "High",
+            dueAt: "2026-07-25",
+          }),
+        }),
+        expect.objectContaining({
+          kind: "requirement",
+          externalKey: "DEMO-100",
+        }),
+        expect.objectContaining({ kind: "person", externalKey: "owner-1" }),
+        expect.objectContaining({ kind: "sprint", externalKey: "7" }),
+        expect.objectContaining({ kind: "module", externalKey: "component-1" }),
+      ]),
+      relations: expect.arrayContaining([
+        expect.objectContaining({ kind: "assigned_to" }),
+        expect.objectContaining({ kind: "depends_on" }),
+        expect.objectContaining({ kind: "implements" }),
+      ]),
+      observations: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "state",
+          subject: expect.objectContaining({ externalKey: "DEMO-100" }),
+        }),
+        expect.objectContaining({ kind: "comment", externalId: "comment:900" }),
+      ]),
+      metrics: expect.arrayContaining([
+        expect.objectContaining({
+          category: "capacity",
+          kind: "estimate_remaining_seconds",
+          value: "7200",
+        }),
+      ]),
+    });
     expect(requests.every(({ init }) => !String(init?.headers).includes("synthetic-token"))).toBe(
       true,
     );
@@ -106,10 +204,13 @@ describe("Jira knowledge source", () => {
   it("fails closed for another workspace", async () => {
     const source = createJiraKnowledgeSource(
       configuration((async () =>
-        Response.json({ issues: [], isLast: true })) as unknown as typeof fetch),
+        Response.json({
+          issues: [],
+          isLast: true,
+        })) as unknown as typeof fetch),
     );
     await expect(Effect.runPromise(source.readSnapshot("finance"))).rejects.toThrow(
-      "Approved Jira knowledge synchronization failed",
+      "Connected Jira knowledge synchronization failed",
     );
   });
 });

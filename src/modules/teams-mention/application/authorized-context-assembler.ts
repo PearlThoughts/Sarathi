@@ -51,7 +51,8 @@ const asContextEvidence = (
       record.sourceSystem === "teams" ||
       record.sourceSystem === "jira" ||
       record.sourceSystem === "github" ||
-      record.sourceSystem === "vault"
+      record.sourceSystem === "vault" ||
+      record.sourceSystem === "email"
         ? record.sourceSystem
         : "intent",
     sourceId: record.externalId,
@@ -109,7 +110,7 @@ export const createAuthorizedContextAssembler = (
       },
       catch: () =>
         new RepositoryError({
-          message: "Approved context retrieval failed; Sarathi will not use partial evidence.",
+          message: "Connected context retrieval failed; Sarathi will not use partial context.",
         }),
     }),
 });

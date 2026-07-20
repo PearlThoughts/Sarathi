@@ -22,7 +22,6 @@ export {
   reciprocalRankFusion,
 } from "./domain/knowledge.ts";
 export type {
-  ApprovedThreadEvidence,
   KnowledgeEmbeddingPort,
   KnowledgeIngestionSummary,
   KnowledgeLiveSearch,
@@ -32,4 +31,5 @@ export type {
   KnowledgeSourceDocument,
   KnowledgeSourceReader,
   KnowledgeSourceSnapshot,
+  TeamsThreadContext,
 } from "./ports/knowledge-ports.ts";
