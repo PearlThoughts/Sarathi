@@ -49,8 +49,8 @@
 - [x] KLG-501 Replace the recent-activity framing with the delivery-intelligence spec and ADR; record time as an optional record/query dimension.
 - [ ] KLG-502 Add the `delivery-intelligence` bounded context and architecture fitness rules; remove the obsolete `delivery-activity` boundary after parity tests pass.
 - [x] KLG-503 Define delivery objects, relations, observations, claims, metrics, conflicts, results, and a whitelisted composable query plan.
-- [ ] KLG-504 Regenerate the unreleased intermediate delivery migrations into one coherent Drizzle migration while preserving deployed audit and knowledge tables.
-- [ ] KLG-505 Move delivery projection contracts out of `knowledge-layer` and reconcile source versions, knowledge, delivery rows, ACLs, tombstones, and checkpoints transactionally.
+- [x] KLG-504 Regenerate the unreleased intermediate delivery migrations into one coherent Drizzle migration while preserving deployed audit and knowledge tables.
+- [x] KLG-505 Move delivery projection contracts out of `knowledge-layer` and reconcile source versions, knowledge, delivery rows, ACLs, tombstones, and checkpoints transactionally.
 - [ ] KLG-506 Project the configured Jira and Vault boundaries into reusable delivery objects, relations, observations, claims, and non-financial metrics.
 - [ ] KLG-507 Implement authorized repository queries for scope, requirements, ownership, dependencies, blockers, delivery, current work, risks, decisions, capacity, recurring patterns, claims, and conflicts.
 - [ ] KLG-508 Keep GitHub live and add connected Teams/project-email operations without per-record approval fields or unrelated mailbox access.

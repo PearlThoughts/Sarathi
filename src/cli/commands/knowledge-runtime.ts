@@ -33,7 +33,7 @@ type IngestSource = "jira" | "vault" | "all";
 type JiraSourceProjection = {
   readonly sourceId: string;
   readonly projectKey: string;
-  readonly approvedJql: string;
+  readonly jql: string;
   readonly fields: Readonly<Record<string, string>>;
   readonly acl: readonly KnowledgeAclRule[];
   readonly sensitivity: "public" | "internal" | "confidential" | "restricted";
@@ -58,7 +58,7 @@ const parseJson = <Value>(name: string, value: string | undefined): Value => {
   try {
     return JSON.parse(required(name, value)) as Value;
   } catch {
-    throw new Error(`${name} must contain valid approved JSON configuration.`);
+    throw new Error(`${name} must contain valid connected-source JSON configuration.`);
   }
 };
 

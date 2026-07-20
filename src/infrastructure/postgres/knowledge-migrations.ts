@@ -13,12 +13,14 @@ export type KnowledgePostgresDatabase = NodePgDatabase<typeof knowledgePostgresS
 export type KnowledgeMigrationVerification = {
   readonly vectorExtensionVersion: string;
   readonly knowledgeTableCount: number;
+  readonly deliveryTableCount: number;
   readonly protectedAuditTablesPresent: readonly string[];
 };
 
 export type KnowledgeMigrationStatus = {
   readonly vectorExtensionVersion: string | null;
   readonly knowledgeTableCount: number;
+  readonly deliveryTableCount: number;
   readonly appliedMigrationCount: number;
   readonly checkpoints: readonly {
     readonly sourceId: string;
@@ -42,7 +44,7 @@ const protectedAuditTableNames = [
 
 export const knowledgeMigrationPlan = {
   migrationFolder: "drizzle",
-  migrations: ["0000_enable-pgvector", "0001_knowledge-layer"],
+  migrations: ["0000_enable-pgvector", "0001_knowledge-layer", "0002_delivery-intelligence-core"],
   additive: true,
   protectedTables: protectedAuditTableNames,
   applicationRollback:
@@ -64,7 +66,7 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
       "select extversion from pg_extension where extname = 'vector'",
     ),
     pool.query<{ readonly table_name: string }>(
-      "select table_name from information_schema.tables where table_schema = 'public' and (table_name like 'knowledge_%' or table_name = any($1::text[])) order by table_name",
+      "select table_name from information_schema.tables where table_schema = 'public' and (table_name like 'knowledge_%' or table_name like 'delivery_%' or table_name = any($1::text[])) order by table_name",
       [protectedAuditTableNames],
     ),
   ]);
@@ -75,9 +77,15 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
   const knowledgeTableCount = names.filter((name) => name.startsWith("knowledge_")).length;
   if (knowledgeTableCount !== 7)
     throw new Error(`Expected 7 knowledge tables after migration; found ${knowledgeTableCount}.`);
+  const deliveryTableCount = names.filter((name) => name.startsWith("delivery_")).length;
+  if (deliveryTableCount !== 7)
+    throw new Error(
+      `Expected 7 delivery intelligence tables after migration; found ${deliveryTableCount}.`,
+    );
   return {
     vectorExtensionVersion,
     knowledgeTableCount,
+    deliveryTableCount,
     protectedAuditTablesPresent: protectedAuditTableNames.filter((name) => names.includes(name)),
   };
 };
@@ -115,12 +123,15 @@ export const readKnowledgePostgresStatus = (
     (pool) =>
       Effect.tryPromise({
         try: async () => {
-          const [extension, tables, journalExists] = await Promise.all([
+          const [extension, tables, deliveryTables, journalExists] = await Promise.all([
             pool.query<{ readonly extversion: string }>(
               "select extversion from pg_extension where extname = 'vector'",
             ),
             pool.query<{ readonly count: string }>(
               "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'knowledge_%'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'delivery_%'",
             ),
             pool.query<{ readonly present: boolean }>(
               "select to_regclass('drizzle.__drizzle_migrations') is not null as present",
@@ -148,6 +159,7 @@ export const readKnowledgePostgresStatus = (
           return {
             vectorExtensionVersion: extension.rows[0]?.extversion ?? null,
             knowledgeTableCount,
+            deliveryTableCount: Number(deliveryTables.rows[0]?.count ?? 0),
             appliedMigrationCount,
             checkpoints,
           };

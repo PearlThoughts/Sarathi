@@ -28,6 +28,7 @@ export type DeliveryRelationKind =
   | "affects"
   | "duplicates"
   | "supersedes"
+  | "relates_to"
   | "participates_in";
 
 export type DeliveryObservationKind =

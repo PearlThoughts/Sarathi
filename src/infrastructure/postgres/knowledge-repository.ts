@@ -4,6 +4,11 @@ import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
+  assertNonFinancialAttributes,
+  type DeliveryObjectRef,
+  deliveryClaimValueHash,
+} from "../../modules/delivery-intelligence/index.ts";
+import {
   type KnowledgeAclRule,
   type KnowledgeEmbeddingPort,
   type KnowledgeRepository,
@@ -16,6 +21,13 @@ import {
 } from "../../modules/knowledge-layer/index.ts";
 import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
 import {
+  deliveryAclBindingTable,
+  deliveryClaimTable,
+  deliveryFinanceMetricTable,
+  deliveryMetricTable,
+  deliveryObjectTable,
+  deliveryObservationTable,
+  deliveryRelationTable,
   knowledgeAclBindingTable,
   knowledgeItemTable,
   knowledgePassageTable,
@@ -63,6 +75,7 @@ const effectiveVersion = (document: KnowledgeSourceDocument): string =>
       acl: document.acl,
       passages: document.passages,
       provenance: document.provenance,
+      deliveryProjection: document.deliveryProjection,
     }),
   );
 
@@ -71,6 +84,31 @@ const citationUrl = (document: KnowledgeSourceDocument, locator: string): string
   url.hash = locator.replace(/^#/, "");
   return url.toString();
 };
+
+const deliveryObjectId = (
+  workspaceId: string,
+  sourceId: string,
+  reference: DeliveryObjectRef,
+): string =>
+  `delivery-object:${stableSha256(`${workspaceId}:${sourceId}:${reference.kind}:${reference.externalKey}`)}`;
+
+const deliveryTargetAclRows = (
+  targetType: "object" | "relation" | "observation" | "metric" | "finance_metric" | "claim",
+  targetId: string,
+  workspaceId: string,
+  rules: readonly KnowledgeAclRule[],
+  now: string,
+) =>
+  rules.map((rule) => ({
+    id: `delivery-acl:${stableSha256(`${targetType}:${targetId}:${rule.subjectType}:${rule.subjectId}:${rule.effect}`)}`,
+    workspaceId,
+    targetType,
+    targetId,
+    subjectType: rule.subjectType,
+    subjectId: rule.subjectId,
+    effect: rule.effect,
+    createdAt: now,
+  }));
 
 const freshness = (sourceUpdatedAt: string | Date): number => {
   const time = new Date(sourceUpdatedAt).getTime();
@@ -198,6 +236,441 @@ const syncAcl = async (
   if (rows.length > 0) await database.insert(knowledgeAclBindingTable).values(rows);
 };
 
+type ProjectedDocument = {
+  readonly document: KnowledgeSourceDocument;
+  readonly documentItemId: string;
+  readonly versionId: string;
+};
+
+const syncDeliveryProjection = async (
+  database: KnowledgePostgresDatabase,
+  projectedDocuments: readonly ProjectedDocument[],
+  now: string,
+): Promise<void> => {
+  const activeDocuments = projectedDocuments.filter(
+    ({ document }) => document.deliveryProjection !== undefined,
+  );
+  if (activeDocuments.length === 0) return;
+  const workspaceId = activeDocuments[0]?.document.workspaceId;
+  if (
+    workspaceId === undefined ||
+    activeDocuments.some(({ document }) => document.workspaceId !== workspaceId)
+  )
+    throw new Error("Delivery projection reconciliation requires one workspace.");
+  const itemIds = activeDocuments.map(({ documentItemId }) => documentItemId);
+  const versionRows = await database
+    .select({ id: knowledgeVersionTable.id })
+    .from(knowledgeVersionTable)
+    .where(inArray(knowledgeVersionTable.itemId, itemIds));
+  const versionIds = versionRows.map(({ id }) => id);
+  const previousObjects = await database
+    .select({ id: deliveryObjectTable.id })
+    .from(deliveryObjectTable)
+    .where(inArray(deliveryObjectTable.sourceItemId, itemIds));
+  const previousRelations =
+    versionIds.length === 0
+      ? []
+      : await database
+          .select({ id: deliveryRelationTable.id })
+          .from(deliveryRelationTable)
+          .where(inArray(deliveryRelationTable.sourceVersionId, versionIds));
+  const previousObservations =
+    versionIds.length === 0
+      ? []
+      : await database
+          .select({ id: deliveryObservationTable.id })
+          .from(deliveryObservationTable)
+          .where(inArray(deliveryObservationTable.sourceVersionId, versionIds));
+  const previousMetrics =
+    versionIds.length === 0
+      ? []
+      : await database
+          .select({ id: deliveryMetricTable.id })
+          .from(deliveryMetricTable)
+          .where(inArray(deliveryMetricTable.sourceVersionId, versionIds));
+  const previousFinanceMetrics =
+    versionIds.length === 0
+      ? []
+      : await database
+          .select({ id: deliveryFinanceMetricTable.id })
+          .from(deliveryFinanceMetricTable)
+          .where(inArray(deliveryFinanceMetricTable.sourceVersionId, versionIds));
+  const previousClaims =
+    versionIds.length === 0
+      ? []
+      : await database
+          .select({ id: deliveryClaimTable.id })
+          .from(deliveryClaimTable)
+          .where(inArray(deliveryClaimTable.sourceVersionId, versionIds));
+  if (previousObjects.length > 0)
+    await database
+      .update(deliveryObjectTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryObjectTable.id,
+          previousObjects.map(({ id }) => id),
+        ),
+      );
+  if (previousRelations.length > 0)
+    await database
+      .update(deliveryRelationTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryRelationTable.id,
+          previousRelations.map(({ id }) => id),
+        ),
+      );
+  if (previousObservations.length > 0)
+    await database
+      .update(deliveryObservationTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryObservationTable.id,
+          previousObservations.map(({ id }) => id),
+        ),
+      );
+  if (previousMetrics.length > 0)
+    await database
+      .update(deliveryMetricTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryMetricTable.id,
+          previousMetrics.map(({ id }) => id),
+        ),
+      );
+  if (previousFinanceMetrics.length > 0)
+    await database
+      .update(deliveryFinanceMetricTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryFinanceMetricTable.id,
+          previousFinanceMetrics.map(({ id }) => id),
+        ),
+      );
+  if (previousClaims.length > 0)
+    await database
+      .update(deliveryClaimTable)
+      .set({ active: false, deletedAt: now })
+      .where(
+        inArray(
+          deliveryClaimTable.id,
+          previousClaims.map(({ id }) => id),
+        ),
+      );
+  const previousTargetIds = [
+    ...previousObjects.map(({ id }) => id),
+    ...previousRelations.map(({ id }) => id),
+    ...previousObservations.map(({ id }) => id),
+    ...previousMetrics.map(({ id }) => id),
+    ...previousFinanceMetrics.map(({ id }) => id),
+    ...previousClaims.map(({ id }) => id),
+  ];
+  if (previousTargetIds.length > 0)
+    await database
+      .delete(deliveryAclBindingTable)
+      .where(inArray(deliveryAclBindingTable.targetId, previousTargetIds));
+
+  const objectRows = new Map<
+    string,
+    typeof deliveryObjectTable.$inferInsert & { readonly rules: readonly KnowledgeAclRule[] }
+  >();
+  for (const projected of activeDocuments) {
+    for (const object of projected.document.deliveryProjection?.objects ?? []) {
+      assertNonFinancialAttributes(object.attributes);
+      const id = deliveryObjectId(
+        projected.document.workspaceId,
+        projected.document.sourceId,
+        object,
+      );
+      const current = objectRows.get(id);
+      if (
+        current !== undefined &&
+        current.attributes.placeholder !== true &&
+        object.attributes.placeholder === true
+      )
+        continue;
+      objectRows.set(id, {
+        id,
+        workspaceId: projected.document.workspaceId,
+        objectKind: object.kind,
+        externalKey: object.externalKey,
+        title: object.title,
+        lifecycleState: object.lifecycleState ?? null,
+        attributes: object.attributes,
+        sensitivity: object.sensitivity,
+        sourceKind: projected.document.source,
+        sourceId: projected.document.sourceId,
+        sourceItemId: projected.documentItemId,
+        sourceVersionId: projected.versionId,
+        effectiveFrom: object.effectiveFrom ?? null,
+        effectiveTo: object.effectiveTo ?? null,
+        observedAt: now,
+        active: true,
+        deletedAt: null,
+        rules: projected.document.acl,
+      });
+    }
+  }
+  for (const { rules, ...row } of objectRows.values()) {
+    await database
+      .insert(deliveryObjectTable)
+      .values(row)
+      .onConflictDoUpdate({
+        target: deliveryObjectTable.id,
+        set: {
+          title: row.title,
+          lifecycleState: row.lifecycleState,
+          attributes: row.attributes,
+          sensitivity: row.sensitivity,
+          sourceItemId: row.sourceItemId,
+          sourceVersionId: row.sourceVersionId,
+          effectiveFrom: row.effectiveFrom,
+          effectiveTo: row.effectiveTo,
+          observedAt: now,
+          active: true,
+          deletedAt: null,
+        },
+      });
+    await database
+      .insert(deliveryAclBindingTable)
+      .values(deliveryTargetAclRows("object", row.id, row.workspaceId, rules, now))
+      .onConflictDoNothing();
+  }
+
+  for (const projected of activeDocuments) {
+    const projection = projected.document.deliveryProjection;
+    if (projection === undefined) continue;
+    for (const [index, relation] of projection.relations.entries()) {
+      const fromObjectId = deliveryObjectId(
+        projected.document.workspaceId,
+        projected.document.sourceId,
+        relation.from,
+      );
+      const toObjectId = deliveryObjectId(
+        projected.document.workspaceId,
+        projected.document.sourceId,
+        relation.to,
+      );
+      const id = `delivery-relation:${stableSha256(`${projected.versionId}:${relation.kind}:${fromObjectId}:${toObjectId}:${index}`)}`;
+      await database
+        .insert(deliveryRelationTable)
+        .values({
+          id,
+          workspaceId: projected.document.workspaceId,
+          relationKind: relation.kind,
+          fromObjectId,
+          toObjectId,
+          attributes: relation.attributes,
+          sensitivity: relation.sensitivity,
+          sourceKind: projected.document.source,
+          sourceId: projected.document.sourceId,
+          sourceItemId: projected.documentItemId,
+          sourceVersionId: projected.versionId,
+          effectiveFrom: relation.effectiveFrom ?? null,
+          effectiveTo: relation.effectiveTo ?? null,
+          observedAt: now,
+          active: true,
+          deletedAt: null,
+        })
+        .onConflictDoUpdate({
+          target: deliveryRelationTable.id,
+          set: {
+            attributes: relation.attributes,
+            effectiveFrom: relation.effectiveFrom ?? null,
+            effectiveTo: relation.effectiveTo ?? null,
+            observedAt: now,
+            active: true,
+            deletedAt: null,
+          },
+        });
+      await database
+        .insert(deliveryAclBindingTable)
+        .values(
+          deliveryTargetAclRows(
+            "relation",
+            id,
+            projected.document.workspaceId,
+            projected.document.acl,
+            now,
+          ),
+        )
+        .onConflictDoNothing();
+    }
+    for (const observation of projection.observations) {
+      const subjectObjectId =
+        observation.subject === undefined
+          ? null
+          : deliveryObjectId(
+              projected.document.workspaceId,
+              projected.document.sourceId,
+              observation.subject,
+            );
+      const id = `delivery-observation:${stableSha256(`${projected.document.sourceId}:${observation.externalId}`)}`;
+      await database
+        .insert(deliveryObservationTable)
+        .values({
+          id,
+          workspaceId: projected.document.workspaceId,
+          observationKind: observation.kind,
+          externalId: observation.externalId,
+          subjectObjectId,
+          actorExternalKey: observation.actorExternalKey ?? null,
+          summary: observation.summary,
+          dedupeKey: observation.dedupeKey,
+          occurredAt: observation.occurredAt,
+          observedAt: now,
+          sensitivity: observation.sensitivity,
+          authority: observation.authority,
+          sourceKind: projected.document.source,
+          sourceId: projected.document.sourceId,
+          sourceItemId: projected.documentItemId,
+          sourceVersionId: projected.versionId,
+          citationUrl: observation.citationUrl ?? projected.document.canonicalUrl,
+          active: true,
+          deletedAt: null,
+        })
+        .onConflictDoUpdate({
+          target: deliveryObservationTable.id,
+          set: {
+            summary: observation.summary,
+            dedupeKey: observation.dedupeKey,
+            occurredAt: observation.occurredAt,
+            observedAt: now,
+            sourceVersionId: projected.versionId,
+            active: true,
+            deletedAt: null,
+          },
+        });
+      await database
+        .insert(deliveryAclBindingTable)
+        .values(
+          deliveryTargetAclRows(
+            "observation",
+            id,
+            projected.document.workspaceId,
+            projected.document.acl,
+            now,
+          ),
+        )
+        .onConflictDoNothing();
+    }
+    for (const [index, metric] of projection.metrics.entries()) {
+      if (
+        metric.category === "finance" &&
+        metric.sensitivity !== "confidential" &&
+        metric.sensitivity !== "restricted"
+      )
+        throw new Error("Financial delivery metrics must be confidential or restricted.");
+      if (!Number.isFinite(Number(metric.value)))
+        throw new Error("Delivery metric value is invalid.");
+      const subjectObjectId = deliveryObjectId(
+        projected.document.workspaceId,
+        projected.document.sourceId,
+        metric.subject,
+      );
+      const targetTable =
+        metric.category === "finance" ? deliveryFinanceMetricTable : deliveryMetricTable;
+      const targetType = metric.category === "finance" ? "finance_metric" : "metric";
+      const id = `delivery-${targetType}:${stableSha256(`${projected.versionId}:${metric.kind}:${subjectObjectId}:${metric.effectiveFrom ?? ""}:${index}`)}`;
+      await database
+        .insert(targetTable)
+        .values({
+          id,
+          workspaceId: projected.document.workspaceId,
+          subjectObjectId,
+          ...(metric.category === "finance" ? {} : { metricCategory: metric.category }),
+          metricKind: metric.kind,
+          value: metric.value,
+          unit: metric.unit,
+          effectiveFrom: metric.effectiveFrom ?? null,
+          effectiveTo: metric.effectiveTo ?? null,
+          sensitivity: metric.sensitivity,
+          sourceKind: projected.document.source,
+          sourceId: projected.document.sourceId,
+          sourceItemId: projected.documentItemId,
+          sourceVersionId: projected.versionId,
+          observedAt: now,
+          active: true,
+          deletedAt: null,
+        })
+        .onConflictDoUpdate({
+          target: targetTable.id,
+          set: { value: metric.value, observedAt: now, active: true, deletedAt: null },
+        });
+      await database
+        .insert(deliveryAclBindingTable)
+        .values(
+          deliveryTargetAclRows(
+            targetType,
+            id,
+            projected.document.workspaceId,
+            projected.document.acl,
+            now,
+          ),
+        )
+        .onConflictDoNothing();
+    }
+    for (const [index, claim] of projection.claims.entries()) {
+      const subjectObjectId =
+        claim.subject === undefined
+          ? null
+          : deliveryObjectId(
+              projected.document.workspaceId,
+              projected.document.sourceId,
+              claim.subject,
+            );
+      const valueHash = deliveryClaimValueHash(claim.value);
+      const id = `delivery-claim:${stableSha256(`${projected.versionId}:${claim.subjectKey}:${claim.predicate}:${valueHash}:${index}`)}`;
+      await database
+        .insert(deliveryClaimTable)
+        .values({
+          id,
+          workspaceId: projected.document.workspaceId,
+          subjectObjectId,
+          subjectKey: claim.subjectKey,
+          predicate: claim.predicate,
+          value: claim.value,
+          valueHash,
+          assertedBy: claim.assertedBy ?? null,
+          sourceKind: projected.document.source,
+          sourceId: projected.document.sourceId,
+          sourceItemId: projected.documentItemId,
+          sourceVersionId: projected.versionId,
+          citationUrl: claim.citationUrl ?? projected.document.canonicalUrl,
+          assertedAt: claim.assertedAt,
+          observedAt: now,
+          effectiveFrom: claim.effectiveFrom ?? null,
+          effectiveTo: claim.effectiveTo ?? null,
+          sensitivity: claim.sensitivity,
+          authority: claim.authority,
+          active: true,
+          deletedAt: null,
+        })
+        .onConflictDoUpdate({
+          target: deliveryClaimTable.id,
+          set: { observedAt: now, active: true, deletedAt: null },
+        });
+      await database
+        .insert(deliveryAclBindingTable)
+        .values(
+          deliveryTargetAclRows(
+            "claim",
+            id,
+            projected.document.workspaceId,
+            projected.document.acl,
+            now,
+          ),
+        )
+        .onConflictDoNothing();
+    }
+  }
+};
+
 const reconcileSnapshot = async (
   database: KnowledgePostgresDatabase,
   snapshot: KnowledgeSourceSnapshot,
@@ -245,6 +718,11 @@ const reconcileSnapshot = async (
     );
     if (deletedItems.length > 0) {
       const deletedIds = deletedItems.map(({ id }) => id);
+      const deletedVersions = await transaction
+        .select({ id: knowledgeVersionTable.id })
+        .from(knowledgeVersionTable)
+        .where(inArray(knowledgeVersionTable.itemId, deletedIds));
+      const deletedVersionIds = deletedVersions.map(({ id }) => id);
       await transaction
         .update(knowledgeItemTable)
         .set({ deletedAt: now, observedAt: now })
@@ -257,11 +735,38 @@ const reconcileSnapshot = async (
         .update(knowledgePassageTable)
         .set({ active: false })
         .where(inArray(knowledgePassageTable.itemId, deletedIds));
+      await transaction
+        .update(deliveryObjectTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryObjectTable.sourceItemId, deletedIds));
+      if (deletedVersionIds.length > 0) {
+        await transaction
+          .update(deliveryRelationTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryRelationTable.sourceVersionId, deletedVersionIds));
+        await transaction
+          .update(deliveryObservationTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryObservationTable.sourceVersionId, deletedVersionIds));
+        await transaction
+          .update(deliveryMetricTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryMetricTable.sourceVersionId, deletedVersionIds));
+        await transaction
+          .update(deliveryFinanceMetricTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryFinanceMetricTable.sourceVersionId, deletedVersionIds));
+        await transaction
+          .update(deliveryClaimTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryClaimTable.sourceVersionId, deletedVersionIds));
+      }
     }
 
     let vectorOffset = 0;
     let versionsCreated = 0;
     let passagesActive = 0;
+    const projectedDocuments: ProjectedDocument[] = [];
     for (const document of snapshot.documents) {
       const documentItemId = itemId(document);
       const versionHash = effectiveVersion(document);
@@ -428,19 +933,25 @@ const reconcileSnapshot = async (
         document.acl,
         now,
       );
+      projectedDocuments.push({ document, documentItemId, versionId });
     }
+
+    await syncDeliveryProjection(transaction, projectedDocuments, now);
 
     const checksum = stableSha256(
       canonicalize({
         sourceId: snapshot.sourceId,
         cursor: snapshot.cursor,
         scopeHash: snapshot.scopeHash,
-        documents: snapshot.documents.map(({ externalId, sourceVersion, passages, acl }) => ({
-          externalId,
-          sourceVersion,
-          passages: passages.map(({ locator, contentHash }) => ({ locator, contentHash })),
-          acl,
-        })),
+        documents: snapshot.documents.map(
+          ({ externalId, sourceVersion, passages, acl, deliveryProjection }) => ({
+            externalId,
+            sourceVersion,
+            passages: passages.map(({ locator, contentHash }) => ({ locator, contentHash })),
+            acl,
+            deliveryProjection,
+          }),
+        ),
       }),
     );
     const summary = {

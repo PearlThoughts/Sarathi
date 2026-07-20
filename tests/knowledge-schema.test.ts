@@ -1,6 +1,13 @@
 import { getTableName, getTableUniqueName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
+  deliveryAclBindingTable,
+  deliveryClaimTable,
+  deliveryFinanceMetricTable,
+  deliveryMetricTable,
+  deliveryObjectTable,
+  deliveryObservationTable,
+  deliveryRelationTable,
   knowledgeAclBindingTable,
   knowledgeItemTable,
   knowledgePassageTable,
@@ -37,5 +44,27 @@ describe("knowledge PostgreSQL schema", () => {
 
   it("keeps globally unique Drizzle table identities", () => {
     expect(getTableUniqueName(knowledgeProjectionTable)).toBe("public.knowledge_projection");
+  });
+
+  it("defines delivery objects, relations, observations, claims, metrics, finance, and ACLs separately", () => {
+    expect(
+      [
+        deliveryObjectTable,
+        deliveryRelationTable,
+        deliveryObservationTable,
+        deliveryMetricTable,
+        deliveryFinanceMetricTable,
+        deliveryClaimTable,
+        deliveryAclBindingTable,
+      ].map(getTableName),
+    ).toEqual([
+      "delivery_object",
+      "delivery_relation",
+      "delivery_observation",
+      "delivery_metric",
+      "delivery_finance_metric",
+      "delivery_claim",
+      "delivery_acl_binding",
+    ]);
   });
 });

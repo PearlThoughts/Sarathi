@@ -9,12 +9,17 @@ const configuration = (fetcher: typeof fetch) => ({
   email: "synthetic@example.test",
   apiToken: "synthetic-token",
   projectKey: "DEMO",
-  approvedJql: "statusCategory != Done",
+  jql: "statusCategory != Done",
   fields: {
     summary: "Summary",
     status: "Status",
     description: "Description",
     updated: "Updated",
+    issuetype: "Issue Type",
+    assignee: "Assignee",
+    sprint: "Sprint",
+    components: "Components",
+    issuelinks: "Issue Links",
   },
   acl: [{ effect: "allow" as const, subjectType: "audience" as const, subjectId: "delivery" }],
   sensitivity: "internal" as const,
@@ -46,6 +51,27 @@ describe("Jira knowledge source", () => {
                   ],
                 },
                 updated: "2026-07-20T01:00:00.000Z",
+                issuetype: { name: "Story" },
+                assignee: { accountId: "owner-1", displayName: "Synthetic Owner" },
+                sprint: [
+                  {
+                    id: 7,
+                    name: "Sprint 7",
+                    state: "active",
+                    startDate: "2026-07-14T00:00:00.000Z",
+                    endDate: "2026-07-27T00:00:00.000Z",
+                  },
+                ],
+                components: [{ id: "component-1", name: "Delivery Portal" }],
+                issuelinks: [
+                  {
+                    type: { inward: "is blocked by", outward: "blocks" },
+                    inwardIssue: {
+                      key: "DEMO-99",
+                      fields: { summary: "Platform dependency" },
+                    },
+                  },
+                ],
               },
             },
           ],
@@ -98,6 +124,28 @@ describe("Jira knowledge source", () => {
         expect.objectContaining({ locator: "#comment-900", body: "Next action approved." }),
       ]),
     );
+    expect(snapshot.documents[0]?.deliveryProjection).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({ kind: "project", externalKey: "DEMO" }),
+        expect.objectContaining({ kind: "work_item", externalKey: "DEMO-100" }),
+        expect.objectContaining({ kind: "requirement", externalKey: "DEMO-100" }),
+        expect.objectContaining({ kind: "person", externalKey: "owner-1" }),
+        expect.objectContaining({ kind: "sprint", externalKey: "7" }),
+        expect.objectContaining({ kind: "module", externalKey: "component-1" }),
+      ]),
+      relations: expect.arrayContaining([
+        expect.objectContaining({ kind: "assigned_to" }),
+        expect.objectContaining({ kind: "depends_on" }),
+        expect.objectContaining({ kind: "implements" }),
+      ]),
+      observations: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "state",
+          subject: expect.objectContaining({ externalKey: "DEMO-100" }),
+        }),
+        expect.objectContaining({ kind: "comment", externalId: "comment:900" }),
+      ]),
+    });
     expect(requests.every(({ init }) => !String(init?.headers).includes("synthetic-token"))).toBe(
       true,
     );
@@ -109,7 +157,7 @@ describe("Jira knowledge source", () => {
         Response.json({ issues: [], isLast: true })) as unknown as typeof fetch),
     );
     await expect(Effect.runPromise(source.readSnapshot("finance"))).rejects.toThrow(
-      "Approved Jira knowledge synchronization failed",
+      "Connected Jira knowledge synchronization failed",
     );
   });
 });

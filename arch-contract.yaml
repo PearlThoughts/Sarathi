@@ -117,6 +117,7 @@ ruleset:
     mayDependOn:
       - domain-kernel
       - module-domain
+      - module-public
       - shared
   release-cli:
     mayDependOn:

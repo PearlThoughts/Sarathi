@@ -1,6 +1,7 @@
 import type { Effect } from "effect";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
+import type { DeliveryProjection } from "../../delivery-intelligence/index.ts";
 import type {
   KnowledgeAclRule,
   KnowledgeAudience,
@@ -23,6 +24,7 @@ export type KnowledgeSourceDocument = {
   readonly provenance: Readonly<Record<string, string>>;
   readonly acl: readonly KnowledgeAclRule[];
   readonly passages: readonly KnowledgePassageDraft[];
+  readonly deliveryProjection?: DeliveryProjection | undefined;
 };
 
 export type KnowledgeSourceSnapshot = {

@@ -15,6 +15,13 @@
       "when": 1784532839687,
       "tag": "0001_knowledge-layer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784557719947,
+      "tag": "0002_delivery-intelligence-core",
+      "breakpoints": true
     }
   ]
 }

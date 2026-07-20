@@ -22,6 +22,15 @@ export {
   isFinanceAttributeKey,
 } from "./domain/delivery-model.ts";
 export type {
+  DeliveryClaimDraft,
+  DeliveryMetricDraft,
+  DeliveryObjectDraft,
+  DeliveryObservationDraft,
+  DeliveryProjection,
+  DeliveryRelationDraft,
+} from "./domain/delivery-projection.ts";
+export { emptyDeliveryProjection } from "./domain/delivery-projection.ts";
+export type {
   DeliveryQueryField,
   DeliveryQueryMeasure,
   DeliveryQueryOperation,
