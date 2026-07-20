@@ -16,11 +16,40 @@ export type KnowledgeMigrationVerification = {
   readonly protectedAuditTablesPresent: readonly string[];
 };
 
+export type KnowledgeMigrationStatus = {
+  readonly vectorExtensionVersion: string | null;
+  readonly knowledgeTableCount: number;
+  readonly appliedMigrationCount: number;
+  readonly checkpoints: readonly {
+    readonly sourceId: string;
+    readonly workspaceId: string;
+    readonly cursor: string;
+    readonly scopeHash: string;
+    readonly documentsObserved: number;
+    readonly passagesActive: number;
+    readonly itemsDeleted: number;
+    readonly checksum: string;
+    readonly status: string;
+    readonly syncedAt: string;
+  }[];
+};
+
 const protectedAuditTableNames = [
   "compliance_reminder_audit",
   "compliance_reminder_dry_run_evidence",
   "teams_mention_audit",
 ] as const;
+
+export const knowledgeMigrationPlan = {
+  migrationFolder: "drizzle",
+  migrations: ["0000_enable-pgvector", "0001_knowledge-layer"],
+  additive: true,
+  protectedTables: protectedAuditTableNames,
+  applicationRollback:
+    "Deploy the previous application revision; retain additive knowledge tables and checkpoints.",
+  databaseRecovery:
+    "Restore only from the pre-migration PostgreSQL backup if additive migration recovery is required.",
+} as const;
 
 export const openKnowledgePostgresDatabase = (
   connectionString: string,
@@ -76,4 +105,58 @@ export const applyKnowledgePostgresMigrations = (
           }),
       }),
     ({ pool }) => Effect.promise(() => pool.end()),
+  );
+
+export const readKnowledgePostgresStatus = (
+  connectionString: string,
+): Effect.Effect<KnowledgeMigrationStatus, RepositoryError> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => new Pool({ connectionString })),
+    (pool) =>
+      Effect.tryPromise({
+        try: async () => {
+          const [extension, tables, journalExists] = await Promise.all([
+            pool.query<{ readonly extversion: string }>(
+              "select extversion from pg_extension where extname = 'vector'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'knowledge_%'",
+            ),
+            pool.query<{ readonly present: boolean }>(
+              "select to_regclass('drizzle.__drizzle_migrations') is not null as present",
+            ),
+          ]);
+          const appliedMigrationCount =
+            journalExists.rows[0]?.present === true
+              ? Number(
+                  (
+                    await pool.query<{ readonly count: string }>(
+                      "select count(*) from drizzle.__drizzle_migrations",
+                    )
+                  ).rows[0]?.count ?? 0,
+                )
+              : 0;
+          const knowledgeTableCount = Number(tables.rows[0]?.count ?? 0);
+          const checkpoints =
+            knowledgeTableCount === 7
+              ? (
+                  await pool.query<KnowledgeMigrationStatus["checkpoints"][number]>(
+                    'select source_id as "sourceId", workspace_id as "workspaceId", cursor, scope_hash as "scopeHash", documents_observed as "documentsObserved", passages_active as "passagesActive", items_deleted as "itemsDeleted", checksum, status, synced_at as "syncedAt" from knowledge_sync_checkpoint order by workspace_id, source_id',
+                  )
+                ).rows
+              : [];
+          return {
+            vectorExtensionVersion: extension.rows[0]?.extversion ?? null,
+            knowledgeTableCount,
+            appliedMigrationCount,
+            checkpoints,
+          };
+        },
+        catch: () =>
+          new RepositoryError({
+            message: "Knowledge PostgreSQL status is unavailable.",
+            operation: "knowledge-status",
+          }),
+      }),
+    (pool) => Effect.promise(() => pool.end()),
   );

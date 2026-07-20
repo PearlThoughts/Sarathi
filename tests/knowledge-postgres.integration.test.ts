@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
   applyKnowledgePostgresMigrations,
@@ -183,5 +184,25 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     );
     expect(afterDelete).toEqual([]);
+
+    const cliStatus = await runKnowledgeCommand(["status"], {
+      SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
+    });
+    expect(cliStatus).toMatchObject({
+      exitCode: 0,
+      output: {
+        status: {
+          knowledgeTableCount: 7,
+          appliedMigrationCount: 2,
+          checkpoints: [
+            expect.objectContaining({
+              sourceId: "jira-1851-test",
+              documentsObserved: 0,
+              itemsDeleted: 1,
+            }),
+          ],
+        },
+      },
+    });
   });
 });

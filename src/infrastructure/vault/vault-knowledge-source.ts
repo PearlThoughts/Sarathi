@@ -16,6 +16,7 @@ export type VaultKnowledgeRoot = {
   readonly sensitivity: SensitivityTier;
   readonly acl: readonly KnowledgeAclRule[];
   readonly authority?: number | undefined;
+  readonly excludePathPrefixes?: readonly string[] | undefined;
 };
 
 export type VaultKnowledgeSourceConfiguration = {
@@ -58,6 +59,9 @@ const validPrefix = (value: string): boolean =>
   !value.startsWith("/") &&
   value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 
+const isExcluded = (path: string, prefixes: readonly string[]): boolean =>
+  prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+
 const headers = (token: string): HeadersInit => ({
   Authorization: `Bearer ${token}`,
   Accept: "application/vnd.github+json",
@@ -94,6 +98,9 @@ const rootDocuments = async (
     throw new Error("Vault knowledge root must use an approved repository and relative prefix.");
   if (root.acl.length === 0)
     throw new Error("Vault knowledge root requires explicit ACL bindings.");
+  const excluded = root.excludePathPrefixes ?? [];
+  if (excluded.some((prefix) => !validPrefix(prefix) || !prefix.startsWith(root.pathPrefix)))
+    throw new Error("Vault knowledge exclusions must remain within the approved root.");
   const ref = root.ref ?? "HEAD";
   const [tree, commit] = await Promise.all([
     requestJson<GitTree>(
@@ -115,6 +122,7 @@ const rootDocuments = async (
         entry.type === "blob" &&
         entry.path !== undefined &&
         (entry.path === root.pathPrefix || entry.path.startsWith(`${root.pathPrefix}/`)) &&
+        !isExcluded(entry.path, excluded) &&
         entry.path.toLowerCase().endsWith(".md"),
     )
     .map((entry) => ({ path: entry.path as string, sha: entry.sha ?? "" }))
@@ -180,13 +188,16 @@ export const createVaultKnowledgeSource = (
               .at(-1) ?? new Date(0).toISOString(),
           scopeHash: stableSha256(
             JSON.stringify(
-              configuration.roots.map(({ repository, pathPrefix, ref, sensitivity, acl }) => ({
-                repository,
-                pathPrefix,
-                ref,
-                sensitivity,
-                acl,
-              })),
+              configuration.roots.map(
+                ({ repository, pathPrefix, ref, sensitivity, acl, excludePathPrefixes }) => ({
+                  repository,
+                  pathPrefix,
+                  ref,
+                  sensitivity,
+                  acl,
+                  excludePathPrefixes,
+                }),
+              ),
             ),
           ),
           documents: ordered,

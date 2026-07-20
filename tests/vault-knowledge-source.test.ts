@@ -16,6 +16,11 @@ describe("Vault knowledge source", () => {
           truncated: false,
           tree: [
             { path: "Projects/1851/Risks.md", type: "blob", sha: "note-sha" },
+            {
+              path: "Projects/1851/Customer Emails/private.md",
+              type: "blob",
+              sha: "private-sha",
+            },
             { path: "Projects/Other/Private.md", type: "blob", sha: "other-sha" },
             { path: "Projects/1851/image.png", type: "blob", sha: "image-sha" },
           ],
@@ -45,6 +50,7 @@ describe("Vault knowledge source", () => {
         {
           repository: "example/Approved-Vault",
           pathPrefix: "Projects/1851",
+          excludePathPrefixes: ["Projects/1851/Customer Emails"],
           sensitivity: "internal",
           acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
         },
@@ -68,6 +74,7 @@ describe("Vault knowledge source", () => {
       "#status",
     ]);
     expect(requests.some((url) => url.includes("Projects/Other"))).toBe(false);
+    expect(requests.some((url) => url.includes("private.md"))).toBe(false);
   });
 
   it("fails on a truncated tree instead of silently claiming complete deletion reconciliation", async () => {

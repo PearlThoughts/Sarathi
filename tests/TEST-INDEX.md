@@ -159,3 +159,17 @@
 - Command: `bun run check`
 - Scope: TypeScript, lint, architecture, static checks, test suite, and tracked-file private-data scan.
 - Prerequisites: Bun dependencies installed with `bun install`.
+
+## knowledge-layer
+
+- Command: `bun run test`
+- Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-search.test.ts`
+- Scope: Canonical Jira/Vault ingestion, explicit exclusions, AI SDK and deterministic embeddings, ACL-first exact/full-text/vector retrieval, live GitHub search, RRF fusion, concise cited answer validation, Teams composition, CLI, and privacy-safe failures.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## knowledge-postgres-integration
+
+- Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
+- Location: `tests/knowledge-postgres.integration.test.ts`
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, deny and cross-workspace filtering, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
+- Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.

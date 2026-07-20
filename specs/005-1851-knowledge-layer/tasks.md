@@ -8,7 +8,7 @@
 - [x] KLG-001 Bind the child capability to `sar-2du.11` and existing convoy `hq-cv-fixy7`; create this scoped Spec Kit package and ADR 0006.
 - [x] KLG-002 Add `drizzle.config.ts`, PostgreSQL schema modules, generated/versioned migration artifacts, and migration runner under `src/infrastructure/postgres/`.
 - [x] KLG-003 Add the pgvector extension migration and canonical source/item/version/passage/ACL/projection/checkpoint tables without altering or replacing existing audit tables.
-- [ ] KLG-004 Add migration plan/status/apply verification and rollback-safe tests against the current production-table baseline.
+- [x] KLG-004 Add migration plan/status/apply verification and rollback-safe tests against the current production-table baseline.
 
 ## Phase 2 — Canonical Ingestion and Reconciliation
 
@@ -24,13 +24,13 @@
 - [x] KLG-202 Implement PostgreSQL full-text and pgvector search with independently inspectable ranks and filtered active versions.
 - [x] KLG-203 Implement deterministic reciprocal-rank fusion, source authority/freshness ranking, and duplicate suppression.
 - [x] KLG-204 Implement bounded GitHub live search/API retrieval in `src/infrastructure/github/` without storing repository bodies or embeddings.
-- [ ] KLG-205 Fuse approved Teams thread context, Jira/Vault indexed evidence, and GitHub live results into a single authorized envelope.
+- [x] KLG-205 Fuse approved Teams thread context, Jira/Vault indexed evidence, and GitHub live results into a single authorized envelope.
 - [x] KLG-206 Implement AI SDK concise cited answer composition with normally two or three lines and resolvable citations for every material claim.
 
 ## Phase 4 — Durable Operations and Regression Coverage
 
-- [ ] KLG-301 Add `knowledge ingest|reconcile|query|status` to `src/cli/commands/knowledge-runtime.ts` and existing release CLI composition.
-- [ ] KLG-302 Add permanent migration, authorization, restricted/cross-workspace, dedupe, edit, deletion, checkpoint, citation, retrieval, fusion, provider, and log-redaction tests; update `tests/manifest.json` and `tests/TEST-INDEX.md`.
+- [x] KLG-301 Add `knowledge ingest|reconcile|query|status` to `src/cli/commands/knowledge-runtime.ts` and existing release CLI composition.
+- [x] KLG-302 Add permanent migration, authorization, restricted/cross-workspace, dedupe, edit, deletion, checkpoint, citation, retrieval, fusion, provider, and log-redaction tests; update `tests/manifest.json` and `tests/TEST-INDEX.md`.
 - [ ] KLG-303 Wire the capability into Teams mention composition/readiness and prove restart persistence plus same-thread response shape.
 - [ ] KLG-304 Run focused tests after each slice, then final exact-branch `bun run check` and `bun run runtime:smoke`.
 

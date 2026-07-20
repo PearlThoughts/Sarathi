@@ -148,6 +148,23 @@
       "description": "Tracked-file leakage scanning with invented stdin values and ignored private configuration."
     },
     {
+      "id": "knowledge-layer",
+      "path": "tests/knowledge-*.test.ts",
+      "command": "bun run test",
+      "prerequisites": ["bun install"],
+      "description": "Canonical Jira/Vault evidence, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
+    },
+    {
+      "id": "knowledge-postgres-integration",
+      "path": "tests/knowledge-postgres.integration.test.ts",
+      "command": "SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres",
+      "prerequisites": [
+        "bun install",
+        "PostgreSQL with pgvector available at the explicit test URL"
+      ],
+      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL/cross-workspace filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
+    },
+    {
       "id": "local-ci",
       "path": "package.json",
       "command": "bun run check",

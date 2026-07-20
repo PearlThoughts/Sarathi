@@ -14,7 +14,10 @@ import express from "express";
 import { RepositoryError } from "../domain/errors.ts";
 import { stableSha256 } from "../domain/hash.ts";
 import type { TrustTier } from "../domain/policy.ts";
-import { createGitHubEvidenceReader } from "../infrastructure/github/index.ts";
+import {
+  createGitHubEvidenceReader,
+  createGitHubKnowledgeSearch,
+} from "../infrastructure/github/index.ts";
 import {
   createEntraClientCredentialsTokenProvider,
   createTeamsGraphThreadReader,
@@ -25,16 +28,23 @@ import {
   createJiraComplianceReminderSource,
   createJiraEvidenceReader,
 } from "../infrastructure/jira/index.ts";
-import { createGroundedAnswerGeneratorFromEnvironment } from "../infrastructure/model/index.ts";
+import {
+  createAiSdkKnowledgeEmbedding,
+  createGroundedAnswerGeneratorFromEnvironment,
+  knowledgeEmbeddingConfigurationFromEnvironment,
+} from "../infrastructure/model/index.ts";
 import {
   createPostgresComplianceReminderAudit,
+  createPostgresKnowledgeRepository,
   createPostgresTeamsMentionAudit,
+  openKnowledgePostgresDatabase,
   openStrategyKernelPostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
 import {
+  createKnowledgeTeamsContextSearch,
   createWorkspaceProjectionResolver,
   workspaceProjectionFromEnvironment,
-} from "../infrastructure/teams/workspace-projection-resolver.ts";
+} from "../infrastructure/teams/index.ts";
 import {
   createGitHubVaultAllowlistReader,
   vaultAllowlistFromEnvironment,
@@ -50,6 +60,7 @@ import {
   createAuthorizedContextAssembler,
   handleTeamsMention,
   stripSarathiMention,
+  type TeamsMentionCommand,
   type TeamsMentionDependencies,
 } from "../modules/teams-mention/index.ts";
 import {
@@ -410,13 +421,19 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
     });
     const githubToken = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
+    const allowedRepositories = JSON.parse(
+      required(
+        "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+        environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+      ),
+    ) as string[];
     const databaseUrl = required(
       "SARATHI_STRATEGY_DATABASE_URL",
       environment.SARATHI_STRATEGY_DATABASE_URL,
     );
     const projection = workspaceProjectionFromEnvironment(environment);
     const resolver = createWorkspaceProjectionResolver(projection);
-    const contextAssembler = createAuthorizedContextAssembler([
+    const contextSources = [
       {
         reader: createTeamsGraphThreadReader({
           tokenProvider: graphTokenProvider,
@@ -424,7 +441,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
           ),
         }),
-        sourceKey: (command) =>
+        sourceKey: (command: TeamsMentionCommand) =>
           teamsThreadSourceKey({
             teamId: command.graphTeamId,
             channelId: command.channelId,
@@ -442,14 +459,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       {
         reader: createGitHubEvidenceReader({
           token: githubToken,
-          allowedRepositories: new Set(
-            JSON.parse(
-              required(
-                "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-                environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-              ),
-            ) as string[],
-          ),
+          allowedRepositories: new Set(allowedRepositories),
         }),
         sourceKey: () => sourceKeys.github,
       },
@@ -460,7 +470,42 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         }),
         sourceKey: () => sourceKeys.vault,
       },
-    ]);
+    ] as const;
+    const knowledgeEnabled = enabled(environment.SARATHI_KNOWLEDGE_ENABLED);
+    const knowledgeDatabase = knowledgeEnabled
+      ? openKnowledgePostgresDatabase(databaseUrl)
+      : undefined;
+    const knowledgeAudienceIds = knowledgeEnabled
+      ? (JSON.parse(
+          required(
+            "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
+            environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
+          ),
+        ) as string[])
+      : [];
+    const supplementalContext =
+      knowledgeDatabase === undefined
+        ? undefined
+        : createKnowledgeTeamsContextSearch({
+            repository: createPostgresKnowledgeRepository(knowledgeDatabase.database),
+            embeddings: createAiSdkKnowledgeEmbedding(
+              knowledgeEmbeddingConfigurationFromEnvironment(environment),
+            ),
+            liveSearches: [
+              createGitHubKnowledgeSearch({
+                token: githubToken,
+                workspaceId: required(
+                  "SARATHI_KNOWLEDGE_WORKSPACE_ID",
+                  environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
+                ),
+                allowedAudienceIds: new Set(knowledgeAudienceIds),
+                allowedRepositories,
+              }),
+            ],
+            audienceIds: knowledgeAudienceIds,
+            topK: 10,
+          });
+    const contextAssembler = createAuthorizedContextAssembler(contextSources, supplementalContext);
     return {
       dependencies: {
         resolver,
@@ -486,6 +531,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       checkReadiness: async () => {
         try {
           await graphTokenProvider.getAccessToken();
+          if (knowledgeDatabase !== undefined) {
+            await knowledgeDatabase.pool.query(
+              "select extversion from pg_extension where extname = 'vector'",
+            );
+            await knowledgeDatabase.pool.query("select 1 from knowledge_passage limit 1");
+          }
           return true;
         } catch {
           return false;
