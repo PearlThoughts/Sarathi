@@ -25,6 +25,12 @@ export type DeliveryAssistantConfiguration = {
   readonly now?: (() => Date) | undefined;
 };
 
+export const deliveryResponseBudget = {
+  sourceTimeoutMs: 4_500,
+  compositionTimeoutMs: 2_500,
+  totalBudgetMs: 6_500,
+} as const;
+
 const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
   jira: "Jira",
   vault: "Vault",
@@ -360,14 +366,23 @@ export const createDeliveryAssistant = (
             }),
           );
         const now = configuration.now?.() ?? new Date();
-        const totalBudgetMs = Math.max(100, Math.min(configuration.totalBudgetMs ?? 6_500, 8_000));
+        const totalBudgetMs = Math.max(
+          100,
+          Math.min(configuration.totalBudgetMs ?? deliveryResponseBudget.totalBudgetMs, 8_000),
+        );
         const sourceTimeoutMs = Math.max(
           100,
-          Math.min(configuration.sourceTimeoutMs ?? 4_500, totalBudgetMs),
+          Math.min(
+            configuration.sourceTimeoutMs ?? deliveryResponseBudget.sourceTimeoutMs,
+            totalBudgetMs,
+          ),
         );
         const compositionTimeoutMs = Math.max(
           100,
-          Math.min(configuration.compositionTimeoutMs ?? 2_500, totalBudgetMs),
+          Math.min(
+            configuration.compositionTimeoutMs ?? deliveryResponseBudget.compositionTimeoutMs,
+            totalBudgetMs,
+          ),
         );
         const selectors = new Set(plan.operations.map((operation) => operation.select));
         const sources = configuration.sources.filter((source) =>
