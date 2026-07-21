@@ -165,7 +165,15 @@ describeDatabase("knowledge PostgreSQL integration", () => {
 
   test("migrates additively, deduplicates replay, versions edits, filters ACL, and tombstones deletion", async () => {
     const repository = createPostgresKnowledgeRepository(opened.database);
-    const embeddings = createDeterministicKnowledgeEmbedding();
+    const deterministicEmbeddings = createDeterministicKnowledgeEmbedding();
+    const embeddingBatches: string[][] = [];
+    const embeddings = {
+      ...deterministicEmbeddings,
+      embed: (values: readonly string[]) => {
+        embeddingBatches.push([...values]);
+        return deterministicEmbeddings.embed(values);
+      },
+    };
     const first = await Effect.runPromise(
       repository.reconcile(
         snapshot("v1", "The builder is in QA with approved rollout risk."),
@@ -181,6 +189,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(first).toMatchObject({ versionsCreated: 1, passagesActive: 1, itemsDeleted: 0 });
     expect(replay).toMatchObject({ versionsCreated: 0, passagesActive: 1, itemsDeleted: 0 });
     expect(replay.checksum).toBe(first.checksum);
+    expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
     const activeCount = async (
       table:
         | typeof deliveryObjectTable
