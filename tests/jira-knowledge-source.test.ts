@@ -80,11 +80,21 @@ describe("Jira knowledge source", () => {
                     endDate: "2026-07-27T00:00:00.000Z",
                   },
                 ],
-                components: [{ id: "component-1", name: "Delivery Portal" }],
+                components: [
+                  { id: "component-1", name: "Delivery Portal" },
+                  { id: "component-1", name: "Delivery Portal" },
+                ],
                 priority: { name: "High" },
                 duedate: "2026-07-25",
                 timeestimate: 7200,
                 issuelinks: [
+                  {
+                    type: { inward: "is blocked by", outward: "blocks" },
+                    inwardIssue: {
+                      key: "DEMO-99",
+                      fields: { summary: "Platform dependency" },
+                    },
+                  },
                   {
                     type: { inward: "is blocked by", outward: "blocks" },
                     inwardIssue: {
@@ -196,6 +206,12 @@ describe("Jira knowledge source", () => {
         }),
       ]),
     });
+    const relations = snapshot.documents[0]?.deliveryProjection?.relations ?? [];
+    const relationKeys = relations.map(
+      (relation) =>
+        `${relation.kind}:${relation.from.kind}:${relation.from.externalKey}:${relation.to.kind}:${relation.to.externalKey}`,
+    );
+    expect(new Set(relationKeys).size).toBe(relations.length);
     expect(requests.every(({ init }) => !String(init?.headers).includes("synthetic-token"))).toBe(
       true,
     );
