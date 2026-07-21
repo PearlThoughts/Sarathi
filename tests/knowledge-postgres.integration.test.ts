@@ -190,6 +190,41 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(replay).toMatchObject({ versionsCreated: 0, passagesActive: 1, itemsDeleted: 0 });
     expect(replay.checksum).toBe(first.checksum);
     expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
+    const projectionTimestampChanged = snapshot(
+      "v1",
+      "The builder is in QA with approved rollout risk.",
+    );
+    const projectionDocument = projectionTimestampChanged.documents[0];
+    if (projectionDocument === undefined) throw new Error("Synthetic document is required.");
+    const projection = projectionDocument.deliveryProjection;
+    if (projection === undefined) throw new Error("Synthetic delivery projection is required.");
+    const timestampReplay = await Effect.runPromise(
+      repository.reconcile(
+        {
+          ...projectionTimestampChanged,
+          cursor: "cursor-v1-projection-timestamp-changed",
+          documents: [
+            {
+              ...projectionDocument,
+              deliveryProjection: {
+                ...projection,
+                observations: projection.observations.map((observation) => ({
+                  ...observation,
+                  occurredAt: "2026-07-21T00:00:00.000Z",
+                })),
+                claims: projection.claims.map((claim) => ({
+                  ...claim,
+                  assertedAt: "2026-07-21T00:00:00.000Z",
+                })),
+              },
+            },
+          ],
+        },
+        embeddings,
+      ),
+    );
+    expect(timestampReplay.versionsCreated).toBe(0);
+    expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
     const provenanceChanged = snapshot("v1", "The builder is in QA with approved rollout risk.");
     const provenanceDocument = provenanceChanged.documents[0];
     if (provenanceDocument === undefined) throw new Error("Synthetic document is required.");
