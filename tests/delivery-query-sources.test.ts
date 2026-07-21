@@ -292,6 +292,68 @@ describe("delivery intelligence live query sources", () => {
     ]);
   });
 
+  it("requires explicit dependency relationships and actionable next-step language", async () => {
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "channel-1",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+        },
+      ],
+      fetcher: async () =>
+        Response.json({
+          value: [
+            {
+              id: "resolved",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "The dependency vulnerabilities are resolved." },
+              webUrl: "https://teams.microsoft.com/l/message/resolved",
+            },
+            {
+              id: "waiting",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "Frontend is waiting for API approval from the backend owner." },
+              webUrl: "https://teams.microsoft.com/l/message/waiting",
+            },
+            {
+              id: "acknowledgement",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "ok mam" },
+              webUrl: "https://teams.microsoft.com/l/message/acknowledgement",
+            },
+            {
+              id: "action",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "I will update the acceptance issue tomorrow." },
+              webUrl: "https://teams.microsoft.com/l/message/action",
+            },
+          ],
+        }),
+    });
+    const dependencyPlan = planDeliveryQuestion("Who is waiting for whom in the active sprint?");
+    const actionPlan = planDeliveryQuestion("What is the next action?");
+    if (dependencyPlan === undefined || actionPlan === undefined)
+      throw new Error("Expected deterministic delivery plans");
+
+    const dependencies = await Effect.runPromise(source.execute(context, dependencyPlan));
+    const actions = await Effect.runPromise(source.execute(context, actionPlan));
+
+    expect(dependencies.items.map(({ id }) => id)).toEqual([
+      "teams:team-1:channel-1:waiting:dependencies",
+    ]);
+    expect(actions.items.map(({ id }) => id)).toEqual([
+      "teams:team-1:channel-1:action:next_actions",
+    ]);
+  });
+
   it("reads scoped project email while excluding finance from general delivery queries", async () => {
     const source = createEmailDeliveryQuerySource({
       tokenProvider: { getAccessToken: async () => "token" },

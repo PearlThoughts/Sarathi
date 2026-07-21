@@ -71,7 +71,7 @@ const containsAssistantMention = (body: string | undefined, assistantName: strin
 const matchesOperation = (content: string, operation: DeliveryQueryOperation): boolean => {
   switch (operation.purpose) {
     case "dependencies":
-      return /\b(?:waiting|depends?|dependency|blocked by)\b/i.test(content);
+      return /\b(?:waiting for|waits? on|depends? on|dependency on|blocked by)\b/i.test(content);
     case "blockers":
       return /\b(?:blocked|stuck|impediment|cannot progress)\b/i.test(content);
     case "risks":
@@ -80,6 +80,10 @@ const matchesOperation = (content: string, operation: DeliveryQueryOperation): b
       return /\b(?:again|recurring|repeated|keeps happening)\b/i.test(content);
     case "decisions":
       return /\b(?:decided|decision|agreed|approved|rejected)\b/i.test(content);
+    case "next_actions":
+      return /\b(?:next action|next step|follow[- ]?up|will|need(?:s)? to|must|should|todo|assigned to)\b/i.test(
+        content,
+      );
     default:
       return true;
   }
