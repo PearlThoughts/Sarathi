@@ -83,6 +83,7 @@ const splitWithOverlap = (
   maximumCharacters: number,
   overlapCharacters: number,
 ): readonly string[] => {
+  if (body.trim() === "") return [];
   if (body.length <= maximumCharacters) return [body];
   const chunks: string[] = [];
   let offset = 0;
@@ -139,7 +140,8 @@ export const chunkVaultMarkdown = (
   const passages: KnowledgePassageDraft[] = [];
   for (const section of sections) {
     const body = section.lines.join("\n").trim();
-    const chunks = splitWithOverlap(body, maximumCharacters, overlapCharacters);
+    const embeddableBody = body === "" && section.title !== "Document" ? section.title : body;
+    const chunks = splitWithOverlap(embeddableBody, maximumCharacters, overlapCharacters);
     chunks.forEach((chunk, chunkIndex) => {
       const locator =
         chunks.length === 1 ? `#${section.anchor}` : `#${section.anchor}:part-${chunkIndex + 1}`;

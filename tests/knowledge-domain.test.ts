@@ -64,6 +64,17 @@ describe("knowledge domain", () => {
     expect(new Set(passages.map(({ locator }) => locator)).size).toBe(passages.length);
   });
 
+  it("uses a lone heading as content and never emits empty Vault passages", () => {
+    expect(chunkVaultMarkdown("# Quality checklist")).toEqual([
+      expect.objectContaining({
+        title: "Quality checklist",
+        locator: "#quality-checklist",
+        body: "Quality checklist",
+      }),
+    ]);
+    expect(chunkVaultMarkdown("  \n\n")).toEqual([]);
+  });
+
   it("creates stable typed Jira passages and omits empty fields", () => {
     expect(createTypedPassage("field", "status", 0, "Status", "  In   Progress ")).toMatchObject({
       locator: "status",
