@@ -114,7 +114,26 @@ describe("GitHub live knowledge search", () => {
         { owner: "example-org", ownerType: "org", repositoryNamePrefix: "delivery-" },
       ],
       fetcher: async (input) => {
-        requests.push(String(input));
+        const url = String(input);
+        requests.push(url);
+        if (url.includes("/search/code"))
+          return Response.json({
+            incomplete_results: false,
+            items: [
+              {
+                html_url: "https://github.com/example-org/delivery-api/blob/abc/src/report.ts#L10",
+                path: "src/report.ts",
+                repository: { full_name: "example-org/delivery-api" },
+                text_matches: [{ fragment: "Current implementation status" }],
+              },
+              {
+                html_url: "https://github.com/example-org/delivery-vault/blob/abc/Status.md#L1",
+                path: "Status.md",
+                repository: { full_name: "example-org/delivery-vault" },
+                text_matches: [{ fragment: "Must remain in canonical Vault retrieval" }],
+              },
+            ],
+          });
         return Response.json({
           incomplete_results: false,
           items: [
@@ -155,7 +174,11 @@ describe("GitHub live knowledge search", () => {
     expect(
       requests.every((url) => new URL(url).searchParams.get("q")?.includes("org:example-org")),
     ).toBe(true);
-    expect(results.map(({ sourceId }) => sourceId)).toEqual(["example-org/delivery-api#9"]);
+    expect(requests.every((url) => new URL(url).searchParams.get("per_page") === "100")).toBe(true);
+    expect(results.map(({ sourceId }) => sourceId)).toEqual([
+      "example-org/delivery-api#9",
+      "example-org/delivery-api:src/report.ts",
+    ]);
   });
 
   test("filters an unauthorized workspace before any GitHub request", async () => {

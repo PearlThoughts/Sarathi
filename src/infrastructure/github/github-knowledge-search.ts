@@ -10,6 +10,7 @@ import {
   githubCodeRepositoryAllowed,
   githubScopeQualifier,
   repositoryFromGitHubApiUrl,
+  repositoryFromGitHubHtmlUrl,
   validGitHubRepository,
   validGitHubRepositoryScope,
 } from "./github-repository-scope.ts";
@@ -19,6 +20,7 @@ type GitHubSearchItem = {
   readonly name?: string;
   readonly path?: string;
   readonly repository_url?: string;
+  readonly repository?: { readonly full_name?: string };
   readonly number?: number;
   readonly title?: string;
   readonly body?: string | null;
@@ -215,18 +217,18 @@ export const createGitHubKnowledgeSearch = (
           githubCodeRepositoryAllowed(repository, allowedRepositories, repositoryScopes),
         );
         const targets = [
-          ...codeRepositories.map((repository) => ({ qualifier: `repo:${repository}` })),
-          ...repositoryScopes.map((scope) => ({ qualifier: githubScopeQualifier(scope) })),
+          ...codeRepositories.map((repository) => ({
+            qualifier: `repo:${repository}`,
+            limit: perRepositoryLimit,
+          })),
+          ...repositoryScopes.map((scope) => ({
+            qualifier: githubScopeQualifier(scope),
+            limit: 100,
+          })),
         ];
-        const searches = targets.flatMap(({ qualifier }) =>
+        const searches = targets.flatMap(({ qualifier, limit }) =>
           (["issues", "code"] as const).map(async (kind) => ({
-            response: await readSearch(
-              configuration,
-              kind,
-              qualifier,
-              question,
-              perRepositoryLimit,
-            ),
+            response: await readSearch(configuration, kind, qualifier, question, limit),
           })),
         );
         const now = configuration.now?.() ?? new Date();
@@ -235,7 +237,10 @@ export const createGitHubKnowledgeSearch = (
         return responses
           .flatMap(({ response }) =>
             response.items.flatMap((item, index) => {
-              const resolvedRepository = repositoryFromGitHubApiUrl(item.repository_url);
+              const resolvedRepository =
+                item.repository?.full_name ??
+                repositoryFromGitHubApiUrl(item.repository_url) ??
+                repositoryFromGitHubHtmlUrl(item.html_url);
               if (
                 resolvedRepository === undefined ||
                 !githubCodeRepositoryAllowed(
