@@ -80,6 +80,55 @@ const effectiveVersion = (document: KnowledgeSourceDocument): string =>
     }),
   );
 
+const versionId = (document: KnowledgeSourceDocument): string =>
+  `knowledge-version:${stableSha256(`${itemId(document)}:${effectiveVersion(document)}`)}`;
+
+const reusableProjectionVersions = async (
+  database: KnowledgePostgresDatabase,
+  snapshot: KnowledgeSourceSnapshot,
+  embeddings: KnowledgeEmbeddingPort,
+): Promise<ReadonlySet<string>> => {
+  const expectedPassages = new Map(
+    snapshot.documents.map((document) => [versionId(document), document.passages.length] as const),
+  );
+  const versionIds = [...expectedPassages.keys()];
+  if (versionIds.length === 0) return new Set();
+  const [versions, projections] = await Promise.all([
+    database
+      .select({ id: knowledgeVersionTable.id })
+      .from(knowledgeVersionTable)
+      .where(inArray(knowledgeVersionTable.id, versionIds)),
+    database
+      .select({ versionId: knowledgePassageTable.versionId })
+      .from(knowledgePassageTable)
+      .innerJoin(
+        knowledgeProjectionTable,
+        eq(knowledgeProjectionTable.passageId, knowledgePassageTable.id),
+      )
+      .where(
+        and(
+          inArray(knowledgePassageTable.versionId, versionIds),
+          eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+          eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+        ),
+      ),
+  ]);
+  const existingVersions = new Set(versions.map(({ id }) => id));
+  const projectionCounts = new Map<string, number>();
+  for (const projection of projections)
+    projectionCounts.set(
+      projection.versionId,
+      (projectionCounts.get(projection.versionId) ?? 0) + 1,
+    );
+  return new Set(
+    versionIds.filter(
+      (id) =>
+        existingVersions.has(id) &&
+        (projectionCounts.get(id) ?? 0) === (expectedPassages.get(id) ?? 0),
+    ),
+  );
+};
+
 const citationUrl = (document: KnowledgeSourceDocument, locator: string): string => {
   const url = new URL(document.canonicalUrl);
   url.hash = locator.replace(/^#/, "");
@@ -860,7 +909,7 @@ const reconcileSnapshot = async (
   database: KnowledgePostgresDatabase,
   snapshot: KnowledgeSourceSnapshot,
   embeddings: KnowledgeEmbeddingPort,
-  vectors: readonly (readonly number[])[],
+  vectorsByVersion: ReadonlyMap<string, readonly (readonly number[])[]>,
 ) => {
   let stage: ReconcileStage = "source";
   try {
@@ -952,16 +1001,14 @@ const reconcileSnapshot = async (
       }
 
       stage = "documents";
-      let vectorOffset = 0;
       let versionsCreated = 0;
       let passagesActive = 0;
       const projectedDocuments: ProjectedDocument[] = [];
       for (const document of snapshot.documents) {
         const documentItemId = itemId(document);
         const versionHash = effectiveVersion(document);
-        const versionId = `knowledge-version:${stableSha256(`${documentItemId}:${versionHash}`)}`;
-        const passageVectors = vectors.slice(vectorOffset, vectorOffset + document.passages.length);
-        vectorOffset += document.passages.length;
+        const currentVersionId = versionId(document);
+        const passageVectors = vectorsByVersion.get(currentVersionId);
         await transaction
           .insert(knowledgeItemTable)
           .values({
@@ -993,7 +1040,7 @@ const reconcileSnapshot = async (
         const existingVersion = await transaction
           .select({ id: knowledgeVersionTable.id })
           .from(knowledgeVersionTable)
-          .where(eq(knowledgeVersionTable.id, versionId))
+          .where(eq(knowledgeVersionTable.id, currentVersionId))
           .limit(1);
         if (existingVersion.length === 0) {
           versionsCreated += 1;
@@ -1006,7 +1053,7 @@ const reconcileSnapshot = async (
             .set({ active: false })
             .where(eq(knowledgePassageTable.itemId, documentItemId));
           await transaction.insert(knowledgeVersionTable).values({
-            id: versionId,
+            id: currentVersionId,
             itemId: documentItemId,
             workspaceId: document.workspaceId,
             sourceVersion: versionHash,
@@ -1018,14 +1065,14 @@ const reconcileSnapshot = async (
             provenance: { ...document.provenance, sourceVersion: document.sourceVersion },
           });
           for (const [passageIndex, passage] of document.passages.entries()) {
-            const vector = passageVectors[passageIndex];
+            const vector = passageVectors?.[passageIndex];
             if (vector === undefined || vector.length !== embeddings.dimensions)
               throw new Error("Embedding result count or dimensions did not match passages.");
-            const passageId = `knowledge-passage:${stableSha256(`${versionId}:${passage.locator}`)}`;
+            const passageId = `knowledge-passage:${stableSha256(`${currentVersionId}:${passage.locator}`)}`;
             await transaction.insert(knowledgePassageTable).values({
               id: passageId,
               itemId: documentItemId,
-              versionId,
+              versionId: currentVersionId,
               workspaceId: document.workspaceId,
               kind: passage.kind,
               locator: passage.locator,
@@ -1055,7 +1102,7 @@ const reconcileSnapshot = async (
             .where(
               and(
                 eq(knowledgeVersionTable.itemId, documentItemId),
-                ne(knowledgeVersionTable.id, versionId),
+                ne(knowledgeVersionTable.id, currentVersionId),
               ),
             );
           await transaction
@@ -1065,44 +1112,46 @@ const reconcileSnapshot = async (
           await transaction
             .update(knowledgeVersionTable)
             .set({ active: true, tombstone: false, observedAt: now })
-            .where(eq(knowledgeVersionTable.id, versionId));
+            .where(eq(knowledgeVersionTable.id, currentVersionId));
           await transaction
             .update(knowledgePassageTable)
             .set({ active: true })
-            .where(eq(knowledgePassageTable.versionId, versionId));
-          const restoredPassages = await transaction
-            .select({
-              id: knowledgePassageTable.id,
-              ordinal: knowledgePassageTable.ordinal,
-              contentHash: knowledgePassageTable.contentHash,
-            })
-            .from(knowledgePassageTable)
-            .where(eq(knowledgePassageTable.versionId, versionId));
-          for (const passage of restoredPassages) {
-            const vector = passageVectors[passage.ordinal];
-            if (vector === undefined || vector.length !== embeddings.dimensions)
-              throw new Error("Embedding result count or dimensions did not match passages.");
-            await transaction
-              .insert(knowledgeProjectionTable)
-              .values({
-                passageId: passage.id,
-                workspaceId: document.workspaceId,
-                embeddingModel: embeddings.model,
-                embeddingDimensions: embeddings.dimensions,
-                embedding: [...vector],
-                contentHash: passage.contentHash,
-                createdAt: now,
+            .where(eq(knowledgePassageTable.versionId, currentVersionId));
+          if (passageVectors !== undefined) {
+            const restoredPassages = await transaction
+              .select({
+                id: knowledgePassageTable.id,
+                ordinal: knowledgePassageTable.ordinal,
+                contentHash: knowledgePassageTable.contentHash,
               })
-              .onConflictDoUpdate({
-                target: knowledgeProjectionTable.passageId,
-                set: {
+              .from(knowledgePassageTable)
+              .where(eq(knowledgePassageTable.versionId, currentVersionId));
+            for (const passage of restoredPassages) {
+              const vector = passageVectors[passage.ordinal];
+              if (vector === undefined || vector.length !== embeddings.dimensions)
+                throw new Error("Embedding result count or dimensions did not match passages.");
+              await transaction
+                .insert(knowledgeProjectionTable)
+                .values({
+                  passageId: passage.id,
+                  workspaceId: document.workspaceId,
                   embeddingModel: embeddings.model,
                   embeddingDimensions: embeddings.dimensions,
                   embedding: [...vector],
                   contentHash: passage.contentHash,
                   createdAt: now,
-                },
-              });
+                })
+                .onConflictDoUpdate({
+                  target: knowledgeProjectionTable.passageId,
+                  set: {
+                    embeddingModel: embeddings.model,
+                    embeddingDimensions: embeddings.dimensions,
+                    embedding: [...vector],
+                    contentHash: passage.contentHash,
+                    createdAt: now,
+                  },
+                });
+            }
           }
         }
         const activePassages = await transaction
@@ -1110,7 +1159,7 @@ const reconcileSnapshot = async (
           .from(knowledgePassageTable)
           .where(
             and(
-              eq(knowledgePassageTable.versionId, versionId),
+              eq(knowledgePassageTable.versionId, currentVersionId),
               eq(knowledgePassageTable.active, true),
             ),
           );
@@ -1122,7 +1171,7 @@ const reconcileSnapshot = async (
           document.acl,
           now,
         );
-        projectedDocuments.push({ document, documentItemId, versionId });
+        projectedDocuments.push({ document, documentItemId, versionId: currentVersionId });
       }
 
       stage = "delivery";
@@ -1194,25 +1243,46 @@ export const createPostgresKnowledgeRepository = (
         }),
       );
     }
-    const passageBodies = snapshot.documents.flatMap((document) =>
-      document.passages.map(({ body }) => body),
-    );
-    const embedded =
-      passageBodies.length === 0
-        ? Effect.succeed([] as readonly number[][])
-        : embeddings.embed(passageBodies);
-    return embedded.pipe(
-      Effect.flatMap((vectors) =>
-        Effect.tryPromise({
-          try: () => reconcileSnapshot(database, snapshot, embeddings, vectors),
-          catch: (failure) =>
-            new RepositoryError({
-              message:
-                "Knowledge reconciliation failed; the previous checkpoint remains authoritative.",
-              operation: classifyKnowledgeReconcileFailure(failure),
-            }),
+    return Effect.tryPromise({
+      try: () => reusableProjectionVersions(database, snapshot, embeddings),
+      catch: (failure) =>
+        new RepositoryError({
+          message: "Knowledge reconciliation could not inspect existing projections.",
+          operation: classifyKnowledgeReconcileFailure(failure),
         }),
-      ),
+    }).pipe(
+      Effect.flatMap((reusableVersions) => {
+        const versionsToEmbed = snapshot.documents.filter(
+          (document) => !reusableVersions.has(versionId(document)),
+        );
+        const passageBodies = versionsToEmbed.flatMap((document) =>
+          document.passages.map(({ body }) => body),
+        );
+        const embedded =
+          passageBodies.length === 0
+            ? Effect.succeed([] as readonly number[][])
+            : embeddings.embed(passageBodies);
+        return embedded.pipe(
+          Effect.flatMap((vectors) => {
+            const vectorsByVersion = new Map<string, readonly (readonly number[])[]>();
+            let offset = 0;
+            for (const document of versionsToEmbed) {
+              const nextOffset = offset + document.passages.length;
+              vectorsByVersion.set(versionId(document), vectors.slice(offset, nextOffset));
+              offset = nextOffset;
+            }
+            return Effect.tryPromise({
+              try: () => reconcileSnapshot(database, snapshot, embeddings, vectorsByVersion),
+              catch: (failure) =>
+                new RepositoryError({
+                  message:
+                    "Knowledge reconciliation failed; the previous checkpoint remains authoritative.",
+                  operation: classifyKnowledgeReconcileFailure(failure),
+                }),
+            });
+          }),
+        );
+      }),
     );
   },
   search: (query, queryEmbedding) =>
