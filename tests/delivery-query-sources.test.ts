@@ -130,6 +130,15 @@ describe("delivery intelligence live query sources", () => {
                 committer: { date: "2026-07-20T09:00:00.000Z" },
               },
             },
+            {
+              sha: "vault123456",
+              html_url: "https://github.com/example-org/delivery-vault/commit/vault123456",
+              repository: { full_name: "example-org/delivery-vault" },
+              commit: {
+                message: "Update delivery notes",
+                committer: { date: "2026-07-20T09:30:00.000Z" },
+              },
+            },
           ],
         });
       },
@@ -142,6 +151,28 @@ describe("delivery intelligence live query sources", () => {
       "Add scoped delivery query",
     ]);
     expect(result.items.some(({ title }) => title === "Finance-only work")).toBe(false);
+    expect(result.items.some(({ title }) => title === "Update delivery notes")).toBe(false);
+  });
+
+  it("does not treat repository activity as recurring-issue evidence", async () => {
+    let requests = 0;
+    const source = createGitHubDeliveryQuerySource({
+      token: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      allowedRepositories: ["example/repo"],
+      fetcher: async () => {
+        requests += 1;
+        return Response.json([]);
+      },
+    });
+    const recurringPlan = planDeliveryQuestion("What recurring issue keeps happening?");
+    if (recurringPlan === undefined) throw new Error("Expected deterministic recurring plan");
+
+    const result = await Effect.runPromise(source.execute(context, recurringPlan));
+
+    expect(requests).toBe(0);
+    expect(result.items).toEqual([]);
   });
 
   it("reads date-bounded Jira transitions from connected project scope", async () => {
