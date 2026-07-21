@@ -95,10 +95,11 @@ const uniqueRanked = (items: readonly DeliveryResultItem[]): readonly DeliveryRe
         left.id.localeCompare(right.id),
     )
     .filter((item) => {
-      const dedupeKey = item.dedupeKey.trim().toLowerCase();
-      if (seenDedupe.has(dedupeKey) || seenUrls.has(item.citationUrl)) return false;
-      seenDedupe.add(dedupeKey);
-      seenUrls.add(item.citationUrl);
+      const intentDedupeKey = `${item.intent}\u0000${item.dedupeKey.trim().toLowerCase()}`;
+      const intentCitationUrl = `${item.intent}\u0000${item.citationUrl}`;
+      if (seenDedupe.has(intentDedupeKey) || seenUrls.has(intentCitationUrl)) return false;
+      seenDedupe.add(intentDedupeKey);
+      seenUrls.add(intentCitationUrl);
       return true;
     });
 };

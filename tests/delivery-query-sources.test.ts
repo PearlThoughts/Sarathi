@@ -289,7 +289,7 @@ describe("delivery intelligence live query sources", () => {
     );
     expect(result.items.map(({ intent }) => intent)).toEqual(["risks", "next_actions"]);
     expect(result.items[1]?.summary).toBe(
-      "Next: Delivery Owner — DEMO-9 In Progress: Resolve launch dependency",
+      "Delivery Owner — DEMO-9 In Progress: Resolve launch dependency",
     );
   });
 

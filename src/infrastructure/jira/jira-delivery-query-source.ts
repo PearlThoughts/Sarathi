@@ -463,7 +463,7 @@ const nextActionItems = (
       issue,
       "next_action",
       "next",
-      `Next: ${issueOwner(issue)} — ${issue.key} ${issueStatus(issue)}: ${issueTitle(issue)}`,
+      `${issueOwner(issue)} — ${issue.key} ${issueStatus(issue)}: ${issueTitle(issue)}`,
     );
     return item === undefined ? [] : [item];
   });
