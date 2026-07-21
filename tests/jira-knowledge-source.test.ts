@@ -23,6 +23,7 @@ const configuration = (fetcher: typeof fetch) => ({
     priority: "Priority",
     duedate: "Due Date",
     timeestimate: "Remaining Estimate",
+    implementationcost: "Implementation Cost",
   },
   acl: [
     {
@@ -87,6 +88,7 @@ describe("Jira knowledge source", () => {
                 priority: { name: "High" },
                 duedate: "2026-07-25",
                 timeestimate: 7200,
+                implementationcost: "synthetic-finance-value",
                 issuelinks: [
                   {
                     type: { inward: "is blocked by", outward: "blocks" },
@@ -206,6 +208,10 @@ describe("Jira knowledge source", () => {
         }),
       ]),
     });
+    expect(JSON.stringify(snapshot)).not.toContain("synthetic-finance-value");
+    expect(snapshot.documents[0]?.passages).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ locator: "#field-implementationcost" })]),
+    );
     const relations = snapshot.documents[0]?.deliveryProjection?.relations ?? [];
     const relationKeys = relations.map(
       (relation) =>

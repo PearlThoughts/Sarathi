@@ -2,12 +2,13 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
-import type {
-  DeliveryObjectDraft,
-  DeliveryObjectKind,
-  DeliveryObjectRef,
-  DeliveryProjection,
-  DeliveryRelationDraft,
+import {
+  type DeliveryObjectDraft,
+  type DeliveryObjectKind,
+  type DeliveryObjectRef,
+  type DeliveryProjection,
+  type DeliveryRelationDraft,
+  isFinanceAttributeKey,
 } from "../../modules/delivery-intelligence/index.ts";
 import {
   createTypedPassage,
@@ -179,6 +180,7 @@ const issuePassages = (
 ): readonly KnowledgePassageDraft[] => {
   const passages: KnowledgePassageDraft[] = [];
   for (const [fieldId, label] of Object.entries(fields)) {
+    if (isFinanceAttributeKey(label)) continue;
     const passage = createTypedPassage(
       fieldId === "description" ? "description" : "field",
       `#field-${fieldId.toLowerCase()}`,
@@ -302,7 +304,7 @@ const deliveryProjection = (
   const attributes = {
     ...Object.fromEntries(
       Object.entries(configuration.fields).flatMap(([fieldId, label]) => {
-        if (/description|comment/i.test(label)) return [];
+        if (/description|comment/i.test(label) || isFinanceAttributeKey(label)) return [];
         const value = structuredValue(issue.fields[fieldId]);
         return value === undefined || value === null || value === ""
           ? []
