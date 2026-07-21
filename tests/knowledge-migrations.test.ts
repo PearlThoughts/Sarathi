@@ -1,10 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { knowledgePostgresPoolConfiguration } from "../src/infrastructure/postgres/knowledge-migrations.ts";
 
 const migration = (name: string): Promise<string> =>
   readFile(new URL(`../drizzle/${name}`, import.meta.url), "utf8");
 
 describe("knowledge Drizzle migrations", () => {
+  it("bounds query connections and PostgreSQL work to the delivery source budget", () => {
+    expect(knowledgePostgresPoolConfiguration("postgresql://database", 3_000)).toEqual({
+      connectionString: "postgresql://database",
+      connectionTimeoutMillis: 3_000,
+      query_timeout: 3_000,
+      statement_timeout: 3_000,
+    });
+    expect(knowledgePostgresPoolConfiguration("postgresql://database")).toEqual({
+      connectionString: "postgresql://database",
+    });
+  });
+
   it("enables pgvector before generated schema DDL", async () => {
     const extension = await migration("0000_enable-pgvector.sql");
     const journal = JSON.parse(await migration("meta/_journal.json")) as {

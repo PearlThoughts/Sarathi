@@ -225,8 +225,10 @@ const answerFromRuntime = async (
   request: DeliveryAssistantRequest,
   environment: DeliveryRuntimeEnvironment,
 ): Promise<DeliveryAssistantAnswer> => {
+  const queryBudgetMs = 3_000;
   const opened = openKnowledgePostgresDatabase(
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
+    queryBudgetMs,
   );
   try {
     const audienceIds = parseJson<readonly string[]>(
@@ -251,7 +253,7 @@ const answerFromRuntime = async (
         answerComposer: createAiSdkDeliveryAnswerComposer(
           createGroundedAnswerGeneratorFromEnvironment(environment),
         ),
-        sourceTimeoutMs: 3_000,
+        sourceTimeoutMs: queryBudgetMs,
         compositionTimeoutMs: 2_500,
         totalBudgetMs: 6_500,
       }).answer(request),
