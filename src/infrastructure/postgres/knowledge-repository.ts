@@ -236,6 +236,64 @@ const syncAcl = async (
   if (rows.length > 0) await database.insert(knowledgeAclBindingTable).values(rows);
 };
 
+const postgresConstraintFailureOperations = new Map<string, string>([
+  ["knowledge_source_workspace_id", "knowledge-reconcile.source-duplicate"],
+  ["knowledge_item_source_external", "knowledge-reconcile.item-duplicate"],
+  ["knowledge_version_item_source_version", "knowledge-reconcile.version-duplicate"],
+  ["knowledge_passage_version_locator", "knowledge-reconcile.passage-duplicate"],
+  ["knowledge_acl_passage_subject", "knowledge-reconcile.passage-acl-duplicate"],
+  ["delivery_object_workspace_source_kind_key", "knowledge-reconcile.object-duplicate"],
+  ["delivery_relation_workspace_edge", "knowledge-reconcile.relation-duplicate"],
+  ["delivery_observation_workspace_source_external", "knowledge-reconcile.observation-duplicate"],
+  ["delivery_metric_workspace_subject_kind_effective", "knowledge-reconcile.metric-duplicate"],
+  [
+    "delivery_finance_metric_workspace_subject_kind_effective",
+    "knowledge-reconcile.finance-metric-duplicate",
+  ],
+  ["delivery_claim_source_value", "knowledge-reconcile.claim-duplicate"],
+  ["delivery_acl_target_subject", "knowledge-reconcile.delivery-acl-duplicate"],
+  ["delivery_metric_excludes_finance", "knowledge-reconcile.metric-finance-boundary"],
+  ["delivery_finance_metric_confidential", "knowledge-reconcile.finance-sensitivity-boundary"],
+]);
+
+const postgresCodeFailureOperations = new Map<string, string>([
+  ["23503", "knowledge-reconcile.foreign-key"],
+  ["23505", "knowledge-reconcile.unique"],
+  ["23514", "knowledge-reconcile.check"],
+  ["22003", "knowledge-reconcile.numeric-range"],
+  ["22007", "knowledge-reconcile.datetime"],
+  ["22P02", "knowledge-reconcile.invalid-value"],
+]);
+
+type ErrorMetadata = {
+  readonly cause?: unknown;
+  readonly code?: unknown;
+  readonly constraint?: unknown;
+  readonly constraint_name?: unknown;
+};
+
+export const classifyKnowledgeReconcileFailure = (failure: unknown): string => {
+  let current: unknown = failure;
+  for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth += 1) {
+    const metadata = current as ErrorMetadata;
+    const constraint =
+      typeof metadata.constraint_name === "string"
+        ? metadata.constraint_name
+        : typeof metadata.constraint === "string"
+          ? metadata.constraint
+          : undefined;
+    const constraintOperation =
+      constraint === undefined ? undefined : postgresConstraintFailureOperations.get(constraint);
+    if (constraintOperation !== undefined) return constraintOperation;
+    if (typeof metadata.code === "string") {
+      const codeOperation = postgresCodeFailureOperations.get(metadata.code);
+      if (codeOperation !== undefined) return codeOperation;
+    }
+    current = metadata.cause;
+  }
+  return "knowledge-reconcile";
+};
+
 type ProjectedDocument = {
   readonly document: KnowledgeSourceDocument;
   readonly documentItemId: string;
@@ -1010,11 +1068,11 @@ export const createPostgresKnowledgeRepository = (
       Effect.flatMap((vectors) =>
         Effect.tryPromise({
           try: () => reconcileSnapshot(database, snapshot, embeddings, vectors),
-          catch: () =>
+          catch: (failure) =>
             new RepositoryError({
               message:
                 "Knowledge reconciliation failed; the previous checkpoint remains authoritative.",
-              operation: "knowledge-reconcile",
+              operation: classifyKnowledgeReconcileFailure(failure),
             }),
         }),
       ),
