@@ -360,6 +360,17 @@ const deliveryProjection = (
       objects.push(object);
   };
   const addRelation = (relation: DeliveryRelationDraft): void => {
+    if (
+      relations.some(
+        (candidate) =>
+          candidate.kind === relation.kind &&
+          candidate.from.kind === relation.from.kind &&
+          candidate.from.externalKey === relation.from.externalKey &&
+          candidate.to.kind === relation.to.kind &&
+          candidate.to.externalKey === relation.to.externalKey,
+      )
+    )
+      return;
     relations.push(relation);
   };
 
