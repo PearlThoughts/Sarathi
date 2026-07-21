@@ -1,5 +1,8 @@
 export type { DeliveryAssistantConfiguration } from "./application/create-delivery-assistant.ts";
-export { createDeliveryAssistant } from "./application/create-delivery-assistant.ts";
+export {
+  createDeliveryAssistant,
+  deliveryResponseBudget,
+} from "./application/create-delivery-assistant.ts";
 export type {
   ChannelPreference,
   CoachingDepth,

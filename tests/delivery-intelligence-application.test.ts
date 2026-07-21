@@ -8,6 +8,7 @@ import {
   type DeliveryQuerySource,
   type DeliveryResultItem,
   deliveryClaimValueHash,
+  deliveryResponseBudget,
   planDeliveryQuestion,
 } from "../src/modules/delivery-intelligence/index.ts";
 
@@ -42,6 +43,17 @@ const item = (
 });
 
 describe("delivery intelligence application", () => {
+  it("allows bounded live sources to finish before the Teams response deadline", () => {
+    expect(deliveryResponseBudget).toEqual({
+      sourceTimeoutMs: 4_500,
+      compositionTimeoutMs: 2_500,
+      totalBudgetMs: 6_500,
+    });
+    expect(deliveryResponseBudget.sourceTimeoutMs).toBeLessThan(
+      deliveryResponseBudget.totalBudgetMs,
+    );
+  });
+
   it("rejects finance before any source call", async () => {
     const execute = vi.fn(() =>
       Effect.succeed({

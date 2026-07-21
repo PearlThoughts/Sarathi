@@ -24,6 +24,7 @@ import {
   type DeliveryAssistantAnswer,
   type DeliveryAssistantRequest,
   type DeliveryQuerySource,
+  deliveryResponseBudget,
 } from "../../modules/delivery-intelligence/index.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
@@ -223,7 +224,7 @@ const answerFromRuntime = async (
   request: DeliveryAssistantRequest,
   environment: DeliveryRuntimeEnvironment,
 ): Promise<DeliveryAssistantAnswer> => {
-  const queryBudgetMs = 3_000;
+  const queryBudgetMs = deliveryResponseBudget.sourceTimeoutMs;
   const opened = openKnowledgePostgresDatabase(
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
     queryBudgetMs,
@@ -248,9 +249,7 @@ const answerFromRuntime = async (
         answerComposer: createAiSdkDeliveryAnswerComposer(
           createGroundedAnswerGeneratorFromEnvironment(environment),
         ),
-        sourceTimeoutMs: queryBudgetMs,
-        compositionTimeoutMs: 2_500,
-        totalBudgetMs: 6_500,
+        ...deliveryResponseBudget,
       }).answer(request),
     );
   } finally {

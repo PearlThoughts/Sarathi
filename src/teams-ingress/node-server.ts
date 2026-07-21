@@ -63,7 +63,10 @@ import {
   runComplianceReminderShadowAcceptance,
   startComplianceReminderScheduler,
 } from "../modules/compliance-reminders/index.ts";
-import { createDeliveryAssistant } from "../modules/delivery-intelligence/index.ts";
+import {
+  createDeliveryAssistant,
+  deliveryResponseBudget,
+} from "../modules/delivery-intelligence/index.ts";
 import {
   createAuthorizedContextAssembler,
   handleTeamsMention,
@@ -640,9 +643,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 console.info(JSON.stringify(event)),
               ),
             ),
-            sourceTimeoutMs: 3_000,
-            compositionTimeoutMs: 2_500,
-            totalBudgetMs: 6_500,
+            ...deliveryResponseBudget,
           });
         })()
       : undefined;
