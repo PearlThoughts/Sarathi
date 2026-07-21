@@ -54,9 +54,8 @@ describe("Vault knowledge source", () => {
           commit: { committer: { date: "2026-07-20T03:00:00.000Z" } },
         });
       }
-      if (url.includes("/contents/")) {
+      if (url.includes("/git/blobs/note-sha")) {
         return Response.json({
-          type: "file",
           encoding: "base64",
           content: Buffer.from(markdown).toString("base64"),
           sha: "note-sha",
@@ -138,6 +137,7 @@ describe("Vault knowledge source", () => {
     });
     expect(requests.some((url) => url.includes("Projects/Other"))).toBe(false);
     expect(requests.some((url) => url.includes("private.md"))).toBe(false);
+    expect(requests.some((url) => url.includes("/git/blobs/note-sha"))).toBe(true);
   });
 
   it("fails on a truncated tree instead of silently claiming complete deletion reconciliation", async () => {
