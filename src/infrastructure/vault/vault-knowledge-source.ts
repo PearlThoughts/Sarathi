@@ -405,7 +405,7 @@ const rootDocuments = async (
       sourceUpdatedAt: updatedAt,
       sensitivity: root.sensitivity,
       authority: root.authority ?? 0.9,
-      provenance: { repository: root.repository, path, revision: commit.sha },
+      provenance: { repository: root.repository, path, revision: content.sha ?? sha },
       acl: root.acl,
       passages,
       deliveryProjection: deliveryProjection(

@@ -190,6 +190,26 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(replay).toMatchObject({ versionsCreated: 0, passagesActive: 1, itemsDeleted: 0 });
     expect(replay.checksum).toBe(first.checksum);
     expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
+    const provenanceChanged = snapshot("v1", "The builder is in QA with approved rollout risk.");
+    const provenanceDocument = provenanceChanged.documents[0];
+    if (provenanceDocument === undefined) throw new Error("Synthetic document is required.");
+    const provenanceReplay = await Effect.runPromise(
+      repository.reconcile(
+        {
+          ...provenanceChanged,
+          cursor: "cursor-v1-provenance-changed",
+          documents: [
+            {
+              ...provenanceDocument,
+              provenance: { ...provenanceDocument.provenance, revision: "new-repository-commit" },
+            },
+          ],
+        },
+        embeddings,
+      ),
+    );
+    expect(provenanceReplay.versionsCreated).toBe(1);
+    expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
     const activeCount = async (
       table:
         | typeof deliveryObjectTable
@@ -365,7 +385,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     }>(
       "select bool_and(i.deleted_at is not null) as deleted, count(distinct p.id) filter (where p.active) as active_passages, count(distinct v.id) filter (where v.tombstone) as tombstones from knowledge_item i left join knowledge_passage p on p.item_id = i.id left join knowledge_version v on v.item_id = i.id",
     );
-    expect(state.rows[0]).toMatchObject({ deleted: true, active_passages: "0", tombstones: "2" });
+    expect(state.rows[0]).toMatchObject({ deleted: true, active_passages: "0", tombstones: "3" });
     expect(
       await Promise.all([
         activeCount(deliveryObjectTable),

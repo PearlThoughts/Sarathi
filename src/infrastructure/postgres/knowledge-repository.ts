@@ -129,6 +129,43 @@ const reusableProjectionVersions = async (
   );
 };
 
+const reusableProjectionVectors = async (
+  database: KnowledgePostgresDatabase,
+  snapshot: KnowledgeSourceSnapshot,
+  embeddings: KnowledgeEmbeddingPort,
+): Promise<ReadonlyMap<string, readonly number[]>> => {
+  const contentHashes = [
+    ...new Set(
+      snapshot.documents.flatMap((document) =>
+        document.passages.map(({ contentHash }) => contentHash),
+      ),
+    ),
+  ];
+  if (contentHashes.length === 0) return new Map();
+  const projections = await database
+    .select({
+      contentHash: knowledgeProjectionTable.contentHash,
+      embedding: knowledgeProjectionTable.embedding,
+    })
+    .from(knowledgeProjectionTable)
+    .where(
+      and(
+        inArray(knowledgeProjectionTable.contentHash, contentHashes),
+        eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+        eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+      ),
+    );
+  const vectors = new Map<string, readonly number[]>();
+  for (const projection of projections) {
+    if (
+      !vectors.has(projection.contentHash) &&
+      projection.embedding.length === embeddings.dimensions
+    )
+      vectors.set(projection.contentHash, projection.embedding);
+  }
+  return vectors;
+};
+
 const citationUrl = (document: KnowledgeSourceDocument, locator: string): string => {
   const url = new URL(document.canonicalUrl);
   url.hash = locator.replace(/^#/, "");
@@ -1255,31 +1292,65 @@ export const createPostgresKnowledgeRepository = (
         const versionsToEmbed = snapshot.documents.filter(
           (document) => !reusableVersions.has(versionId(document)),
         );
-        const passageBodies = versionsToEmbed.flatMap((document) =>
-          document.passages.map(({ body }) => body),
-        );
-        const embedded =
-          passageBodies.length === 0
-            ? Effect.succeed([] as readonly number[][])
-            : embeddings.embed(passageBodies);
-        return embedded.pipe(
-          Effect.flatMap((vectors) => {
-            const vectorsByVersion = new Map<string, readonly (readonly number[])[]>();
-            let offset = 0;
-            for (const document of versionsToEmbed) {
-              const nextOffset = offset + document.passages.length;
-              vectorsByVersion.set(versionId(document), vectors.slice(offset, nextOffset));
-              offset = nextOffset;
-            }
-            return Effect.tryPromise({
-              try: () => reconcileSnapshot(database, snapshot, embeddings, vectorsByVersion),
-              catch: (failure) =>
-                new RepositoryError({
-                  message:
-                    "Knowledge reconciliation failed; the previous checkpoint remains authoritative.",
-                  operation: classifyKnowledgeReconcileFailure(failure),
-                }),
-            });
+        return Effect.tryPromise({
+          try: () =>
+            reusableProjectionVectors(
+              database,
+              { ...snapshot, documents: versionsToEmbed },
+              embeddings,
+            ),
+          catch: (failure) =>
+            new RepositoryError({
+              message: "Knowledge reconciliation could not reuse existing passage projections.",
+              operation: classifyKnowledgeReconcileFailure(failure),
+            }),
+        }).pipe(
+          Effect.flatMap((reusableVectors) => {
+            const missingPassages = new Map<string, string>();
+            for (const document of versionsToEmbed)
+              for (const passage of document.passages)
+                if (!reusableVectors.has(passage.contentHash))
+                  missingPassages.set(passage.contentHash, passage.body);
+            const passageBodies = [...missingPassages.values()];
+            const embedded =
+              passageBodies.length === 0
+                ? Effect.succeed([] as readonly number[][])
+                : embeddings.embed(passageBodies);
+            return embedded.pipe(
+              Effect.flatMap((vectors) => {
+                const vectorsByContentHash = new Map(reusableVectors);
+                for (const [index, contentHash] of [...missingPassages.keys()].entries()) {
+                  const vector = vectors[index];
+                  if (vector !== undefined) vectorsByContentHash.set(contentHash, vector);
+                }
+                const vectorsByVersion = new Map<string, readonly (readonly number[])[]>();
+                for (const document of versionsToEmbed) {
+                  const passageVectors = document.passages.map((passage) =>
+                    vectorsByContentHash.get(passage.contentHash),
+                  );
+                  if (passageVectors.some((vector) => vector === undefined))
+                    return Effect.fail(
+                      new RepositoryError({
+                        message: "Embedding result count did not match changed passages.",
+                        operation: "knowledge-reconcile",
+                      }),
+                    );
+                  vectorsByVersion.set(
+                    versionId(document),
+                    passageVectors as readonly (readonly number[])[],
+                  );
+                }
+                return Effect.tryPromise({
+                  try: () => reconcileSnapshot(database, snapshot, embeddings, vectorsByVersion),
+                  catch: (failure) =>
+                    new RepositoryError({
+                      message:
+                        "Knowledge reconciliation failed; the previous checkpoint remains authoritative.",
+                      operation: classifyKnowledgeReconcileFailure(failure),
+                    }),
+                });
+              }),
+            );
           }),
         );
       }),
