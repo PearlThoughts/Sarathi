@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { classifyKnowledgeReconcileFailure } from "../src/infrastructure/postgres/knowledge-repository.ts";
+import {
+  boundedPostgresBindBatches,
+  classifyKnowledgeReconcileFailure,
+} from "../src/infrastructure/postgres/knowledge-repository.ts";
 
 describe("knowledge reconcile failure classification", () => {
+  it("partitions protocol-limit-sized mutation inputs into bounded batches", () => {
+    const values = Array.from({ length: 65_537 }, (_, index) => index);
+    const batches = boundedPostgresBindBatches(values);
+
+    expect(batches).toHaveLength(66);
+    expect(batches.every((batch) => batch.length > 0 && batch.length <= 1_000)).toBe(true);
+    expect(batches.reduce((total, batch) => total + batch.length, 0)).toBe(values.length);
+    expect(batches[0]?.[0]).toBe(0);
+    expect(batches.at(-1)?.at(-1)).toBe(65_536);
+  });
+
   it("maps a nested known constraint without exposing database details", () => {
     const failure = {
       message: "query contains private evidence",
