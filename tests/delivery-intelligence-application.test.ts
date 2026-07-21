@@ -22,7 +22,7 @@ const request = {
 } as const;
 
 const item = (
-  source: "github" | "jira" | "teams",
+  source: "github" | "jira" | "teams" | "vault",
   id: string,
   summary: string,
   intent: "activity" | "dependencies" | "status" = "activity",
@@ -93,6 +93,33 @@ describe("delivery intelligence application", () => {
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
     expect(answer.status).toBe("ok");
+  });
+
+  it("prefers structured Jira lifecycle state for status answers", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            { ...item("vault", "boundary", "Builder scope table", "status"), authority: 1 },
+            item("jira", "done", "DEMO-10 Done: Builder navigation fix", "status"),
+            item("jira", "active", "DEMO-11 In Progress: Builder acceptance", "status"),
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is the current status of Builder?",
+      }),
+    );
+    expect(answer.text).toContain("DEMO-10 Done");
+    expect(answer.text).toContain("DEMO-11 In Progress");
+    expect(answer.text).not.toContain("Builder scope table");
   });
 
   it("discloses competing claims rather than choosing one silently", async () => {
