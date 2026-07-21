@@ -96,6 +96,11 @@ describe("Vault knowledge source", () => {
       title: "Delivery Risks",
       canonicalUrl:
         "https://github.com/example/Connected-Vault/blob/commit-sha/Projects/example/Risks.md",
+      provenance: {
+        repository: "example/Connected-Vault",
+        path: "Projects/example/Risks.md",
+        revision: "note-sha",
+      },
       acl: [{ subjectId: "delivery" }],
     });
     expect(snapshot.documents[0]?.passages.map(({ locator }) => locator)).toEqual([
