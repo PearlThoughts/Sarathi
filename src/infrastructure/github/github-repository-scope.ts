@@ -26,7 +26,7 @@ export const repositoryFromGitHubApiUrl = (value: string | undefined): string | 
 export const repositoryFromGitHubHtmlUrl = (value: string): string | undefined =>
   value.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\//)?.[1];
 
-export const githubRepositoryAllowed = (
+const githubRepositoryAllowed = (
   repository: string,
   allowedRepositories: readonly string[],
   repositoryScopes: readonly GitHubRepositoryScope[],
@@ -40,5 +40,18 @@ export const githubRepositoryAllowed = (
       scope.owner.toLowerCase() === owner.toLowerCase() &&
       (scope.repositoryNamePrefix === undefined ||
         name.toLowerCase().startsWith(scope.repositoryNamePrefix.toLowerCase())),
+  );
+};
+
+export const githubCodeRepositoryAllowed = (
+  repository: string,
+  allowedRepositories: readonly string[],
+  repositoryScopes: readonly GitHubRepositoryScope[],
+): boolean => {
+  const name = repository.split("/", 2)[1];
+  return (
+    name !== undefined &&
+    !name.toLowerCase().includes("vault") &&
+    githubRepositoryAllowed(repository, allowedRepositories, repositoryScopes)
   );
 };

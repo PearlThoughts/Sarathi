@@ -12,7 +12,7 @@ import {
 import { createGitHubKnowledgeSearch } from "./github-knowledge-search.ts";
 import {
   type GitHubRepositoryScope,
-  githubRepositoryAllowed,
+  githubCodeRepositoryAllowed,
   githubScopeQualifier,
   repositoryFromGitHubApiUrl,
   repositoryFromGitHubHtmlUrl,
@@ -258,7 +258,7 @@ const readScopedActivity = async (
     const observedAt = mergedAt ?? pull.updated_at;
     if (
       repository === undefined ||
-      !githubRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
+      !githubCodeRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
       pull.number === undefined ||
       pull.title === undefined ||
       pull.html_url === undefined ||
@@ -292,7 +292,7 @@ const readScopedActivity = async (
       const summary = firstLine(commit.commit?.message);
       if (
         repository === undefined ||
-        !githubRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
+        !githubCodeRepositoryAllowed(repository, allowedRepositories, repositoryScopes) ||
         commit.sha === undefined ||
         commit.html_url === undefined ||
         observedAt === undefined ||
@@ -327,6 +327,9 @@ export const createGitHubDeliveryQuerySource = (
 ): DeliveryQuerySource => {
   const allowedRepositories = configuration.allowedRepositories ?? [];
   const repositoryScopes = configuration.repositoryScopes ?? [];
+  const codeRepositories = allowedRepositories.filter((repository) =>
+    githubCodeRepositoryAllowed(repository, allowedRepositories, repositoryScopes),
+  );
   const liveSearch = createGitHubKnowledgeSearch({
     token: configuration.token,
     workspaceId: configuration.workspaceId,
@@ -356,7 +359,8 @@ export const createGitHubDeliveryQuerySource = (
             return emptyResult();
           const selected = plan.operations.filter(
             (operation) =>
-              operation.select === "observations" || operation.select === "github_live",
+              operation.select === "github_live" ||
+              (operation.select === "observations" && operation.purpose === "activity"),
           );
           const responses = await Promise.all(
             selected.map(async (operation) => {
@@ -391,7 +395,7 @@ export const createGitHubDeliveryQuerySource = (
               }
               return (
                 await Promise.all([
-                  ...allowedRepositories.map((repository) =>
+                  ...codeRepositories.map((repository) =>
                     readRepositoryActivity(configuration, repository, context, operation),
                   ),
                   ...repositoryScopes.map((scope) =>

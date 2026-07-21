@@ -7,7 +7,7 @@ import type {
 } from "../../modules/knowledge-layer/index.ts";
 import {
   type GitHubRepositoryScope,
-  githubRepositoryAllowed,
+  githubCodeRepositoryAllowed,
   githubScopeQualifier,
   repositoryFromGitHubApiUrl,
   validGitHubRepository,
@@ -211,8 +211,11 @@ export const createGitHubKnowledgeSearch = (
           1,
           Math.min(configuration.perRepositoryLimit ?? query.topK, 20),
         );
+        const codeRepositories = allowedRepositories.filter((repository) =>
+          githubCodeRepositoryAllowed(repository, allowedRepositories, repositoryScopes),
+        );
         const targets = [
-          ...allowedRepositories.map((repository) => ({ qualifier: `repo:${repository}` })),
+          ...codeRepositories.map((repository) => ({ qualifier: `repo:${repository}` })),
           ...repositoryScopes.map((scope) => ({ qualifier: githubScopeQualifier(scope) })),
         ];
         const searches = targets.flatMap(({ qualifier }) =>
@@ -235,7 +238,11 @@ export const createGitHubKnowledgeSearch = (
               const resolvedRepository = repositoryFromGitHubApiUrl(item.repository_url);
               if (
                 resolvedRepository === undefined ||
-                !githubRepositoryAllowed(resolvedRepository, allowedRepositories, repositoryScopes)
+                !githubCodeRepositoryAllowed(
+                  resolvedRepository,
+                  allowedRepositories,
+                  repositoryScopes,
+                )
               )
                 return [];
               const result = resultFromItem(item, resolvedRepository, now, index + 1);

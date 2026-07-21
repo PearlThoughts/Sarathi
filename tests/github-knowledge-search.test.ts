@@ -15,7 +15,7 @@ describe("GitHub live knowledge search", () => {
       token: "secret-test-token",
       workspaceId: "workspace-example",
       allowedAudienceIds: new Set(["delivery"]),
-      allowedRepositories: ["example-org/delivery-pulse"],
+      allowedRepositories: ["example-org/delivery-pulse", "example-org/delivery-vault"],
       now: () => new Date("2026-07-20T00:00:00.000Z"),
       fetcher: async (input) => {
         const url = String(input);
@@ -56,6 +56,7 @@ describe("GitHub live knowledge search", () => {
 
     expect(requests).toHaveLength(2);
     expect(requests.every((url) => url.includes("repo%3Aexample-org%2Fdelivery-pulse"))).toBe(true);
+    expect(requests.every((url) => !url.includes("delivery-vault"))).toBe(true);
     expect(results.map(({ sourceId }) => sourceId)).toEqual([
       "example-org/delivery-pulse#1",
       "example-org/delivery-pulse:src/report.ts",
@@ -132,6 +133,14 @@ describe("GitHub live knowledge search", () => {
               body: "Must not leave the configured delivery boundary",
               updated_at: "2026-07-20T00:00:00.000Z",
               repository_url: "https://api.github.com/repos/example-org/finance-api",
+            },
+            {
+              html_url: "https://github.com/example-org/delivery-vault/issues/2",
+              number: 2,
+              title: "Vault result",
+              body: "Canonical project note belongs in indexed Vault retrieval",
+              updated_at: "2026-07-20T00:00:00.000Z",
+              repository_url: "https://api.github.com/repos/example-org/delivery-vault",
             },
           ],
         });
