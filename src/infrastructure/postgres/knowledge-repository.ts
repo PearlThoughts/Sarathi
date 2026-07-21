@@ -440,12 +440,17 @@ const postgresConstraintFailureOperations = new Map<string, string>([
 ]);
 
 const postgresCodeFailureOperations = new Map<string, string>([
+  ["08006", "knowledge-reconcile.connection-failure"],
+  ["08P01", "knowledge-reconcile.protocol-limit"],
   ["23503", "knowledge-reconcile.foreign-key"],
   ["23505", "knowledge-reconcile.unique"],
   ["23514", "knowledge-reconcile.check"],
   ["22003", "knowledge-reconcile.numeric-range"],
   ["22007", "knowledge-reconcile.datetime"],
   ["22P02", "knowledge-reconcile.invalid-value"],
+  ["53300", "knowledge-reconcile.connection-capacity"],
+  ["54000", "knowledge-reconcile.program-limit"],
+  ["57014", "knowledge-reconcile.query-cancelled"],
 ]);
 
 const reconcileStageFailureOperations = {
@@ -455,6 +460,13 @@ const reconcileStageFailureOperations = {
   delivery: "knowledge-reconcile.delivery-stage",
   deliveryInventory: "knowledge-reconcile.delivery-inventory-stage",
   deliveryDeactivate: "knowledge-reconcile.delivery-deactivate-stage",
+  deliveryDeactivateObjects: "knowledge-reconcile.delivery-deactivate-objects-stage",
+  deliveryDeactivateRelations: "knowledge-reconcile.delivery-deactivate-relations-stage",
+  deliveryDeactivateObservations: "knowledge-reconcile.delivery-deactivate-observations-stage",
+  deliveryDeactivateMetrics: "knowledge-reconcile.delivery-deactivate-metrics-stage",
+  deliveryDeactivateFinanceMetrics: "knowledge-reconcile.delivery-deactivate-finance-metrics-stage",
+  deliveryDeactivateClaims: "knowledge-reconcile.delivery-deactivate-claims-stage",
+  deliveryDeactivateAcl: "knowledge-reconcile.delivery-deactivate-acl-stage",
   deliveryObjects: "knowledge-reconcile.delivery-objects-stage",
   deliveryRelations: "knowledge-reconcile.delivery-relations-stage",
   deliveryObservations: "knowledge-reconcile.delivery-observations-stage",
@@ -582,7 +594,8 @@ const syncDeliveryProjection = async (
           .from(deliveryClaimTable)
           .where(inArray(deliveryClaimTable.sourceVersionId, versionIds));
   onStage("deliveryDeactivate");
-  if (previousObjects.length > 0)
+  if (previousObjects.length > 0) {
+    onStage("deliveryDeactivateObjects");
     await database
       .update(deliveryObjectTable)
       .set({ active: false, deletedAt: now })
@@ -592,7 +605,9 @@ const syncDeliveryProjection = async (
           previousObjects.map(({ id }) => id),
         ),
       );
-  if (previousRelations.length > 0)
+  }
+  if (previousRelations.length > 0) {
+    onStage("deliveryDeactivateRelations");
     await database
       .update(deliveryRelationTable)
       .set({ active: false, deletedAt: now })
@@ -602,7 +617,9 @@ const syncDeliveryProjection = async (
           previousRelations.map(({ id }) => id),
         ),
       );
-  if (previousObservations.length > 0)
+  }
+  if (previousObservations.length > 0) {
+    onStage("deliveryDeactivateObservations");
     await database
       .update(deliveryObservationTable)
       .set({ active: false, deletedAt: now })
@@ -612,7 +629,9 @@ const syncDeliveryProjection = async (
           previousObservations.map(({ id }) => id),
         ),
       );
-  if (previousMetrics.length > 0)
+  }
+  if (previousMetrics.length > 0) {
+    onStage("deliveryDeactivateMetrics");
     await database
       .update(deliveryMetricTable)
       .set({ active: false, deletedAt: now })
@@ -622,7 +641,9 @@ const syncDeliveryProjection = async (
           previousMetrics.map(({ id }) => id),
         ),
       );
-  if (previousFinanceMetrics.length > 0)
+  }
+  if (previousFinanceMetrics.length > 0) {
+    onStage("deliveryDeactivateFinanceMetrics");
     await database
       .update(deliveryFinanceMetricTable)
       .set({ active: false, deletedAt: now })
@@ -632,7 +653,9 @@ const syncDeliveryProjection = async (
           previousFinanceMetrics.map(({ id }) => id),
         ),
       );
-  if (previousClaims.length > 0)
+  }
+  if (previousClaims.length > 0) {
+    onStage("deliveryDeactivateClaims");
     await database
       .update(deliveryClaimTable)
       .set({ active: false, deletedAt: now })
@@ -642,6 +665,7 @@ const syncDeliveryProjection = async (
           previousClaims.map(({ id }) => id),
         ),
       );
+  }
   const previousTargetIds = [
     ...previousObjects.map(({ id }) => id),
     ...previousRelations.map(({ id }) => id),
@@ -650,10 +674,12 @@ const syncDeliveryProjection = async (
     ...previousFinanceMetrics.map(({ id }) => id),
     ...previousClaims.map(({ id }) => id),
   ];
-  if (previousTargetIds.length > 0)
+  if (previousTargetIds.length > 0) {
+    onStage("deliveryDeactivateAcl");
     await database
       .delete(deliveryAclBindingTable)
       .where(inArray(deliveryAclBindingTable.targetId, previousTargetIds));
+  }
 
   onStage("deliveryObjects");
   const objectRows = new Map<
