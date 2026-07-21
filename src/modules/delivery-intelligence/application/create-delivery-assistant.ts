@@ -97,6 +97,24 @@ const uniqueRanked = (items: readonly DeliveryResultItem[]): readonly DeliveryRe
     });
 };
 
+const statusSourcePriority: Readonly<Record<DeliverySourceKind, number>> = {
+  jira: 0,
+  vault: 1,
+  teams: 2,
+  github: 3,
+  email: 4,
+};
+
+const rankedForIntent = (
+  items: readonly DeliveryResultItem[],
+  intent: DeliveryQuestionIntent,
+): readonly DeliveryResultItem[] =>
+  intent === "status"
+    ? [...items].sort(
+        (left, right) => statusSourcePriority[left.source] - statusSourcePriority[right.source],
+      )
+    : items;
+
 const uniqueConflicts = (conflicts: readonly DeliveryConflict[]): readonly DeliveryConflict[] => {
   const seen = new Set<string>();
   return conflicts.filter((conflict) => {
@@ -156,7 +174,10 @@ const composeAnswer = (
     }
   } else {
     for (const intent of plan.intents) {
-      const selected = items.filter((item) => item.intent === intent).slice(0, 2);
+      const selected = rankedForIntent(
+        items.filter((item) => item.intent === intent),
+        intent,
+      ).slice(0, 2);
       if (selected.length > 0)
         lines.push(
           `${intentLabel[intent]}: ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
@@ -221,7 +242,10 @@ const composeWithModel = (
   timeoutMs: number,
 ): Effect.Effect<DeliveryAssistantAnswer> => {
   const deterministic = composeAnswer(plan, result);
-  const items = uniqueRanked(result.items).slice(0, 12);
+  const items = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general").slice(
+    0,
+    12,
+  );
   if (items.length < 2) return Effect.succeed(deterministic);
   const allowedCitationUrls = new Set([
     ...items.map((item) => item.citationUrl),
