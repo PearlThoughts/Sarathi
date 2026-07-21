@@ -34,4 +34,19 @@ describe("knowledge reconcile failure classification", () => {
       }),
     ).toBe("knowledge-reconcile");
   });
+
+  it("returns only an allowlisted reconcile stage", () => {
+    expect(
+      classifyKnowledgeReconcileFailure({
+        reconcileStage: "delivery",
+        cause: { message: "private delivery row" },
+      }),
+    ).toBe("knowledge-reconcile.delivery-stage");
+    expect(
+      classifyKnowledgeReconcileFailure({
+        reconcileStage: "private-stage-name",
+        message: "private body",
+      }),
+    ).toBe("knowledge-reconcile");
+  });
 });

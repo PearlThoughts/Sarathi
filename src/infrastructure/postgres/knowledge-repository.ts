@@ -265,17 +265,46 @@ const postgresCodeFailureOperations = new Map<string, string>([
   ["22P02", "knowledge-reconcile.invalid-value"],
 ]);
 
+const reconcileStageFailureOperations = {
+  source: "knowledge-reconcile.source-stage",
+  inventory: "knowledge-reconcile.inventory-stage",
+  documents: "knowledge-reconcile.document-stage",
+  delivery: "knowledge-reconcile.delivery-stage",
+  checkpoint: "knowledge-reconcile.checkpoint-stage",
+} as const;
+
+type ReconcileStage = keyof typeof reconcileStageFailureOperations;
+
+class KnowledgeReconcileStageError extends Error {
+  readonly cause: unknown;
+  readonly reconcileStage: ReconcileStage;
+
+  constructor(reconcileStage: ReconcileStage, cause: unknown) {
+    super("Knowledge reconciliation failed within an identified stage.");
+    this.name = "KnowledgeReconcileStageError";
+    this.reconcileStage = reconcileStage;
+    this.cause = cause;
+  }
+}
+
 type ErrorMetadata = {
   readonly cause?: unknown;
   readonly code?: unknown;
   readonly constraint?: unknown;
   readonly constraint_name?: unknown;
+  readonly reconcileStage?: unknown;
 };
 
 export const classifyKnowledgeReconcileFailure = (failure: unknown): string => {
   let current: unknown = failure;
+  let stageOperation: string | undefined;
   for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth += 1) {
     const metadata = current as ErrorMetadata;
+    if (
+      typeof metadata.reconcileStage === "string" &&
+      metadata.reconcileStage in reconcileStageFailureOperations
+    )
+      stageOperation = reconcileStageFailureOperations[metadata.reconcileStage as ReconcileStage];
     const constraint =
       typeof metadata.constraint_name === "string"
         ? metadata.constraint_name
@@ -291,7 +320,7 @@ export const classifyKnowledgeReconcileFailure = (failure: unknown): string => {
     }
     current = metadata.cause;
   }
-  return "knowledge-reconcile";
+  return stageOperation ?? "knowledge-reconcile";
 };
 
 type ProjectedDocument = {
@@ -734,304 +763,314 @@ const reconcileSnapshot = async (
   snapshot: KnowledgeSourceSnapshot,
   embeddings: KnowledgeEmbeddingPort,
   vectors: readonly (readonly number[])[],
-) =>
-  database.transaction(async (transaction) => {
-    const now = new Date().toISOString();
-    const firstDocument = snapshot.documents[0];
-    await transaction
-      .insert(knowledgeSourceTable)
-      .values({
-        id: snapshot.sourceId,
-        workspaceId: snapshot.workspaceId,
-        kind: snapshot.source,
-        authority: firstDocument?.authority ?? 0,
-        scopeHash: snapshot.scopeHash,
-        active: true,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: knowledgeSourceTable.id,
-        set: {
-          scopeHash: snapshot.scopeHash,
-          authority: firstDocument?.authority ?? 0,
-          active: true,
-          updatedAt: now,
-        },
-      });
-
-    const existingItems = await transaction
-      .select({ id: knowledgeItemTable.id, externalId: knowledgeItemTable.externalId })
-      .from(knowledgeItemTable)
-      .where(
-        and(
-          eq(knowledgeItemTable.sourceId, snapshot.sourceId),
-          eq(knowledgeItemTable.workspaceId, snapshot.workspaceId),
-          isNull(knowledgeItemTable.deletedAt),
-        ),
-      );
-    const observedExternalIds = snapshot.documents.map(({ externalId }) => externalId);
-    const deletedItems = existingItems.filter(
-      ({ externalId }) => !observedExternalIds.includes(externalId),
-    );
-    if (deletedItems.length > 0) {
-      const deletedIds = deletedItems.map(({ id }) => id);
-      const deletedVersions = await transaction
-        .select({ id: knowledgeVersionTable.id })
-        .from(knowledgeVersionTable)
-        .where(inArray(knowledgeVersionTable.itemId, deletedIds));
-      const deletedVersionIds = deletedVersions.map(({ id }) => id);
+) => {
+  let stage: ReconcileStage = "source";
+  try {
+    return await database.transaction(async (transaction) => {
+      const now = new Date().toISOString();
+      const firstDocument = snapshot.documents[0];
       await transaction
-        .update(knowledgeItemTable)
-        .set({ deletedAt: now, observedAt: now })
-        .where(inArray(knowledgeItemTable.id, deletedIds));
-      await transaction
-        .update(knowledgeVersionTable)
-        .set({ active: false, tombstone: true, observedAt: now })
-        .where(inArray(knowledgeVersionTable.itemId, deletedIds));
-      await transaction
-        .update(knowledgePassageTable)
-        .set({ active: false })
-        .where(inArray(knowledgePassageTable.itemId, deletedIds));
-      await transaction
-        .update(deliveryObjectTable)
-        .set({ active: false, deletedAt: now })
-        .where(inArray(deliveryObjectTable.sourceItemId, deletedIds));
-      if (deletedVersionIds.length > 0) {
-        await transaction
-          .update(deliveryRelationTable)
-          .set({ active: false, deletedAt: now })
-          .where(inArray(deliveryRelationTable.sourceVersionId, deletedVersionIds));
-        await transaction
-          .update(deliveryObservationTable)
-          .set({ active: false, deletedAt: now })
-          .where(inArray(deliveryObservationTable.sourceVersionId, deletedVersionIds));
-        await transaction
-          .update(deliveryMetricTable)
-          .set({ active: false, deletedAt: now })
-          .where(inArray(deliveryMetricTable.sourceVersionId, deletedVersionIds));
-        await transaction
-          .update(deliveryFinanceMetricTable)
-          .set({ active: false, deletedAt: now })
-          .where(inArray(deliveryFinanceMetricTable.sourceVersionId, deletedVersionIds));
-        await transaction
-          .update(deliveryClaimTable)
-          .set({ active: false, deletedAt: now })
-          .where(inArray(deliveryClaimTable.sourceVersionId, deletedVersionIds));
-      }
-    }
-
-    let vectorOffset = 0;
-    let versionsCreated = 0;
-    let passagesActive = 0;
-    const projectedDocuments: ProjectedDocument[] = [];
-    for (const document of snapshot.documents) {
-      const documentItemId = itemId(document);
-      const versionHash = effectiveVersion(document);
-      const versionId = `knowledge-version:${stableSha256(`${documentItemId}:${versionHash}`)}`;
-      const passageVectors = vectors.slice(vectorOffset, vectorOffset + document.passages.length);
-      vectorOffset += document.passages.length;
-      await transaction
-        .insert(knowledgeItemTable)
+        .insert(knowledgeSourceTable)
         .values({
-          id: documentItemId,
-          sourceId: document.sourceId,
-          workspaceId: document.workspaceId,
-          externalId: document.externalId,
-          sourceType: document.sourceType,
-          canonicalUrl: document.canonicalUrl,
-          title: document.title,
-          sensitivity: document.sensitivity,
-          authority: document.authority,
-          sourceUpdatedAt: document.sourceUpdatedAt,
-          observedAt: now,
+          id: snapshot.sourceId,
+          workspaceId: snapshot.workspaceId,
+          kind: snapshot.source,
+          authority: firstDocument?.authority ?? 0,
+          scopeHash: snapshot.scopeHash,
+          active: true,
+          createdAt: now,
+          updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: knowledgeItemTable.id,
+          target: knowledgeSourceTable.id,
           set: {
+            scopeHash: snapshot.scopeHash,
+            authority: firstDocument?.authority ?? 0,
+            active: true,
+            updatedAt: now,
+          },
+        });
+
+      stage = "inventory";
+      const existingItems = await transaction
+        .select({ id: knowledgeItemTable.id, externalId: knowledgeItemTable.externalId })
+        .from(knowledgeItemTable)
+        .where(
+          and(
+            eq(knowledgeItemTable.sourceId, snapshot.sourceId),
+            eq(knowledgeItemTable.workspaceId, snapshot.workspaceId),
+            isNull(knowledgeItemTable.deletedAt),
+          ),
+        );
+      const observedExternalIds = snapshot.documents.map(({ externalId }) => externalId);
+      const deletedItems = existingItems.filter(
+        ({ externalId }) => !observedExternalIds.includes(externalId),
+      );
+      if (deletedItems.length > 0) {
+        const deletedIds = deletedItems.map(({ id }) => id);
+        const deletedVersions = await transaction
+          .select({ id: knowledgeVersionTable.id })
+          .from(knowledgeVersionTable)
+          .where(inArray(knowledgeVersionTable.itemId, deletedIds));
+        const deletedVersionIds = deletedVersions.map(({ id }) => id);
+        await transaction
+          .update(knowledgeItemTable)
+          .set({ deletedAt: now, observedAt: now })
+          .where(inArray(knowledgeItemTable.id, deletedIds));
+        await transaction
+          .update(knowledgeVersionTable)
+          .set({ active: false, tombstone: true, observedAt: now })
+          .where(inArray(knowledgeVersionTable.itemId, deletedIds));
+        await transaction
+          .update(knowledgePassageTable)
+          .set({ active: false })
+          .where(inArray(knowledgePassageTable.itemId, deletedIds));
+        await transaction
+          .update(deliveryObjectTable)
+          .set({ active: false, deletedAt: now })
+          .where(inArray(deliveryObjectTable.sourceItemId, deletedIds));
+        if (deletedVersionIds.length > 0) {
+          await transaction
+            .update(deliveryRelationTable)
+            .set({ active: false, deletedAt: now })
+            .where(inArray(deliveryRelationTable.sourceVersionId, deletedVersionIds));
+          await transaction
+            .update(deliveryObservationTable)
+            .set({ active: false, deletedAt: now })
+            .where(inArray(deliveryObservationTable.sourceVersionId, deletedVersionIds));
+          await transaction
+            .update(deliveryMetricTable)
+            .set({ active: false, deletedAt: now })
+            .where(inArray(deliveryMetricTable.sourceVersionId, deletedVersionIds));
+          await transaction
+            .update(deliveryFinanceMetricTable)
+            .set({ active: false, deletedAt: now })
+            .where(inArray(deliveryFinanceMetricTable.sourceVersionId, deletedVersionIds));
+          await transaction
+            .update(deliveryClaimTable)
+            .set({ active: false, deletedAt: now })
+            .where(inArray(deliveryClaimTable.sourceVersionId, deletedVersionIds));
+        }
+      }
+
+      stage = "documents";
+      let vectorOffset = 0;
+      let versionsCreated = 0;
+      let passagesActive = 0;
+      const projectedDocuments: ProjectedDocument[] = [];
+      for (const document of snapshot.documents) {
+        const documentItemId = itemId(document);
+        const versionHash = effectiveVersion(document);
+        const versionId = `knowledge-version:${stableSha256(`${documentItemId}:${versionHash}`)}`;
+        const passageVectors = vectors.slice(vectorOffset, vectorOffset + document.passages.length);
+        vectorOffset += document.passages.length;
+        await transaction
+          .insert(knowledgeItemTable)
+          .values({
+            id: documentItemId,
+            sourceId: document.sourceId,
+            workspaceId: document.workspaceId,
+            externalId: document.externalId,
+            sourceType: document.sourceType,
             canonicalUrl: document.canonicalUrl,
             title: document.title,
             sensitivity: document.sensitivity,
             authority: document.authority,
             sourceUpdatedAt: document.sourceUpdatedAt,
             observedAt: now,
-            deletedAt: null,
-          },
-        });
-
-      const existingVersion = await transaction
-        .select({ id: knowledgeVersionTable.id })
-        .from(knowledgeVersionTable)
-        .where(eq(knowledgeVersionTable.id, versionId))
-        .limit(1);
-      if (existingVersion.length === 0) {
-        versionsCreated += 1;
-        await transaction
-          .update(knowledgeVersionTable)
-          .set({ active: false })
-          .where(eq(knowledgeVersionTable.itemId, documentItemId));
-        await transaction
-          .update(knowledgePassageTable)
-          .set({ active: false })
-          .where(eq(knowledgePassageTable.itemId, documentItemId));
-        await transaction.insert(knowledgeVersionTable).values({
-          id: versionId,
-          itemId: documentItemId,
-          workspaceId: document.workspaceId,
-          sourceVersion: versionHash,
-          contentHash: versionHash,
-          sourceUpdatedAt: document.sourceUpdatedAt,
-          observedAt: now,
-          active: true,
-          tombstone: false,
-          provenance: { ...document.provenance, sourceVersion: document.sourceVersion },
-        });
-        for (const [passageIndex, passage] of document.passages.entries()) {
-          const vector = passageVectors[passageIndex];
-          if (vector === undefined || vector.length !== embeddings.dimensions)
-            throw new Error("Embedding result count or dimensions did not match passages.");
-          const passageId = `knowledge-passage:${stableSha256(`${versionId}:${passage.locator}`)}`;
-          await transaction.insert(knowledgePassageTable).values({
-            id: passageId,
-            itemId: documentItemId,
-            versionId,
-            workspaceId: document.workspaceId,
-            kind: passage.kind,
-            locator: passage.locator,
-            ordinal: passage.ordinal,
-            title: passage.title,
-            body: passage.body,
-            contentHash: passage.contentHash,
-            canonicalUrl: citationUrl(document, passage.locator),
-            sensitivity: document.sensitivity,
-            sourceUpdatedAt: document.sourceUpdatedAt,
-            active: true,
-          });
-          await transaction.insert(knowledgeProjectionTable).values({
-            passageId,
-            workspaceId: document.workspaceId,
-            embeddingModel: embeddings.model,
-            embeddingDimensions: embeddings.dimensions,
-            embedding: [...vector],
-            contentHash: passage.contentHash,
-            createdAt: now,
-          });
-        }
-      } else {
-        await transaction
-          .update(knowledgeVersionTable)
-          .set({ active: false })
-          .where(
-            and(
-              eq(knowledgeVersionTable.itemId, documentItemId),
-              ne(knowledgeVersionTable.id, versionId),
-            ),
-          );
-        await transaction
-          .update(knowledgePassageTable)
-          .set({ active: false })
-          .where(eq(knowledgePassageTable.itemId, documentItemId));
-        await transaction
-          .update(knowledgeVersionTable)
-          .set({ active: true, tombstone: false, observedAt: now })
-          .where(eq(knowledgeVersionTable.id, versionId));
-        await transaction
-          .update(knowledgePassageTable)
-          .set({ active: true })
-          .where(eq(knowledgePassageTable.versionId, versionId));
-        const restoredPassages = await transaction
-          .select({
-            id: knowledgePassageTable.id,
-            ordinal: knowledgePassageTable.ordinal,
-            contentHash: knowledgePassageTable.contentHash,
           })
-          .from(knowledgePassageTable)
-          .where(eq(knowledgePassageTable.versionId, versionId));
-        for (const passage of restoredPassages) {
-          const vector = passageVectors[passage.ordinal];
-          if (vector === undefined || vector.length !== embeddings.dimensions)
-            throw new Error("Embedding result count or dimensions did not match passages.");
+          .onConflictDoUpdate({
+            target: knowledgeItemTable.id,
+            set: {
+              canonicalUrl: document.canonicalUrl,
+              title: document.title,
+              sensitivity: document.sensitivity,
+              authority: document.authority,
+              sourceUpdatedAt: document.sourceUpdatedAt,
+              observedAt: now,
+              deletedAt: null,
+            },
+          });
+
+        const existingVersion = await transaction
+          .select({ id: knowledgeVersionTable.id })
+          .from(knowledgeVersionTable)
+          .where(eq(knowledgeVersionTable.id, versionId))
+          .limit(1);
+        if (existingVersion.length === 0) {
+          versionsCreated += 1;
           await transaction
-            .insert(knowledgeProjectionTable)
-            .values({
-              passageId: passage.id,
+            .update(knowledgeVersionTable)
+            .set({ active: false })
+            .where(eq(knowledgeVersionTable.itemId, documentItemId));
+          await transaction
+            .update(knowledgePassageTable)
+            .set({ active: false })
+            .where(eq(knowledgePassageTable.itemId, documentItemId));
+          await transaction.insert(knowledgeVersionTable).values({
+            id: versionId,
+            itemId: documentItemId,
+            workspaceId: document.workspaceId,
+            sourceVersion: versionHash,
+            contentHash: versionHash,
+            sourceUpdatedAt: document.sourceUpdatedAt,
+            observedAt: now,
+            active: true,
+            tombstone: false,
+            provenance: { ...document.provenance, sourceVersion: document.sourceVersion },
+          });
+          for (const [passageIndex, passage] of document.passages.entries()) {
+            const vector = passageVectors[passageIndex];
+            if (vector === undefined || vector.length !== embeddings.dimensions)
+              throw new Error("Embedding result count or dimensions did not match passages.");
+            const passageId = `knowledge-passage:${stableSha256(`${versionId}:${passage.locator}`)}`;
+            await transaction.insert(knowledgePassageTable).values({
+              id: passageId,
+              itemId: documentItemId,
+              versionId,
+              workspaceId: document.workspaceId,
+              kind: passage.kind,
+              locator: passage.locator,
+              ordinal: passage.ordinal,
+              title: passage.title,
+              body: passage.body,
+              contentHash: passage.contentHash,
+              canonicalUrl: citationUrl(document, passage.locator),
+              sensitivity: document.sensitivity,
+              sourceUpdatedAt: document.sourceUpdatedAt,
+              active: true,
+            });
+            await transaction.insert(knowledgeProjectionTable).values({
+              passageId,
               workspaceId: document.workspaceId,
               embeddingModel: embeddings.model,
               embeddingDimensions: embeddings.dimensions,
               embedding: [...vector],
               contentHash: passage.contentHash,
               createdAt: now,
+            });
+          }
+        } else {
+          await transaction
+            .update(knowledgeVersionTable)
+            .set({ active: false })
+            .where(
+              and(
+                eq(knowledgeVersionTable.itemId, documentItemId),
+                ne(knowledgeVersionTable.id, versionId),
+              ),
+            );
+          await transaction
+            .update(knowledgePassageTable)
+            .set({ active: false })
+            .where(eq(knowledgePassageTable.itemId, documentItemId));
+          await transaction
+            .update(knowledgeVersionTable)
+            .set({ active: true, tombstone: false, observedAt: now })
+            .where(eq(knowledgeVersionTable.id, versionId));
+          await transaction
+            .update(knowledgePassageTable)
+            .set({ active: true })
+            .where(eq(knowledgePassageTable.versionId, versionId));
+          const restoredPassages = await transaction
+            .select({
+              id: knowledgePassageTable.id,
+              ordinal: knowledgePassageTable.ordinal,
+              contentHash: knowledgePassageTable.contentHash,
             })
-            .onConflictDoUpdate({
-              target: knowledgeProjectionTable.passageId,
-              set: {
+            .from(knowledgePassageTable)
+            .where(eq(knowledgePassageTable.versionId, versionId));
+          for (const passage of restoredPassages) {
+            const vector = passageVectors[passage.ordinal];
+            if (vector === undefined || vector.length !== embeddings.dimensions)
+              throw new Error("Embedding result count or dimensions did not match passages.");
+            await transaction
+              .insert(knowledgeProjectionTable)
+              .values({
+                passageId: passage.id,
+                workspaceId: document.workspaceId,
                 embeddingModel: embeddings.model,
                 embeddingDimensions: embeddings.dimensions,
                 embedding: [...vector],
                 contentHash: passage.contentHash,
                 createdAt: now,
-              },
-            });
+              })
+              .onConflictDoUpdate({
+                target: knowledgeProjectionTable.passageId,
+                set: {
+                  embeddingModel: embeddings.model,
+                  embeddingDimensions: embeddings.dimensions,
+                  embedding: [...vector],
+                  contentHash: passage.contentHash,
+                  createdAt: now,
+                },
+              });
+          }
         }
-      }
-      const activePassages = await transaction
-        .select({ id: knowledgePassageTable.id })
-        .from(knowledgePassageTable)
-        .where(
-          and(
-            eq(knowledgePassageTable.versionId, versionId),
-            eq(knowledgePassageTable.active, true),
-          ),
+        const activePassages = await transaction
+          .select({ id: knowledgePassageTable.id })
+          .from(knowledgePassageTable)
+          .where(
+            and(
+              eq(knowledgePassageTable.versionId, versionId),
+              eq(knowledgePassageTable.active, true),
+            ),
+          );
+        passagesActive += activePassages.length;
+        await syncAcl(
+          transaction,
+          activePassages.map(({ id }) => id),
+          document.workspaceId,
+          document.acl,
+          now,
         );
-      passagesActive += activePassages.length;
-      await syncAcl(
-        transaction,
-        activePassages.map(({ id }) => id),
-        document.workspaceId,
-        document.acl,
-        now,
+        projectedDocuments.push({ document, documentItemId, versionId });
+      }
+
+      stage = "delivery";
+      await syncDeliveryProjection(transaction, projectedDocuments, now);
+
+      stage = "checkpoint";
+      const checksum = stableSha256(
+        canonicalize({
+          sourceId: snapshot.sourceId,
+          cursor: snapshot.cursor,
+          scopeHash: snapshot.scopeHash,
+          documents: snapshot.documents.map(
+            ({ externalId, sourceVersion, passages, acl, deliveryProjection }) => ({
+              externalId,
+              sourceVersion,
+              passages: passages.map(({ locator, contentHash }) => ({ locator, contentHash })),
+              acl,
+              deliveryProjection,
+            }),
+          ),
+        }),
       );
-      projectedDocuments.push({ document, documentItemId, versionId });
-    }
-
-    await syncDeliveryProjection(transaction, projectedDocuments, now);
-
-    const checksum = stableSha256(
-      canonicalize({
+      const summary = {
         sourceId: snapshot.sourceId,
+        workspaceId: snapshot.workspaceId,
         cursor: snapshot.cursor,
         scopeHash: snapshot.scopeHash,
-        documents: snapshot.documents.map(
-          ({ externalId, sourceVersion, passages, acl, deliveryProjection }) => ({
-            externalId,
-            sourceVersion,
-            passages: passages.map(({ locator, contentHash }) => ({ locator, contentHash })),
-            acl,
-            deliveryProjection,
-          }),
-        ),
-      }),
-    );
-    const summary = {
-      sourceId: snapshot.sourceId,
-      workspaceId: snapshot.workspaceId,
-      cursor: snapshot.cursor,
-      scopeHash: snapshot.scopeHash,
-      documentsObserved: snapshot.documents.length,
-      versionsCreated,
-      passagesActive,
-      itemsDeleted: deletedItems.length,
-      checksum,
-    } as const;
-    await transaction
-      .insert(knowledgeSyncCheckpointTable)
-      .values({ ...summary, status: "succeeded", errorCode: null, syncedAt: now })
-      .onConflictDoUpdate({
-        target: [knowledgeSyncCheckpointTable.sourceId, knowledgeSyncCheckpointTable.workspaceId],
-        set: { ...summary, status: "succeeded", errorCode: null, syncedAt: now },
-      });
-    return summary;
-  });
+        documentsObserved: snapshot.documents.length,
+        versionsCreated,
+        passagesActive,
+        itemsDeleted: deletedItems.length,
+        checksum,
+      } as const;
+      await transaction
+        .insert(knowledgeSyncCheckpointTable)
+        .values({ ...summary, status: "succeeded", errorCode: null, syncedAt: now })
+        .onConflictDoUpdate({
+          target: [knowledgeSyncCheckpointTable.sourceId, knowledgeSyncCheckpointTable.workspaceId],
+          set: { ...summary, status: "succeeded", errorCode: null, syncedAt: now },
+        });
+      return summary;
+    });
+  } catch (cause) {
+    throw new KnowledgeReconcileStageError(stage, cause);
+  }
+};
 
 export const createPostgresKnowledgeRepository = (
   database: KnowledgePostgresDatabase,
