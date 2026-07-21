@@ -75,6 +75,10 @@ describe("delivery intelligence domain", () => {
 
   it("isolates finance plans and rejects finance attributes in shared objects", () => {
     expect(planDeliveryQuestion("What is the current project budget?")?.requiresFinance).toBe(true);
+    const responseBudget = planDeliveryQuestion("Where is the Teams response budget implemented?");
+    expect(responseBudget?.requiresFinance).toBe(false);
+    expect(responseBudget?.intents).toContain("implementation");
+    expect(responseBudget?.intents).not.toContain("finance");
     expect(() =>
       assertNonFinancialAttributes({
         owner: "actor-example",
