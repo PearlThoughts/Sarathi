@@ -310,21 +310,49 @@ const render = (result: KnowledgeCliResult) =>
     Effect.tap(() => Effect.sync(() => (process.exitCode = result.exitCode))),
   );
 
+export const runKnowledgeCliOperation = (
+  operation: () => Promise<KnowledgeCliResult>,
+): Effect.Effect<KnowledgeCliResult> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (error) =>
+      new RepositoryError({
+        message: "Knowledge CLI operation failed.",
+        operation:
+          error instanceof RepositoryError && error.operation !== undefined
+            ? error.operation
+            : "knowledge-runtime",
+      }),
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.succeed({
+        exitCode: 1,
+        output: {
+          ok: false,
+          message: "Knowledge operation failed; inspect privacy-safe service diagnostics.",
+          failureOperation: error.operation ?? "knowledge-runtime",
+        },
+      }),
+    ),
+  );
+
 const sourceArgument = Args.text({ name: "source" });
 const questionOption = Options.text("question");
 const topKOption = Options.integer("top-k").pipe(Options.withDefault(10));
 const environment = process.env;
 
 const statusCommand = Command.make("status", {}, () =>
-  Effect.promise(() => runKnowledgeCommand(["status"], environment)).pipe(Effect.flatMap(render)),
+  runKnowledgeCliOperation(() => runKnowledgeCommand(["status"], environment)).pipe(
+    Effect.flatMap(render),
+  ),
 );
 const ingestCommand = Command.make("ingest", { source: sourceArgument }, ({ source }) =>
-  Effect.promise(() => runKnowledgeCommand(["ingest", source], environment)).pipe(
+  runKnowledgeCliOperation(() => runKnowledgeCommand(["ingest", source], environment)).pipe(
     Effect.flatMap(render),
   ),
 );
 const reconcileCommand = Command.make("reconcile", { source: sourceArgument }, ({ source }) =>
-  Effect.promise(() => runKnowledgeCommand(["reconcile", source], environment)).pipe(
+  runKnowledgeCliOperation(() => runKnowledgeCommand(["reconcile", source], environment)).pipe(
     Effect.flatMap(render),
   ),
 );
@@ -332,17 +360,17 @@ const queryCommand = Command.make(
   "query",
   { question: questionOption, topK: topKOption },
   ({ question, topK }) =>
-    Effect.promise(() =>
+    runKnowledgeCliOperation(() =>
       runKnowledgeCommand(["query", "--question", question, "--top-k", String(topK)], environment),
     ).pipe(Effect.flatMap(render)),
 );
 const migratePlanCommand = Command.make("plan", {}, () =>
-  Effect.promise(() => runKnowledgeCommand(["migrate", "plan"], environment)).pipe(
+  runKnowledgeCliOperation(() => runKnowledgeCommand(["migrate", "plan"], environment)).pipe(
     Effect.flatMap(render),
   ),
 );
 const migrateApplyCommand = Command.make("apply", {}, () =>
-  Effect.promise(() => runKnowledgeCommand(["migrate", "apply"], environment)).pipe(
+  runKnowledgeCliOperation(() => runKnowledgeCommand(["migrate", "apply"], environment)).pipe(
     Effect.flatMap(render),
   ),
 );

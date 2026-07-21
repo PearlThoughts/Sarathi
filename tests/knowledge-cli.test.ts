@@ -1,6 +1,11 @@
+import { Effect } from "effect";
 import { describe, expect, test } from "vitest";
-import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
+import {
+  runKnowledgeCliOperation,
+  runKnowledgeCommand,
+} from "../src/cli/commands/knowledge-runtime.ts";
 import { runReleaseCli } from "../src/cli/release.ts";
+import { RepositoryError } from "../src/domain/errors.ts";
 
 describe("knowledge CLI", () => {
   test("exposes the additive migration and rollback plan through the Effect CLI handler", async () => {
@@ -48,5 +53,28 @@ describe("knowledge CLI", () => {
     });
     expect(result.exitCode).toBe(1);
     expect(JSON.stringify(result)).not.toContain("secret-database-value");
+  });
+
+  test("renders rejected command promises as privacy-safe typed failures", async () => {
+    const result = await Effect.runPromise(
+      runKnowledgeCliOperation(() =>
+        Promise.reject(
+          new RepositoryError({
+            message: "sensitive provider or database detail",
+            operation: "delivery-projection",
+          }),
+        ),
+      ),
+    );
+
+    expect(result).toEqual({
+      exitCode: 1,
+      output: {
+        ok: false,
+        message: "Knowledge operation failed; inspect privacy-safe service diagnostics.",
+        failureOperation: "delivery-projection",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("sensitive provider or database detail");
   });
 });
