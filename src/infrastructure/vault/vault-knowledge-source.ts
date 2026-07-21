@@ -97,7 +97,11 @@ const requestJson = async <Value>(
 };
 
 const decodeMarkdown = (content: GitContent): string => {
-  if (content.type !== "file" || content.encoding !== "base64" || content.content === undefined)
+  if (
+    (content.type !== undefined && content.type !== "file") ||
+    content.encoding !== "base64" ||
+    content.content === undefined
+  )
     throw new Error("Configured Vault path did not resolve to a Markdown file.");
   return Buffer.from(content.content.replace(/\n/g, ""), "base64").toString("utf8");
 };
@@ -376,10 +380,10 @@ const rootDocuments = async (
     .sort((left, right) => left.path.localeCompare(right.path));
 
   return mapBounded(paths, 6, async ({ path, sha }) => {
-    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    if (sha === "") throw new Error("Configured Vault Markdown blob has no revision identifier.");
     const content = await requestJson<GitContent>(
       configuration,
-      `/repos/${root.repository}/contents/${encodedPath}?ref=${encodeURIComponent(commit.sha)}`,
+      `/repos/${root.repository}/git/blobs/${encodeURIComponent(sha)}`,
     );
     const markdown = decodeMarkdown(content);
     const passages = chunkVaultMarkdown(markdown);
