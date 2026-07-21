@@ -26,12 +26,13 @@ const item = (
   source: "github" | "jira" | "teams" | "vault",
   id: string,
   summary: string,
-  intent: "activity" | "dependencies" | "status" = "activity",
+  intent: "activity" | "dependencies" | "status" | "risks" | "next_actions" = "activity",
 ): DeliveryResultItem => ({
   id,
   workspaceId: request.workspaceId,
   source,
-  selector: intent === "activity" ? "observations" : intent === "status" ? "objects" : "relations",
+  selector:
+    intent === "activity" ? "observations" : intent === "dependencies" ? "relations" : "objects",
   intent,
   title: summary,
   summary,
@@ -105,6 +106,44 @@ describe("delivery intelligence application", () => {
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
     expect(answer.status).toBe("ok");
+  });
+
+  it("preserves each requested intent when one Jira issue supports a compound answer", async () => {
+    const sharedCitation = "https://example.com/jira/DEMO-9";
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "risk", "DEMO-9 is a high delivery risk", "risks"),
+              citationUrl: sharedCitation,
+              dedupeKey: "jira:DEMO-9:risk",
+            },
+            {
+              ...item("jira", "action", "Owner — DEMO-9 In Progress", "next_actions"),
+              citationUrl: sharedCitation,
+              dedupeKey: "jira:DEMO-9:next",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What are the delivery risks and next action?",
+      }),
+    );
+
+    expect(answer.text.split("\n")).toEqual([
+      `Risks: DEMO-9 is a high delivery risk [Jira 1](${sharedCitation})`,
+      `Next action: Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
+    ]);
+    expect(answer.citations).toHaveLength(2);
   });
 
   it("prefers structured Jira lifecycle state for status answers", async () => {
