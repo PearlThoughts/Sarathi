@@ -384,7 +384,17 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       limit: top,
     });
   }
-  if (has(value, /\b(?:budget|cost|rate|burn|revenue|margin)\b/))
+  const nonFinancialBudget = has(
+    value,
+    /\b(?:response|time|latency|token|compute|memory|performance|retry|timeout)\s+budget\b/,
+  );
+  const financialQuestion =
+    (has(value, /\bbudget\b/) && !nonFinancialBudget) ||
+    has(
+      value,
+      /\b(?:cost|costs|billing|financial|finance|revenue|profit|profits|margin|margins|burn rate|hourly rate|day rate)\b/,
+    );
+  if (financialQuestion)
     add("finance", {
       select: "metrics",
       metricCategories: ["finance"],

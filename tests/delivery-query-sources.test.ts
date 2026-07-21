@@ -249,6 +249,50 @@ describe("delivery intelligence live query sources", () => {
     expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
   });
 
+  it("returns both Jira risks and a ranked next action for a compound question", async () => {
+    const observedJql: string[] = [];
+    const question = "What are the delivery risks and next action?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic risk and action plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { readonly jql: string };
+        observedJql.push(body.jql);
+        return Response.json({
+          issues: [
+            {
+              key: body.jql.includes("ORDER BY priority DESC") ? "DEMO-9" : "DEMO-8",
+              fields: {
+                summary: "Resolve launch dependency",
+                updated: "2026-07-20T11:00:00.000Z",
+                status: { name: "In Progress" },
+                assignee: { displayName: "Delivery Owner" },
+                priority: { name: "High" },
+              },
+            },
+          ],
+        });
+      },
+    });
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(observedJql).toHaveLength(2);
+    expect(observedJql).toContain(
+      'project in ("DEMO") AND statusCategory != Done ORDER BY priority DESC, updated DESC',
+    );
+    expect(result.items.map(({ intent }) => intent)).toEqual(["risks", "next_actions"]);
+    expect(result.items[1]?.summary).toBe(
+      "Next: Delivery Owner — DEMO-9 In Progress: Resolve launch dependency",
+    );
+  });
+
   it("filters Teams channels before requesting a token or Graph content", async () => {
     let tokenRequests = 0;
     let graphRequests = 0;

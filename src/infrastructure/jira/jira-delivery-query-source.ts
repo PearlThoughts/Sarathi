@@ -15,6 +15,7 @@ type JiraSupportedIntent =
   | "blockers"
   | "delivered"
   | "current_work"
+  | "next_actions"
   | "risks"
   | "recurring"
   | "status";
@@ -104,6 +105,7 @@ const supportedIntents = new Set<JiraSupportedIntent>([
   "blockers",
   "delivered",
   "current_work",
+  "next_actions",
   "risks",
   "recurring",
   "status",
@@ -262,6 +264,8 @@ const jqlForView = (
     case "blockers":
     case "current_work":
       return `${scope} AND sprint in openSprints() AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
+    case "next_actions":
+      return `${scope} AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
     case "delivered":
       return query.operation.time?.kind === "jira_sprint" &&
         query.operation.time.sprint === "previous"
@@ -447,6 +451,23 @@ const currentWorkItems = (
     return item === undefined ? [] : [item];
   });
 
+const nextActionItems = (
+  configuration: JiraDeliveryQueryConfiguration,
+  query: JiraDeliveryQuery,
+  issues: readonly JiraIssue[],
+): readonly DeliveryResultItem[] =>
+  issues.flatMap((issue) => {
+    const item = baseItem(
+      configuration,
+      query,
+      issue,
+      "next_action",
+      "next",
+      `Next: ${issueOwner(issue)} — ${issue.key} ${issueStatus(issue)}: ${issueTitle(issue)}`,
+    );
+    return item === undefined ? [] : [item];
+  });
+
 const riskScore = (issue: JiraIssue): number => {
   const priority = issue.fields?.priority?.name?.toLowerCase() ?? "";
   const labels = issue.fields?.labels?.map((label) => label.toLowerCase()) ?? [];
@@ -590,6 +611,8 @@ export const createJiraDeliveryQuerySource = (
                 return deliveredItems(configuration, query, connectedIssues);
               case "current_work":
                 return currentWorkItems(configuration, query, connectedIssues);
+              case "next_actions":
+                return nextActionItems(configuration, query, connectedIssues);
               case "risks":
                 return riskItems(configuration, query, connectedIssues);
               case "recurring":
