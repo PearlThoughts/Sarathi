@@ -53,10 +53,25 @@ export const knowledgeMigrationPlan = {
     "Restore only from the pre-migration PostgreSQL backup if additive migration recovery is required.",
 } as const;
 
+export const knowledgePostgresPoolConfiguration = (
+  connectionString: string,
+  queryBudgetMs?: number,
+) => ({
+  connectionString,
+  ...(queryBudgetMs === undefined
+    ? {}
+    : {
+        connectionTimeoutMillis: queryBudgetMs,
+        query_timeout: queryBudgetMs,
+        statement_timeout: queryBudgetMs,
+      }),
+});
+
 export const openKnowledgePostgresDatabase = (
   connectionString: string,
+  queryBudgetMs?: number,
 ): { readonly pool: Pool; readonly database: KnowledgePostgresDatabase } => {
-  const pool = new Pool({ connectionString });
+  const pool = new Pool(knowledgePostgresPoolConfiguration(connectionString, queryBudgetMs));
   return { pool, database: drizzle(pool, { schema: knowledgePostgresSchema }) };
 };
 
