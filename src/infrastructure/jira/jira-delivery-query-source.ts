@@ -108,6 +108,11 @@ const supportedIntents = new Set<JiraSupportedIntent>([
   "recurring",
   "status",
 ]);
+const supportedSelectors = new Set<DeliveryQueryOperation["select"]>([
+  "objects",
+  "relations",
+  "observations",
+]);
 
 const asJiraQuery = (
   context: DeliveryQueryContext,
@@ -225,6 +230,25 @@ const sprintValues = (issue: JiraIssue): readonly JiraSprint[] =>
     );
   });
 
+const escapedJqlText = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+
+const statusTargetClause = (query: JiraDeliveryQuery): string => {
+  const exactKey = query.operation.predicates?.find(
+    ({ field, operator, value }) =>
+      field === "externalKey" && operator === "equals" && typeof value === "string",
+  )?.value;
+  if (typeof exactKey === "string" && /^[A-Z][A-Z0-9]+-\d+$/.test(exactKey))
+    return ` AND key = "${exactKey}"`;
+  const titleTarget = query.operation.predicates?.find(
+    ({ field, operator, value }) =>
+      field === "title" && operator === "contains" && typeof value === "string",
+  )?.value;
+  return typeof titleTarget === "string" && titleTarget.trim() !== ""
+    ? ` AND summary ~ "\\"${escapedJqlText(titleTarget.trim())}\\""`
+    : "";
+};
+
 const jqlForView = (
   view: JiraSupportedIntent,
   projects: string,
@@ -248,7 +272,7 @@ const jqlForView = (
     case "recurring":
       return `${scope} AND created >= "${jiraDate(query.fromInclusive)}" ORDER BY created DESC`;
     case "status":
-      return `${scope} ORDER BY updated DESC`;
+      return `${scope}${statusTargetClause(query)} ORDER BY updated DESC`;
   }
 };
 
@@ -532,6 +556,7 @@ export const createJiraDeliveryQuerySource = (
           return { items: [], conflicts: [], unavailableSources: [], complete: true };
         const projects = configuration.projectKeys.map((key) => `"${key}"`).join(", ");
         const queries = plan.operations.flatMap((operation) => {
+          if (!supportedSelectors.has(operation.select)) return [];
           const query = asJiraQuery(context, operation);
           return query === undefined ? [] : [query];
         });
