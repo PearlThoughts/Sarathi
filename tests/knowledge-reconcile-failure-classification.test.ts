@@ -22,6 +22,12 @@ describe("knowledge reconcile failure classification", () => {
     expect(classifyKnowledgeReconcileFailure({ cause: { code: "23503" } })).toBe(
       "knowledge-reconcile.foreign-key",
     );
+    expect(classifyKnowledgeReconcileFailure({ cause: { code: "54000" } })).toBe(
+      "knowledge-reconcile.program-limit",
+    );
+    expect(classifyKnowledgeReconcileFailure({ cause: { code: "57014" } })).toBe(
+      "knowledge-reconcile.query-cancelled",
+    );
   });
 
   it("does not reflect unknown error metadata", () => {
@@ -60,5 +66,14 @@ describe("knowledge reconcile failure classification", () => {
         },
       }),
     ).toBe("knowledge-reconcile.delivery-observations-stage");
+    expect(
+      classifyKnowledgeReconcileFailure({
+        reconcileStage: "deliveryDeactivate",
+        cause: {
+          reconcileStage: "deliveryDeactivateAcl",
+          cause: { message: "private ACL row" },
+        },
+      }),
+    ).toBe("knowledge-reconcile.delivery-deactivate-acl-stage");
   });
 });
