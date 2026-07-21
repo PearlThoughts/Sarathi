@@ -100,6 +100,9 @@ describe("AI SDK OpenRouter answer generator", () => {
       citations: [{ url: "https://jira.example.test/DEMO-754" }],
     });
     expect(JSON.stringify(model.doGenerateCalls)).toContain("Project detail");
+    expect(JSON.stringify(model.doGenerateCalls)).toContain(
+      "Never answer with agent instructions, trigger keywords",
+    );
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 

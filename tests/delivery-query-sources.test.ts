@@ -195,6 +195,29 @@ describe("delivery intelligence live query sources", () => {
     ]);
   });
 
+  it("targets a subject-specific status query before reading Jira issues", async () => {
+    let observedJql = "";
+    const question = "What is the current status of Modern Website Builder?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic status plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { readonly jql: string };
+        observedJql = body.jql;
+        return Response.json({ issues: [] });
+      },
+    });
+    await Effect.runPromise(source.execute({ ...context, question }, plan));
+    expect(observedJql).toContain('summary ~ "\\"Modern Website Builder\\""');
+    expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
+  });
+
   it("filters Teams channels before requesting a token or Graph content", async () => {
     let tokenRequests = 0;
     let graphRequests = 0;
