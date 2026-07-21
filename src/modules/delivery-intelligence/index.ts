@@ -40,6 +40,7 @@ export {
   assertNonFinancialAttributes,
   deliveryClaimValueHash,
   findDeliveryConflicts,
+  isFinanceAttributeKey,
 } from "./domain/delivery-model.ts";
 export type {
   DeliveryClaimDraft,
