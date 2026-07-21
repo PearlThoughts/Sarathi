@@ -39,8 +39,16 @@ export const createDeliveryKnowledgeQuerySource = (
           unavailableSources: [],
           complete: true,
         };
+      const titleTarget = plan.operations
+        .flatMap(({ predicates }) => predicates ?? [])
+        .find(
+          (predicate) =>
+            predicate.field === "title" &&
+            predicate.operator === "contains" &&
+            typeof predicate.value === "string",
+        )?.value;
       const results = yield* queryKnowledgeLexically(configuration.repository, {
-        question: context.question,
+        question: typeof titleTarget === "string" ? titleTarget : context.question,
         audience: {
           workspaceId: context.workspaceId,
           actorId: context.actorId,
