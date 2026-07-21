@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import { createGitHubDeliveryQuerySource } from "../../infrastructure/github/index.ts";
 import {
@@ -333,12 +334,15 @@ export const runDeliveryCommand = async (
           "Use delivery status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone>.",
       },
     };
-  } catch {
+  } catch (error) {
     return {
       exitCode: 1,
       output: {
         ok: false,
         message: "Delivery operation failed; inspect privacy-safe service diagnostics.",
+        ...(error instanceof RepositoryError && error.operation !== undefined
+          ? { failureOperation: error.operation }
+          : {}),
       },
     };
   }

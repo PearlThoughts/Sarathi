@@ -18,6 +18,7 @@ describe("AI SDK knowledge embedding", () => {
 
   test("batches through the AI SDK boundary and validates projection dimensions", async () => {
     const calls: string[][] = [];
+    const retries: number[] = [];
     const embedding = createAiSdkKnowledgeEmbedding(
       {
         provider: "openrouter",
@@ -28,8 +29,9 @@ describe("AI SDK knowledge embedding", () => {
         timeoutMs: 1_000,
         batchSize: 2,
       },
-      async ({ values }) => {
+      async ({ values, maxRetries }) => {
         calls.push(values);
+        retries.push(maxRetries);
         return {
           embeddings: values.map(() => Array.from({ length: 1536 }, () => 0.25)),
         };
@@ -39,9 +41,24 @@ describe("AI SDK knowledge embedding", () => {
     const result = await Effect.runPromise(embedding.embed(["one", "two", "three"]));
 
     expect(calls).toEqual([["one", "two"], ["three"]]);
+    expect(retries).toEqual([2, 2]);
     expect(result).toHaveLength(3);
     expect(result[0]).toHaveLength(1536);
     expect(embedding.model).toBe("openrouter:openai/text-embedding-3-small");
+  });
+
+  test("accepts a bounded retry override without exposing the credential", () => {
+    const configuration = knowledgeEmbeddingConfigurationFromEnvironment({
+      SARATHI_EMBEDDING_PROVIDER: "openrouter",
+      SARATHI_EMBEDDING_API_KEY: "test-only",
+      SARATHI_EMBEDDING_MODEL: "openai/text-embedding-3-small",
+      SARATHI_EMBEDDING_MAX_RETRIES: "3",
+    });
+
+    expect(configuration.maxRetries).toBe(3);
+    expect(JSON.stringify(configuration).replace(configuration.apiKey, "[redacted]")).not.toContain(
+      "test-only",
+    );
   });
 
   test("fails closed on a provider shape mismatch", async () => {
