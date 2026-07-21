@@ -51,6 +51,17 @@ type SearchRow = {
   readonly authority: number;
 };
 
+const postgresBindBatchSize = 1_000;
+
+export const boundedPostgresBindBatches = <Value>(
+  values: readonly Value[],
+): readonly (readonly Value[])[] => {
+  const batches: Value[][] = [];
+  for (let offset = 0; offset < values.length; offset += postgresBindBatchSize)
+    batches.push(values.slice(offset, offset + postgresBindBatchSize));
+  return batches;
+};
+
 const canonicalize = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   if (typeof value === "object" && value !== null) {
@@ -596,75 +607,51 @@ const syncDeliveryProjection = async (
   onStage("deliveryDeactivate");
   if (previousObjects.length > 0) {
     onStage("deliveryDeactivateObjects");
-    await database
-      .update(deliveryObjectTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryObjectTable.id,
-          previousObjects.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousObjects.map(({ id }) => id)))
+      await database
+        .update(deliveryObjectTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryObjectTable.id, ids));
   }
   if (previousRelations.length > 0) {
     onStage("deliveryDeactivateRelations");
-    await database
-      .update(deliveryRelationTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryRelationTable.id,
-          previousRelations.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousRelations.map(({ id }) => id)))
+      await database
+        .update(deliveryRelationTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryRelationTable.id, ids));
   }
   if (previousObservations.length > 0) {
     onStage("deliveryDeactivateObservations");
-    await database
-      .update(deliveryObservationTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryObservationTable.id,
-          previousObservations.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousObservations.map(({ id }) => id)))
+      await database
+        .update(deliveryObservationTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryObservationTable.id, ids));
   }
   if (previousMetrics.length > 0) {
     onStage("deliveryDeactivateMetrics");
-    await database
-      .update(deliveryMetricTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryMetricTable.id,
-          previousMetrics.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousMetrics.map(({ id }) => id)))
+      await database
+        .update(deliveryMetricTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryMetricTable.id, ids));
   }
   if (previousFinanceMetrics.length > 0) {
     onStage("deliveryDeactivateFinanceMetrics");
-    await database
-      .update(deliveryFinanceMetricTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryFinanceMetricTable.id,
-          previousFinanceMetrics.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousFinanceMetrics.map(({ id }) => id)))
+      await database
+        .update(deliveryFinanceMetricTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryFinanceMetricTable.id, ids));
   }
   if (previousClaims.length > 0) {
     onStage("deliveryDeactivateClaims");
-    await database
-      .update(deliveryClaimTable)
-      .set({ active: false, deletedAt: now })
-      .where(
-        inArray(
-          deliveryClaimTable.id,
-          previousClaims.map(({ id }) => id),
-        ),
-      );
+    for (const ids of boundedPostgresBindBatches(previousClaims.map(({ id }) => id)))
+      await database
+        .update(deliveryClaimTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryClaimTable.id, ids));
   }
   const previousTargetIds = [
     ...previousObjects.map(({ id }) => id),
@@ -676,9 +663,10 @@ const syncDeliveryProjection = async (
   ];
   if (previousTargetIds.length > 0) {
     onStage("deliveryDeactivateAcl");
-    await database
-      .delete(deliveryAclBindingTable)
-      .where(inArray(deliveryAclBindingTable.targetId, previousTargetIds));
+    for (const ids of boundedPostgresBindBatches(previousTargetIds))
+      await database
+        .delete(deliveryAclBindingTable)
+        .where(inArray(deliveryAclBindingTable.targetId, ids));
   }
 
   onStage("deliveryObjects");
