@@ -50,6 +50,7 @@ describe("cross-source knowledge fusion", () => {
     const repository: KnowledgeRepository = {
       reconcile: () => Effect.die("not used"),
       search: () => Effect.succeed([indexed]),
+      searchLexical: () => Effect.succeed([indexed]),
     };
     const embeddings: KnowledgeEmbeddingPort = {
       model: "deterministic",

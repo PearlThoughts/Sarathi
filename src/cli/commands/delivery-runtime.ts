@@ -10,9 +10,7 @@ import { createJiraDeliveryQuerySource } from "../../infrastructure/jira/index.t
 import { createDeliveryKnowledgeQuerySource } from "../../infrastructure/knowledge/index.ts";
 import {
   createAiSdkDeliveryAnswerComposer,
-  createAiSdkKnowledgeEmbedding,
   createGroundedAnswerGeneratorFromEnvironment,
-  knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../../infrastructure/model/index.ts";
 import {
   createPostgresDeliveryQuerySource,
@@ -241,9 +239,6 @@ const answerFromRuntime = async (
           createPostgresDeliveryQuerySource(opened.database),
           createDeliveryKnowledgeQuerySource({
             repository: createPostgresKnowledgeRepository(opened.database),
-            embeddings: createAiSdkKnowledgeEmbedding(
-              knowledgeEmbeddingConfigurationFromEnvironment(environment),
-            ),
             workspaceId: request.workspaceId,
             allowedActorIds: new Set([request.actorId]),
             audienceIds,

@@ -581,12 +581,11 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               ...(knowledgeDatabase === undefined
                 ? []
                 : [createPostgresDeliveryQuerySource(knowledgeDatabase.database)]),
-              ...(knowledgeRepository === undefined || knowledgeEmbeddings === undefined
+              ...(knowledgeRepository === undefined
                 ? []
                 : [
                     createDeliveryKnowledgeQuerySource({
                       repository: knowledgeRepository,
-                      embeddings: knowledgeEmbeddings,
                       workspaceId,
                       allowedActorIds,
                       audienceIds: knowledgeAudienceIds,

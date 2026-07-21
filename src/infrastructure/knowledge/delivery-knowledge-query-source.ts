@@ -3,14 +3,12 @@ import { RepositoryError } from "../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../domain/policy.ts";
 import type { DeliveryQuerySource } from "../../modules/delivery-intelligence/index.ts";
 import {
-  type KnowledgeEmbeddingPort,
   type KnowledgeRepository,
-  queryKnowledge,
+  queryKnowledgeLexically,
 } from "../../modules/knowledge-layer/index.ts";
 
 type DeliveryKnowledgeQuerySourceConfiguration = {
   readonly repository: KnowledgeRepository;
-  readonly embeddings: KnowledgeEmbeddingPort;
   readonly workspaceId: string;
   readonly allowedActorIds: ReadonlySet<string>;
   readonly audienceIds: readonly string[];
@@ -41,7 +39,7 @@ export const createDeliveryKnowledgeQuerySource = (
           unavailableSources: [],
           complete: true,
         };
-      const results = yield* queryKnowledge(configuration.repository, configuration.embeddings, {
+      const results = yield* queryKnowledgeLexically(configuration.repository, {
         question: context.question,
         audience: {
           workspaceId: context.workspaceId,

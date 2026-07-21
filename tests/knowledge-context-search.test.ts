@@ -30,6 +30,7 @@ describe("Teams knowledge context search", () => {
           },
         ]);
       },
+      searchLexical: () => Effect.succeed([]),
     };
     const embeddings: KnowledgeEmbeddingPort = {
       model: "test",

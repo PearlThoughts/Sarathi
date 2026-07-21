@@ -211,6 +211,74 @@ const authorizedPassages = (
       )`;
 };
 
+const readLexicalSearchLists = async (
+  database: KnowledgePostgresDatabase,
+  authorized: ReturnType<typeof authorizedPassages>,
+  question: string,
+  limit: number,
+): Promise<Readonly<Record<"exact" | "keyword", readonly SearchRow[]>>> => {
+  const [exactResult, keywordResult] = await Promise.all([
+    database.execute(sql`
+      with authorized as materialized (${authorized})
+      select authorized.*, content.body from authorized
+      join ${knowledgePassageTable} content on content.id = authorized.id
+      where position(lower(authorized.external_id) in lower(${question})) > 0
+         or position(lower(replace(authorized.locator, '#', '')) in lower(${question})) > 0
+      order by length(authorized.external_id) desc, authorized.source_updated_at desc
+      limit ${limit}`),
+    database.execute(sql`
+      with authorized as materialized (${authorized}), query as (
+        select websearch_to_tsquery('english', ${question}) as value
+      )
+      select authorized.*, content.body from authorized
+      join ${knowledgePassageTable} content on content.id = authorized.id
+      cross join query
+      where to_tsvector('english', authorized.title || ' ' || content.body) @@ query.value
+      order by ts_rank_cd(to_tsvector('english', authorized.title || ' ' || content.body), query.value) desc,
+               authorized.source_updated_at desc
+      limit ${limit}`),
+  ]);
+  return {
+    exact: valuesFromResult(exactResult),
+    keyword: valuesFromResult(keywordResult),
+  };
+};
+
+const fuseSearchRows = (
+  lists: Readonly<Record<string, readonly SearchRow[]>>,
+  limit: number,
+): readonly KnowledgeSearchResult[] => {
+  const rowsById = new Map<string, SearchRow>();
+  for (const rows of Object.values(lists)) for (const row of rows) rowsById.set(row.id, row);
+  return reciprocalRankFusion(
+    Object.fromEntries(
+      Object.entries(lists).map(([component, rows]) => [component, rows.map(rankCandidate)]),
+    ),
+  )
+    .slice(0, limit)
+    .flatMap((candidate): readonly KnowledgeSearchResult[] => {
+      const row = rowsById.get(candidate.id);
+      return row === undefined
+        ? []
+        : [
+            {
+              id: row.id,
+              source: row.source,
+              sourceId: row.external_id,
+              title: row.title,
+              excerpt: row.body.replace(/\s+/g, " ").trim().slice(0, 1200),
+              citationUrl: row.canonical_url,
+              sourceUpdatedAt: new Date(row.source_updated_at).toISOString(),
+              sensitivity: row.sensitivity,
+              authority: Number(row.authority),
+              freshness: freshness(row.source_updated_at),
+              componentRanks: candidate.componentRanks,
+              score: candidate.fusedScore,
+            },
+          ];
+    });
+};
+
 const syncAcl = async (
   database: KnowledgePostgresDatabase,
   passageIds: readonly string[],
@@ -1129,26 +1197,8 @@ export const createPostgresKnowledgeRepository = (
           query.audience.actorId,
         );
         const limit = Math.max(1, Math.min(query.topK, 50));
-        const [exactResult, keywordResult, vectorResult] = await Promise.all([
-          database.execute(sql`
-            with authorized as materialized (${authorized})
-            select authorized.*, content.body from authorized
-            join ${knowledgePassageTable} content on content.id = authorized.id
-            where position(lower(authorized.external_id) in lower(${query.question})) > 0
-               or position(lower(replace(authorized.locator, '#', '')) in lower(${query.question})) > 0
-            order by length(authorized.external_id) desc, authorized.source_updated_at desc
-            limit ${limit}`),
-          database.execute(sql`
-            with authorized as materialized (${authorized}), query as (
-              select websearch_to_tsquery('english', ${query.question}) as value
-            )
-            select authorized.*, content.body from authorized
-            join ${knowledgePassageTable} content on content.id = authorized.id
-            cross join query
-            where to_tsvector('english', authorized.title || ' ' || content.body) @@ query.value
-            order by ts_rank_cd(to_tsvector('english', authorized.title || ' ' || content.body), query.value) desc,
-                     authorized.source_updated_at desc
-            limit ${limit}`),
+        const [lexical, vectorResult] = await Promise.all([
+          readLexicalSearchLists(database, authorized, query.question, limit),
           database.execute(sql`
             with authorized as materialized (${authorized})
             select authorized.*, content.body from authorized
@@ -1157,46 +1207,39 @@ export const createPostgresKnowledgeRepository = (
             order by ${cosineDistance(sql`projection.embedding`, [...queryEmbedding])}
             limit ${limit}`),
         ]);
-        const rowsById = new Map<string, SearchRow>();
-        const lists = {
-          exact: valuesFromResult(exactResult),
-          keyword: valuesFromResult(keywordResult),
-          vector: valuesFromResult(vectorResult),
-        };
-        for (const row of [...lists.exact, ...lists.keyword, ...lists.vector])
-          rowsById.set(row.id, row);
-        return reciprocalRankFusion({
-          exact: lists.exact.map(rankCandidate),
-          keyword: lists.keyword.map(rankCandidate),
-          vector: lists.vector.map(rankCandidate),
-        })
-          .slice(0, limit)
-          .flatMap((candidate): readonly KnowledgeSearchResult[] => {
-            const row = rowsById.get(candidate.id);
-            return row === undefined
-              ? []
-              : [
-                  {
-                    id: row.id,
-                    source: row.source,
-                    sourceId: row.external_id,
-                    title: row.title,
-                    excerpt: row.body.replace(/\s+/g, " ").trim().slice(0, 1200),
-                    citationUrl: row.canonical_url,
-                    sourceUpdatedAt: new Date(row.source_updated_at).toISOString(),
-                    sensitivity: row.sensitivity,
-                    authority: Number(row.authority),
-                    freshness: freshness(row.source_updated_at),
-                    componentRanks: candidate.componentRanks,
-                    score: candidate.fusedScore,
-                  },
-                ];
-          });
+        return fuseSearchRows(
+          {
+            ...lexical,
+            vector: valuesFromResult(vectorResult),
+          },
+          limit,
+        );
       },
       catch: () =>
         new RepositoryError({
           message: "Authorized hybrid knowledge retrieval failed.",
           operation: "knowledge-query",
+        }),
+    }),
+  searchLexical: (query) =>
+    Effect.tryPromise({
+      try: async () => {
+        const authorized = authorizedPassages(
+          query.audience.workspaceId,
+          query.audience.maximumSensitivity,
+          query.audience.audienceIds,
+          query.audience.actorId,
+        );
+        const limit = Math.max(1, Math.min(query.topK, 50));
+        return fuseSearchRows(
+          await readLexicalSearchLists(database, authorized, query.question, limit),
+          limit,
+        );
+      },
+      catch: () =>
+        new RepositoryError({
+          message: "Authorized lexical knowledge retrieval failed.",
+          operation: "knowledge-query-lexical",
         }),
     }),
 });
