@@ -1,6 +1,7 @@
 import { Args, Command, Options } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Console, Effect } from "effect";
+import { RepositoryError } from "../../domain/errors.ts";
 import { createGitHubKnowledgeSearch } from "../../infrastructure/github/index.ts";
 import { createJiraKnowledgeSource } from "../../infrastructure/jira/index.ts";
 import {
@@ -289,12 +290,15 @@ export const runKnowledgeCommand = async (
           "Use knowledge status, migrate plan|apply, ingest|reconcile jira|vault|all, or query --question <text>.",
       },
     };
-  } catch {
+  } catch (error) {
     return {
       exitCode: 1,
       output: {
         ok: false,
         message: "Knowledge operation failed; inspect privacy-safe service diagnostics.",
+        ...(error instanceof RepositoryError && error.operation !== undefined
+          ? { failureOperation: error.operation }
+          : {}),
       },
     };
   }

@@ -14,6 +14,7 @@ export type KnowledgeEmbeddingConfiguration = {
   readonly dimensions: 1536;
   readonly timeoutMs: number;
   readonly batchSize: number;
+  readonly maxRetries?: number | undefined;
 };
 
 type EmbedManyRunner = (input: {
@@ -35,6 +36,13 @@ const positiveInteger = (key: string, value: string | undefined, fallback: numbe
   if (value === undefined) return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${key} must be positive.`);
+  return parsed;
+};
+
+const nonNegativeInteger = (key: string, value: string | undefined, fallback: number): number => {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${key} must be non-negative.`);
   return parsed;
 };
 
@@ -65,6 +73,11 @@ export const knowledgeEmbeddingConfigurationFromEnvironment = (
         "SARATHI_EMBEDDING_BATCH_SIZE",
         environment.SARATHI_EMBEDDING_BATCH_SIZE,
         64,
+      ),
+      maxRetries: nonNegativeInteger(
+        "SARATHI_EMBEDDING_MAX_RETRIES",
+        environment.SARATHI_EMBEDDING_MAX_RETRIES,
+        2,
       ),
     };
   } catch {
@@ -98,7 +111,7 @@ export const createAiSdkKnowledgeEmbedding = (
           const result = await runner({
             model,
             values: [...batch],
-            maxRetries: 0,
+            maxRetries: configuration.maxRetries ?? 2,
             abortSignal: AbortSignal.timeout(configuration.timeoutMs),
             experimental_telemetry: { isEnabled: false },
           });

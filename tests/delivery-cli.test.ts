@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { runDeliveryCommand } from "../src/cli/commands/delivery-runtime.ts";
 import { runReleaseCli } from "../src/cli/release.ts";
+import { RepositoryError } from "../src/domain/errors.ts";
 
 describe("delivery CLI", () => {
   it("exposes privacy-safe durable status", async () => {
@@ -93,6 +94,32 @@ describe("delivery CLI", () => {
     );
     expect(result.exitCode).toBe(1);
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it("reports only the safe failing operation for repository errors", async () => {
+    const result = await runDeliveryCommand(
+      ["query", "--question", "status", "--actor-id", "actor-1", "--time-zone", "Asia/Kolkata"],
+      { SARATHI_KNOWLEDGE_WORKSPACE_ID: "1851" },
+      {
+        answer: async () =>
+          Promise.reject(
+            new RepositoryError({
+              message: "provider response with private diagnostic details",
+              operation: "knowledge-embedding",
+            }),
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      exitCode: 1,
+      output: {
+        ok: false,
+        message: "Delivery operation failed; inspect privacy-safe service diagnostics.",
+        failureOperation: "knowledge-embedding",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("private diagnostic details");
   });
 
   it("is available through the repository release CLI", async () => {
