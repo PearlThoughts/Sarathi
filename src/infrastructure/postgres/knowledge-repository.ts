@@ -453,6 +453,13 @@ const reconcileStageFailureOperations = {
   inventory: "knowledge-reconcile.inventory-stage",
   documents: "knowledge-reconcile.document-stage",
   delivery: "knowledge-reconcile.delivery-stage",
+  deliveryInventory: "knowledge-reconcile.delivery-inventory-stage",
+  deliveryDeactivate: "knowledge-reconcile.delivery-deactivate-stage",
+  deliveryObjects: "knowledge-reconcile.delivery-objects-stage",
+  deliveryRelations: "knowledge-reconcile.delivery-relations-stage",
+  deliveryObservations: "knowledge-reconcile.delivery-observations-stage",
+  deliveryMetrics: "knowledge-reconcile.delivery-metrics-stage",
+  deliveryClaims: "knowledge-reconcile.delivery-claims-stage",
   checkpoint: "knowledge-reconcile.checkpoint-stage",
 } as const;
 
@@ -516,7 +523,9 @@ const syncDeliveryProjection = async (
   database: KnowledgePostgresDatabase,
   projectedDocuments: readonly ProjectedDocument[],
   now: string,
+  onStage: (stage: ReconcileStage) => void,
 ): Promise<void> => {
+  onStage("deliveryInventory");
   const activeDocuments = projectedDocuments.filter(
     ({ document }) => document.deliveryProjection !== undefined,
   );
@@ -572,6 +581,7 @@ const syncDeliveryProjection = async (
           .select({ id: deliveryClaimTable.id })
           .from(deliveryClaimTable)
           .where(inArray(deliveryClaimTable.sourceVersionId, versionIds));
+  onStage("deliveryDeactivate");
   if (previousObjects.length > 0)
     await database
       .update(deliveryObjectTable)
@@ -645,6 +655,7 @@ const syncDeliveryProjection = async (
       .delete(deliveryAclBindingTable)
       .where(inArray(deliveryAclBindingTable.targetId, previousTargetIds));
 
+  onStage("deliveryObjects");
   const objectRows = new Map<
     string,
     typeof deliveryObjectTable.$inferInsert & { readonly rules: readonly KnowledgeAclRule[] }
@@ -715,6 +726,7 @@ const syncDeliveryProjection = async (
   for (const projected of activeDocuments) {
     const projection = projected.document.deliveryProjection;
     if (projection === undefined) continue;
+    onStage("deliveryRelations");
     for (const [index, relation] of projection.relations.entries()) {
       const fromObjectId = deliveryObjectId(
         projected.document.workspaceId,
@@ -771,6 +783,7 @@ const syncDeliveryProjection = async (
         )
         .onConflictDoNothing();
     }
+    onStage("deliveryObservations");
     for (const observation of projection.observations) {
       const subjectObjectId =
         observation.subject === undefined
@@ -829,6 +842,7 @@ const syncDeliveryProjection = async (
         )
         .onConflictDoNothing();
     }
+    onStage("deliveryMetrics");
     for (const [index, metric] of projection.metrics.entries()) {
       if (
         metric.category === "finance" &&
@@ -885,6 +899,7 @@ const syncDeliveryProjection = async (
         )
         .onConflictDoNothing();
     }
+    onStage("deliveryClaims");
     for (const [index, claim] of projection.claims.entries()) {
       const subjectObjectId =
         claim.subject === undefined
@@ -1211,7 +1226,9 @@ const reconcileSnapshot = async (
       }
 
       stage = "delivery";
-      await syncDeliveryProjection(transaction, projectedDocuments, now);
+      await syncDeliveryProjection(transaction, projectedDocuments, now, (nextStage) => {
+        stage = nextStage;
+      });
 
       stage = "checkpoint";
       const checksum = stableSha256(
