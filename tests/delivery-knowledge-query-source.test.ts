@@ -66,8 +66,39 @@ describe("delivery knowledge query source", () => {
     });
   });
 
-  it("uses the planned title target instead of question boilerplate", async () => {
-    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() => Effect.succeed([]));
+  it("uses the full delivery question and excludes operational agent metadata", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() =>
+      Effect.succeed([
+        {
+          id: "metadata",
+          source: "vault",
+          sourceId: "metadata",
+          title: "Agent Prompt Playbook",
+          excerpt: "Use these trigger keywords.",
+          citationUrl: "https://example.com/vault/playbook#reliable-trigger-keywords",
+          sourceUpdatedAt: "2026-07-20T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 1,
+          freshness: 1,
+          componentRanks: { keyword: 1 },
+          score: 1,
+        },
+        {
+          id: "status",
+          source: "vault",
+          sourceId: "status",
+          title: "Builder delivery status",
+          excerpt: "The builder is in acceptance testing.",
+          citationUrl: "https://example.com/vault/builder#delivery-status",
+          sourceUpdatedAt: "2026-07-20T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 0.9,
+          freshness: 1,
+          componentRanks: { keyword: 2 },
+          score: 0.8,
+        },
+      ]),
+    );
     const plan = planDeliveryQuestion("What is the current status of Modern Website Builder?");
     if (plan === undefined) throw new Error("Expected a status plan");
     const source = createDeliveryKnowledgeQuerySource({
@@ -80,7 +111,7 @@ describe("delivery knowledge query source", () => {
       allowedActorIds: new Set(["actor-1851"]),
       audienceIds: ["team-1851"],
     });
-    await Effect.runPromise(
+    const result = await Effect.runPromise(
       source.execute(
         {
           workspaceId: "workspace-1851",
@@ -95,7 +126,10 @@ describe("delivery knowledge query source", () => {
         plan,
       ),
     );
-    expect(searchLexical.mock.calls[0]?.[0].question).toBe("Modern Website Builder");
+    expect(searchLexical.mock.calls[0]?.[0].question).toBe(
+      "What is the current status of Modern Website Builder?",
+    );
+    expect(result.items.map(({ title }) => title)).toEqual(["Builder delivery status"]);
   });
 
   it("excludes unmapped actors before repository access", async () => {

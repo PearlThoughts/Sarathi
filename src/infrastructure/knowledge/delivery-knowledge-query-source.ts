@@ -14,6 +14,14 @@ type DeliveryKnowledgeQuerySourceConfiguration = {
   readonly audienceIds: readonly string[];
 };
 
+const operationalMetadata = (title: string, citationUrl: string): boolean => {
+  const location = new URL(citationUrl);
+  const descriptor = `${title} ${decodeURIComponent(location.pathname)} ${decodeURIComponent(location.hash)}`;
+  return /\b(?:agent prompt|prompt playbook|agent trigger|trigger keywords?|routing keywords?|navigation)\b/i.test(
+    descriptor.replaceAll("-", " "),
+  );
+};
+
 export const createDeliveryKnowledgeQuerySource = (
   configuration: DeliveryKnowledgeQuerySourceConfiguration,
 ): DeliveryQuerySource => ({
@@ -39,16 +47,8 @@ export const createDeliveryKnowledgeQuerySource = (
           unavailableSources: [],
           complete: true,
         };
-      const titleTarget = plan.operations
-        .flatMap(({ predicates }) => predicates ?? [])
-        .find(
-          (predicate) =>
-            predicate.field === "title" &&
-            predicate.operator === "contains" &&
-            typeof predicate.value === "string",
-        )?.value;
       const results = yield* queryKnowledgeLexically(configuration.repository, {
-        question: typeof titleTarget === "string" ? titleTarget : context.question,
+        question: context.question,
         audience: {
           workspaceId: context.workspaceId,
           actorId: context.actorId,
@@ -59,8 +59,10 @@ export const createDeliveryKnowledgeQuerySource = (
       });
       return {
         items: results
-          .filter((result) =>
-            isSensitivityAtOrBelow(result.sensitivity, context.maximumSensitivity),
+          .filter(
+            (result) =>
+              isSensitivityAtOrBelow(result.sensitivity, context.maximumSensitivity) &&
+              !operationalMetadata(result.title, result.citationUrl),
           )
           .map((result) => ({
             id: result.id,
