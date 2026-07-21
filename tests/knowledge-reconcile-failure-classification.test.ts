@@ -49,4 +49,16 @@ describe("knowledge reconcile failure classification", () => {
       }),
     ).toBe("knowledge-reconcile");
   });
+
+  it("returns the deepest allowlisted delivery substage", () => {
+    expect(
+      classifyKnowledgeReconcileFailure({
+        reconcileStage: "delivery",
+        cause: {
+          reconcileStage: "deliveryObservations",
+          cause: { message: "private observation body" },
+        },
+      }),
+    ).toBe("knowledge-reconcile.delivery-observations-stage");
+  });
 });
