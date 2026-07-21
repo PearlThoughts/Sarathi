@@ -58,11 +58,44 @@ describe("delivery knowledge query source", () => {
       audienceIds: ["team-1851"],
       maximumSensitivity: "internal",
     });
+    expect(searchLexical.mock.calls[0]?.[0].question).toBe("What should I know before standup?");
     expect(result.items[0]).toMatchObject({
       source: "vault",
       selector: "knowledge",
       intent: "general",
     });
+  });
+
+  it("uses the planned title target instead of question boilerplate", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() => Effect.succeed([]));
+    const plan = planDeliveryQuestion("What is the current status of Modern Website Builder?");
+    if (plan === undefined) throw new Error("Expected a status plan");
+    const source = createDeliveryKnowledgeQuerySource({
+      repository: {
+        reconcile: () => Effect.die("not used"),
+        search: () => Effect.die("not used"),
+        searchLexical,
+      },
+      workspaceId: "workspace-1851",
+      allowedActorIds: new Set(["actor-1851"]),
+      audienceIds: ["team-1851"],
+    });
+    await Effect.runPromise(
+      source.execute(
+        {
+          workspaceId: "workspace-1851",
+          actorId: "actor-1851",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-20T10:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-20T10:00:06.000Z",
+          question: "What is the current status of Modern Website Builder?",
+        },
+        plan,
+      ),
+    );
+    expect(searchLexical.mock.calls[0]?.[0].question).toBe("Modern Website Builder");
   });
 
   it("excludes unmapped actors before repository access", async () => {

@@ -11,6 +11,7 @@ import {
 import {
   type KnowledgeAclRule,
   type KnowledgeEmbeddingPort,
+  type KnowledgeQuery,
   type KnowledgeRepository,
   type KnowledgeSearchResult,
   type KnowledgeSourceDocument,
@@ -134,6 +135,7 @@ const authorizedPassages = (
   maximumSensitivity: SensitivityTier,
   audienceIds: readonly string[],
   actorId: string | undefined,
+  candidateIds?: ReturnType<typeof sql>,
 ) => {
   const maximumSensitivityRank = {
     public: 0,
@@ -180,6 +182,7 @@ const authorizedPassages = (
       and v.tombstone = false
       and i.deleted_at is null
       and s.active = true
+      and ${candidateIds === undefined ? sql`true` : sql`p.id in (${candidateIds})`}
       and case p.sensitivity
         when 'public' then 0
         when 'internal' then 1
@@ -213,29 +216,56 @@ const authorizedPassages = (
 
 const readLexicalSearchLists = async (
   database: KnowledgePostgresDatabase,
-  authorized: ReturnType<typeof authorizedPassages>,
-  question: string,
+  query: KnowledgeQuery,
   limit: number,
 ): Promise<Readonly<Record<"exact" | "keyword", readonly SearchRow[]>>> => {
+  const externalId = /\b[a-z][a-z0-9]+-\d+\b/i.exec(query.question)?.[0];
+  const candidateLimit = Math.min(1_000, limit * 20);
+  const authorizedCandidates = () =>
+    authorizedPassages(
+      query.audience.workspaceId,
+      query.audience.maximumSensitivity,
+      query.audience.audienceIds,
+      query.audience.actorId,
+      sql`select id from candidates`,
+    );
   const [exactResult, keywordResult] = await Promise.all([
+    externalId === undefined
+      ? Promise.resolve({ rows: [] })
+      : database.execute(sql`
+          with candidates as materialized (
+            select passage.id
+            from ${knowledgeItemTable} item
+            join ${knowledgePassageTable} passage on passage.item_id = item.id
+            where item.workspace_id = ${query.audience.workspaceId}
+              and passage.workspace_id = ${query.audience.workspaceId}
+              and passage.active = true
+              and upper(item.external_id) = upper(${externalId})
+            order by passage.ordinal
+            limit ${candidateLimit}
+          ), authorized as materialized (${authorizedCandidates()})
+          select authorized.*, content.body from authorized
+          join ${knowledgePassageTable} content on content.id = authorized.id
+          order by content.ordinal
+          limit ${limit}`),
     database.execute(sql`
-      with authorized as materialized (${authorized})
+      with query as (
+        select websearch_to_tsquery('english', ${query.question}) as value
+      ), candidates as materialized (
+        select passage.id,
+               ts_rank_cd(to_tsvector('english', passage.title || ' ' || passage.body), query.value) as rank
+        from ${knowledgePassageTable} passage
+        cross join query
+        where passage.workspace_id = ${query.audience.workspaceId}
+          and passage.active = true
+          and to_tsvector('english', passage.title || ' ' || passage.body) @@ query.value
+        order by rank desc, passage.source_updated_at desc
+        limit ${candidateLimit}
+      ), authorized as materialized (${authorizedCandidates()})
       select authorized.*, content.body from authorized
       join ${knowledgePassageTable} content on content.id = authorized.id
-      where position(lower(authorized.external_id) in lower(${question})) > 0
-         or position(lower(replace(authorized.locator, '#', '')) in lower(${question})) > 0
-      order by length(authorized.external_id) desc, authorized.source_updated_at desc
-      limit ${limit}`),
-    database.execute(sql`
-      with authorized as materialized (${authorized}), query as (
-        select websearch_to_tsquery('english', ${question}) as value
-      )
-      select authorized.*, content.body from authorized
-      join ${knowledgePassageTable} content on content.id = authorized.id
-      cross join query
-      where to_tsvector('english', authorized.title || ' ' || content.body) @@ query.value
-      order by ts_rank_cd(to_tsvector('english', authorized.title || ' ' || content.body), query.value) desc,
-               authorized.source_updated_at desc
+      join candidates on candidates.id = authorized.id
+      order by candidates.rank desc, authorized.source_updated_at desc
       limit ${limit}`),
   ]);
   return {
@@ -1198,7 +1228,7 @@ export const createPostgresKnowledgeRepository = (
         );
         const limit = Math.max(1, Math.min(query.topK, 50));
         const [lexical, vectorResult] = await Promise.all([
-          readLexicalSearchLists(database, authorized, query.question, limit),
+          readLexicalSearchLists(database, query, limit),
           database.execute(sql`
             with authorized as materialized (${authorized})
             select authorized.*, content.body from authorized
@@ -1224,17 +1254,8 @@ export const createPostgresKnowledgeRepository = (
   searchLexical: (query) =>
     Effect.tryPromise({
       try: async () => {
-        const authorized = authorizedPassages(
-          query.audience.workspaceId,
-          query.audience.maximumSensitivity,
-          query.audience.audienceIds,
-          query.audience.actorId,
-        );
         const limit = Math.max(1, Math.min(query.topK, 50));
-        return fuseSearchRows(
-          await readLexicalSearchLists(database, authorized, query.question, limit),
-          limit,
-        );
+        return fuseSearchRows(await readLexicalSearchLists(database, query, limit), limit);
       },
       catch: () =>
         new RepositoryError({
