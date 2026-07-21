@@ -290,6 +290,13 @@ const canonicalFieldValue = (
   return value === "" ? undefined : value;
 };
 
+const numericMetricValue = (value: unknown): string | undefined => {
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : undefined;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized !== "" && Number.isFinite(Number(normalized)) ? normalized : undefined;
+};
+
 const deliveryProjection = (
   configuration: JiraKnowledgeSourceConfiguration,
   issue: JiraIssue,
@@ -538,7 +545,7 @@ const deliveryProjection = (
   }
 
   const metrics = Object.entries(configuration.fields).flatMap(([fieldId, label]) => {
-    const value = issue.fields[fieldId];
+    const value = numericMetricValue(issue.fields[fieldId]);
     const metricKind = /story point/i.test(label)
       ? "estimate_story_points"
       : /original estimate/i.test(label)
@@ -546,13 +553,13 @@ const deliveryProjection = (
         : /remaining estimate/i.test(label)
           ? "estimate_remaining_seconds"
           : undefined;
-    if (metricKind === undefined || !Number.isFinite(Number(value))) return [];
+    if (metricKind === undefined || value === undefined) return [];
     return [
       {
         subject: workItem,
         category: /remaining estimate/i.test(label) ? ("capacity" as const) : ("delivery" as const),
         kind: metricKind,
-        value: String(value),
+        value,
         unit: metricKind === "estimate_story_points" ? "points" : "seconds",
         sensitivity,
       },
