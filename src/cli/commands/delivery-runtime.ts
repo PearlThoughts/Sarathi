@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import { createGitHubDeliveryQuerySource } from "../../infrastructure/github/index.ts";
@@ -28,6 +27,7 @@ import {
   type DeliveryAssistantRequest,
   type DeliveryQuerySource,
 } from "../../modules/delivery-intelligence/index.ts";
+import { runRepositoryEffect } from "./effect-repository-promise.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
 
 type DeliveryCliResult = {
@@ -233,7 +233,7 @@ const answerFromRuntime = async (
       "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
       environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
     );
-    return await Effect.runPromise(
+    return await runRepositoryEffect(
       createDeliveryAssistant({
         sources: [
           createPostgresDeliveryQuerySource(opened.database),
@@ -262,7 +262,7 @@ const answerFromRuntime = async (
 };
 
 const deliveryStatus = async (environment: DeliveryRuntimeEnvironment): Promise<unknown> =>
-  Effect.runPromise(
+  runRepositoryEffect(
     readKnowledgePostgresStatus(
       required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
     ),

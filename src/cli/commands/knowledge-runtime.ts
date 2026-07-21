@@ -22,6 +22,7 @@ import {
   type KnowledgeAclRule,
   queryKnowledgeAcrossSources,
 } from "../../modules/knowledge-layer/index.ts";
+import { runRepositoryEffect } from "./effect-repository-promise.ts";
 
 export type KnowledgeCliResult = {
   readonly exitCode: number;
@@ -131,7 +132,7 @@ const ingest = async (
     knowledgeEmbeddingConfigurationFromEnvironment(environment),
   );
   const summaries = await withKnowledgeDatabase(environment, (repository) =>
-    Effect.runPromise(
+    runRepositoryEffect(
       Effect.all(
         selected.map((reader) =>
           ingestKnowledgeSource(reader, repository, embeddings, workspaceId(environment)),
@@ -175,7 +176,7 @@ const query = async (
         );
   const token = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
   const results = await withKnowledgeDatabase(environment, (repository) =>
-    Effect.runPromise(
+    runRepositoryEffect(
       queryKnowledgeAcrossSources(
         repository,
         createAiSdkKnowledgeEmbedding(knowledgeEmbeddingConfigurationFromEnvironment(environment)),
@@ -200,7 +201,7 @@ const query = async (
       ),
     ),
   );
-  const answer = await Effect.runPromise(
+  const answer = await runRepositoryEffect(
     createGroundedAnswerGeneratorFromEnvironment(environment).generate({
       workspaceId: workspace,
       question,
@@ -246,7 +247,7 @@ export const runKnowledgeCommand = async (
         output: {
           ok: true,
           operation: "status",
-          status: await Effect.runPromise(readKnowledgePostgresStatus(databaseUrl(environment))),
+          status: await runRepositoryEffect(readKnowledgePostgresStatus(databaseUrl(environment))),
         },
       };
     }
@@ -261,7 +262,7 @@ export const runKnowledgeCommand = async (
         output: {
           ok: true,
           operation: "migrate-apply",
-          verification: await Effect.runPromise(
+          verification: await runRepositoryEffect(
             applyKnowledgePostgresMigrations(databaseUrl(environment)),
           ),
         },
