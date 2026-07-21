@@ -379,7 +379,7 @@ const rootDocuments = async (
     .map((entry) => ({ path: entry.path as string, sha: entry.sha ?? "" }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
-  return mapBounded(paths, 6, async ({ path, sha }) => {
+  const documents = await mapBounded(paths, 6, async ({ path, sha }) => {
     if (sha === "") throw new Error("Configured Vault Markdown blob has no revision identifier.");
     const content = await requestJson<GitContent>(
       configuration,
@@ -387,8 +387,7 @@ const rootDocuments = async (
     );
     const markdown = decodeMarkdown(content);
     const passages = chunkVaultMarkdown(markdown);
-    if (passages.length === 0)
-      throw new Error(`Configured Vault path ${path} produced no passages.`);
+    if (passages.length === 0) return undefined;
     const documentTitle = title(markdown, path);
     const canonicalUrl = `https://github.com/${root.repository}/blob/${commit.sha}/${path
       .split("/")
@@ -419,6 +418,7 @@ const rootDocuments = async (
       ),
     } satisfies KnowledgeSourceDocument;
   });
+  return documents.filter((document) => document !== undefined);
 };
 
 export const createVaultKnowledgeSource = (

@@ -38,6 +38,7 @@ describe("Vault knowledge source", () => {
           truncated: false,
           tree: [
             { path: "Projects/example/Risks.md", type: "blob", sha: "note-sha" },
+            { path: "Projects/example/Empty.md", type: "blob", sha: "empty-note-sha" },
             {
               path: "Projects/example/Excluded Communications/private.md",
               type: "blob",
@@ -59,6 +60,13 @@ describe("Vault knowledge source", () => {
           encoding: "base64",
           content: Buffer.from(markdown).toString("base64"),
           sha: "note-sha",
+        });
+      }
+      if (url.includes("/git/blobs/empty-note-sha")) {
+        return Response.json({
+          encoding: "base64",
+          content: Buffer.from("  \n\n").toString("base64"),
+          sha: "empty-note-sha",
         });
       }
       return new Response("not found", { status: 404 });
@@ -138,6 +146,7 @@ describe("Vault knowledge source", () => {
     expect(requests.some((url) => url.includes("Projects/Other"))).toBe(false);
     expect(requests.some((url) => url.includes("private.md"))).toBe(false);
     expect(requests.some((url) => url.includes("/git/blobs/note-sha"))).toBe(true);
+    expect(requests.some((url) => url.includes("/git/blobs/empty-note-sha"))).toBe(true);
   });
 
   it("fails on a truncated tree instead of silently claiming complete deletion reconciliation", async () => {
