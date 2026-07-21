@@ -64,6 +64,7 @@ describe("knowledge application service", () => {
         return Effect.succeed(summary);
       },
       search: () => Effect.succeed([]),
+      searchLexical: () => Effect.succeed([]),
     };
     const embeddings = createDeterministicKnowledgeEmbedding();
 
@@ -105,6 +106,7 @@ describe("knowledge application service", () => {
         return Effect.succeed(summary);
       },
       search: () => Effect.succeed([]),
+      searchLexical: () => Effect.succeed([]),
     };
 
     await expect(
@@ -133,6 +135,7 @@ describe("knowledge application service", () => {
         observedDimensions = vector.length;
         return Effect.succeed([]);
       },
+      searchLexical: () => Effect.succeed([]),
     };
     const query = {
       question: "What is the current status?",

@@ -81,6 +81,9 @@ export type KnowledgeRepository = {
     query: KnowledgeQuery,
     queryEmbedding: readonly number[],
   ) => Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError>;
+  readonly searchLexical: (
+    query: KnowledgeQuery,
+  ) => Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError>;
 };
 
 export type KnowledgeLiveSearch = {

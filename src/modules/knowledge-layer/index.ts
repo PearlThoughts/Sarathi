@@ -3,6 +3,7 @@ export {
   ingestKnowledgeSource,
   queryKnowledge,
   queryKnowledgeAcrossSources,
+  queryKnowledgeLexically,
 } from "./application/knowledge-service.ts";
 export type {
   FusedKnowledgeCandidate,

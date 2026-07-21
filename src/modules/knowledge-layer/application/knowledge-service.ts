@@ -67,6 +67,12 @@ export const queryKnowledge = (
     }),
   );
 
+export const queryKnowledgeLexically = (
+  repository: KnowledgeRepository,
+  query: KnowledgeQuery,
+): Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError> =>
+  repository.searchLexical(query);
+
 const canonicalResultKey = (result: KnowledgeSearchResult): string => {
   const url = new URL(result.citationUrl);
   url.hash = "";

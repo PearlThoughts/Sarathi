@@ -2,20 +2,11 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { createDeliveryKnowledgeQuerySource } from "../src/infrastructure/knowledge/index.ts";
 import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index.ts";
-import type {
-  KnowledgeEmbeddingPort,
-  KnowledgeRepository,
-} from "../src/modules/knowledge-layer/index.ts";
-
-const embeddings: KnowledgeEmbeddingPort = {
-  model: "deterministic-test",
-  dimensions: 3,
-  embed: () => Effect.succeed([[0.1, 0.2, 0.3]]),
-};
+import type { KnowledgeRepository } from "../src/modules/knowledge-layer/index.ts";
 
 describe("delivery knowledge query source", () => {
-  it("passes actor, workspace, audience, and sensitivity into hybrid retrieval", async () => {
-    const search = vi.fn<KnowledgeRepository["search"]>(() =>
+  it("passes actor, workspace, audience, and sensitivity into lexical retrieval", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() =>
       Effect.succeed([
         {
           id: "passage-1",
@@ -35,13 +26,13 @@ describe("delivery knowledge query source", () => {
     );
     const repository: KnowledgeRepository = {
       reconcile: () => Effect.die("not used"),
-      search,
+      search: () => Effect.die("delivery retrieval must not wait for query embeddings"),
+      searchLexical,
     };
     const plan = planDeliveryQuestion("What should I know before standup?");
     if (plan === undefined) throw new Error("Expected a generic delivery plan");
     const source = createDeliveryKnowledgeQuerySource({
       repository,
-      embeddings,
       workspaceId: "workspace-1851",
       allowedActorIds: new Set(["actor-1851"]),
       audienceIds: ["team-1851"],
@@ -61,7 +52,7 @@ describe("delivery knowledge query source", () => {
         plan,
       ),
     );
-    expect(search.mock.calls[0]?.[0].audience).toEqual({
+    expect(searchLexical.mock.calls[0]?.[0].audience).toEqual({
       workspaceId: "workspace-1851",
       actorId: "actor-1851",
       audienceIds: ["team-1851"],
@@ -74,14 +65,16 @@ describe("delivery knowledge query source", () => {
     });
   });
 
-  it("excludes unmapped actors before embedding or repository access", async () => {
-    const search = vi.fn<KnowledgeRepository["search"]>(() => Effect.succeed([]));
-    const embed = vi.fn<KnowledgeEmbeddingPort["embed"]>(() => Effect.succeed([[0, 0, 0]]));
+  it("excludes unmapped actors before repository access", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() => Effect.succeed([]));
     const plan = planDeliveryQuestion("What should I know before standup?");
     if (plan === undefined) throw new Error("Expected a generic delivery plan");
     const source = createDeliveryKnowledgeQuerySource({
-      repository: { reconcile: () => Effect.die("not used"), search },
-      embeddings: { ...embeddings, embed },
+      repository: {
+        reconcile: () => Effect.die("not used"),
+        search: () => Effect.die("not used"),
+        searchLexical,
+      },
       workspaceId: "workspace-1851",
       allowedActorIds: new Set(["actor-1851"]),
       audienceIds: ["team-1851"],
@@ -102,7 +95,6 @@ describe("delivery knowledge query source", () => {
       ),
     );
     expect(result.items).toEqual([]);
-    expect(embed).not.toHaveBeenCalled();
-    expect(search).not.toHaveBeenCalled();
+    expect(searchLexical).not.toHaveBeenCalled();
   });
 });
