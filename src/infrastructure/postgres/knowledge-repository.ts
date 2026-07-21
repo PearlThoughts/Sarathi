@@ -76,7 +76,6 @@ const effectiveVersion = (document: KnowledgeSourceDocument): string =>
       acl: document.acl,
       passages: document.passages,
       provenance: document.provenance,
-      deliveryProjection: document.deliveryProjection,
     }),
   );
 
