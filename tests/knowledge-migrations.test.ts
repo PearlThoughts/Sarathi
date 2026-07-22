@@ -31,6 +31,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 2, tag: "0002_delivery-intelligence-core" },
       { idx: 3, tag: "0003_continuous-sync-control-plane" },
       { idx: 4, tag: "0004_attributed-delivery-assertions" },
+      { idx: 5, tag: "0005_canonical-entity-time" },
     ]);
   });
 
@@ -123,5 +124,22 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).toContain('CONSTRAINT "delivery_claim_confidence_range"');
     expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
     expect(schema).not.toContain("assertion_body");
+  });
+
+  it("adds canonical aliases and explicit source/index timestamps with safe backfill", async () => {
+    const schema = await migration("0005_canonical-entity-time.sql");
+
+    expect(schema).toContain('CREATE TABLE "delivery_entity_alias"');
+    expect(schema).toContain('ADD COLUMN "canonical_key" text;');
+    expect(schema).toContain('UPDATE "delivery_object" SET');
+    expect(schema.indexOf('UPDATE "delivery_object" SET')).toBeLessThan(
+      schema.indexOf('ALTER COLUMN "canonical_key" SET NOT NULL'),
+    );
+    expect(schema).toContain('ADD COLUMN "source_created_at" timestamp with time zone');
+    expect(schema).toContain('ADD COLUMN "source_updated_at" timestamp with time zone');
+    expect(schema).toContain('ADD COLUMN "indexed_at" timestamp with time zone');
+    expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+    expect(schema).not.toContain("teams_mention_audit");
+    expect(schema).not.toContain("compliance_reminder_audit");
   });
 });

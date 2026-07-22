@@ -1027,6 +1027,7 @@ const asDocument = (
       configuration.baseUrl,
     ).toString(),
     title: plainText(issue.fields.summary) || issue.key,
+    ...(typeof issue.fields.created === "string" ? { sourceCreatedAt: issue.fields.created } : {}),
     sourceUpdatedAt: updated,
     sensitivity: configuration.sensitivity,
     authority: configuration.authority ?? 1,

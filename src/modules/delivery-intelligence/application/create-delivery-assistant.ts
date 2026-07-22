@@ -246,7 +246,8 @@ const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boo
   if (operation.select === "github_live" && item.source !== "github") return false;
   const subject = plan.subject;
   if (subject === undefined) return true;
-  const searchable = `${item.title} ${item.summary}`.toLowerCase();
+  const searchable =
+    `${item.title} ${item.summary} ${(item.subjectAliases ?? []).join(" ")}`.toLowerCase();
   if (subject.externalKey !== undefined)
     return searchable.includes(subject.externalKey.toLowerCase());
   const tokens = subjectTokens(subject.phrase ?? "");

@@ -31,6 +31,10 @@ export type DeliveryResultItem = {
   readonly sensitivity: SensitivityTier;
   readonly authority: number;
   readonly observedAt?: string | undefined;
+  readonly sourceCreatedAt?: string | undefined;
+  readonly sourceUpdatedAt?: string | undefined;
+  readonly indexedAt?: string | undefined;
+  readonly subjectAliases?: readonly string[] | undefined;
   readonly lifecycleState?: DeliveryLifecycleState | undefined;
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;

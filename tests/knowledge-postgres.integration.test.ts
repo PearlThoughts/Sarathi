@@ -12,6 +12,7 @@ import {
 } from "../src/infrastructure/postgres/index.ts";
 import {
   deliveryClaimTable,
+  deliveryEntityAliasTable,
   deliveryFinanceMetricTable,
   deliveryMetricTable,
   deliveryObjectTable,
@@ -19,6 +20,7 @@ import {
   deliveryRelationTable,
 } from "../src/infrastructure/postgres/knowledge-schema.ts";
 import {
+  type DeliveryEntityCatalog,
   type DeliveryQueryPlan,
   planDeliveryQuestion,
 } from "../src/modules/delivery-intelligence/index.ts";
@@ -43,6 +45,7 @@ const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
       sourceVersion: version,
       canonicalUrl: "https://jira.example/browse/DEMO-635",
       title: "Example Delivery Portal",
+      sourceCreatedAt: "2026-07-19T00:00:00.000Z",
       sourceUpdatedAt: "2026-07-20T00:00:00.000Z",
       sensitivity: "internal",
       authority: 1,
@@ -151,7 +154,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     );
     const verification = await Effect.runPromise(applyKnowledgePostgresMigrations(databaseUrl));
     expect(verification.knowledgeTableCount).toBe(11);
-    expect(verification.deliveryTableCount).toBe(7);
+    expect(verification.deliveryTableCount).toBe(8);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
       "compliance_reminder_dry_run_evidence",
@@ -498,7 +501,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 11,
-          appliedMigrationCount: 5,
+          appliedMigrationCount: 6,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
@@ -791,5 +794,197 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(restored.items.map(({ summary }) => summary)).toEqual([
       "product-builder delivery.status: At risk",
     ]);
+  });
+
+  test("joins source-qualified aliases onto one canonical entity with explicit source timestamps", async () => {
+    const entityCatalog: DeliveryEntityCatalog = {
+      version: 1,
+      entities: [
+        {
+          kind: "module",
+          canonicalKey: "product-builder",
+          title: "Product Builder",
+          aliases: [
+            { source: "github", value: "Puck" },
+            { source: "jira", value: "Modern Website Builder" },
+            { value: "Product Builder" },
+          ],
+        },
+      ],
+    };
+    const repository = createPostgresKnowledgeRepository(opened.database, { entityCatalog });
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const workspaceId = "workspace-canonical-alias";
+    const acl = [
+      { effect: "allow" as const, subjectType: "workspace" as const, subjectId: workspaceId },
+    ];
+    const sourceSnapshot = (
+      source: "github" | "jira",
+      sourceId: string,
+      externalId: string,
+      title: string,
+      value: string,
+      sourceCreatedAt: string,
+      sourceUpdatedAt: string,
+    ): KnowledgeSourceSnapshot => ({
+      source,
+      sourceId,
+      workspaceId,
+      cursor: `${sourceId}-cursor`,
+      scopeHash: `${sourceId}-scope`,
+      mode: "full",
+      documents: [
+        {
+          source,
+          sourceId,
+          workspaceId,
+          externalId,
+          sourceType: source === "github" ? "repository" : "issue",
+          sourceVersion: "v1",
+          canonicalUrl: `https://example.test/${source}/${externalId}`,
+          title,
+          sourceCreatedAt,
+          sourceUpdatedAt,
+          sensitivity: "internal",
+          authority: 1,
+          provenance: {},
+          acl,
+          passages: [],
+          deliveryProjection: {
+            objects: [
+              {
+                kind: "module",
+                externalKey: externalId,
+                title,
+                attributes: {},
+                sensitivity: "internal",
+              },
+            ],
+            relations: [],
+            observations: [],
+            metrics: [],
+            claims: [
+              {
+                subject: { kind: "module", externalKey: externalId },
+                subjectKey: externalId,
+                predicate: "delivery.status",
+                value,
+                assertedAt: sourceUpdatedAt,
+                sensitivity: "internal",
+                authority: 1,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    await Effect.runPromise(
+      repository.reconcile(
+        sourceSnapshot(
+          "github",
+          "github-canonical-alias",
+          "puck-repository",
+          "Puck",
+          "ready",
+          "2026-01-02T08:00:00.000Z",
+          "2026-07-22T08:00:00.000Z",
+        ),
+        embeddings,
+      ),
+    );
+    await Effect.runPromise(
+      repository.reconcile(
+        sourceSnapshot(
+          "jira",
+          "jira-canonical-alias",
+          "MWB",
+          "Modern Website Builder",
+          "blocked",
+          "2026-02-03T09:00:00.000Z",
+          "2026-07-22T09:00:00.000Z",
+        ),
+        embeddings,
+      ),
+    );
+
+    const objects = await pool.query<{
+      readonly canonical_key: string;
+      readonly source_created_at: Date;
+      readonly source_updated_at: Date;
+      readonly indexed_at: Date;
+    }>(
+      "select canonical_key, source_created_at, source_updated_at, indexed_at from delivery_object where workspace_id = $1 and active = true order by source_kind",
+      [workspaceId],
+    );
+    expect(objects.rows).toHaveLength(2);
+    expect(new Set(objects.rows.map(({ canonical_key }) => canonical_key))).toEqual(
+      new Set(["module:product-builder"]),
+    );
+    expect(objects.rows.map(({ source_created_at }) => source_created_at.toISOString())).toEqual([
+      "2026-01-02T08:00:00.000Z",
+      "2026-02-03T09:00:00.000Z",
+    ]);
+    expect(
+      objects.rows.every(
+        ({ source_updated_at, indexed_at }) => indexed_at.getTime() >= source_updated_at.getTime(),
+      ),
+    ).toBe(true);
+
+    const aliases = await opened.database
+      .select({
+        alias: deliveryEntityAliasTable.alias,
+        canonicalKey: deliveryEntityAliasTable.canonicalKey,
+      })
+      .from(deliveryEntityAliasTable)
+      .where(eq(deliveryEntityAliasTable.workspaceId, workspaceId));
+    expect(new Set(aliases.map(({ canonicalKey }) => canonicalKey))).toEqual(
+      new Set(["module:product-builder"]),
+    );
+    expect(aliases.map(({ alias }) => alias)).toEqual(
+      expect.arrayContaining(["Puck", "Modern Website Builder", "Product Builder"]),
+    );
+
+    const conflictPlan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["conflicts"],
+      operations: [
+        {
+          id: "canonical-module-conflict",
+          purpose: "conflicts",
+          select: "conflicts",
+          predicates: [
+            { field: "subjectKey", operator: "equals", value: "module:product-builder" },
+          ],
+          limit: 10,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 5,
+      requiresFinance: false,
+    };
+    const conflicts = await Effect.runPromise(
+      createPostgresDeliveryQuerySource(opened.database).execute(
+        {
+          workspaceId,
+          actorId: "delivery-member",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-22T12:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-22T12:00:08.000Z",
+          question: "Where do sources disagree about Product Builder?",
+        },
+        conflictPlan,
+      ),
+    );
+    expect(conflicts.conflicts).toHaveLength(1);
+    expect(conflicts.conflicts[0]).toMatchObject({
+      subjectKey: "module:product-builder",
+      predicate: "delivery.status",
+    });
+    expect(new Set(conflicts.conflicts[0]?.claims.map(({ source }) => source.source))).toEqual(
+      new Set(["github", "jira"]),
+    );
   });
 });

@@ -17,6 +17,7 @@ import {
   readKnowledgePostgresStatus,
 } from "../../infrastructure/postgres/index.ts";
 import { createVaultKnowledgeSource } from "../../infrastructure/vault/index.ts";
+import { parseDeliveryEntityCatalog } from "../../modules/delivery-intelligence/index.ts";
 import {
   ingestKnowledgeSource,
   type KnowledgeAclRule,
@@ -115,7 +116,11 @@ const withKnowledgeDatabase = async <Value>(
 ): Promise<Value> => {
   const opened = openKnowledgePostgresDatabase(databaseUrl(environment));
   try {
-    return await use(createPostgresKnowledgeRepository(opened.database));
+    return await use(
+      createPostgresKnowledgeRepository(opened.database, {
+        entityCatalog: parseDeliveryEntityCatalog(environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON),
+      }),
+    );
   } finally {
     await opened.pool.end();
   }

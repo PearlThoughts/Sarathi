@@ -6,13 +6,13 @@ import { RepositoryError } from "../src/domain/errors.ts";
 describe("delivery CLI", () => {
   it("exposes privacy-safe durable status", async () => {
     await expect(
-      runDeliveryCommand(["status"], {}, { readStatus: async () => ({ deliveryTableCount: 7 }) }),
+      runDeliveryCommand(["status"], {}, { readStatus: async () => ({ deliveryTableCount: 8 }) }),
     ).resolves.toEqual({
       exitCode: 0,
       output: {
         ok: true,
         operation: "delivery-status",
-        status: { deliveryTableCount: 7 },
+        status: { deliveryTableCount: 8 },
       },
     });
   });

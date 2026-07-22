@@ -36,6 +36,13 @@
       "when": 1784737893323,
       "tag": "0004_attributed-delivery-assertions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784741143952,
+      "tag": "0005_canonical-entity-time",
+      "breakpoints": true
     }
   ]
 }

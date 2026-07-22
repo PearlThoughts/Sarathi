@@ -6,6 +6,18 @@ export {
 export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";
 export { parseAttributedDeliveryAssertion } from "./domain/attributed-assertion.ts";
 export type {
+  DeliveryEntityAlias,
+  DeliveryEntityCatalog,
+  DeliveryEntityDefinition,
+  ResolvedDeliveryEntity,
+} from "./domain/canonical-entity.ts";
+export {
+  normalizeDeliveryEntityAlias,
+  parseDeliveryEntityCatalog,
+  resolveDeliveryEntity,
+  validateDeliveryEntityCatalog,
+} from "./domain/canonical-entity.ts";
+export type {
   ChannelPreference,
   CoachingDepth,
   DeliveryAssistantCapability,
