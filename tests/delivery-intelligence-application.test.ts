@@ -215,8 +215,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text.split("\n")).toEqual([
       "Here’s the delivery situation that needs attention.",
       `- ⚠️ **Risks:** DEMO-9 is a high delivery risk [Jira 1](${sharedCitation})`,
-      `- ➡️ **Next action:** Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
-      `1. ➡️ **Recommended next step:** Assign a mitigation owner and checkpoint to the highest risk. [Jira 2](${sharedCitation})`,
+      `1. ➡️ **Next:** Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
     ]);
     expect(answer.citations).toHaveLength(2);
   });

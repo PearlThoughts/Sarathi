@@ -246,6 +246,7 @@ const composeAnswer = (
     }
   } else {
     for (const intent of plan.intents) {
+      if (intent === "next_actions") continue;
       const selected = rankedForIntent(
         items.filter((item) => item.intent === intent),
         intent,
@@ -328,7 +329,9 @@ const composeAnswer = (
       ? undefined
       : mentionName !== undefined && mentionName !== ""
         ? `1. ➡️ **Next:** <at>${mentionName}</at>, please confirm the next step and due date for this item. ${citation(actionItem)}`
-        : `1. ➡️ **Recommended next step:** ${recommendedAction(plan)} ${citation(actionItem)}`;
+        : actionItem.intent === "next_actions"
+          ? `1. ➡️ **Next:** ${safeText(actionItem.summary)} ${citation(actionItem)}`
+          : `1. ➡️ **Recommended next step:** ${recommendedAction(plan)} ${citation(actionItem)}`;
   const lines = [
     responseOpening(plan),
     ...detailLines.slice(0, plan.maximumLines),
