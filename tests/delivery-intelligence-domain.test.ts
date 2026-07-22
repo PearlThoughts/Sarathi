@@ -4,9 +4,13 @@ import {
   type DeliveryClaim,
   deliveryClaimValueHash,
   findDeliveryConflicts,
+  normalizeDeliveryEntityAlias,
   parseAttributedDeliveryAssertion,
+  parseDeliveryEntityCatalog,
   planDeliveryQuestion,
+  resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
+  validateDeliveryEntityCatalog,
   validateDeliveryQueryPlan,
 } from "../src/modules/delivery-intelligence/index.ts";
 
@@ -288,5 +292,113 @@ describe("delivery intelligence domain", () => {
       "metrics",
       "knowledge",
     ]);
+  });
+
+  it("resolves source-qualified aliases to one stable delivery entity", () => {
+    const catalog = validateDeliveryEntityCatalog({
+      version: 1,
+      entities: [
+        {
+          kind: "module",
+          canonicalKey: "product-builder",
+          title: "Product Builder",
+          aliases: [
+            { value: "Puck", source: "github" },
+            { value: "Modern Website Builder", source: "jira" },
+            { value: "Builder" },
+          ],
+        },
+      ],
+    });
+
+    const github = resolveDeliveryEntity(catalog, "github", {
+      kind: "module",
+      externalKey: "PearlThoughts/puck",
+      title: "Puck",
+      attributes: {},
+      sensitivity: "internal",
+    });
+    const jira = resolveDeliveryEntity(catalog, "jira", {
+      kind: "module",
+      externalKey: "component-42",
+      title: "Modern Website Builder",
+      attributes: {},
+      sensitivity: "internal",
+    });
+
+    expect(github.canonicalKey).toBe("module:product-builder");
+    expect(jira.canonicalKey).toBe(github.canonicalKey);
+    expect(github.canonicalTitle).toBe("Product Builder");
+    expect(github.aliases).toContain("Builder");
+    expect(normalizeDeliveryEntityAlias("  Modern_Website Builder  ")).toBe(
+      "modern website builder",
+    );
+  });
+
+  it("rejects ambiguous aliases instead of guessing a cross-source join", () => {
+    expect(() =>
+      validateDeliveryEntityCatalog({
+        version: 1,
+        entities: [
+          {
+            kind: "person",
+            canonicalKey: "person-a",
+            title: "Person A",
+            aliases: [{ value: "shared", source: "teams" }],
+          },
+          {
+            kind: "person",
+            canonicalKey: "person-b",
+            title: "Person B",
+            aliases: [{ value: "shared", source: "teams" }],
+          },
+        ],
+      }),
+    ).toThrow("ambiguous alias");
+    expect(() =>
+      validateDeliveryEntityCatalog({
+        version: 1,
+        entities: [
+          {
+            kind: "module",
+            canonicalKey: "global-builder",
+            title: "Global Builder",
+            aliases: [{ value: "Builder" }],
+          },
+          {
+            kind: "module",
+            canonicalKey: "github-builder",
+            title: "GitHub Builder",
+            aliases: [{ value: "Builder", source: "github" }],
+          },
+        ],
+      }),
+    ).toThrow("ambiguous alias");
+  });
+
+  it("loads a private runtime catalog from JSON and fails closed on malformed definitions", () => {
+    expect(
+      parseDeliveryEntityCatalog(
+        JSON.stringify({
+          version: 1,
+          entities: [
+            {
+              kind: "person",
+              canonicalKey: "person-1",
+              title: "Delivery Lead",
+              aliases: [
+                { source: "jira", value: "jira-account-1" },
+                { source: "teams", value: "entra-person-1" },
+              ],
+            },
+          ],
+        }),
+      )?.entities[0]?.canonicalKey,
+    ).toBe("person-1");
+    expect(parseDeliveryEntityCatalog(undefined)).toBeUndefined();
+    expect(() => parseDeliveryEntityCatalog("not-json")).toThrow("valid JSON");
+    expect(() =>
+      parseDeliveryEntityCatalog('{"version":1,"entities":[{"kind":"unknown"}]}'),
+    ).toThrow("invalid entity definition");
   });
 });

@@ -67,6 +67,7 @@ import {
 import {
   createDeliveryAssistant,
   deliveryResponseBudget,
+  parseDeliveryEntityCatalog,
 } from "../modules/delivery-intelligence/index.ts";
 import {
   createAuthorizedContextAssembler,
@@ -517,7 +518,11 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     const knowledgeRepository =
       knowledgeDatabase === undefined
         ? undefined
-        : createPostgresKnowledgeRepository(knowledgeDatabase.database);
+        : createPostgresKnowledgeRepository(knowledgeDatabase.database, {
+            entityCatalog: parseDeliveryEntityCatalog(
+              environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+            ),
+          });
     const knowledgeEmbeddings =
       knowledgeDatabase === undefined
         ? undefined

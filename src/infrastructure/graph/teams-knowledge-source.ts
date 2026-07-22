@@ -525,6 +525,7 @@ const asDocument = (
     sourceVersion: contextVersion,
     canonicalUrl: message.webUrl,
     title: message.title,
+    sourceCreatedAt: message.createdAt,
     sourceUpdatedAt,
     sensitivity: channel.sensitivity,
     authority: channel.authority ?? 0.82,

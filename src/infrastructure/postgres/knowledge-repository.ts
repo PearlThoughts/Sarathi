@@ -5,8 +5,12 @@ import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   assertNonFinancialAttributes,
+  type DeliveryEntityCatalog,
   type DeliveryObjectRef,
   deliveryClaimValueHash,
+  normalizeDeliveryEntityAlias,
+  resolveDeliveryEntity,
+  validateDeliveryEntityCatalog,
 } from "../../modules/delivery-intelligence/index.ts";
 import {
   type KnowledgeAclRule,
@@ -24,6 +28,7 @@ import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
 import {
   deliveryAclBindingTable,
   deliveryClaimTable,
+  deliveryEntityAliasTable,
   deliveryFinanceMetricTable,
   deliveryMetricTable,
   deliveryObjectTable,
@@ -472,6 +477,7 @@ const reconcileStageFailureOperations = {
   deliveryInventory: "knowledge-reconcile.delivery-inventory-stage",
   deliveryDeactivate: "knowledge-reconcile.delivery-deactivate-stage",
   deliveryDeactivateObjects: "knowledge-reconcile.delivery-deactivate-objects-stage",
+  deliveryDeactivateAliases: "knowledge-reconcile.delivery-deactivate-aliases-stage",
   deliveryDeactivateRelations: "knowledge-reconcile.delivery-deactivate-relations-stage",
   deliveryDeactivateObservations: "knowledge-reconcile.delivery-deactivate-observations-stage",
   deliveryDeactivateMetrics: "knowledge-reconcile.delivery-deactivate-metrics-stage",
@@ -479,6 +485,7 @@ const reconcileStageFailureOperations = {
   deliveryDeactivateClaims: "knowledge-reconcile.delivery-deactivate-claims-stage",
   deliveryDeactivateAcl: "knowledge-reconcile.delivery-deactivate-acl-stage",
   deliveryObjects: "knowledge-reconcile.delivery-objects-stage",
+  deliveryAliases: "knowledge-reconcile.delivery-aliases-stage",
   deliveryRelations: "knowledge-reconcile.delivery-relations-stage",
   deliveryObservations: "knowledge-reconcile.delivery-observations-stage",
   deliveryMetrics: "knowledge-reconcile.delivery-metrics-stage",
@@ -547,6 +554,7 @@ const syncDeliveryProjection = async (
   projectedDocuments: readonly ProjectedDocument[],
   now: string,
   onStage: (stage: ReconcileStage) => void,
+  entityCatalog?: DeliveryEntityCatalog | undefined,
 ): Promise<void> => {
   onStage("deliveryInventory");
   const activeDocuments = projectedDocuments.filter(
@@ -612,6 +620,12 @@ const syncDeliveryProjection = async (
         .update(deliveryObjectTable)
         .set({ active: false, deletedAt: now })
         .where(inArray(deliveryObjectTable.id, ids));
+    onStage("deliveryDeactivateAliases");
+    for (const ids of boundedPostgresBindBatches(previousObjects.map(({ id }) => id)))
+      await database
+        .update(deliveryEntityAliasTable)
+        .set({ active: false, deletedAt: now })
+        .where(inArray(deliveryEntityAliasTable.sourceObjectId, ids));
   }
   if (previousRelations.length > 0) {
     onStage("deliveryDeactivateRelations");
@@ -672,7 +686,10 @@ const syncDeliveryProjection = async (
   onStage("deliveryObjects");
   const objectRows = new Map<
     string,
-    typeof deliveryObjectTable.$inferInsert & { readonly rules: readonly KnowledgeAclRule[] }
+    typeof deliveryObjectTable.$inferInsert & {
+      readonly rules: readonly KnowledgeAclRule[];
+      readonly aliases: readonly string[];
+    }
   >();
   for (const projected of activeDocuments) {
     for (const object of projected.document.deliveryProjection?.objects ?? []) {
@@ -689,12 +706,14 @@ const syncDeliveryProjection = async (
         object.attributes.placeholder === true
       )
         continue;
+      const resolved = resolveDeliveryEntity(entityCatalog, projected.document.source, object);
       objectRows.set(id, {
         id,
         workspaceId: projected.document.workspaceId,
         objectKind: object.kind,
         externalKey: object.externalKey,
-        title: object.title,
+        canonicalKey: resolved.canonicalKey,
+        title: resolved.canonicalTitle,
         lifecycleState: object.lifecycleState ?? null,
         attributes: object.attributes,
         sensitivity: object.sensitivity,
@@ -704,14 +723,18 @@ const syncDeliveryProjection = async (
         sourceVersionId: projected.versionId,
         effectiveFrom: object.effectiveFrom ?? null,
         effectiveTo: object.effectiveTo ?? null,
-        observedAt: now,
+        sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+        sourceUpdatedAt: projected.document.sourceUpdatedAt,
+        observedAt: projected.document.sourceUpdatedAt,
+        indexedAt: now,
         active: true,
         deletedAt: null,
         rules: projected.document.acl,
+        aliases: resolved.aliases,
       });
     }
   }
-  for (const { rules, ...row } of objectRows.values()) {
+  for (const { rules, aliases, ...row } of objectRows.values()) {
     await database
       .insert(deliveryObjectTable)
       .values(row)
@@ -719,6 +742,7 @@ const syncDeliveryProjection = async (
         target: deliveryObjectTable.id,
         set: {
           title: row.title,
+          canonicalKey: row.canonicalKey,
           lifecycleState: row.lifecycleState,
           attributes: row.attributes,
           sensitivity: row.sensitivity,
@@ -726,7 +750,10 @@ const syncDeliveryProjection = async (
           sourceVersionId: row.sourceVersionId,
           effectiveFrom: row.effectiveFrom,
           effectiveTo: row.effectiveTo,
-          observedAt: now,
+          sourceCreatedAt: row.sourceCreatedAt,
+          sourceUpdatedAt: row.sourceUpdatedAt,
+          observedAt: row.observedAt,
+          indexedAt: now,
           active: true,
           deletedAt: null,
         },
@@ -735,6 +762,42 @@ const syncDeliveryProjection = async (
       .insert(deliveryAclBindingTable)
       .values(deliveryTargetAclRows("object", row.id, row.workspaceId, rules, now))
       .onConflictDoNothing();
+    onStage("deliveryAliases");
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeDeliveryEntityAlias(alias);
+      if (normalizedAlias === "") continue;
+      const aliasRow = {
+        id: `delivery-alias:${stableSha256(`${row.id}:${normalizedAlias}`)}`,
+        workspaceId: row.workspaceId,
+        objectKind: row.objectKind,
+        canonicalKey: row.canonicalKey,
+        alias,
+        normalizedAlias,
+        sourceObjectId: row.id,
+        sourceKind: row.sourceKind,
+        sourceId: row.sourceId,
+        sensitivity: row.sensitivity,
+        sourceUpdatedAt: row.sourceUpdatedAt,
+        indexedAt: now,
+        active: true,
+        deletedAt: null,
+      };
+      await database
+        .insert(deliveryEntityAliasTable)
+        .values(aliasRow)
+        .onConflictDoUpdate({
+          target: deliveryEntityAliasTable.id,
+          set: {
+            canonicalKey: aliasRow.canonicalKey,
+            alias: aliasRow.alias,
+            sensitivity: aliasRow.sensitivity,
+            sourceUpdatedAt: aliasRow.sourceUpdatedAt,
+            indexedAt: now,
+            active: true,
+            deletedAt: null,
+          },
+        });
+    }
   }
 
   for (const projected of activeDocuments) {
@@ -769,7 +832,10 @@ const syncDeliveryProjection = async (
           sourceVersionId: projected.versionId,
           effectiveFrom: relation.effectiveFrom ?? null,
           effectiveTo: relation.effectiveTo ?? null,
-          observedAt: now,
+          sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+          sourceUpdatedAt: projected.document.sourceUpdatedAt,
+          observedAt: projected.document.sourceUpdatedAt,
+          indexedAt: now,
           active: true,
           deletedAt: null,
         })
@@ -779,7 +845,10 @@ const syncDeliveryProjection = async (
             attributes: relation.attributes,
             effectiveFrom: relation.effectiveFrom ?? null,
             effectiveTo: relation.effectiveTo ?? null,
-            observedAt: now,
+            sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+            sourceUpdatedAt: projected.document.sourceUpdatedAt,
+            observedAt: projected.document.sourceUpdatedAt,
+            indexedAt: now,
             active: true,
             deletedAt: null,
           },
@@ -820,7 +889,10 @@ const syncDeliveryProjection = async (
           summary: observation.summary,
           dedupeKey: observation.dedupeKey,
           occurredAt: observation.occurredAt,
-          observedAt: now,
+          sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+          sourceUpdatedAt: projected.document.sourceUpdatedAt,
+          observedAt: observation.occurredAt,
+          indexedAt: now,
           sensitivity: observation.sensitivity,
           authority: observation.authority,
           sourceKind: projected.document.source,
@@ -837,7 +909,10 @@ const syncDeliveryProjection = async (
             summary: observation.summary,
             dedupeKey: observation.dedupeKey,
             occurredAt: observation.occurredAt,
-            observedAt: now,
+            sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+            sourceUpdatedAt: projected.document.sourceUpdatedAt,
+            observedAt: observation.occurredAt,
+            indexedAt: now,
             sourceVersionId: projected.versionId,
             active: true,
             deletedAt: null,
@@ -892,13 +967,24 @@ const syncDeliveryProjection = async (
           sourceId: projected.document.sourceId,
           sourceItemId: projected.documentItemId,
           sourceVersionId: projected.versionId,
-          observedAt: now,
+          sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+          sourceUpdatedAt: projected.document.sourceUpdatedAt,
+          observedAt: metric.effectiveFrom ?? projected.document.sourceUpdatedAt,
+          indexedAt: now,
           active: true,
           deletedAt: null,
         })
         .onConflictDoUpdate({
           target: targetTable.id,
-          set: { value: metric.value, observedAt: now, active: true, deletedAt: null },
+          set: {
+            value: metric.value,
+            sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+            sourceUpdatedAt: projected.document.sourceUpdatedAt,
+            observedAt: metric.effectiveFrom ?? projected.document.sourceUpdatedAt,
+            indexedAt: now,
+            active: true,
+            deletedAt: null,
+          },
         });
       await database
         .insert(deliveryAclBindingTable)
@@ -923,15 +1009,19 @@ const syncDeliveryProjection = async (
               projected.document.sourceId,
               claim.subject,
             );
+      const canonicalSubjectKey =
+        subjectObjectId === null
+          ? claim.subjectKey
+          : (objectRows.get(subjectObjectId)?.canonicalKey ?? claim.subjectKey);
       const valueHash = deliveryClaimValueHash(claim.value);
-      const id = `delivery-claim:${stableSha256(`${projected.versionId}:${claim.subjectKey}:${claim.predicate}:${valueHash}:${index}`)}`;
+      const id = `delivery-claim:${stableSha256(`${projected.versionId}:${canonicalSubjectKey}:${claim.predicate}:${valueHash}:${index}`)}`;
       await database
         .insert(deliveryClaimTable)
         .values({
           id,
           workspaceId: projected.document.workspaceId,
           subjectObjectId,
-          subjectKey: claim.subjectKey,
+          subjectKey: canonicalSubjectKey,
           predicate: claim.predicate,
           value: claim.value,
           valueHash,
@@ -946,7 +1036,10 @@ const syncDeliveryProjection = async (
           sourceVersionId: projected.versionId,
           citationUrl: claim.citationUrl ?? projected.document.canonicalUrl,
           assertedAt: claim.assertedAt,
-          observedAt: now,
+          sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+          sourceUpdatedAt: projected.document.sourceUpdatedAt,
+          observedAt: claim.assertedAt,
+          indexedAt: now,
           effectiveFrom: claim.effectiveFrom ?? null,
           effectiveTo: claim.effectiveTo ?? null,
           sensitivity: claim.sensitivity,
@@ -962,7 +1055,10 @@ const syncDeliveryProjection = async (
             supersedesAssertionIds: claim.supersedesAssertionIds ?? [],
             confidence: claim.confidence ?? null,
             assertionSchemaVersion: claim.assertionSchemaVersion ?? null,
-            observedAt: now,
+            sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
+            sourceUpdatedAt: projected.document.sourceUpdatedAt,
+            observedAt: claim.assertedAt,
+            indexedAt: now,
             active: true,
             deletedAt: null,
           },
@@ -988,6 +1084,7 @@ const reconcileSnapshot = async (
   snapshot: KnowledgeSourceSnapshot,
   embeddings: KnowledgeEmbeddingPort,
   vectorsByVersion: ReadonlyMap<string, readonly (readonly number[])[]>,
+  entityCatalog?: DeliveryEntityCatalog | undefined,
 ) => {
   let stage: ReconcileStage = "source";
   try {
@@ -1041,6 +1138,10 @@ const reconcileSnapshot = async (
           .from(knowledgeVersionTable)
           .where(inArray(knowledgeVersionTable.itemId, deletedIds));
         const deletedVersionIds = deletedVersions.map(({ id }) => id);
+        const deletedObjects = await transaction
+          .select({ id: deliveryObjectTable.id })
+          .from(deliveryObjectTable)
+          .where(inArray(deliveryObjectTable.sourceItemId, deletedIds));
         await transaction
           .update(knowledgeItemTable)
           .set({ deletedAt: now, observedAt: now })
@@ -1057,6 +1158,16 @@ const reconcileSnapshot = async (
           .update(deliveryObjectTable)
           .set({ active: false, deletedAt: now })
           .where(inArray(deliveryObjectTable.sourceItemId, deletedIds));
+        if (deletedObjects.length > 0)
+          await transaction
+            .update(deliveryEntityAliasTable)
+            .set({ active: false, deletedAt: now })
+            .where(
+              inArray(
+                deliveryEntityAliasTable.sourceObjectId,
+                deletedObjects.map(({ id }) => id),
+              ),
+            );
         if (deletedVersionIds.length > 0) {
           await transaction
             .update(deliveryRelationTable)
@@ -1102,6 +1213,7 @@ const reconcileSnapshot = async (
             title: document.title,
             sensitivity: document.sensitivity,
             authority: document.authority,
+            sourceCreatedAt: document.sourceCreatedAt ?? null,
             sourceUpdatedAt: document.sourceUpdatedAt,
             observedAt: now,
           })
@@ -1112,6 +1224,7 @@ const reconcileSnapshot = async (
               title: document.title,
               sensitivity: document.sensitivity,
               authority: document.authority,
+              sourceCreatedAt: document.sourceCreatedAt ?? null,
               sourceUpdatedAt: document.sourceUpdatedAt,
               observedAt: now,
               deletedAt: null,
@@ -1139,6 +1252,7 @@ const reconcileSnapshot = async (
             workspaceId: document.workspaceId,
             sourceVersion: versionHash,
             contentHash: versionHash,
+            sourceCreatedAt: document.sourceCreatedAt ?? null,
             sourceUpdatedAt: document.sourceUpdatedAt,
             observedAt: now,
             active: true,
@@ -1256,9 +1370,15 @@ const reconcileSnapshot = async (
       }
 
       stage = "delivery";
-      await syncDeliveryProjection(transaction, projectedDocuments, now, (nextStage) => {
-        stage = nextStage;
-      });
+      await syncDeliveryProjection(
+        transaction,
+        projectedDocuments,
+        now,
+        (nextStage) => {
+          stage = nextStage;
+        },
+        entityCatalog,
+      );
 
       stage = "checkpoint";
       const checksum = stableSha256(
@@ -1364,6 +1484,7 @@ const reconcileSnapshot = async (
 
 export const createPostgresKnowledgeRepository = (
   database: KnowledgePostgresDatabase,
+  configuration: { readonly entityCatalog?: DeliveryEntityCatalog | undefined } = {},
 ): KnowledgeRepository => ({
   reconcile: (snapshot, embeddings) => {
     if (embeddings.dimensions !== 1536) {
@@ -1385,6 +1506,18 @@ export const createPostgresKnowledgeRepository = (
           operation: "knowledge-reconcile",
         }),
       );
+    }
+    if (configuration.entityCatalog !== undefined) {
+      try {
+        validateDeliveryEntityCatalog(configuration.entityCatalog);
+      } catch {
+        return Effect.fail(
+          new RepositoryError({
+            message: "Delivery entity catalog is invalid.",
+            operation: "knowledge-reconcile.entity-catalog",
+          }),
+        );
+      }
     }
     return Effect.tryPromise({
       try: () => reusableProjectionVersions(database, snapshot, embeddings),
@@ -1447,7 +1580,14 @@ export const createPostgresKnowledgeRepository = (
                   );
                 }
                 return Effect.tryPromise({
-                  try: () => reconcileSnapshot(database, snapshot, embeddings, vectorsByVersion),
+                  try: () =>
+                    reconcileSnapshot(
+                      database,
+                      snapshot,
+                      embeddings,
+                      vectorsByVersion,
+                      configuration.entityCatalog,
+                    ),
                   catch: (failure) =>
                     new RepositoryError({
                       message:

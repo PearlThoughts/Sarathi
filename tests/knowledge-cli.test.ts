@@ -23,6 +23,7 @@ describe("knowledge CLI", () => {
             "0002_delivery-intelligence-core",
             "0003_continuous-sync-control-plane",
             "0004_attributed-delivery-assertions",
+            "0005_canonical-entity-time",
           ],
           protectedTables: [
             "compliance_reminder_audit",

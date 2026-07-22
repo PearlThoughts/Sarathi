@@ -138,6 +138,7 @@ type Activity = {
   readonly title: string;
   readonly body: string;
   readonly url: string;
+  readonly createdAt: string;
   readonly occurredAt: string;
   readonly actor?: string | undefined;
   readonly state?: string | undefined;
@@ -443,6 +444,7 @@ const activityDocument = (
     sourceVersion: activity.version,
     canonicalUrl: activity.url,
     title: activity.title,
+    sourceCreatedAt: activity.createdAt,
     sourceUpdatedAt: activity.occurredAt,
     sensitivity: repository.sensitivity,
     authority: repository.authority ?? 0.92,
@@ -516,6 +518,7 @@ const readActivities = async (
         title: `PR #${pull.number}: ${pull.title}`,
         body: pull.body ?? "",
         url: pull.html_url,
+        createdAt: pull.created_at,
         occurredAt: pull.updated_at,
         actor: pull.user?.login,
         state: pull.merged_at == null ? pull.state : "merged",
@@ -534,6 +537,7 @@ const readActivities = async (
             title: `Review on PR #${pull.number}: ${review.state ?? "submitted"}`,
             body: review.body ?? "",
             url: review.html_url ?? pull.html_url,
+            createdAt: review.submitted_at,
             occurredAt: review.submitted_at,
             actor: review.user?.login,
             state: review.state,
@@ -556,6 +560,7 @@ const readActivities = async (
           body: message,
           url:
             commit.html_url ?? `https://github.com/${repository.repository}/commit/${commit.sha}`,
+          createdAt: occurredAt,
           occurredAt,
           actor: commit.author?.login ?? commit.commit?.author?.name,
           workItemKeys: workItemKeys(message),
@@ -574,6 +579,7 @@ const readActivities = async (
           title: `Release ${release.name ?? release.tag_name}`,
           body: release.body ?? release.tag_name,
           url: release.html_url,
+          createdAt: release.created_at,
           occurredAt,
           actor: release.author?.login,
           state: "released",
@@ -592,6 +598,7 @@ const readActivities = async (
           title: `Deployment to ${deployment.environment ?? deployment.ref}`,
           body: deployment.description ?? deployment.sha,
           url: `https://github.com/${repository.repository}/deployments/${deployment.environment ?? deployment.id}`,
+          createdAt: deployment.created_at,
           occurredAt: deployment.updated_at,
           actor: deployment.creator?.login,
           state: deployment.environment,
@@ -610,6 +617,7 @@ const readActivities = async (
           title: `Check ${check.name}: ${check.conclusion ?? check.status ?? "unknown"}`,
           body: check.app?.name ?? check.name,
           url: check.html_url ?? `https://github.com/${repository.repository}/actions`,
+          createdAt: check.started_at ?? occurredAt,
           occurredAt,
           actor: check.app?.name,
           state: check.conclusion ?? check.status,

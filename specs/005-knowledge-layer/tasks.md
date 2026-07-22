@@ -74,7 +74,7 @@
 - [x] KLG-523 Implement immutable tree/blob delta synchronization for configured knowledge roots with rename/deletion reconciliation and unchanged-vector reuse.
 - [x] KLG-524 Implement current default-branch repository bootstrap, symbol-aware code passages, activity history, verified push/merge changed-file indexing, deletion retirement, and live verification fallback.
 - [x] KLG-525 Implement configured collaboration-history bootstrap, thread/reply passages, message version/edit/delete handling, change-notification renewal, and hourly repair reconciliation.
-- [ ] KLG-526 Add canonical entity/alias joins and comparable source/business timestamps across synchronized Jira, knowledge, repository, and collaboration projections.
+- [x] KLG-526 Add canonical entity/alias joins and comparable source/business timestamps across synchronized Jira, knowledge, repository, and collaboration projections.
 - [ ] KLG-527 Add explicit fast, structured-brief, and deep-dive response modes with independent completeness, citation, freshness, formatting, and latency acceptance.
 - [ ] KLG-528 Add permanent PostgreSQL connector tests for bootstrap, pagination, unchanged replay, changed-only embeddings, missed/duplicate/out-of-order events, expired subscriptions, deletion, scope removal, hourly convergence, and privacy-safe observability.
 - [ ] KLG-529 Add durable `delivery sync backfill|events|reconcile|status` operations and production freshness acceptance without source bodies in logs.

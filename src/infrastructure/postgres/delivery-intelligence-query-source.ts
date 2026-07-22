@@ -19,6 +19,7 @@ import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
 import {
   deliveryAclBindingTable,
   deliveryClaimTable,
+  deliveryEntityAliasTable,
   deliveryFinanceMetricTable,
   deliveryMetricTable,
   deliveryObjectTable,
@@ -195,12 +196,16 @@ const queryObjects = async (
       workspaceId: deliveryObjectTable.workspaceId,
       objectKind: deliveryObjectTable.objectKind,
       externalKey: deliveryObjectTable.externalKey,
+      canonicalKey: deliveryObjectTable.canonicalKey,
       title: deliveryObjectTable.title,
       lifecycleState: deliveryObjectTable.lifecycleState,
       attributes: deliveryObjectTable.attributes,
       sensitivity: deliveryObjectTable.sensitivity,
       sourceKind: deliveryObjectTable.sourceKind,
+      sourceCreatedAt: deliveryObjectTable.sourceCreatedAt,
+      sourceUpdatedAt: deliveryObjectTable.sourceUpdatedAt,
       observedAt: deliveryObjectTable.observedAt,
+      indexedAt: deliveryObjectTable.indexedAt,
       canonicalUrl: knowledgeItemTable.canonicalUrl,
       authority: knowledgeItemTable.authority,
     })
@@ -223,12 +228,44 @@ const queryObjects = async (
     )
     .orderBy(desc(deliveryObjectTable.observedAt), asc(deliveryObjectTable.externalKey))
     .limit(Math.min(operation.limit * 4, 80));
+  const aliasRows =
+    rows.length === 0
+      ? []
+      : await database
+          .select({
+            sourceObjectId: deliveryEntityAliasTable.sourceObjectId,
+            alias: deliveryEntityAliasTable.alias,
+          })
+          .from(deliveryEntityAliasTable)
+          .where(
+            and(
+              eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
+              inArray(
+                deliveryEntityAliasTable.sourceObjectId,
+                rows.map(({ id }) => id),
+              ),
+              inArray(
+                deliveryEntityAliasTable.sensitivity,
+                allowedSensitivities(context.maximumSensitivity),
+              ),
+              eq(deliveryEntityAliasTable.active, true),
+              isNull(deliveryEntityAliasTable.deletedAt),
+            ),
+          );
+  const aliases = new Map<string, string[]>();
+  for (const alias of aliasRows) {
+    const current = aliases.get(alias.sourceObjectId) ?? [];
+    current.push(alias.alias);
+    aliases.set(alias.sourceObjectId, current);
+  }
   const filtered = rows.filter((row) =>
     matchesPredicates(
       {
         kind: row.objectKind,
         title: row.title,
         externalKey: row.externalKey,
+        canonicalKey: row.canonicalKey,
+        aliases: aliases.get(row.id) ?? [],
         lifecycleState: row.lifecycleState,
         source: row.sourceKind,
         ...row.attributes,
@@ -241,6 +278,8 @@ const queryObjects = async (
       kind: row.objectKind,
       title: row.title,
       externalKey: row.externalKey,
+      canonicalKey: row.canonicalKey,
+      aliases: aliases.get(row.id) ?? [],
       lifecycleState: row.lifecycleState,
       source: row.sourceKind,
       ...row.attributes,
@@ -258,7 +297,11 @@ const queryObjects = async (
         sensitivity: sensitivity(row.sensitivity),
         authority: row.authority,
         observedAt: row.observedAt,
-        dedupeKey: `${row.externalKey}:${row.lifecycleState ?? ""}`,
+        sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+        sourceUpdatedAt: row.sourceUpdatedAt,
+        indexedAt: row.indexedAt,
+        subjectAliases: aliases.get(row.id) ?? [],
+        dedupeKey: `${row.canonicalKey}:${row.lifecycleState ?? ""}`,
       })),
   );
 };
@@ -281,7 +324,10 @@ const queryRelations = async (
       attributes: deliveryRelationTable.attributes,
       sensitivity: deliveryRelationTable.sensitivity,
       sourceKind: deliveryRelationTable.sourceKind,
+      sourceCreatedAt: deliveryRelationTable.sourceCreatedAt,
+      sourceUpdatedAt: deliveryRelationTable.sourceUpdatedAt,
       observedAt: deliveryRelationTable.observedAt,
+      indexedAt: deliveryRelationTable.indexedAt,
       canonicalUrl: knowledgeItemTable.canonicalUrl,
       authority: knowledgeItemTable.authority,
     })
@@ -321,6 +367,7 @@ const queryRelations = async (
           .select({
             id: deliveryObjectTable.id,
             externalKey: deliveryObjectTable.externalKey,
+            canonicalKey: deliveryObjectTable.canonicalKey,
             title: deliveryObjectTable.title,
           })
           .from(deliveryObjectTable)
@@ -336,7 +383,43 @@ const queryRelations = async (
               isNull(deliveryObjectTable.deletedAt),
             ),
           );
-  const objects = new Map(objectRows.map((row) => [row.id, `${row.externalKey}: ${row.title}`]));
+  const relationAliasRows =
+    objectIds.length === 0
+      ? []
+      : await database
+          .select({
+            sourceObjectId: deliveryEntityAliasTable.sourceObjectId,
+            alias: deliveryEntityAliasTable.alias,
+          })
+          .from(deliveryEntityAliasTable)
+          .where(
+            and(
+              eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
+              inArray(deliveryEntityAliasTable.sourceObjectId, objectIds),
+              inArray(
+                deliveryEntityAliasTable.sensitivity,
+                allowedSensitivities(context.maximumSensitivity),
+              ),
+              eq(deliveryEntityAliasTable.active, true),
+              isNull(deliveryEntityAliasTable.deletedAt),
+            ),
+          );
+  const relationAliases = new Map<string, string[]>();
+  for (const alias of relationAliasRows) {
+    const current = relationAliases.get(alias.sourceObjectId) ?? [];
+    current.push(alias.alias);
+    relationAliases.set(alias.sourceObjectId, current);
+  }
+  const objects = new Map(
+    objectRows.map((row) => [
+      row.id,
+      {
+        label: `${row.externalKey}: ${row.title}`,
+        canonicalKey: row.canonicalKey,
+        aliases: relationAliases.get(row.id) ?? [],
+      },
+    ]),
+  );
   return result(
     rows
       .filter(
@@ -360,12 +443,19 @@ const queryRelations = async (
         selector: "relations" as const,
         intent: operation.purpose,
         title: row.relationKind,
-        summary: `${objects.get(row.fromObjectId)} ${row.relationKind.replaceAll("_", " ")} ${objects.get(row.toObjectId)}`,
+        summary: `${objects.get(row.fromObjectId)?.label} ${row.relationKind.replaceAll("_", " ")} ${objects.get(row.toObjectId)?.label}`,
         citationUrl: row.canonicalUrl,
         sensitivity: sensitivity(row.sensitivity),
         authority: row.authority,
         observedAt: row.observedAt,
-        dedupeKey: `${row.fromObjectId}:${row.relationKind}:${row.toObjectId}`,
+        sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+        sourceUpdatedAt: row.sourceUpdatedAt,
+        indexedAt: row.indexedAt,
+        subjectAliases: [
+          ...(objects.get(row.fromObjectId)?.aliases ?? []),
+          ...(objects.get(row.toObjectId)?.aliases ?? []),
+        ],
+        dedupeKey: `${objects.get(row.fromObjectId)?.canonicalKey}:${row.relationKind}:${objects.get(row.toObjectId)?.canonicalKey}`,
       })),
   );
 };
@@ -436,6 +526,9 @@ const queryObservations = async (
         sensitivity: sensitivity(row.sensitivity),
         authority: row.authority,
         observedAt: row.occurredAt,
+        sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+        sourceUpdatedAt: row.sourceUpdatedAt,
+        indexedAt: row.indexedAt,
         dedupeKey: row.dedupeKey,
       })),
   );
@@ -463,6 +556,9 @@ const mapClaim = (row: typeof deliveryClaimTable.$inferSelect): DeliveryClaim =>
     citationUrl: row.citationUrl,
   },
   observedAt: row.observedAt,
+  sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+  sourceUpdatedAt: row.sourceUpdatedAt,
+  indexedAt: row.indexedAt,
   effectiveFrom: row.effectiveFrom ?? undefined,
   effectiveTo: row.effectiveTo ?? undefined,
   active: row.active,
@@ -570,6 +666,9 @@ const queryClaims = async (
       sensitivity: claim.sensitivity,
       authority: claim.authority,
       observedAt: claim.observedAt,
+      sourceCreatedAt: claim.sourceCreatedAt,
+      sourceUpdatedAt: claim.sourceUpdatedAt,
+      indexedAt: claim.indexedAt,
       dedupeKey: `${claim.subjectKey}:${claim.predicate}:${claim.valueHash}`,
     })),
     conflicts,
@@ -595,7 +694,10 @@ const queryMetrics = async (
         unit: deliveryFinanceMetricTable.unit,
         sensitivity: deliveryFinanceMetricTable.sensitivity,
         sourceKind: deliveryFinanceMetricTable.sourceKind,
+        sourceCreatedAt: deliveryFinanceMetricTable.sourceCreatedAt,
+        sourceUpdatedAt: deliveryFinanceMetricTable.sourceUpdatedAt,
         observedAt: deliveryFinanceMetricTable.observedAt,
+        indexedAt: deliveryFinanceMetricTable.indexedAt,
         canonicalUrl: knowledgeItemTable.canonicalUrl,
         authority: knowledgeItemTable.authority,
       })
@@ -634,6 +736,9 @@ const queryMetrics = async (
         sensitivity: sensitivity(row.sensitivity),
         authority: row.authority,
         observedAt: row.observedAt,
+        sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+        sourceUpdatedAt: row.sourceUpdatedAt,
+        indexedAt: row.indexedAt,
         dedupeKey: `${row.metricKind}:${row.value}:${row.unit}`,
       })),
     );
@@ -648,7 +753,10 @@ const queryMetrics = async (
       unit: deliveryMetricTable.unit,
       sensitivity: deliveryMetricTable.sensitivity,
       sourceKind: deliveryMetricTable.sourceKind,
+      sourceCreatedAt: deliveryMetricTable.sourceCreatedAt,
+      sourceUpdatedAt: deliveryMetricTable.sourceUpdatedAt,
       observedAt: deliveryMetricTable.observedAt,
+      indexedAt: deliveryMetricTable.indexedAt,
       canonicalUrl: knowledgeItemTable.canonicalUrl,
       authority: knowledgeItemTable.authority,
     })
@@ -689,6 +797,9 @@ const queryMetrics = async (
       sensitivity: sensitivity(row.sensitivity),
       authority: row.authority,
       observedAt: row.observedAt,
+      sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+      sourceUpdatedAt: row.sourceUpdatedAt,
+      indexedAt: row.indexedAt,
       dedupeKey: `${row.metricCategory}:${row.metricKind}:${row.value}:${row.unit}`,
     })),
   );

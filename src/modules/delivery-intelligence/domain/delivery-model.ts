@@ -57,6 +57,8 @@ export type DeliveryMetricCategory = "delivery" | "capacity" | "quality" | "fina
 export type DeliveryObjectRef = {
   readonly kind: DeliveryObjectKind;
   readonly externalKey: string;
+  readonly canonicalKey?: string | undefined;
+  readonly aliases?: readonly string[] | undefined;
 };
 
 export type DeliverySourceReference = {
@@ -72,6 +74,9 @@ export type DeliveryRecordBoundary = {
   readonly sensitivity: SensitivityTier;
   readonly source: DeliverySourceReference;
   readonly observedAt: string;
+  readonly sourceCreatedAt?: string | undefined;
+  readonly sourceUpdatedAt?: string | undefined;
+  readonly indexedAt?: string | undefined;
   readonly effectiveFrom?: string | undefined;
   readonly effectiveTo?: string | undefined;
   readonly active: boolean;

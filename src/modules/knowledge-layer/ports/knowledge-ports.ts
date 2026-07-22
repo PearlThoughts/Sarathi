@@ -18,6 +18,7 @@ export type KnowledgeSourceDocument = {
   readonly sourceVersion: string;
   readonly canonicalUrl: string;
   readonly title: string;
+  readonly sourceCreatedAt?: string | undefined;
   readonly sourceUpdatedAt: string;
   readonly sensitivity: SensitivityTier;
   readonly authority: number;

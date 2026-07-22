@@ -79,6 +79,7 @@ export const knowledgeMigrationPlan = {
     "0002_delivery-intelligence-core",
     "0003_continuous-sync-control-plane",
     "0004_attributed-delivery-assertions",
+    "0005_canonical-entity-time",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,
@@ -128,9 +129,9 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
   if (knowledgeTableCount !== 11)
     throw new Error(`Expected 11 knowledge tables after migration; found ${knowledgeTableCount}.`);
   const deliveryTableCount = names.filter((name) => name.startsWith("delivery_")).length;
-  if (deliveryTableCount !== 7)
+  if (deliveryTableCount !== 8)
     throw new Error(
-      `Expected 7 delivery intelligence tables after migration; found ${deliveryTableCount}.`,
+      `Expected 8 delivery intelligence tables after migration; found ${deliveryTableCount}.`,
     );
   return {
     vectorExtensionVersion,
