@@ -40,6 +40,8 @@ type JiraSourceProjection = {
   readonly acl: readonly KnowledgeAclRule[];
   readonly sensitivity: "public" | "internal" | "confidential" | "restricted";
   readonly authority?: number | undefined;
+  readonly boardId?: number | undefined;
+  readonly cursorOverlapSeconds?: number | undefined;
 };
 
 type VaultRootProjection = {

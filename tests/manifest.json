@@ -152,7 +152,7 @@
       "path": "tests/knowledge-*.test.ts",
       "command": "bun run test",
       "prerequisites": ["bun install"],
-      "description": "Canonical Jira/Vault knowledge and delivery projections, continuous-sync event/subscription/lease/freshness contracts, AI SDK embeddings, ACL-first hybrid retrieval, live GitHub fusion, concise cited answering, runtime composition, and durable CLI coverage."
+      "description": "Canonical Jira/Vault knowledge and delivery projections; Jira overlap cursors, catalog/changelog/status-wait deltas; immutable Vault blob deltas and rename retirement; continuous-sync control contracts; AI SDK embeddings; ACL-first hybrid retrieval; live GitHub fusion; concise cited answering; runtime composition; and durable CLI coverage."
     },
     {
       "id": "knowledge-postgres-integration",
@@ -162,7 +162,7 @@
         "bun install",
         "PostgreSQL with pgvector available at the explicit test URL"
       ],
-      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, ACL-first delivery query and finance separation, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint, and deletion-tombstone coverage."
+      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, full-vs-delta deletion safety, Vault rename vector reuse, ACL-first delivery query and finance separation, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint freshness, and tombstone coverage."
     },
     {
       "id": "delivery-intelligence-domain",

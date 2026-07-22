@@ -57,7 +57,32 @@ type GitCommit = {
   };
 };
 
+type VaultRootCursor = {
+  readonly commitSha: string;
+  readonly blobs: Readonly<Record<string, string>>;
+};
+
+type VaultIncrementalCursor = {
+  readonly version: 1;
+  readonly scopeHash: string;
+  readonly roots: Readonly<Record<string, VaultRootCursor>>;
+};
+
 const repositoryPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+const rootIdentity = (root: VaultKnowledgeRoot): string =>
+  `${root.repository}:${root.pathPrefix}:${root.ref ?? "HEAD"}`;
+
+const encodeCursor = (cursor: VaultIncrementalCursor): string =>
+  `vault-v1:${Buffer.from(JSON.stringify(cursor)).toString("base64url")}`;
+
+const parseCursor = (value: string): VaultIncrementalCursor | undefined => {
+  if (!value.startsWith("vault-v1:")) return undefined;
+  const parsed = JSON.parse(
+    Buffer.from(value.slice("vault-v1:".length), "base64url").toString("utf8"),
+  ) as VaultIncrementalCursor | undefined;
+  return parsed?.version === 1 && typeof parsed.scopeHash === "string" ? parsed : undefined;
+};
 
 const validPrefix = (value: string): boolean =>
   value !== "" &&
@@ -344,7 +369,12 @@ const deliveryProjection = (
 const rootDocuments = async (
   configuration: VaultKnowledgeSourceConfiguration,
   root: VaultKnowledgeRoot,
-): Promise<readonly KnowledgeSourceDocument[]> => {
+  previous?: VaultRootCursor,
+): Promise<{
+  readonly documents: readonly KnowledgeSourceDocument[];
+  readonly cursor: VaultRootCursor;
+  readonly retiredExternalIds: readonly string[];
+}> => {
   if (!repositoryPattern.test(root.repository) || !validPrefix(root.pathPrefix))
     throw new Error("Vault knowledge root must use a configured repository and relative prefix.");
   if (root.acl.length === 0)
@@ -378,8 +408,18 @@ const rootDocuments = async (
     )
     .map((entry) => ({ path: entry.path as string, sha: entry.sha ?? "" }))
     .sort((left, right) => left.path.localeCompare(right.path));
+  const blobs = Object.fromEntries(
+    paths.map(({ path, sha }) => [`${root.repository}:${path}`, sha] as const),
+  );
+  const retiredExternalIds =
+    previous === undefined
+      ? []
+      : Object.keys(previous.blobs).filter((externalId) => blobs[externalId] === undefined);
+  const changedPaths = paths.filter(
+    ({ path, sha }) => previous?.blobs[`${root.repository}:${path}`] !== sha,
+  );
 
-  const documents = await mapBounded(paths, 6, async ({ path, sha }) => {
+  const documents = await mapBounded(changedPaths, 6, async ({ path, sha }) => {
     if (sha === "") throw new Error("Configured Vault Markdown blob has no revision identifier.");
     const content = await requestJson<GitContent>(
       configuration,
@@ -387,7 +427,10 @@ const rootDocuments = async (
     );
     const markdown = decodeMarkdown(content);
     const passages = chunkVaultMarkdown(markdown);
-    if (passages.length === 0) return undefined;
+    if (passages.length === 0) {
+      retiredExternalIds.push(`${root.repository}:${path}`);
+      return undefined;
+    }
     const documentTitle = title(markdown, path);
     const canonicalUrl = `https://github.com/${root.repository}/blob/${commit.sha}/${path
       .split("/")
@@ -418,48 +461,60 @@ const rootDocuments = async (
       ),
     } satisfies KnowledgeSourceDocument;
   });
-  return documents.filter((document) => document !== undefined);
+  return {
+    documents: documents.filter((document) => document !== undefined),
+    cursor: { commitSha: commit.sha, blobs },
+    retiredExternalIds: [...new Set(retiredExternalIds)].sort(),
+  };
 };
 
 export const createVaultKnowledgeSource = (
   configuration: VaultKnowledgeSourceConfiguration,
 ): KnowledgeSourceReader => ({
-  readSnapshot: (workspaceId) =>
+  readSnapshot: (workspaceId, previousCursor) =>
     Effect.tryPromise({
       try: async () => {
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Vault knowledge source was requested for another workspace.");
         if (configuration.roots.length === 0)
           throw new Error("At least one configured Vault knowledge root is required.");
-        const documents = (
-          await Promise.all(configuration.roots.map((root) => rootDocuments(configuration, root)))
-        ).flat();
+        const scopeHash = stableSha256(
+          JSON.stringify(
+            configuration.roots.map(
+              ({ repository, pathPrefix, ref, sensitivity, acl, excludePathPrefixes }) => ({
+                repository,
+                pathPrefix,
+                ref,
+                sensitivity,
+                acl,
+                excludePathPrefixes,
+              }),
+            ),
+          ),
+        );
+        const decodedCursor =
+          previousCursor === undefined ? undefined : parseCursor(previousCursor);
+        const previous = decodedCursor?.scopeHash === scopeHash ? decodedCursor : undefined;
+        const roots = await Promise.all(
+          configuration.roots.map((root) =>
+            rootDocuments(configuration, root, previous?.roots[rootIdentity(root)]),
+          ),
+        );
+        const documents = roots.flatMap((root) => root.documents);
         const ordered = [...documents].sort((left, right) =>
           left.externalId.localeCompare(right.externalId),
         );
+        const nextRoots = Object.fromEntries(
+          configuration.roots.map((root, index) => [rootIdentity(root), roots[index]?.cursor]),
+        ) as Readonly<Record<string, VaultRootCursor>>;
         return {
           sourceId: configuration.sourceId,
           source: "vault",
           workspaceId,
-          cursor:
-            ordered
-              .map(({ sourceUpdatedAt }) => sourceUpdatedAt)
-              .sort()
-              .at(-1) ?? new Date(0).toISOString(),
-          scopeHash: stableSha256(
-            JSON.stringify(
-              configuration.roots.map(
-                ({ repository, pathPrefix, ref, sensitivity, acl, excludePathPrefixes }) => ({
-                  repository,
-                  pathPrefix,
-                  ref,
-                  sensitivity,
-                  acl,
-                  excludePathPrefixes,
-                }),
-              ),
-            ),
-          ),
+          cursor: encodeCursor({ version: 1, scopeHash, roots: nextRoots }),
+          scopeHash,
+          mode: previous === undefined ? "full" : "delta",
+          retiredExternalIds: roots.flatMap((root) => root.retiredExternalIds),
           documents: ordered,
         };
       },
