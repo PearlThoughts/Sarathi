@@ -279,9 +279,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           ? { phrase: implementationTarget }
           : undefined;
   const activityQuestion =
-    has(value, /\b(?:activity|progress)\b/) ||
+    has(value, /\bactivity\b/) ||
     (has(value, /\b(?:team|delivery|work)\b/) &&
-      has(value, /\b(?:today|daily|summary|summarize|report|update|accomplished)\b/));
+      has(value, /\b(?:today|daily|summary|summarize|report|update|accomplished)\b/) &&
+      !has(value, /\b(?:capacity|allocation|availability|bandwidth)\b/));
 
   if (has(value, /\b(?:scope|project boundary|in scope|out of scope)\b/))
     add("scope", {

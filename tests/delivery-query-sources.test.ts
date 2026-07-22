@@ -531,6 +531,16 @@ describe("delivery intelligence live query sources", () => {
     expect(capacity.items.map(({ id }) => id)).toEqual([
       "teams:team-1:channel-1:availability:capacity",
     ]);
+    expect(capacityPlan.intents).toEqual(["capacity"]);
+  });
+
+  it("treats project progress fields as compound delivery facts rather than generic activity", () => {
+    const plan = planDeliveryQuestion(
+      "What is the current status of Admin Portal Migration? Summarize scope, progress, review queue, risks, and next action.",
+    );
+
+    expect(plan?.intents).toEqual(["scope", "reviews", "risks", "next_actions", "status"]);
+    expect(plan?.intents).not.toContain("activity");
   });
 
   it("reads scoped project email while excluding finance from general delivery queries", async () => {

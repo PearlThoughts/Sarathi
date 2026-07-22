@@ -117,21 +117,6 @@ const responseOpening = (plan: DeliveryQueryPlan): string => {
   return "Here’s the delivery context I found for your question.";
 };
 
-const recommendedAction = (plan: DeliveryQueryPlan): string => {
-  const intents = new Set(plan.intents);
-  if (intents.has("risks")) return "Assign a mitigation owner and checkpoint to the highest risk.";
-  if (intents.has("blockers") || intents.has("dependencies"))
-    return "Assign the dependency to the person who can unblock it and record a due date.";
-  if (intents.has("status")) return "Confirm the next milestone, owner, and due date.";
-  if (intents.has("implementation"))
-    return "Confirm the responsible module owner before changing the cited implementation.";
-  if (intents.has("activity")) return "Confirm owners and due dates for the open items above.";
-  return "Confirm the owner, decision, and due date for the highest-priority item.";
-};
-
-const actionableSummary =
-  /\b(?:review|approve|confirm|follow[- ]?up|next action|next step|will|need(?:s)? to|must|should|todo|assigned to)\b/i;
-
 const resolvableUrl = (value: string): boolean => {
   try {
     return new URL(value).protocol === "https:";
@@ -193,6 +178,9 @@ const subjectTokens = (value: string): readonly string[] =>
     .filter((token) => token.length > 2 && !["the", "and", "for", "with"].includes(token));
 
 const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boolean => {
+  // A cross-source conflict is a relationship between attributed claims, not a
+  // conflict-shaped sentence from any single adapter.
+  if (item.intent === "conflicts") return false;
   const operation = plan.operations.find(
     (candidate) => candidate.purpose === item.intent && candidate.select === item.selector,
   );
@@ -229,7 +217,8 @@ const authorizedConflicts = (
         claim.workspaceId === workspaceId &&
         isSensitivityAtOrBelow(claim.sensitivity, maximumSensitivity),
     );
-    return claims.length < 2 ? [] : [{ ...conflict, claims }];
+    const sources = new Set(claims.map((claim) => claim.source.source));
+    return claims.length < 2 || sources.size < 2 ? [] : [{ ...conflict, claims }];
   });
 
 const composeAnswer = (
@@ -250,6 +239,9 @@ const composeAnswer = (
   };
   const detailLines: string[] = [];
   const items = uniqueRanked(result.items.filter((item) => itemMatchesPlan(item, plan)));
+  const missingIntentLabels = (result.missingRequiredIntents ?? []).map(
+    (intent) => intentLabel[intent],
+  );
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const groups = [
@@ -319,7 +311,8 @@ const composeAnswer = (
     }
   }
 
-  if (detailLines.length === 0) {
+  const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
+  if (detailLines.length === 0 && !hasSourceBackedAction) {
     const unavailable = result.unavailableSources.map((source) => sourceLabel[source]).join(", ");
     const missing = (result.missingRequiredSources ?? [])
       .map((source) => sourceLabel[source])
@@ -348,6 +341,7 @@ const composeAnswer = (
       unavailableSources: result.unavailableSources,
       conflicts,
       missingRequiredSources: result.missingRequiredSources,
+      missingRequiredIntents: result.missingRequiredIntents,
       mentions: [],
     };
   }
@@ -359,6 +353,11 @@ const composeAnswer = (
     detailLines.push(
       `- ⚠️ **Coverage:** No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
     );
+  if (missingIntentLabels.length > 0) {
+    const coverage = `- ⚠️ **Coverage:** No explicit ${missingIntentLabels.join(", ")} evidence was found.`;
+    if (detailLines.length >= plan.maximumLines) detailLines.splice(plan.maximumLines - 1);
+    detailLines.push(coverage);
+  }
 
   const materialItems = items.filter((item) => item.intent !== "next_actions");
   const relatedToMaterial = (candidate: DeliveryResultItem): boolean => {
@@ -370,23 +369,13 @@ const composeAnswer = (
         [...candidateKeys].some((key) => item.summary.includes(key)),
     );
   };
-  const mentionActionItem =
-    items.find(
-      (item) =>
-        item.intent === "next_actions" &&
-        item.actionTarget !== undefined &&
-        relatedToMaterial(item),
-    ) ??
-    items.find(
-      (item) =>
-        item.actionTarget !== undefined &&
-        actionableSummary.test(item.summary) &&
-        relatedToMaterial(item),
-    );
+  const mentionActionItem = items.find(
+    (item) =>
+      item.intent === "next_actions" && item.actionTarget !== undefined && relatedToMaterial(item),
+  );
   const actionItem =
     mentionActionItem ??
-    items.find((item) => item.intent === "next_actions" && relatedToMaterial(item)) ??
-    materialItems[0];
+    items.find((item) => item.intent === "next_actions" && relatedToMaterial(item));
   const mentionName =
     mentionActionItem?.actionTarget === undefined
       ? undefined
@@ -396,9 +385,7 @@ const composeAnswer = (
       ? undefined
       : mentionName !== undefined && mentionName !== ""
         ? `1. ➡️ **Next:** <at>${mentionName}</at>, please confirm the next step and due date for this item. ${citation(actionItem)}`
-        : actionItem.intent === "next_actions"
-          ? `1. ➡️ **Next:** ${safeText(actionItem.summary)} ${citation(actionItem)}`
-          : `1. ➡️ **Recommended next step:** ${recommendedAction(plan)} ${citation(actionItem)}`;
+        : `1. ➡️ **Next:** ${safeText(actionItem.summary)} ${citation(actionItem)}`;
   const lines = [
     responseOpening(plan),
     ...detailLines.slice(0, plan.maximumLines),
@@ -411,13 +398,16 @@ const composeAnswer = (
     status:
       result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
         ? "partial"
-        : items.length === 0
-          ? "empty"
-          : "ok",
+        : missingIntentLabels.length > 0
+          ? "partial"
+          : items.length === 0
+            ? "empty"
+            : "ok",
     plan,
     unavailableSources: result.unavailableSources,
     conflicts,
     missingRequiredSources: result.missingRequiredSources,
+    missingRequiredIntents: result.missingRequiredIntents,
     mentions:
       mentionActionItem?.actionTarget === undefined ||
       mentionName === undefined ||
@@ -439,7 +429,13 @@ const composeWithModel = (
     0,
     12,
   );
-  if (items.length < 2 || (deterministic.mentions?.length ?? 0) > 0)
+  const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
+  if (
+    items.length < 2 ||
+    !hasSourceBackedAction ||
+    (result.missingRequiredIntents?.length ?? 0) > 0 ||
+    (deterministic.mentions?.length ?? 0) > 0
+  )
     return Effect.succeed(deterministic);
   const allowedCitationUrls = new Set([
     ...items.map((item) => item.citationUrl),
@@ -653,10 +649,19 @@ export const createDeliveryAssistant = (
             const missingRequiredSources = (plan.requiredSources ?? []).filter(
               (source) => !representedSources.has(source),
             );
+            const representedIntents = new Set(merged.items.map((item) => item.intent));
+            if (merged.conflicts.length > 0) representedIntents.add("conflicts");
+            const missingRequiredIntents = plan.intents.filter(
+              (intent) => !representedIntents.has(intent),
+            );
             const completed: DeliveryQueryResult = {
               ...merged,
-              complete: merged.complete && missingRequiredSources.length === 0,
+              complete:
+                merged.complete &&
+                missingRequiredSources.length === 0 &&
+                missingRequiredIntents.length === 0,
               missingRequiredSources,
+              missingRequiredIntents,
             };
             return configuration.answerComposer === undefined
               ? Effect.succeed(composeAnswer(request, plan, completed))

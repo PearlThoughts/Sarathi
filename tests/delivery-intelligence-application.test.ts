@@ -107,7 +107,7 @@ describe("delivery intelligence application", () => {
       "Here’s the current project activity across connected sources.",
     );
     expect(answer.text).toContain("- 🧩 **Code:**");
-    expect(answer.text).toContain("1. ➡️ **Recommended next step:**");
+    expect(answer.text).not.toContain("Recommended next step");
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
     expect(answer.status).toBe("ok");
@@ -116,12 +116,17 @@ describe("delivery intelligence application", () => {
   it("delegates with a real Teams mention only when the source resolves the target identity", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
-      selectors: ["observations"],
+      selectors: ["objects"],
       execute: () =>
         Effect.succeed({
           items: [
             {
-              ...item("teams", "review", "Pavithra, please review the delivery issue"),
+              ...item(
+                "teams",
+                "review",
+                "Pavithra, please review the delivery issue",
+                "next_actions",
+              ),
               actionTarget: {
                 source: "teams",
                 externalId: "pavithra-entra-id",
@@ -136,7 +141,10 @@ describe("delivery intelligence application", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [source] }).answer(request),
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is the next action?",
+      }),
     );
 
     expect(answer.text).toContain(
@@ -179,6 +187,31 @@ describe("delivery intelligence application", () => {
 
     expect(answer.text).not.toContain("<at>Pavithra</at>");
     expect(answer.mentions).toEqual([]);
+  });
+
+  it("does not invent an action when a requested action has no cited evidence", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [item("jira", "status", "DEMO-12 In Progress", "status")],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is the current status of DEMO-12? Include the next action.",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.text).toContain("No explicit Next action evidence was found");
+    expect(answer.text).not.toContain("Recommended next step");
+    expect(answer.missingRequiredIntents).toContain("next_actions");
   });
 
   it("preserves each requested intent when one Jira issue supports a compound answer", async () => {
@@ -304,11 +337,67 @@ describe("delivery intelligence application", () => {
         },
       }),
     );
-    expect(answer.text.split("\n")).toHaveLength(4);
+    expect(answer.text.split("\n")).toHaveLength(3);
     expect(answer.text).not.toContain("Dependencies:");
     expect(answer.text).toContain("**Conflict — DEMO-1 status:** blocked");
     expect(answer.text).toContain("vs ready");
     expect(answer.conflicts).toHaveLength(1);
+  });
+
+  it("does not call two messages from one source a cross-source conflict", async () => {
+    const claim = (id: string, value: string): DeliveryClaim => ({
+      id,
+      workspaceId: request.workspaceId,
+      subjectKey: "DEMO-4",
+      predicate: "status",
+      value,
+      valueHash: deliveryClaimValueHash(value),
+      authority: 0.8,
+      sensitivity: "internal",
+      observedAt: "2026-07-20T10:00:00.000Z",
+      active: true,
+      deleted: false,
+      source: {
+        source: "teams",
+        sourceId: "teams-source",
+        sourceItemId: id,
+        citationUrl: `https://example.com/teams/${id}`,
+      },
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["conflicts", "claims", "github_live"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("teams", "message-1", "Resolved, but one regression remains", "status"),
+              selector: "claims",
+              intent: "conflicts",
+            },
+          ],
+          conflicts: [
+            {
+              workspaceId: request.workspaceId,
+              subjectKey: "DEMO-4",
+              predicate: "status",
+              claims: [claim("1", "ready"), claim("2", "blocked")],
+            },
+          ],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Where do Jira, Teams, and GitHub disagree about delivery status?",
+      }),
+    );
+
+    expect(answer.conflicts).toEqual([]);
+    expect(answer.text).not.toContain("Resolved, but one regression remains");
+    expect(answer.status).toBe("partial");
   });
 
   it("filters wrong-workspace and excessive-sensitivity results before composition", async () => {
@@ -376,7 +465,7 @@ describe("delivery intelligence application", () => {
         Effect.succeed({
           items: [
             item("github", "code", "Merged code"),
-            item("teams", "team", "Confirmed next step"),
+            item("teams", "team", "Confirmed next step", "next_actions"),
             {
               ...item("jira", "other", "Other workspace"),
               workspaceId: "other",
@@ -395,7 +484,10 @@ describe("delivery intelligence application", () => {
       createDeliveryAssistant({
         sources: [source],
         answerComposer: { compose },
-      }).answer(request),
+      }).answer({
+        ...request,
+        question: "What did the team do today, and what is the next action?",
+      }),
     );
     const composition = compose.mock.calls[0]?.[0];
     expect(composition?.items.map(({ id }) => id)).toEqual(["code", "team"]);
