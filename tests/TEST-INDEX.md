@@ -163,8 +163,8 @@
 ## knowledge-layer
 
 - Command: `bun run test`
-- Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-search.test.ts`
-- Scope: Canonical Jira/Vault ingestion and delivery projections; Jira overlap cursors, project/field/board/sprint catalog, changelog, and status-wait intervals; immutable Vault tree/blob deltas, rename/deletion retirement, and changed-only fetches; versioned attributed assertions with stable authors, aliases, confidence, effective dates, corrections, and supersession; continuous-sync control contracts; explicit exclusions; AI SDK and deterministic embeddings; ACL-first exact/full-text/vector retrieval; live GitHub search; RRF fusion; concise cited answer validation; Teams composition; CLI; and privacy-safe failures.
+- Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-*.test.ts`
+- Scope: Canonical Jira/Vault/GitHub ingestion and delivery projections; Jira overlap cursors, project/field/board/sprint catalog, changelog, and status-wait intervals; immutable Vault tree/blob deltas, rename/deletion retirement, and changed-only fetches; exact-revision GitHub default-branch bootstrap, symbol and line passages, code exclusions, activity observations, and changed-only repair; versioned attributed assertions with stable authors, aliases, confidence, effective dates, corrections, and supersession; continuous-sync control contracts; explicit exclusions; AI SDK and deterministic embeddings; ACL-first exact/full-text/vector retrieval; live GitHub search; RRF fusion; concise cited answer validation; Teams composition; CLI; and privacy-safe failures.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## knowledge-postgres-integration
