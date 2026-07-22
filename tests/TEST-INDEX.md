@@ -185,7 +185,7 @@
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
 - Location: `tests/delivery-intelligence-application.test.ts`
-- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before model composition, deduplication, conflict disclosure, citation validation, deterministic fallback, concise response limits, and partial-source behavior.
+- Scope: Bounded planning, finance authorization before source calls, workspace and sensitivity filtering before model composition, deduplication, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback, and partial-source behavior.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-live-sources

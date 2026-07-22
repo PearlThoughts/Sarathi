@@ -294,6 +294,51 @@ describe("delivery intelligence live query sources", () => {
     expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
   });
 
+  it("normalizes Jira lifecycle state and returns active status ahead of terminal history", async () => {
+    const question = "What is the current status of Modern Website Builder?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic status plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async () =>
+        Response.json({
+          issues: [
+            {
+              key: "DEMO-1",
+              fields: {
+                summary: "Modern Website Builder legacy parity",
+                updated: "2026-07-22T09:00:00.000Z",
+                status: { name: "Canceled", statusCategory: { key: "done" } },
+              },
+            },
+            {
+              key: "DEMO-2",
+              fields: {
+                summary: "Modern Website Builder production readiness",
+                updated: "2026-07-21T09:00:00.000Z",
+                status: {
+                  name: "In Progress",
+                  statusCategory: { key: "indeterminate" },
+                },
+              },
+            },
+          ],
+        }),
+    });
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(result.items.map(({ id, lifecycleState }) => ({ id, lifecycleState }))).toEqual([
+      { id: "jira:DEMO-2:current", lifecycleState: "active" },
+      { id: "jira:DEMO-1:current", lifecycleState: "canceled" },
+    ]);
+  });
+
   it("returns both Jira risks and a ranked next action for a compound question", async () => {
     const observedJql: string[] = [];
     const question = "What are the delivery risks and next action?";
