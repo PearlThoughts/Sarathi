@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { isSensitivityAtOrBelow, type SensitivityTier } from "../../domain/policy.ts";
 import {
+  type DeliveryLifecycleState,
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
   type DeliveryQuerySource,
@@ -172,6 +173,17 @@ const issueOwner = (issue: JiraIssue | JiraLinkedIssue): string =>
   issue.fields?.assignee?.displayName?.trim() || "unassigned";
 const issueStatus = (issue: JiraIssue | JiraLinkedIssue): string =>
   issue.fields?.status?.name?.trim() || "status unavailable";
+const issueLifecycleState = (issue: JiraIssue | JiraLinkedIssue): DeliveryLifecycleState => {
+  const status = issueStatus(issue).toLowerCase();
+  const category = issue.fields?.status?.statusCategory?.key?.toLowerCase() ?? "";
+  if (/cancel|won't do|wont do|declin|abandon/.test(status)) return "canceled";
+  if (/block|imped|stuck/.test(status)) return "blocked";
+  if (category === "done" || /done|closed|resolved|complete|delivered/.test(status)) return "done";
+  if (category === "indeterminate" || /progress|review|testing|active/.test(status))
+    return "active";
+  if (category === "new" || /open|ready|planned|backlog|todo|to do/.test(status)) return "planned";
+  return "unknown";
+};
 const issueProject = (issue: JiraIssue): string => issue.key?.split("-")[0] ?? "jira";
 
 const baseItem = (
@@ -195,6 +207,7 @@ const baseItem = (
         summary,
         citationUrl: issueUrl(configuration, issue.key),
         observedAt: occurredAt,
+        lifecycleState: issueLifecycleState(issue),
         sensitivity: configuration.sensitivity ?? "internal",
         authority: configuration.authority ?? 0.95,
         dedupeKey: `jira:${issue.key}:${kind}:${idSuffix}`,
@@ -618,7 +631,26 @@ export const createJiraDeliveryQuerySource = (
               case "recurring":
                 return recurringItems(configuration, query, connectedIssues);
               case "status":
-                return currentWorkItems(configuration, query, connectedIssues);
+                return currentWorkItems(
+                  configuration,
+                  query,
+                  [...connectedIssues].sort((left, right) => {
+                    const priority: Readonly<Record<DeliveryLifecycleState, number>> = {
+                      blocked: 0,
+                      active: 1,
+                      planned: 2,
+                      unknown: 3,
+                      done: 4,
+                      canceled: 5,
+                    };
+                    return (
+                      (priority[issueLifecycleState(left)] ?? 6) -
+                        (priority[issueLifecycleState(right)] ?? 6) ||
+                      Date.parse(right.fields?.updated ?? "") -
+                        Date.parse(left.fields?.updated ?? "")
+                    );
+                  }),
+                );
             }
           }),
         );

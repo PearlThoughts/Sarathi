@@ -79,6 +79,7 @@ export type {
   DeliveryAssistant,
   DeliveryAssistantAnswer,
   DeliveryAssistantRequest,
+  DeliveryLifecycleState,
   DeliveryModelPlanner,
   DeliveryQueryContext,
   DeliveryQueryResult,

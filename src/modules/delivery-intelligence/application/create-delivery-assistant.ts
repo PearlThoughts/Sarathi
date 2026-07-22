@@ -89,6 +89,36 @@ const intentIcon: Readonly<Record<DeliveryQuestionIntent, string>> = {
   implementation: "🧩",
 };
 
+const intentPresentationOrder: readonly DeliveryQuestionIntent[] = [
+  "status",
+  "goals",
+  "commitments",
+  "scope",
+  "requirements",
+  "delivered",
+  "current_work",
+  "activity",
+  "ownership",
+  "reviews",
+  "dependencies",
+  "blockers",
+  "risks",
+  "recurring",
+  "conflicts",
+  "decisions",
+  "milestones",
+  "capacity",
+  "implementation",
+  "general",
+  "finance",
+  "next_actions",
+];
+
+const presentedIntents = (plan: DeliveryQueryPlan): readonly DeliveryQuestionIntent[] =>
+  [...plan.intents].sort(
+    (left, right) => intentPresentationOrder.indexOf(left) - intentPresentationOrder.indexOf(right),
+  );
+
 const safeText = (value: string): string =>
   value
     .replace(/[\r\n]+/g, " ")
@@ -104,6 +134,15 @@ const safeMentionName = (value: string): string =>
     .slice(0, 80);
 
 const responseOpening = (plan: DeliveryQueryPlan): string => {
+  const subject = safeText(plan.subject?.externalKey ?? plan.subject?.phrase ?? "");
+  if (subject !== "") {
+    const requested = presentedIntents(plan).map((intent) => intentLabel[intent].toLowerCase());
+    const views =
+      requested.length < 2
+        ? requested[0]
+        : `${requested.slice(0, -1).join(", ")} and ${requested.at(-1)}`;
+    return `I checked **${subject}** for ${views}.`;
+  }
   const intents = new Set(plan.intents);
   if (intents.has("activity"))
     return "Here’s the current project activity across connected sources.";
@@ -160,13 +199,32 @@ const statusSourcePriority: Readonly<Record<DeliverySourceKind, number>> = {
   email: 4,
 };
 
+const statusLifecyclePriority = {
+  blocked: 0,
+  active: 1,
+  planned: 2,
+  unknown: 3,
+  done: 4,
+  canceled: 5,
+} as const;
+
+const statusPriorityFor = (item: DeliveryResultItem): number =>
+  item.lifecycleState === undefined
+    ? item.source === "jira"
+      ? statusLifecyclePriority.unknown
+      : 6
+    : statusLifecyclePriority[item.lifecycleState];
+
 const rankedForIntent = (
   items: readonly DeliveryResultItem[],
   intent: DeliveryQuestionIntent,
 ): readonly DeliveryResultItem[] =>
   intent === "status"
     ? [...items].sort(
-        (left, right) => statusSourcePriority[left.source] - statusSourcePriority[right.source],
+        (left, right) =>
+          statusPriorityFor(left) - statusPriorityFor(right) ||
+          statusSourcePriority[left.source] - statusSourcePriority[right.source] ||
+          sortableTimestamp(right.observedAt) - sortableTimestamp(left.observedAt),
       )
     : items;
 
@@ -239,9 +297,8 @@ const composeAnswer = (
   };
   const detailLines: string[] = [];
   const items = uniqueRanked(result.items.filter((item) => itemMatchesPlan(item, plan)));
-  const missingIntentLabels = (result.missingRequiredIntents ?? []).map(
-    (intent) => intentLabel[intent],
-  );
+  const missingIntents = new Set(result.missingRequiredIntents ?? []);
+  let historicalStatusOnly = false;
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const groups = [
@@ -265,16 +322,29 @@ const composeAnswer = (
         );
     }
   } else {
-    for (const intent of plan.intents) {
+    for (const intent of presentedIntents(plan)) {
       if (intent === "next_actions") continue;
       const selected = rankedForIntent(
         items.filter((item) => item.intent === intent),
         intent,
       ).slice(0, 2);
-      if (selected.length > 0)
+      if (selected.length > 0) {
+        historicalStatusOnly =
+          intent === "status" &&
+          selected.every(
+            (item) => item.lifecycleState === "done" || item.lifecycleState === "canceled",
+          );
+        const label = historicalStatusOnly
+          ? `${intentLabel[intent]} — historical only`
+          : intentLabel[intent];
         detailLines.push(
-          `- ${intentIcon[intent]} **${intentLabel[intent]}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
+          `- ${intentIcon[intent]} **${label}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join(" · ")}`,
         );
+      } else if (missingIntents.has(intent)) {
+        detailLines.push(
+          `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
+        );
+      }
     }
   }
 
@@ -353,12 +423,6 @@ const composeAnswer = (
     detailLines.push(
       `- ⚠️ **Coverage:** No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
     );
-  if (missingIntentLabels.length > 0) {
-    const coverage = `- ⚠️ **Coverage:** No explicit ${missingIntentLabels.join(", ")} evidence was found.`;
-    if (detailLines.length >= plan.maximumLines) detailLines.splice(plan.maximumLines - 1);
-    detailLines.push(coverage);
-  }
-
   const materialItems = items.filter((item) => item.intent !== "next_actions");
   const relatedToMaterial = (candidate: DeliveryResultItem): boolean => {
     if (materialItems.length === 0) return true;
@@ -386,10 +450,15 @@ const composeAnswer = (
       : mentionName !== undefined && mentionName !== ""
         ? `1. ➡️ **Next:** <at>${mentionName}</at>, please confirm the next step and due date for this item. ${citation(actionItem)}`
         : `1. ➡️ **Next:** ${safeText(actionItem.summary)} ${citation(actionItem)}`;
+  const completeActionLine =
+    actionLine ??
+    (plan.intents.includes("next_actions")
+      ? "1. ➡️ **Next:** No explicit source-backed next action was found."
+      : undefined);
   const lines = [
     responseOpening(plan),
     ...detailLines.slice(0, plan.maximumLines),
-    ...(actionLine === undefined ? [] : [actionLine]),
+    ...(completeActionLine === undefined ? [] : [completeActionLine]),
   ];
   const text = lines.join("\n");
   return {
@@ -398,7 +467,7 @@ const composeAnswer = (
     status:
       result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
         ? "partial"
-        : missingIntentLabels.length > 0
+        : missingIntents.size > 0 || historicalStatusOnly
           ? "partial"
           : items.length === 0
             ? "empty"

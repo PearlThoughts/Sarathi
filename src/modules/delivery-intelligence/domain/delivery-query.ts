@@ -116,7 +116,7 @@ export type DeliveryQueryPlan = {
   readonly intents: readonly DeliveryQuestionIntent[];
   readonly operations: readonly DeliveryQueryOperation[];
   readonly answerMode: "deterministic" | "model_assisted";
-  readonly maximumLines: 2 | 3;
+  readonly maximumLines: 2 | 3 | 4 | 5 | 6;
   readonly requiresFinance: boolean;
   readonly subject?: DeliveryQuerySubject | undefined;
   readonly requiredSources?: readonly DeliverySourceKind[] | undefined;
@@ -206,8 +206,14 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
   }
   if (plan.answerMode !== "deterministic" && plan.answerMode !== "model_assisted")
     throw new DeliveryQueryPlanValidationError("Delivery answer mode is invalid.");
-  if (plan.maximumLines !== 2 && plan.maximumLines !== 3)
-    throw new DeliveryQueryPlanValidationError("Delivery answers must use two or three lines.");
+  const maximumLines = plan.maximumLines;
+  if (
+    typeof maximumLines !== "number" ||
+    !Number.isInteger(maximumLines) ||
+    maximumLines < 2 ||
+    maximumLines > 6
+  )
+    throw new DeliveryQueryPlanValidationError("Delivery answers must use two to six detail rows.");
   if (typeof plan.requiresFinance !== "boolean")
     throw new DeliveryQueryPlanValidationError("Delivery finance requirement must be explicit.");
   const selectsFinance = plan.operations.some(
@@ -528,7 +534,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     answerMode: operations.some((operation) => operation.select === "knowledge")
       ? "model_assisted"
       : "deterministic",
-    maximumLines: 3,
+    maximumLines: Math.max(3, Math.min(intents.length, 6)) as 3 | 4 | 5 | 6,
     requiresFinance: intents.includes("finance"),
     subject,
     requiredSources: intents.includes("implementation")

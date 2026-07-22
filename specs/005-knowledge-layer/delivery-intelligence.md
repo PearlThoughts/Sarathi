@@ -74,6 +74,8 @@ The 2026-07-22 delivery-manager matrix showed that latency and visual formatting
 - capacity answers only from explicit availability, allocation, leave, or bandwidth signals rather than generic activity or assignee changes;
 - finance-shaped Teams messages remain excluded at the adapter boundary even when their channel is otherwise allowlisted;
 - canonical channel labels and routing topics provide project/module context for terse channel-local messages and prevent unrelated or inaccessible channels from contaminating every query;
+- compound briefs allocate one bounded row to every requested decision field; missing fields remain visible instead of being displaced by a fixed three-line evidence budget;
+- normalized lifecycle state ranks active Jira work above terminal history, and a historical-only current-status answer is explicitly partial;
 - model composition and deterministic recommendations may not manufacture a next action when no cited action evidence exists;
 - delegation only when a source-resolved Teams identity belongs to an action that is related to the material answer.
 

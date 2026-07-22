@@ -176,7 +176,7 @@
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Bounded planning, pre-source finance authorization, workspace and sensitivity filtering, deduplication, conflict disclosure, citations, and concise answer coverage."
+      "description": "Bounded planning, pre-source finance authorization, workspace and sensitivity filtering, deduplication, compound briefs, active-over-terminal status ranking, conflicts, citations, and concise answer coverage."
     },
     {
       "id": "delivery-capability-matrix",

@@ -209,7 +209,7 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.status).toBe("partial");
-    expect(answer.text).toContain("No explicit Next action evidence was found");
+    expect(answer.text).toContain("No explicit source-backed next action was found");
     expect(answer.text).not.toContain("Recommended next step");
     expect(answer.missingRequiredIntents).toContain("next_actions");
   });
@@ -261,8 +261,14 @@ describe("delivery intelligence application", () => {
         Effect.succeed({
           items: [
             { ...item("vault", "boundary", "Builder scope table", "status"), authority: 1 },
-            item("jira", "done", "DEMO-10 Done: Builder navigation fix", "status"),
-            item("jira", "active", "DEMO-11 In Progress: Builder acceptance", "status"),
+            {
+              ...item("jira", "done", "DEMO-10 Done: Builder navigation fix", "status"),
+              lifecycleState: "done",
+            },
+            {
+              ...item("jira", "active", "DEMO-11 In Progress: Builder acceptance", "status"),
+              lifecycleState: "active",
+            },
           ],
           conflicts: [],
           unavailableSources: [],
@@ -275,9 +281,90 @@ describe("delivery intelligence application", () => {
         question: "What is the current status of Builder?",
       }),
     );
-    expect(answer.text).toContain("DEMO-10 Done");
-    expect(answer.text).toContain("DEMO-11 In Progress");
+    expect(answer.text.indexOf("DEMO-11 In Progress")).toBeLessThan(
+      answer.text.indexOf("DEMO-10 Done"),
+    );
     expect(answer.text).not.toContain("Builder scope table");
+  });
+
+  it("marks a current-status answer as partial when Jira only returns terminal history", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "done", "DEMO-10 Done: Builder navigation fix", "status"),
+              lifecycleState: "done" as const,
+            },
+            {
+              ...item("jira", "canceled", "DEMO-9 Canceled: Legacy form parity", "status"),
+              lifecycleState: "canceled" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is the current status of Builder?",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.text).toContain("**Status — historical only:**");
+  });
+
+  it("accounts for every requested field in a compound decision brief", async () => {
+    const compoundItem = (
+      id: string,
+      intent: "scope" | "reviews" | "status",
+      summary: string,
+    ): DeliveryResultItem => ({
+      ...item("teams", id, summary, "status"),
+      selector: intent === "reviews" ? "observations" : "objects",
+      intent,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            compoundItem("scope", "scope", "Page-content migration is in scope"),
+            compoundItem("review", "reviews", "UI integration awaits review"),
+            compoundItem("status", "status", "The migration remains active"),
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question:
+          "What is the current status of Admin Portal Migration? Summarize scope, progress, review queue, risks, and next action.",
+      }),
+    );
+
+    expect(answer.text.split("\n")[0]).toBe(
+      "I checked **Admin Portal Migration** for status, scope, review queue, risks and next action.",
+    );
+    expect(answer.text).toContain("**Scope:**");
+    expect(answer.text).toContain("**Review queue:**");
+    expect(answer.text).toContain("**Risks:** No explicit source-backed information was found.");
+    expect(answer.text).toContain("**Status:**");
+    expect(answer.text).toContain(
+      "1. ➡️ **Next:** No explicit source-backed next action was found.",
+    );
+    expect(answer.status).toBe("partial");
   });
 
   it("discloses competing claims rather than choosing one silently", async () => {
@@ -572,7 +659,8 @@ describe("delivery intelligence application", () => {
         question: "What is the current status of Admin Portal Migration?",
       }),
     );
-    expect(answer.status).toBe("empty");
+    expect(answer.status).toBe("partial");
+    expect(answer.text).toContain("No explicit source-backed information was found");
     expect(answer.text).not.toContain("Modern lead form");
   });
 });

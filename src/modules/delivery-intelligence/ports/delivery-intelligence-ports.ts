@@ -31,9 +31,18 @@ export type DeliveryResultItem = {
   readonly sensitivity: SensitivityTier;
   readonly authority: number;
   readonly observedAt?: string | undefined;
+  readonly lifecycleState?: DeliveryLifecycleState | undefined;
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
 };
+
+export type DeliveryLifecycleState =
+  | "planned"
+  | "active"
+  | "blocked"
+  | "done"
+  | "canceled"
+  | "unknown";
 
 export type DeliveryActionTarget = {
   readonly source: "teams";
