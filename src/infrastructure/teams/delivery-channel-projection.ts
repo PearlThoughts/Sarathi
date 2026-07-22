@@ -9,6 +9,8 @@ export type TeamsDeliveryChannelProjection = {
   readonly workspaceId: string;
   readonly scope: TeamsDeliveryChannelScope;
   readonly sensitivity: SensitivityTier;
+  readonly label?: string | undefined;
+  readonly topics?: readonly string[] | undefined;
 };
 
 const scopes = new Set<TeamsDeliveryChannelScope>(["standard", "shared", "private"]);
@@ -22,6 +24,34 @@ const sensitivities = new Set<SensitivityTier>([
 const nonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";
 
+const optionalLabel = (value: unknown): string | undefined => {
+  if (value === undefined) return undefined;
+  if (!nonEmptyString(value) || value.trim().length > 120)
+    throw new RepositoryError({
+      message: "Teams delivery channel projection has an invalid channel label.",
+    });
+  return value.trim();
+};
+
+const optionalTopics = (value: unknown): readonly string[] | undefined => {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 24 ||
+    !value.every((topic) => nonEmptyString(topic) && topic.trim().length <= 120)
+  )
+    throw new RepositoryError({
+      message: "Teams delivery channel projection has invalid routing topics.",
+    });
+  const topics = value.map((topic) => topic.trim());
+  if (new Set(topics.map((topic) => topic.toLowerCase())).size !== topics.length)
+    throw new RepositoryError({
+      message: "Teams delivery channel projection has duplicate routing topics.",
+    });
+  return topics;
+};
+
 const validateChannel = (candidate: unknown): TeamsDeliveryChannelProjection => {
   const channel = candidate as Record<string, unknown>;
   if (
@@ -34,12 +64,16 @@ const validateChannel = (candidate: unknown): TeamsDeliveryChannelProjection => 
     throw new RepositoryError({
       message: "Teams delivery channel projection has an invalid channel mapping.",
     });
+  const label = optionalLabel(channel.label);
+  const topics = optionalTopics(channel.topics);
   return {
     graphTeamId: channel.graphTeamId,
     channelId: channel.channelId,
     workspaceId: channel.workspaceId,
     scope: channel.scope as TeamsDeliveryChannelScope,
     sensitivity: channel.sensitivity as SensitivityTier,
+    ...(label === undefined ? {} : { label }),
+    ...(topics === undefined ? {} : { topics }),
   };
 };
 

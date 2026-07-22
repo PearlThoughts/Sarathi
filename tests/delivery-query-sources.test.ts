@@ -47,12 +47,18 @@ describe("delivery intelligence live query sources", () => {
           {
             sha: "merge-sha",
             html_url: "https://github.com/example/repo/commit/merge-sha",
-            commit: { message: "Merge pull request", committer: { date: "2026-07-20T10:00:00Z" } },
+            commit: {
+              message: "Merge pull request",
+              committer: { date: "2026-07-20T10:00:00Z" },
+            },
           },
           {
             sha: "abc123456789",
             html_url: "https://github.com/example/repo/commit/abc123456789",
-            commit: { message: "Add delivery query", committer: { date: "2026-07-20T09:00:00Z" } },
+            commit: {
+              message: "Add delivery query",
+              committer: { date: "2026-07-20T09:00:00Z" },
+            },
           },
         ]);
       },
@@ -94,7 +100,11 @@ describe("delivery intelligence live query sources", () => {
       workspaceId: context.workspaceId,
       allowedActorIds: new Set([context.actorId]),
       repositoryScopes: [
-        { owner: "example-org", ownerType: "org", repositoryNamePrefix: "delivery-" },
+        {
+          owner: "example-org",
+          ownerType: "org",
+          repositoryNamePrefix: "delivery-",
+        },
       ],
       fetcher: async (input) => {
         const url = String(input);
@@ -215,7 +225,9 @@ describe("delivery intelligence live query sources", () => {
         const url = String(input);
         requests.push(url);
         if (url.endsWith("/rest/api/3/search/jql")) {
-          const body = JSON.parse(String(init?.body)) as { readonly jql: string };
+          const body = JSON.parse(String(init?.body)) as {
+            readonly jql: string;
+          };
           expect(body.jql).toContain('project in ("DEMO")');
           return Response.json({
             issues: [
@@ -235,7 +247,13 @@ describe("delivery intelligence live query sources", () => {
             {
               id: "history-1",
               created: "2026-07-20T11:00:00.000Z",
-              items: [{ field: "status", fromString: "In Progress", toString: "Done" }],
+              items: [
+                {
+                  field: "status",
+                  fromString: "In Progress",
+                  toString: "Done",
+                },
+              ],
             },
           ],
         });
@@ -376,7 +394,10 @@ describe("delivery intelligence live query sources", () => {
               mentions: [
                 {
                   mentioned: {
-                    user: { id: "reviewer-id", displayName: "Delivery Reviewer" },
+                    user: {
+                      id: "reviewer-id",
+                      displayName: "Delivery Reviewer",
+                    },
                   },
                 },
               ],
@@ -386,7 +407,9 @@ describe("delivery intelligence live query sources", () => {
                   id: "reply-1",
                   messageType: "message",
                   createdDateTime: "2026-07-20T12:01:00.000Z",
-                  body: { content: '<at id="0">Sarathi</at> post team work summary' },
+                  body: {
+                    content: '<at id="0">Sarathi</at> post team work summary',
+                  },
                   from: { user: { displayName: "Delivery Member" } },
                   webUrl: "https://teams.microsoft.com/l/message/reply-1",
                 },
@@ -435,7 +458,9 @@ describe("delivery intelligence live query sources", () => {
               id: "waiting",
               messageType: "message",
               createdDateTime: "2026-07-20T12:00:00.000Z",
-              body: { content: "Frontend is waiting for API approval from the backend owner." },
+              body: {
+                content: "Frontend is waiting for API approval from the backend owner.",
+              },
               webUrl: "https://teams.microsoft.com/l/message/waiting",
             },
             {
@@ -497,7 +522,9 @@ describe("delivery intelligence live query sources", () => {
               id: "availability",
               messageType: "message",
               createdDateTime: "2026-07-20T12:00:00.000Z",
-              body: { content: "I am unavailable until 2 PM because of a personal emergency." },
+              body: {
+                content: "I am unavailable until 2 PM because of a personal emergency.",
+              },
               webUrl: "https://teams.microsoft.com/l/message/availability",
             },
             {
@@ -518,7 +545,9 @@ describe("delivery intelligence live query sources", () => {
               id: "finance",
               messageType: "message",
               createdDateTime: "2026-07-20T12:00:00.000Z",
-              body: { content: "Project budget and commercial rate need review." },
+              body: {
+                content: "Project budget and commercial rate need review.",
+              },
               webUrl: "https://teams.microsoft.com/l/message/finance",
             },
           ],
@@ -605,6 +634,66 @@ describe("delivery intelligence live query sources", () => {
     ]);
     expect(result.unavailableSources).toEqual(["teams"]);
     expect(result.complete).toBe(false);
+  });
+
+  it("uses channel catalog context to route named-project questions before Graph reads", async () => {
+    const fetched: string[] = [];
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "admin-portal",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+          label: "Admin Portal Migration",
+          topics: ["status", "reviews", "risks", "next_actions"],
+        },
+        {
+          teamId: "team-1",
+          channelId: "availability",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+          label: "1851 Availability",
+          topics: ["capacity"],
+        },
+      ],
+      fetcher: async (input) => {
+        fetched.push(String(input));
+        return Response.json({
+          value: [
+            {
+              id: "review",
+              messageType: "message",
+              createdDateTime: "2026-07-21T12:00:00.000Z",
+              body: { content: "Please review the completed UI integration." },
+              webUrl: "https://teams.microsoft.com/l/message/admin-review",
+            },
+          ],
+        });
+      },
+    });
+    const plan = planDeliveryQuestion(
+      "What is the current status of Admin Portal Migration? Summarize review queue and risks.",
+    );
+    if (plan === undefined) throw new Error("Expected Admin Portal plan");
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(fetched).toHaveLength(1);
+    expect(fetched[0]).toContain("admin-portal");
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "teams",
+          intent: "reviews",
+          title: "Admin Portal Migration",
+        }),
+      ]),
+    );
+    expect(result.unavailableSources).toEqual([]);
   });
 
   it("treats project progress fields as compound delivery facts rather than generic activity", () => {

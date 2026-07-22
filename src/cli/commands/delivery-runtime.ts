@@ -208,6 +208,8 @@ const liveSources = (
         workspaceId: channel.workspaceId,
         sensitivity: channel.sensitivity,
         allowedActorIds,
+        label: channel.label,
+        topics: channel.topics,
       })),
       timeoutMs: 4_000,
     }),

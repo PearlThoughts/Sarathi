@@ -63,6 +63,7 @@
 - [x] KLG-515 Enforce source-role, entity-boundary, required-backend, answer-completeness, review-queue, conflict, and related-delegation rules derived from the 2026-07-22 ten-question live matrix.
 - [x] KLG-516 Require explicit intent evidence, same-item claims from distinct sources for conflicts, capacity-specific signals, and cited next actions; disclose partial compound answers without generic recommendations.
 - [x] KLG-517 Decouple the explicit Teams delivery-read allowlist from ingress mappings, support bounded declared standard/shared/private channels, and remove the ten-channel empty-result cliff without broadening actor or sensitivity authorization.
+- [x] KLG-518 Add canonical Teams channel labels and bounded routing topics so terse channel-local updates retain project context and queries do not fan out to unrelated inaccessible scopes.
 
 ## Dependency Order
 

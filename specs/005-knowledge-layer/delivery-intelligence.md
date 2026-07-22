@@ -73,6 +73,7 @@ The 2026-07-22 delivery-manager matrix showed that latency and visual formatting
 - conflict disclosure only when attributed claims about the same subject and predicate come from at least two distinct sources;
 - capacity answers only from explicit availability, allocation, leave, or bandwidth signals rather than generic activity or assignee changes;
 - finance-shaped Teams messages remain excluded at the adapter boundary even when their channel is otherwise allowlisted;
+- canonical channel labels and routing topics provide project/module context for terse channel-local messages and prevent unrelated or inaccessible channels from contaminating every query;
 - model composition and deterministic recommendations may not manufacture a next action when no cited action evidence exists;
 - delegation only when a source-resolved Teams identity belongs to an action that is related to the material answer.
 
