@@ -30,7 +30,7 @@ The objective is to maintain a policy-bounded delivery representation once and r
 6. **Sources retain authority and provenance.** Jira and Vault are synchronized; GitHub remains live; Teams and project email are bounded by configured project connections. Derived state never overwrites its source.
 7. **Knowledge retrieval supports delivery reasoning.** Versioned documents, passages, full-text search, vectors, citations, and deletion reconciliation enrich structured delivery queries.
 8. **Frameworks remain at the edge.** Domain and application code do not depend on Drizzle, PostgreSQL, Graph, Jira, GitHub, Vault, Railway, or model-provider SDK types.
-9. **Answers are concise and auditable.** Normal Teams answers use two or three lines, disclose conflicts and unavailable required sources, and cite material claims.
+9. **Answers are concise, decision-ready, and auditable.** Normal Teams answers open with one short acknowledgement or paraphrase, present material facts as scan-friendly Markdown bullets, and close with one numbered next action. Resolvable citations remain inline; a person is tagged only through a source-resolved Teams identity.
 
 ## 4. Capability Architecture
 
@@ -48,7 +48,7 @@ flowchart LR
   U[Delivery question] --> P[Validated delivery query plan]
   P --> Q
   Q --> X[Conflict and completeness evaluation]
-  X --> A[Two or three cited lines]
+  X --> A[Concise cited summary and next action]
 ```
 
 `delivery-intelligence` owns the delivery vocabulary, normalized query plan, conflict rules, result model, and concise report composition. `knowledge-layer` owns source items, immutable versions, passages, ACL metadata, embeddings, hybrid retrieval, citations, checkpoints, and deletion reconciliation. `boundary-policy` and identity capabilities authorize the request before either capability retrieves content. Infrastructure adapters translate external APIs and PostgreSQL rows into capability ports.
@@ -72,6 +72,12 @@ A member asks who is waiting for whom, whether anyone is stuck, or for the top r
 A member asks what the team delivered last sprint, is doing this week, or did today. Sarathi applies the requested sprint or calendar window as a filter over work, observations, and live activity.
 
 **Independent test**: today, week, current-sprint, and previous-sprint questions use the same domain model with different optional boundaries and return in less than ten seconds.
+
+The response opens by acknowledging the requested reporting scope, uses concise
+visual bullets for the material status, and ends with one numbered action. When
+the contributing Teams activity contains a Graph-resolved person mention,
+Sarathi may preserve that native mention for delegation; it never infers a
+mention target from display text alone.
 
 ### Story 4 — Recurring Problems
 
@@ -104,8 +110,9 @@ A member asks a question that requires repository truth. Sarathi uses GitHub's l
 - **FR-015**: Suppress duplicate observations and claims using stable source identity, version, content hashes, and cross-source equivalence keys.
 - **FR-016**: Use Vercel AI SDK provider abstractions with OpenRouter as the only production model/embedding provider. Tests use deterministic implementations.
 - **FR-017**: Answer deterministic delivery queries without a model when possible. Model-assisted planning or synthesis receives only an authorized, bounded result envelope.
-- **FR-018**: Produce normally two or three cited lines and complete the Teams response path in less than ten seconds for supported delivery questions.
+- **FR-018**: Produce a concise Teams-native Markdown response with one short prose opening, one to four cited evidence bullets, and exactly one cited numbered next action. Complete the response path in less than ten seconds for supported delivery questions.
 - **FR-019**: Provide durable ingestion, reconciliation, query, status, and projection-rebuild CLI operations with counts, checksums, checkpoints, and no private bodies in logs.
+- **FR-020**: Emit Teams mention entities only for `<at>` tokens backed by a source-resolved Graph user identifier. Do not invent, guess, or resolve people from display text during answer composition.
 
 ## 7. Core Data Contracts
 
@@ -131,7 +138,7 @@ A member asks a question that requires repository truth. Sarathi uses GitHub's l
 
 ## 9. Verification
 
-Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, and concise response shape.
+Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, and source-resolved Teams mention transport.
 
 Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, bounded connector synchronization, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint delivery, current work, recurring issues, and a daily summary under ten seconds.
 

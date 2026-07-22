@@ -20,9 +20,14 @@ type TeamsMessage = {
   readonly subject?: string | null;
   readonly body?: { readonly content?: string };
   readonly from?: {
-    readonly user?: { readonly displayName?: string };
+    readonly user?: { readonly id?: string; readonly displayName?: string };
     readonly application?: { readonly id?: string; readonly displayName?: string };
   };
+  readonly mentions?: readonly {
+    readonly mentioned?: {
+      readonly user?: { readonly id?: string; readonly displayName?: string };
+    };
+  }[];
   readonly webUrl?: string;
   readonly replies?: readonly TeamsMessage[];
 };
@@ -67,6 +72,24 @@ const containsAssistantMention = (body: string | undefined, assistantName: strin
     `<at\\b[^>]*>\\s*${assistantName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</at>`,
     "i",
   ).test(body ?? "");
+
+const actionTargetFrom = (
+  message: TeamsMessage,
+): DeliveryResultItem["actionTarget"] | undefined => {
+  for (const mention of message.mentions ?? []) {
+    const user = mention.mentioned?.user;
+    const externalId = user?.id?.trim();
+    const displayName = user?.displayName?.trim();
+    if (
+      externalId !== undefined &&
+      externalId !== "" &&
+      displayName !== undefined &&
+      displayName !== ""
+    )
+      return { source: "teams", externalId, displayName };
+  }
+  return undefined;
+};
 
 const matchesOperation = (content: string, operation: DeliveryQueryOperation): boolean => {
   switch (operation.purpose) {
@@ -195,6 +218,7 @@ export const createTeamsDeliveryQuerySource = (
                     authority: 0.8,
                     observedAt,
                     dedupeKey: `teams:${channel.teamId}:${channel.channelId}:${message.id}`,
+                    actionTarget: actionTargetFrom(message),
                   },
                 ];
               })

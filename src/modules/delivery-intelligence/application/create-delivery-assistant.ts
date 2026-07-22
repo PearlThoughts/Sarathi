@@ -62,12 +62,69 @@ const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
   implementation: "Implementation",
 };
 
+const intentIcon: Readonly<Record<DeliveryQuestionIntent, string>> = {
+  general: "📌",
+  status: "📊",
+  goals: "🎯",
+  commitments: "🤝",
+  scope: "🧭",
+  requirements: "📋",
+  ownership: "👤",
+  dependencies: "🔗",
+  blockers: "⛔",
+  delivered: "✅",
+  current_work: "🚧",
+  risks: "⚠️",
+  recurring: "🔁",
+  decisions: "💡",
+  next_actions: "➡️",
+  milestones: "🏁",
+  capacity: "📈",
+  finance: "🔒",
+  activity: "🗓️",
+  implementation: "🧩",
+};
+
 const safeText = (value: string): string =>
   value
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 190);
+
+const safeMentionName = (value: string): string =>
+  value
+    .replace(/[<>\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+
+const responseOpening = (plan: DeliveryQueryPlan): string => {
+  const intents = new Set(plan.intents);
+  if (intents.has("activity"))
+    return "Here’s the current project activity across connected sources.";
+  if (intents.has("risks") || intents.has("blockers"))
+    return "Here’s the delivery situation that needs attention.";
+  if (intents.has("dependencies")) return "Here’s who appears to be waiting on what.";
+  if (intents.has("status")) return "Here’s the current delivery status I found.";
+  if (intents.has("implementation")) return "Here’s the relevant implementation context I found.";
+  return "Here’s the delivery context I found for your question.";
+};
+
+const recommendedAction = (plan: DeliveryQueryPlan): string => {
+  const intents = new Set(plan.intents);
+  if (intents.has("risks")) return "Assign a mitigation owner and checkpoint to the highest risk.";
+  if (intents.has("blockers") || intents.has("dependencies"))
+    return "Assign the dependency to the person who can unblock it and record a due date.";
+  if (intents.has("status")) return "Confirm the next milestone, owner, and due date.";
+  if (intents.has("implementation"))
+    return "Confirm the responsible module owner before changing the cited implementation.";
+  if (intents.has("activity")) return "Confirm owners and due dates for the open items above.";
+  return "Confirm the owner, decision, and due date for the highest-priority item.";
+};
+
+const actionableSummary =
+  /\b(?:review|approve|confirm|follow[- ]?up|next action|next step|will|need(?:s)? to|must|should|todo|assigned to)\b/i;
 
 const resolvableUrl = (value: string): boolean => {
   try {
@@ -148,26 +205,34 @@ const authorizedConflicts = (
   });
 
 const composeAnswer = (
+  _request: DeliveryAssistantRequest,
   plan: DeliveryQueryPlan,
   result: DeliveryQueryResult,
 ): DeliveryAssistantAnswer => {
   const citations: { label: string; url: string }[] = [];
+  const citationLabels = new Map<string, string>();
   const citation = (item: DeliveryResultItem): string => {
+    const key = `${item.intent}\u0000${item.citationUrl}`;
+    const existing = citationLabels.get(key);
+    if (existing !== undefined) return `[${existing}](${item.citationUrl})`;
     const label = `${sourceLabel[item.source]} ${citations.length + 1}`;
     citations.push({ label, url: item.citationUrl });
+    citationLabels.set(key, label);
     return `[${label}](${item.citationUrl})`;
   };
-  const lines: string[] = [];
+  const detailLines: string[] = [];
   const items = uniqueRanked(result.items);
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const groups = [
-      { label: "Code", sources: new Set<DeliverySourceKind>(["github"]) },
+      { icon: "🧩", label: "Code", sources: new Set<DeliverySourceKind>(["github"]) },
       {
+        icon: "📋",
         label: "Delivery tracking",
         sources: new Set<DeliverySourceKind>(["jira", "vault"]),
       },
       {
+        icon: "💬",
         label: "Team updates",
         sources: new Set<DeliverySourceKind>(["teams", "email"]),
       },
@@ -175,8 +240,8 @@ const composeAnswer = (
     for (const group of groups) {
       const selected = items.filter((item) => group.sources.has(item.source)).slice(0, 2);
       if (selected.length > 0)
-        lines.push(
-          `${group.label}: ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
+        detailLines.push(
+          `- ${group.icon} **${group.label}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
         );
     }
   } else {
@@ -186,8 +251,8 @@ const composeAnswer = (
         intent,
       ).slice(0, 2);
       if (selected.length > 0)
-        lines.push(
-          `${intentLabel[intent]}: ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
+        detailLines.push(
+          `- ${intentIcon[intent]} **${intentLabel[intent]}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
         );
     }
   }
@@ -217,20 +282,59 @@ const composeAnswer = (
           };
           return `${safeText(String(claim.value))} ${citation(item)}`;
         });
-        const conflictLine = `Conflict — ${conflict.subjectKey} ${conflict.predicate}: ${summaries.join(" vs ")}`;
-        if (lines.length >= plan.maximumLines) lines.splice(Math.max(0, plan.maximumLines - 1));
-        lines.push(conflictLine);
+        const conflictLine = `- ⚖️ **Conflict — ${conflict.subjectKey} ${conflict.predicate}:** ${summaries.join(" vs ")}`;
+        if (detailLines.length >= plan.maximumLines)
+          detailLines.splice(Math.max(0, plan.maximumLines - 1));
+        detailLines.push(conflictLine);
       }
     }
   }
 
-  if (lines.length === 0) lines.push("No connected project information matched this question.");
-  if (result.unavailableSources.length > 0 && lines.length < plan.maximumLines)
-    lines.push(
-      `Partial: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")} unavailable.`,
+  if (detailLines.length === 0) {
+    const unavailable = result.unavailableSources.map((source) => sourceLabel[source]).join(", ");
+    return {
+      text:
+        result.unavailableSources.length === 0
+          ? "I couldn’t find connected project information that answers this yet."
+          : [
+              "I couldn’t answer this yet because connected project sources are unavailable.",
+              `- ⚠️ **Coverage:** ${unavailable} unavailable.`,
+              "1. ➡️ **Next:** Retry after connected source access is restored.",
+            ].join("\n"),
+      citations: [],
+      status: result.unavailableSources.length > 0 ? "partial" : "empty",
+      plan,
+      unavailableSources: result.unavailableSources,
+      conflicts,
+      mentions: [],
+    };
+  }
+  if (result.unavailableSources.length > 0 && detailLines.length < plan.maximumLines)
+    detailLines.push(
+      `- ⚠️ **Coverage:** ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")} unavailable.`,
     );
 
-  const text = lines.slice(0, plan.maximumLines).join("\n");
+  const mentionActionItem =
+    items.find((item) => item.intent === "next_actions" && item.actionTarget !== undefined) ??
+    items.find((item) => item.actionTarget !== undefined && actionableSummary.test(item.summary));
+  const actionItem =
+    mentionActionItem ?? items.find((item) => item.intent === "next_actions") ?? items[0];
+  const mentionName =
+    mentionActionItem?.actionTarget === undefined
+      ? undefined
+      : safeMentionName(mentionActionItem.actionTarget.displayName);
+  const actionLine =
+    actionItem === undefined
+      ? undefined
+      : mentionName !== undefined && mentionName !== ""
+        ? `1. ➡️ **Next:** <at>${mentionName}</at>, please confirm the next step and due date for this item. ${citation(actionItem)}`
+        : `1. ➡️ **Recommended next step:** ${recommendedAction(plan)} ${citation(actionItem)}`;
+  const lines = [
+    responseOpening(plan),
+    ...detailLines.slice(0, plan.maximumLines),
+    ...(actionLine === undefined ? [] : [actionLine]),
+  ];
+  const text = lines.join("\n");
   return {
     text,
     citations: citations.filter(({ url }) => text.includes(url)),
@@ -238,6 +342,12 @@ const composeAnswer = (
     plan,
     unavailableSources: result.unavailableSources,
     conflicts,
+    mentions:
+      mentionActionItem?.actionTarget === undefined ||
+      mentionName === undefined ||
+      mentionName === ""
+        ? []
+        : [{ ...mentionActionItem.actionTarget, displayName: mentionName }],
   };
 };
 
@@ -248,12 +358,13 @@ const composeWithModel = (
   result: DeliveryQueryResult,
   timeoutMs: number,
 ): Effect.Effect<DeliveryAssistantAnswer> => {
-  const deterministic = composeAnswer(plan, result);
+  const deterministic = composeAnswer(request, plan, result);
   const items = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general").slice(
     0,
     12,
   );
-  if (items.length < 2) return Effect.succeed(deterministic);
+  if (items.length < 2 || (deterministic.mentions?.length ?? 0) > 0)
+    return Effect.succeed(deterministic);
   const allowedCitationUrls = new Set([
     ...items.map((item) => item.citationUrl),
     ...result.conflicts.flatMap((conflict) =>
@@ -285,8 +396,14 @@ const composeWithModel = (
               .split(/\r?\n/)
               .map((line) => line.trim())
               .filter(Boolean);
-            if (lines.length < 1 || lines.length > plan.maximumLines)
+            if (lines.length < 3 || lines.length > plan.maximumLines + 2)
               throw new Error("Composed delivery answer has an invalid line count.");
+            if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
+              throw new Error("Composed delivery answer lacks a short opening paragraph.");
+            if (!lines.slice(1, -1).some((line) => line.startsWith("- ")))
+              throw new Error("Composed delivery answer lacks scannable evidence bullets.");
+            if (!/^1\.\s/.test(lines.at(-1) ?? ""))
+              throw new Error("Composed delivery answer lacks an explicit next action.");
             if (
               composed.citations.some(
                 ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
@@ -297,6 +414,7 @@ const composeWithModel = (
               ...deterministic,
               text: lines.join("\n"),
               citations: composed.citations,
+              mentions: [],
             };
           },
           catch: () =>
@@ -450,7 +568,7 @@ export const createDeliveryAssistant = (
                 failures.length === 0 && successful.every((result) => result.complete === true),
             };
             return configuration.answerComposer === undefined
-              ? Effect.succeed(composeAnswer(plan, merged))
+              ? Effect.succeed(composeAnswer(request, plan, merged))
               : composeWithModel(
                   configuration.answerComposer,
                   request,

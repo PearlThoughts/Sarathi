@@ -51,6 +51,11 @@ export type GroundedAnswer = {
     readonly url: string;
   }[];
   readonly unavailableSources: readonly string[];
+  readonly mentions?: readonly {
+    readonly source: "teams";
+    readonly externalId: string;
+    readonly displayName: string;
+  }[];
 };
 
 export type TeamsMentionOutcome =

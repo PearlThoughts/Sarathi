@@ -103,7 +103,10 @@ describe("AI Delivery Assistant capability matrix", () => {
 
     expect(answer.plan.intents).toEqual(row.intents);
     expect(answer.status).toBe("ok");
-    expect(answer.text.split("\n").length).toBeLessThanOrEqual(3);
+    expect(answer.text.split("\n").length).toBeLessThanOrEqual(5);
+    expect(answer.text.split("\n")[0]).not.toMatch(/^(?:-|\d+\.)\s/);
+    expect(answer.text).toMatch(/- .+ \*\*/u);
+    expect(answer.text).toContain("1. ➡️ **");
     expect(answer.citations.length).toBeGreaterThan(0);
   });
 });
