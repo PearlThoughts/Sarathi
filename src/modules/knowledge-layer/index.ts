@@ -5,6 +5,11 @@ export {
   queryKnowledgeAcrossSources,
   queryKnowledgeLexically,
 } from "./application/knowledge-service.ts";
+export type { SynchronizationSource } from "./application/synchronization-service.ts";
+export {
+  readSynchronizationSourceStatus,
+  synchronizeKnowledgeSource,
+} from "./application/synchronization-service.ts";
 export type {
   FusedKnowledgeCandidate,
   KnowledgeAclEffect,
@@ -30,6 +35,7 @@ export type {
   SynchronizationFailureClass,
   SynchronizationFreshness,
   SynchronizationLease,
+  SynchronizationLeaseOperation,
   SynchronizationRetryPolicy,
   SynchronizationRunStatus,
   SynchronizationSubscription,

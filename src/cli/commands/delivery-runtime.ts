@@ -32,6 +32,7 @@ import {
   deliveryResponseModePolicies,
   selectDeliveryResponseMode,
 } from "../../modules/delivery-intelligence/index.ts";
+import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
 
@@ -46,6 +47,7 @@ type DeliveryCliDependencies = {
     | undefined;
   readonly readStatus?: (() => Promise<unknown>) | undefined;
   readonly runKnowledge?: typeof runKnowledgeCommand | undefined;
+  readonly runSync?: typeof runDeliverySyncCommand | undefined;
 };
 
 type JiraProjection = { readonly projectKey: string };
@@ -295,6 +297,8 @@ export const runDeliveryCommand = async (
   dependencies: DeliveryCliDependencies = {},
 ): Promise<DeliveryCliResult> => {
   try {
+    if (args[0] === "sync")
+      return (dependencies.runSync ?? runDeliverySyncCommand)(args.slice(1), environment);
     if (args[0] === "status")
       return {
         exitCode: 0,
@@ -354,7 +358,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
+          "Use delivery status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
       },
     };
   } catch (error) {

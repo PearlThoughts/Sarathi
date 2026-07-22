@@ -319,6 +319,7 @@ export const createPostgresSynchronizationControlRepository = (
         .set({
           status: run.status,
           cursorAfter: run.cursorAfter ?? null,
+          scopeHash: run.scopeHash,
           newestSourceUpdatedAt: run.newestSourceUpdatedAt ?? null,
           lagSeconds: run.lagSeconds ?? null,
           attemptCount: run.attemptCount,
