@@ -21,6 +21,7 @@ describe("knowledge CLI", () => {
             "0000_enable-pgvector",
             "0001_knowledge-layer",
             "0002_delivery-intelligence-core",
+            "0003_continuous-sync-control-plane",
           ],
           protectedTables: [
             "compliance_reminder_audit",

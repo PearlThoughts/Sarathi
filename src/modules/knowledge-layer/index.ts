@@ -23,6 +23,26 @@ export {
   reciprocalRankFusion,
 } from "./domain/knowledge.ts";
 export type {
+  SynchronizationCheckpoint,
+  SynchronizationDeliveryStatus,
+  SynchronizationEventDelivery,
+  SynchronizationEventIdentity,
+  SynchronizationFailureClass,
+  SynchronizationFreshness,
+  SynchronizationLease,
+  SynchronizationRetryPolicy,
+  SynchronizationRunStatus,
+  SynchronizationSubscription,
+  SynchronizationSubscriptionStatus,
+  SynchronizationTrigger,
+} from "./domain/synchronization.ts";
+export {
+  synchronizationEventDeliveryId,
+  synchronizationFreshness,
+  synchronizationLeaseAvailable,
+  synchronizationRetryAt,
+} from "./domain/synchronization.ts";
+export type {
   KnowledgeEmbeddingPort,
   KnowledgeIngestionSummary,
   KnowledgeLiveSearch,
@@ -34,3 +54,9 @@ export type {
   KnowledgeSourceSnapshot,
   TeamsThreadContext,
 } from "./ports/knowledge-ports.ts";
+export type {
+  SynchronizationControlRepository,
+  SynchronizationEventRegistration,
+  SynchronizationRun,
+  SynchronizationStatus,
+} from "./ports/synchronization-ports.ts";

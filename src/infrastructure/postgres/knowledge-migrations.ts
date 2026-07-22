@@ -32,9 +32,38 @@ export type KnowledgeMigrationStatus = {
     readonly itemsDeleted: number;
     readonly checksum: string;
     readonly status: string;
+    readonly indexedSourceRevision: string | null;
+    readonly lastEventAt: string | null;
+    readonly lastReconciledAt: string | null;
+    readonly newestSourceUpdatedAt: string | null;
+    readonly lastSucceededAt: string | null;
+    readonly lagSeconds: number | null;
+    readonly retryCount: number;
+    readonly nextReconcileAt: string | null;
+    readonly failureClass: string | null;
     readonly syncedAt: string;
   }[];
 };
+
+type RawKnowledgeCheckpoint = Omit<
+  KnowledgeMigrationStatus["checkpoints"][number],
+  | "lastEventAt"
+  | "lastReconciledAt"
+  | "newestSourceUpdatedAt"
+  | "lastSucceededAt"
+  | "nextReconcileAt"
+  | "syncedAt"
+> & {
+  readonly lastEventAt: string | Date | null;
+  readonly lastReconciledAt: string | Date | null;
+  readonly newestSourceUpdatedAt: string | Date | null;
+  readonly lastSucceededAt: string | Date | null;
+  readonly nextReconcileAt: string | Date | null;
+  readonly syncedAt: string | Date;
+};
+
+const isoTimestamp = (value: string | Date | null): string | null =>
+  value instanceof Date ? value.toISOString() : value;
 
 const protectedAuditTableNames = [
   "compliance_reminder_audit",
@@ -44,7 +73,12 @@ const protectedAuditTableNames = [
 
 export const knowledgeMigrationPlan = {
   migrationFolder: "drizzle",
-  migrations: ["0000_enable-pgvector", "0001_knowledge-layer", "0002_delivery-intelligence-core"],
+  migrations: [
+    "0000_enable-pgvector",
+    "0001_knowledge-layer",
+    "0002_delivery-intelligence-core",
+    "0003_continuous-sync-control-plane",
+  ],
   additive: true,
   protectedTables: protectedAuditTableNames,
   applicationRollback:
@@ -90,8 +124,8 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
     throw new Error("pgvector extension is not installed after migration.");
   const names = tables.rows.map(({ table_name }) => table_name);
   const knowledgeTableCount = names.filter((name) => name.startsWith("knowledge_")).length;
-  if (knowledgeTableCount !== 7)
-    throw new Error(`Expected 7 knowledge tables after migration; found ${knowledgeTableCount}.`);
+  if (knowledgeTableCount !== 11)
+    throw new Error(`Expected 11 knowledge tables after migration; found ${knowledgeTableCount}.`);
   const deliveryTableCount = names.filter((name) => name.startsWith("delivery_")).length;
   if (deliveryTableCount !== 7)
     throw new Error(
@@ -164,12 +198,23 @@ export const readKnowledgePostgresStatus = (
               : 0;
           const knowledgeTableCount = Number(tables.rows[0]?.count ?? 0);
           const checkpoints =
-            knowledgeTableCount === 7
+            knowledgeTableCount === 11
               ? (
-                  await pool.query<KnowledgeMigrationStatus["checkpoints"][number]>(
-                    'select source_id as "sourceId", workspace_id as "workspaceId", cursor, scope_hash as "scopeHash", documents_observed as "documentsObserved", passages_active as "passagesActive", items_deleted as "itemsDeleted", checksum, status, synced_at as "syncedAt" from knowledge_sync_checkpoint order by workspace_id, source_id',
+                  await pool.query<RawKnowledgeCheckpoint>(
+                    'select source_id as "sourceId", workspace_id as "workspaceId", cursor, scope_hash as "scopeHash", documents_observed as "documentsObserved", passages_active as "passagesActive", items_deleted as "itemsDeleted", checksum, status, indexed_source_revision as "indexedSourceRevision", last_event_at as "lastEventAt", last_reconciled_at as "lastReconciledAt", newest_source_updated_at as "newestSourceUpdatedAt", last_succeeded_at as "lastSucceededAt", lag_seconds as "lagSeconds", retry_count as "retryCount", next_reconcile_at as "nextReconcileAt", failure_class as "failureClass", synced_at as "syncedAt" from knowledge_sync_checkpoint order by workspace_id, source_id',
                   )
-                ).rows
+                ).rows.map((checkpoint) => ({
+                  ...checkpoint,
+                  lastEventAt: isoTimestamp(checkpoint.lastEventAt),
+                  lastReconciledAt: isoTimestamp(checkpoint.lastReconciledAt),
+                  newestSourceUpdatedAt: isoTimestamp(checkpoint.newestSourceUpdatedAt),
+                  lastSucceededAt: isoTimestamp(checkpoint.lastSucceededAt),
+                  nextReconcileAt: isoTimestamp(checkpoint.nextReconcileAt),
+                  syncedAt:
+                    checkpoint.syncedAt instanceof Date
+                      ? checkpoint.syncedAt.toISOString()
+                      : checkpoint.syncedAt,
+                }))
               : [];
           return {
             vectorExtensionVersion: extension.rows[0]?.extversion ?? null,

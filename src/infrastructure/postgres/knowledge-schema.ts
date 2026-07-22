@@ -180,11 +180,146 @@ export const knowledgeSyncCheckpointTable = pgTable(
     checksum: text("checksum").notNull(),
     status: text("status").notNull(),
     errorCode: text("error_code"),
+    indexedSourceRevision: text("indexed_source_revision"),
+    lastEventAt: timestampColumn("last_event_at"),
+    lastReconciledAt: timestampColumn("last_reconciled_at"),
+    newestSourceUpdatedAt: timestampColumn("newest_source_updated_at"),
+    lastSucceededAt: timestampColumn("last_succeeded_at"),
+    lagSeconds: integer("lag_seconds"),
+    retryCount: integer("retry_count").notNull().default(0),
+    nextReconcileAt: timestampColumn("next_reconcile_at"),
+    failureClass: text("failure_class"),
     syncedAt: timestampColumn("synced_at").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.sourceId, table.workspaceId] }),
     index("knowledge_checkpoint_workspace").on(table.workspaceId, table.syncedAt),
+    index("knowledge_checkpoint_next_reconcile").on(table.nextReconcileAt, table.status),
+    check(
+      "knowledge_checkpoint_nonnegative_operational_counts",
+      sql`${table.retryCount} >= 0 and (${table.lagSeconds} is null or ${table.lagSeconds} >= 0)`,
+    ),
+  ],
+);
+
+export const knowledgeSyncEventDeliveryTable = pgTable(
+  "knowledge_sync_event_delivery",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    workspaceId: text("workspace_id").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    providerEventId: text("provider_event_id").notNull(),
+    sourceVersion: text("source_version"),
+    payloadHash: text("payload_hash").notNull(),
+    sourceOccurredAt: timestampColumn("source_occurred_at"),
+    receivedAt: timestampColumn("received_at").notNull(),
+    status: text("status").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestampColumn("next_attempt_at"),
+    processedAt: timestampColumn("processed_at"),
+    failureClass: text("failure_class"),
+  },
+  (table) => [
+    uniqueIndex("knowledge_sync_event_source_provider_id").on(
+      table.workspaceId,
+      table.sourceId,
+      table.providerEventId,
+    ),
+    index("knowledge_sync_event_retry").on(table.status, table.nextAttemptAt),
+    index("knowledge_sync_event_source_received").on(
+      table.workspaceId,
+      table.sourceId,
+      table.receivedAt,
+    ),
+    check("knowledge_sync_event_attempt_count", sql`${table.attemptCount} >= 0`),
+  ],
+);
+
+export const knowledgeSyncSubscriptionTable = pgTable(
+  "knowledge_sync_subscription",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    workspaceId: text("workspace_id").notNull(),
+    sourceKind: text("source_kind").notNull(),
+    provider: text("provider").notNull(),
+    resourceHash: text("resource_hash").notNull(),
+    status: text("status").notNull(),
+    expiresAt: timestampColumn("expires_at"),
+    renewedAt: timestampColumn("renewed_at"),
+    nextRenewalAt: timestampColumn("next_renewal_at"),
+    retryCount: integer("retry_count").notNull().default(0),
+    failureClass: text("failure_class"),
+    updatedAt: timestampColumn("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("knowledge_sync_subscription_source_provider_resource").on(
+      table.workspaceId,
+      table.sourceId,
+      table.provider,
+      table.resourceHash,
+    ),
+    index("knowledge_sync_subscription_renewal").on(table.status, table.nextRenewalAt),
+    check("knowledge_sync_subscription_retry_count", sql`${table.retryCount} >= 0`),
+  ],
+);
+
+export const knowledgeSyncLeaseTable = pgTable(
+  "knowledge_sync_lease",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    operation: text("operation").notNull(),
+    ownerId: text("owner_id").notNull(),
+    acquiredAt: timestampColumn("acquired_at").notNull(),
+    heartbeatAt: timestampColumn("heartbeat_at").notNull(),
+    expiresAt: timestampColumn("expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.sourceId, table.operation] }),
+    index("knowledge_sync_lease_expiry").on(table.expiresAt),
+    check("knowledge_sync_lease_time_order", sql`${table.expiresAt} > ${table.acquiredAt}`),
+  ],
+);
+
+export const knowledgeSyncRunTable = pgTable(
+  "knowledge_sync_run",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => knowledgeSourceTable.id),
+    workspaceId: text("workspace_id").notNull(),
+    trigger: text("trigger").notNull(),
+    status: text("status").notNull(),
+    cursorBefore: text("cursor_before"),
+    cursorAfter: text("cursor_after"),
+    scopeHash: text("scope_hash").notNull(),
+    newestSourceUpdatedAt: timestampColumn("newest_source_updated_at"),
+    lagSeconds: integer("lag_seconds"),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    failureClass: text("failure_class"),
+    startedAt: timestampColumn("started_at").notNull(),
+    completedAt: timestampColumn("completed_at"),
+  },
+  (table) => [
+    index("knowledge_sync_run_source_started").on(
+      table.workspaceId,
+      table.sourceId,
+      table.startedAt,
+    ),
+    index("knowledge_sync_run_status").on(table.status, table.startedAt),
+    check(
+      "knowledge_sync_run_nonnegative_operational_counts",
+      sql`${table.attemptCount} >= 1 and (${table.lagSeconds} is null or ${table.lagSeconds} >= 0)`,
+    ),
   ],
 );
 
@@ -514,6 +649,10 @@ export const knowledgePostgresSchema = {
   knowledgeAclBindingTable,
   knowledgeProjectionTable,
   knowledgeSyncCheckpointTable,
+  knowledgeSyncEventDeliveryTable,
+  knowledgeSyncSubscriptionTable,
+  knowledgeSyncLeaseTable,
+  knowledgeSyncRunTable,
   deliveryObjectTable,
   deliveryRelationTable,
   deliveryObservationTable,
