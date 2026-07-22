@@ -236,6 +236,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
     ?.trim();
+  const activityQuestion =
+    has(value, /\b(?:activity|progress)\b/) ||
+    (has(value, /\b(?:team|delivery|work)\b/) &&
+      has(value, /\b(?:today|daily|summary|summarize|report|update|accomplished)\b/));
 
   if (has(value, /\b(?:scope|project boundary|in scope|out of scope)\b/))
     add("scope", {
@@ -344,6 +348,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       objectKinds: ["decision"],
       limit: top,
     });
+  if (activityQuestion)
+    add("activity", {
+      select: "observations",
+      time:
+        has(value, /\b(?:today|daily)\b/) || !has(value, /\bthis week\b/)
+          ? { kind: "workspace_day" }
+          : { kind: "workspace_week" },
+      limit: top,
+    });
   if (
     has(
       value,
@@ -398,21 +411,6 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     add("finance", {
       select: "metrics",
       metricCategories: ["finance"],
-      limit: top,
-    });
-  if (
-    has(
-      value,
-      /\b(?:team|delivery|work|activity|progress)\b.*\b(?:today|daily|summary|report|update|done|did|accomplished)\b/,
-    ) ||
-    has(value, /\b(?:post|give|show|share|send)\b.*\bteam work\b.*\b(?:summary|report|update)\b/)
-  )
-    add("activity", {
-      select: "observations",
-      time:
-        has(value, /\b(?:today|daily)\b/) || !has(value, /\bthis week\b/)
-          ? { kind: "workspace_day" }
-          : { kind: "workspace_week" },
       limit: top,
     });
   if (
