@@ -56,9 +56,9 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 
 ## Reporting
 
-The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. Deterministic renderers produce a short acknowledgement or situation paraphrase followed by concise emoji-led, bold-labelled bullets. A numbered next action appears only when a connected source supports it with a resolvable citation. Native Teams mentions identify a person only when that cited action safely resolves the person. Tables and richer layouts are reserved for comparisons that materially benefit from them and are supported by Teams; optional model synthesis receives only the bounded result.
+The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. The request selects a fast answer, structured brief, or deep-dive mode. Fast answers prefer a short acknowledgement and compact cited facts; structured briefs may use sections, bullets, numbered actions, and supported tables; deep dives preserve the requested scope, time window, sources, freshness, conflicts, gaps, and inference boundaries even when the answer is longer. A next action appears only when a connected source supports it with a resolvable citation. Native Teams mentions identify a person only when that cited action safely resolves the person. Optional model synthesis receives only the authorized result envelope.
 
-Supported fast-path queries must complete through Teams in less than ten seconds. Latency is a query acceptance property, not the domain boundary.
+Supported fast operational queries must complete through Teams in less than ten seconds. Explicit deep dives may exceed that budget and must report elapsed time and coverage; they may not be silently truncated into a fast answer. Latency is a response-mode acceptance property, not the domain boundary.
 
 ### Live evaluation contract
 

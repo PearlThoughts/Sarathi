@@ -12,7 +12,7 @@ Refactor the existing production-pilot child capability from a knowledge-led ans
 - Composition: Effect-based application ports with pure domain rules.
 - Storage: existing Railway PostgreSQL, pgvector, Drizzle ORM, generated/versioned migrations, and Drizzle migration journal.
 - Providers: Vercel AI SDK abstractions with OpenRouter as the only production model and embedding provider; deterministic test adapters.
-- Sources: synchronized Jira and Vault, live GitHub, bounded Graph reads for Teams and scoped project email.
+- Sources: continuously synchronized Jira, versioned knowledge roots, default-branch repository code/activity, and bounded collaboration channels; optional live verification and scoped project email.
 - Retrieval: structured delivery queries first; exact/full-text/vector knowledge retrieval and GitHub live search as supporting operations.
 - Verification: Vitest, Bun integration tests, architecture fitness, privacy scan, `bun run check`, runtime smoke, production acceptance, and rollback proof.
 
@@ -107,6 +107,16 @@ Teams mention handling consumes one `DeliveryAssistant` port. It does not classi
 4. Confirm backup/restore and application rollback, apply the additive migration, deploy the merged revision, and synchronize bounded Jira/Vault data.
 5. Verify real Teams answers for project status, ownership/dependencies, blockers, previous sprint/current week, top risks, recurring issues, daily activity, and a GitHub implementation question.
 
+### Slice G — Continuous Source Synchronization
+
+1. Add generic event-delivery, subscription, lease, freshness, lag, and reconciliation checkpoint contracts without coupling the application layer to source SDKs.
+2. Make Jira incremental synchronization include project metadata, board/field/sprint structure, issue/comment/changelog changes, and derived status intervals.
+3. Reconcile configured knowledge roots by immutable tree/blob diff and reuse unchanged embeddings.
+4. Bootstrap current default-branch repository code plus configured activity history; index symbol-aware changed files on verified pushes/merges and retain live verification.
+5. Bootstrap configured collaboration history; synchronize threads, replies, edits, and deletions through change notifications plus hourly repair.
+6. Add adaptive response modes for fast operational answers, structured briefs, and completeness-first deep dives.
+7. Keep orchestration in existing typed Effect workflows and PostgreSQL checkpoints; evaluate a general agent graph framework only against ADR 0008's measurable adoption gate.
+
 ## 6. Data and Migration Strategy
 
 Drizzle schema definitions are authoritative for new tables. Because delivery migrations `0002` and `0003` have not been deployed and exist only on this feature branch, regenerate them into one coherent migration rather than carrying an abandoned intermediate design into production. The deployed knowledge migration and existing audit tables remain immutable sentinels.
@@ -119,7 +129,9 @@ Finance uses separate confidential storage and repository operations. General de
 
 A question becomes a validated plan. Deterministic classifiers cover high-frequency questions; a schema-constrained model planner may propose the same plan vocabulary for broader language. The executor authorizes the plan, runs independent reads concurrently, caps traversal depth and result volume, materializes content only after policy checks, then fuses results by stable identity and citation.
 
-Time boundaries are optional predicates resolved from workspace configuration or Jira sprint metadata. They are used for daily, weekly, sprint, historical, and trend questions but do not affect ownership, scope, requirement, or dependency modeling when no time boundary is requested.
+Time boundaries are optional predicates resolved from workspace configuration or source metadata. They are used for yesterday/today, weekly, sprint, quarterly, historical, wait-duration, and trend questions but do not affect ownership, scope, requirement, or dependency modeling when no time boundary is requested.
+
+The synchronization control plane is event-first and reconciliation-correct. Verified source events create idempotent changed-item work; an hourly leased job independently enumerates authoritative source state with overlap and repairs missed, delayed, duplicated, out-of-order, or expired event paths. Checkpoints advance only with versions, passages, embeddings, delivery projections, ACLs, tombstones, and freshness metadata committed together.
 
 ## 8. Test Strategy
 
@@ -129,6 +141,7 @@ Time boundaries are optional predicates resolved from workspace configuration or
 - Sources: full configured Jira projection, Vault heading/metadata projection, live GitHub guards, Teams/email connected-scope guards, no connector call before authorization.
 - Capability: equivalent wording produces equivalent plans; all Delivery Manager question families use the shared model; unsupported operators fail closed.
 - Production: exact SHA, migration journal, safe counts/checksums, real citations, response latency, log scan, app rollback, and database recovery evidence.
+- Continuous sync: historical bootstrap, pagination, event authenticity, duplicate/out-of-order delivery, subscription renewal, hourly repair, changed-only embedding reuse, deletion convergence, lag/freshness reporting, and manual replay.
 
 ## 9. Stop Conditions
 

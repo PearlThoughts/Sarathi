@@ -7,5 +7,5 @@ Product strategy, launch positioning, naming, and commercial notes belong in Sen
 ## Active Specifications
 
 - [Production Pilot Readiness](./001-production-pilot-readiness/spec.md) defines the community-safe capability, dependency, privacy, ownership, and verification contract for the internal production pilot.
-- [example Teams Mention Production](./002-example-teams-mention-production/spec.md) defines the sole team-facing production slice: a policy-bounded, grounded, same-thread answer to a direct Teams mention.
-- [example Knowledge Layer](./005-example-knowledge-layer/spec.md) extends that accepted production slice with authorized Jira and Vault indexing, live GitHub retrieval, hybrid search, and concise cited answers.
+- [Teams Mention Production](./002-teams-mention-production/spec.md) defines the sole team-facing production slice: a policy-bounded, grounded, same-thread answer to a direct Teams mention.
+- [AI Delivery Assistant Intelligence](./005-knowledge-layer/spec.md) extends that accepted production slice with authorized continuous project synchronization, delivery projections, hybrid retrieval, adaptive cited answers, and optional live source verification.
