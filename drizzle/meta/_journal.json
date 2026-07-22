@@ -29,6 +29,13 @@
       "when": 1784735465486,
       "tag": "0003_continuous-sync-control-plane",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784737893323,
+      "tag": "0004_attributed-delivery-assertions",
+      "breakpoints": true
     }
   ]
 }

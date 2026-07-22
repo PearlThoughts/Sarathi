@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
@@ -449,6 +449,10 @@ const mapClaim = (row: typeof deliveryClaimTable.$inferSelect): DeliveryClaim =>
   value: row.value as DeliveryClaim["value"],
   valueHash: row.valueHash,
   assertedBy: row.assertedBy ?? undefined,
+  externalAssertionId: row.externalAssertionId ?? undefined,
+  supersedesAssertionIds: row.supersedesAssertionIds,
+  confidence: row.confidence ?? undefined,
+  assertionSchemaVersion: row.assertionSchemaVersion ?? undefined,
   authority: row.authority,
   sensitivity: sensitivity(row.sensitivity),
   source: {
@@ -473,21 +477,64 @@ const queryClaims = async (
   conflictsOnly: boolean,
 ): Promise<DeliveryQueryResult> => {
   if (authorized.size === 0) return result([]);
-  const rows = await database
-    .select()
-    .from(deliveryClaimTable)
-    .where(
-      and(
-        eq(deliveryClaimTable.workspaceId, context.workspaceId),
-        inArray(deliveryClaimTable.id, [...authorized]),
-        inArray(deliveryClaimTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
-        eq(deliveryClaimTable.active, true),
-        isNull(deliveryClaimTable.deletedAt),
-        ...timeConditions(deliveryClaimTable.observedAt, operation, context),
+  const [rows, supersessionRows] = await Promise.all([
+    database
+      .select()
+      .from(deliveryClaimTable)
+      .where(
+        and(
+          eq(deliveryClaimTable.workspaceId, context.workspaceId),
+          inArray(deliveryClaimTable.id, [...authorized]),
+          inArray(deliveryClaimTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
+          eq(deliveryClaimTable.active, true),
+          isNull(deliveryClaimTable.deletedAt),
+          or(
+            isNull(deliveryClaimTable.effectiveFrom),
+            lte(deliveryClaimTable.effectiveFrom, context.requestedAt),
+          ),
+          or(
+            isNull(deliveryClaimTable.effectiveTo),
+            gt(deliveryClaimTable.effectiveTo, context.requestedAt),
+          ),
+          ...timeConditions(deliveryClaimTable.observedAt, operation, context),
+        ),
+      )
+      .orderBy(
+        desc(deliveryClaimTable.authority),
+        desc(deliveryClaimTable.confidence),
+        desc(deliveryClaimTable.observedAt),
+      )
+      .limit(Math.min(operation.limit * 8, 120)),
+    database
+      .select({
+        subjectKey: deliveryClaimTable.subjectKey,
+        predicate: deliveryClaimTable.predicate,
+        supersedesAssertionIds: deliveryClaimTable.supersedesAssertionIds,
+      })
+      .from(deliveryClaimTable)
+      .where(
+        and(
+          eq(deliveryClaimTable.workspaceId, context.workspaceId),
+          eq(deliveryClaimTable.active, true),
+          isNull(deliveryClaimTable.deletedAt),
+          or(
+            isNull(deliveryClaimTable.effectiveFrom),
+            lte(deliveryClaimTable.effectiveFrom, context.requestedAt),
+          ),
+          or(
+            isNull(deliveryClaimTable.effectiveTo),
+            gt(deliveryClaimTable.effectiveTo, context.requestedAt),
+          ),
+        ),
       ),
-    )
-    .orderBy(desc(deliveryClaimTable.authority), desc(deliveryClaimTable.observedAt))
-    .limit(Math.min(operation.limit * 8, 120));
+  ]);
+  const globallySuperseded = new Set(
+    supersessionRows.flatMap(({ subjectKey, predicate, supersedesAssertionIds }) =>
+      supersedesAssertionIds.map(
+        (assertionId) => `${subjectKey}\u0000${predicate}\u0000${assertionId}`,
+      ),
+    ),
+  );
   const claims = rows
     .filter((row) =>
       matchesPredicates(
@@ -499,6 +546,13 @@ const queryClaims = async (
         },
         operation.predicates,
       ),
+    )
+    .filter(
+      (row) =>
+        row.externalAssertionId === null ||
+        !globallySuperseded.has(
+          `${row.subjectKey}\u0000${row.predicate}\u0000${row.externalAssertionId}`,
+        ),
     )
     .map(mapClaim);
   const conflicts = findDeliveryConflicts(claims).slice(0, operation.limit);

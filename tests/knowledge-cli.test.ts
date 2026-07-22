@@ -22,6 +22,7 @@ describe("knowledge CLI", () => {
             "0001_knowledge-layer",
             "0002_delivery-intelligence-core",
             "0003_continuous-sync-control-plane",
+            "0004_attributed-delivery-assertions",
           ],
           protectedTables: [
             "compliance_reminder_audit",

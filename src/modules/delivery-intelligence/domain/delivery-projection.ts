@@ -56,6 +56,10 @@ export type DeliveryClaimDraft = {
   readonly predicate: string;
   readonly value: DeliveryClaimValue;
   readonly assertedBy?: string | undefined;
+  readonly externalAssertionId?: string | undefined;
+  readonly supersedesAssertionIds?: readonly string[] | undefined;
+  readonly confidence?: number | undefined;
+  readonly assertionSchemaVersion?: number | undefined;
   readonly assertedAt: string;
   readonly effectiveFrom?: string | undefined;
   readonly effectiveTo?: string | undefined;

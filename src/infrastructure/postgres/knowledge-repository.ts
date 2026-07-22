@@ -936,6 +936,10 @@ const syncDeliveryProjection = async (
           value: claim.value,
           valueHash,
           assertedBy: claim.assertedBy ?? null,
+          externalAssertionId: claim.externalAssertionId ?? null,
+          supersedesAssertionIds: claim.supersedesAssertionIds ?? [],
+          confidence: claim.confidence ?? null,
+          assertionSchemaVersion: claim.assertionSchemaVersion ?? null,
           sourceKind: projected.document.source,
           sourceId: projected.document.sourceId,
           sourceItemId: projected.documentItemId,
@@ -952,7 +956,16 @@ const syncDeliveryProjection = async (
         })
         .onConflictDoUpdate({
           target: deliveryClaimTable.id,
-          set: { observedAt: now, active: true, deletedAt: null },
+          set: {
+            assertedBy: claim.assertedBy ?? null,
+            externalAssertionId: claim.externalAssertionId ?? null,
+            supersedesAssertionIds: claim.supersedesAssertionIds ?? [],
+            confidence: claim.confidence ?? null,
+            assertionSchemaVersion: claim.assertionSchemaVersion ?? null,
+            observedAt: now,
+            active: true,
+            deletedAt: null,
+          },
         });
       await database
         .insert(deliveryAclBindingTable)

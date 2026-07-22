@@ -156,6 +156,116 @@ describe("Vault knowledge source", () => {
     expect(requests.some((url) => url.includes("/git/blobs/empty-note-sha"))).toBe(true);
   });
 
+  it("projects versioned attributed human assertions without indexing control frontmatter", async () => {
+    const attributed = `---
+sarathi_delivery:
+  schema_version: 1
+  assertion_id: delivery/product-builder/2026-07-22
+  subject:
+    kind: module
+    key: product-builder
+    title: Product Builder
+    aliases: [builder, puck]
+  author:
+    id: entra:person-1
+    display_name: Synthetic Delivery Lead
+  asserted_at: 2026-07-22T10:00:00Z
+  effective_from: 2026-07-01T00:00:00Z
+  confidence: 0.75
+  supersedes: [delivery/product-builder/2026-07-15]
+---
+# Product Builder Context
+
+## Status
+Pre-production validation is active.
+
+## Human Observations
+Ownership transition still needs explicit confirmation.`;
+    const source = createVaultKnowledgeSource({
+      sourceId: "vault-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      roots: [
+        {
+          repository: "example/Connected-Vault",
+          pathPrefix: "Projects/example",
+          sensitivity: "confidential",
+          authority: 0.9,
+          acl: [{ effect: "allow", subjectType: "actor", subjectId: "delivery-lead" }],
+        },
+      ],
+      fetcher: (async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/git/trees/"))
+          return Response.json({
+            sha: "tree-sha",
+            tree: [{ path: "Projects/example/Delivery Context.md", type: "blob", sha: "note-sha" }],
+          });
+        if (url.includes("/commits/"))
+          return Response.json({
+            sha: "commit-sha",
+            commit: { committer: { date: "2026-07-22T11:00:00.000Z" } },
+          });
+        if (url.includes("/git/blobs/note-sha"))
+          return Response.json({
+            encoding: "base64",
+            content: Buffer.from(attributed).toString("base64"),
+            sha: "note-sha",
+          });
+        return new Response("not found", { status: 404 });
+      }) as typeof fetch,
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+    const document = snapshot.documents[0];
+
+    expect(document?.passages.map(({ locator }) => locator)).toEqual([
+      "#status",
+      "#human-observations",
+    ]);
+    expect(JSON.stringify(document?.passages)).not.toContain("sarathi_delivery");
+    expect(document?.deliveryProjection).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "module",
+          externalKey: "product-builder",
+          attributes: expect.objectContaining({
+            aliases: ["builder", "puck"],
+            confidence: 0.75,
+          }),
+        }),
+        expect.objectContaining({
+          kind: "person",
+          externalKey: "entra:person-1",
+          title: "Synthetic Delivery Lead",
+        }),
+      ]),
+      relations: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "participates_in",
+          from: { kind: "person", externalKey: "entra:person-1" },
+          to: { kind: "module", externalKey: "product-builder" },
+        }),
+      ]),
+      claims: expect.arrayContaining([
+        expect.objectContaining({
+          subject: { kind: "module", externalKey: "product-builder" },
+          subjectKey: "product-builder",
+          predicate: "delivery.status",
+          assertedBy: "entra:person-1",
+          externalAssertionId: "delivery/product-builder/2026-07-22:status:status",
+          supersedesAssertionIds: ["delivery/product-builder/2026-07-15:status:status"],
+          confidence: 0.75,
+          assertionSchemaVersion: 1,
+          assertedAt: "2026-07-22T10:00:00.000Z",
+          effectiveFrom: "2026-07-01T00:00:00.000Z",
+          authority: 0.9,
+        }),
+        expect.objectContaining({ predicate: "delivery.interpretation" }),
+      ]),
+    });
+  });
+
   it("uses immutable blob identities to fetch only changes and retire renames", async () => {
     let revision = 1;
     const requests: string[] = [];

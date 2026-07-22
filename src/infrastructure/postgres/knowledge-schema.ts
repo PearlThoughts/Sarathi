@@ -575,6 +575,13 @@ export const deliveryClaimTable = pgTable(
     value: jsonb("value").$type<unknown>().notNull(),
     valueHash: text("value_hash").notNull(),
     assertedBy: text("asserted_by"),
+    externalAssertionId: text("external_assertion_id"),
+    supersedesAssertionIds: jsonb("supersedes_assertion_ids")
+      .$type<readonly string[]>()
+      .notNull()
+      .default([]),
+    confidence: real("confidence"),
+    assertionSchemaVersion: integer("assertion_schema_version"),
     sourceKind: text("source_kind").notNull(),
     sourceId: text("source_id")
       .notNull()
@@ -610,6 +617,20 @@ export const deliveryClaimTable = pgTable(
       table.deletedAt,
     ),
     index("delivery_claim_subject_object").on(table.subjectObjectId),
+    index("delivery_claim_external_assertion").on(
+      table.workspaceId,
+      table.externalAssertionId,
+      table.active,
+      table.deletedAt,
+    ),
+    check(
+      "delivery_claim_confidence_range",
+      sql`${table.confidence} is null or (${table.confidence} >= 0 and ${table.confidence} <= 1)`,
+    ),
+    check(
+      "delivery_claim_schema_version_positive",
+      sql`${table.assertionSchemaVersion} is null or ${table.assertionSchemaVersion} >= 1`,
+    ),
   ],
 );
 

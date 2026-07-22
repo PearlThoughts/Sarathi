@@ -70,8 +70,8 @@
 
 - [x] KLG-520 Ratify the continuous synchronization sub-spec and ADR 0008; remove live-only and globally concise assumptions from the public contract.
 - [ ] KLG-521 Add framework-neutral event-delivery, subscription, lease, source cursor, freshness, lag, retry, and hourly reconciliation contracts to `knowledge-layer` ports and Drizzle schema.
-- [ ] KLG-522 Implement incremental Jira synchronization for project metadata, fields, board columns, sprints, issues, comments, changelog, relationships, and status wait intervals with bounded cursor overlap.
-- [ ] KLG-523 Implement immutable tree/blob delta synchronization for configured knowledge roots with rename/deletion reconciliation and unchanged-vector reuse.
+- [x] KLG-522 Implement incremental Jira synchronization for project metadata, fields, board columns, sprints, issues, comments, changelog, relationships, and status wait intervals with bounded cursor overlap.
+- [x] KLG-523 Implement immutable tree/blob delta synchronization for configured knowledge roots with rename/deletion reconciliation and unchanged-vector reuse.
 - [ ] KLG-524 Implement current default-branch repository bootstrap, symbol-aware code passages, activity history, verified push/merge changed-file indexing, deletion retirement, and live verification fallback.
 - [ ] KLG-525 Implement configured collaboration-history bootstrap, thread/reply passages, message version/edit/delete handling, change-notification renewal, and hourly repair reconciliation.
 - [ ] KLG-526 Add canonical entity/alias joins and comparable source/business timestamps across synchronized Jira, knowledge, repository, and collaboration projections.

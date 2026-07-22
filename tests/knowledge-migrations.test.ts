@@ -30,6 +30,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 1, tag: "0001_knowledge-layer" },
       { idx: 2, tag: "0002_delivery-intelligence-core" },
       { idx: 3, tag: "0003_continuous-sync-control-plane" },
+      { idx: 4, tag: "0004_attributed-delivery-assertions" },
     ]);
   });
 
@@ -110,5 +111,17 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
     expect(schema).not.toContain("teams_mention_audit");
     expect(schema).not.toContain("compliance_reminder_audit");
+  });
+
+  it("adds versioned attributed-assertion metadata without storing a second claim body", async () => {
+    const schema = await migration("0004_attributed-delivery-assertions.sql");
+
+    expect(schema).toContain('ADD COLUMN "external_assertion_id" text');
+    expect(schema).toContain('ADD COLUMN "supersedes_assertion_ids" jsonb');
+    expect(schema).toContain('ADD COLUMN "confidence" real');
+    expect(schema).toContain('ADD COLUMN "assertion_schema_version" integer');
+    expect(schema).toContain('CONSTRAINT "delivery_claim_confidence_range"');
+    expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+    expect(schema).not.toContain("assertion_body");
   });
 });

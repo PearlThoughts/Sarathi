@@ -18,7 +18,10 @@ import {
   deliveryObservationTable,
   deliveryRelationTable,
 } from "../src/infrastructure/postgres/knowledge-schema.ts";
-import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index.ts";
+import {
+  type DeliveryQueryPlan,
+  planDeliveryQuestion,
+} from "../src/modules/delivery-intelligence/index.ts";
 import type { KnowledgeSourceSnapshot } from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
@@ -495,7 +498,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 11,
-          appliedMigrationCount: 4,
+          appliedMigrationCount: 5,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
@@ -634,6 +637,159 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(paths.rows).toEqual([
       { external_id: newExternalId, active: true },
       { external_id: oldExternalId, active: false },
+    ]);
+  });
+
+  test("suppresses superseded attributed claims before egress and restores them if the correction is deleted", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const base = snapshot("attributed-base", "Attributed delivery context.");
+    const template = base.documents[0];
+    if (template === undefined) throw new Error("Synthetic snapshot document is required.");
+    const sourceId = "vault-correction-test";
+    const attributedDocument = (
+      externalId: string,
+      value: string,
+      externalAssertionId: string,
+      supersedesAssertionIds: readonly string[],
+      acl: KnowledgeSourceSnapshot["documents"][number]["acl"],
+    ): KnowledgeSourceSnapshot["documents"][number] => ({
+      ...template,
+      source: "vault",
+      sourceId,
+      externalId,
+      sourceVersion: externalAssertionId,
+      canonicalUrl: `https://github.com/example/Connected-Vault/blob/commit/${externalId}.md`,
+      provenance: { path: `${externalId}.md` },
+      acl,
+      passages: [
+        {
+          kind: "heading",
+          locator: "#status",
+          ordinal: 0,
+          title: "Status",
+          body: value,
+          contentHash: `sha256-${externalAssertionId}`,
+        },
+      ],
+      deliveryProjection: {
+        objects: [],
+        relations: [],
+        observations: [],
+        metrics: [],
+        claims: [
+          {
+            subjectKey: "product-builder",
+            predicate: "delivery.status",
+            value,
+            assertedBy: "entra:person-1",
+            externalAssertionId,
+            supersedesAssertionIds,
+            confidence: 0.9,
+            assertionSchemaVersion: 1,
+            assertedAt: "2026-07-22T10:00:00.000Z",
+            sensitivity: "internal",
+            authority: 0.9,
+          },
+        ],
+      },
+    });
+    const workspaceAcl = [
+      {
+        effect: "allow" as const,
+        subjectType: "workspace" as const,
+        subjectId: "workspace-example",
+      },
+    ];
+    const correctionAcl = [
+      { effect: "allow" as const, subjectType: "actor" as const, subjectId: "correction-author" },
+    ];
+    const oldExternalId = "context-old";
+    const correctionExternalId = "context-correction";
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId,
+          source: "vault",
+          workspaceId: "workspace-example",
+          cursor: "correction-cursor-1",
+          scopeHash: "correction-scope",
+          mode: "full",
+          documents: [
+            attributedDocument(
+              oldExternalId,
+              "At risk",
+              "delivery/product-builder/old:status:status",
+              [],
+              workspaceAcl,
+            ),
+            attributedDocument(
+              correctionExternalId,
+              "Ready",
+              "delivery/product-builder/new:status:status",
+              ["delivery/product-builder/old:status:status"],
+              correctionAcl,
+            ),
+          ],
+        },
+        embeddings,
+      ),
+    );
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["general"],
+      operations: [
+        {
+          id: "attributed-status",
+          purpose: "general",
+          select: "claims",
+          predicates: [{ field: "subjectKey", operator: "equals", value: "product-builder" }],
+          limit: 10,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 3,
+      requiresFinance: false,
+    };
+    const source = createPostgresDeliveryQuerySource(opened.database);
+    const context = {
+      workspaceId: "workspace-example",
+      actorId: "delivery-member",
+      maximumSensitivity: "internal" as const,
+      financeAccess: false,
+      requestedAt: "2026-07-22T12:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      deadlineAt: "2026-07-22T12:00:08.000Z",
+      question: "What is the Product Builder status?",
+    };
+
+    const unauthorized = await Effect.runPromise(source.execute(context, plan));
+    expect(unauthorized.items).toEqual([]);
+    const authorized = await Effect.runPromise(
+      source.execute({ ...context, actorId: "correction-author" }, plan),
+    );
+    expect(authorized.items.map(({ summary }) => summary)).toEqual([
+      "product-builder delivery.status: Ready",
+    ]);
+
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId,
+          source: "vault",
+          workspaceId: "workspace-example",
+          cursor: "correction-cursor-2",
+          scopeHash: "correction-scope",
+          mode: "delta",
+          retiredExternalIds: [correctionExternalId],
+          documents: [],
+        },
+        embeddings,
+      ),
+    );
+    const restored = await Effect.runPromise(source.execute(context, plan));
+    expect(restored.items.map(({ summary }) => summary)).toEqual([
+      "product-builder delivery.status: At risk",
     ]);
   });
 });

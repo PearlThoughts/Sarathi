@@ -4,6 +4,7 @@ import {
   type DeliveryClaim,
   deliveryClaimValueHash,
   findDeliveryConflicts,
+  parseAttributedDeliveryAssertion,
   planDeliveryQuestion,
   resolveDeliveryTimeConstraint,
   validateDeliveryQueryPlan,
@@ -159,12 +160,52 @@ describe("delivery intelligence domain", () => {
     ).toThrow("unknown selector");
   });
 
-  it("derives conflicts without overwriting competing claims", () => {
+  it("validates versioned attributed assertions with stable identities and independent confidence", () => {
+    expect(
+      parseAttributedDeliveryAssertion({
+        schema_version: 1,
+        assertion_id: "delivery/product-builder/2026-07-22",
+        subject: {
+          kind: "module",
+          key: "product-builder",
+          title: "Product Builder",
+          aliases: ["builder", "puck"],
+        },
+        author: { id: "entra:person-1", display_name: "Synthetic Delivery Lead" },
+        asserted_at: "2026-07-22T10:00:00Z",
+        effective_from: "2026-07-01T00:00:00Z",
+        confidence: 0.72,
+        supersedes: ["delivery/product-builder/2026-07-15"],
+      }),
+    ).toEqual({
+      schemaVersion: 1,
+      assertionId: "delivery/product-builder/2026-07-22",
+      subject: {
+        kind: "module",
+        key: "product-builder",
+        title: "Product Builder",
+        aliases: ["builder", "puck"],
+      },
+      author: { id: "entra:person-1", displayName: "Synthetic Delivery Lead" },
+      assertedAt: "2026-07-22T10:00:00.000Z",
+      effectiveFrom: "2026-07-01T00:00:00.000Z",
+      confidence: 0.72,
+      supersedes: ["delivery/product-builder/2026-07-15"],
+    });
+    expect(() =>
+      parseAttributedDeliveryAssertion({
+        schema_version: 2,
+        confidence: 1.1,
+      }),
+    ).toThrow("schema_version must be 1");
+  });
+
+  it("derives conflicts without overwriting competing or superseded claims", () => {
     const claim = (
       id: string,
       value: string,
       authority: number,
-      source: "jira" | "teams",
+      source: "jira" | "teams" | "vault",
     ): DeliveryClaim => ({
       id,
       workspaceId: "workspace-example",
@@ -190,6 +231,36 @@ describe("delivery intelligence domain", () => {
     ]);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]?.claims.map((entry) => entry.value)).toEqual(["blocked", "ready"]);
+
+    const oldHumanClaim = {
+      ...claim("vault-old", "at risk", 0.8, "vault"),
+      externalAssertionId: "delivery/old:status:status",
+      confidence: 0.6,
+    };
+    const correction = {
+      ...claim("vault-correction", "ready", 0.8, "vault"),
+      externalAssertionId: "delivery/new:status:status",
+      supersedesAssertionIds: ["delivery/old:status:status"],
+      confidence: 0.9,
+    };
+    const corrected = findDeliveryConflicts([
+      oldHumanClaim,
+      correction,
+      claim("jira-2", "blocked", 0.95, "jira"),
+    ]);
+    expect(corrected).toHaveLength(1);
+    expect(corrected[0]?.claims.map((entry) => entry.value)).toEqual(["blocked", "ready"]);
+    const unrelatedCorrection = {
+      ...correction,
+      id: "vault-unrelated",
+      subjectKey: "project:other",
+    };
+    const unrelated = findDeliveryConflicts([
+      oldHumanClaim,
+      unrelatedCorrection,
+      claim("jira-3", "blocked", 0.95, "jira"),
+    ]);
+    expect(unrelated[0]?.claims.map((entry) => entry.value)).toEqual(["blocked", "at risk"]);
   });
 
   it("resolves workspace-local time only when a query requests it", () => {

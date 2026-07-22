@@ -1,11 +1,14 @@
 import { Effect } from "effect";
+import { parse as parseYaml } from "yaml";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
-import type {
-  DeliveryObjectDraft,
-  DeliveryObjectKind,
-  DeliveryProjection,
+import {
+  type AttributedDeliveryAssertionEnvelope,
+  type DeliveryObjectDraft,
+  type DeliveryObjectKind,
+  type DeliveryProjection,
+  parseAttributedDeliveryAssertion,
 } from "../../modules/delivery-intelligence/index.ts";
 import {
   chunkVaultMarkdown,
@@ -136,6 +139,22 @@ const title = (markdown: string, path: string): string =>
   path.split("/").at(-1)?.replace(/\.md$/i, "") ??
   "Vault document";
 
+const assertionFrontmatter = (
+  markdown: string,
+): { readonly metadata?: AttributedDeliveryAssertionEnvelope; readonly body: string } => {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(markdown);
+  if (match?.[1] === undefined) return { body: markdown };
+  const parsed = parseYaml(match[1]) as unknown;
+  if (typeof parsed !== "object" || parsed === null || !("sarathi_delivery" in parsed))
+    return { body: markdown };
+  return {
+    metadata: parseAttributedDeliveryAssertion(
+      (parsed as { readonly sarathi_delivery?: unknown }).sarathi_delivery,
+    ),
+    body: markdown.slice(match[0].length),
+  };
+};
+
 type VaultSectionTopic =
   | "status"
   | "goal"
@@ -151,6 +170,7 @@ type VaultSectionTopic =
   | "ownership"
   | "next_action"
   | "milestone"
+  | "interpretation"
   | "context";
 
 const sectionTopic = (heading: string): VaultSectionTopic => {
@@ -170,6 +190,8 @@ const sectionTopic = (heading: string): VaultSectionTopic => {
   if (/\b(?:owner|ownership|responsib|team)\b/.test(normalized)) return "ownership";
   if (/\b(?:next actions?|next steps?|action items?)\b/.test(normalized)) return "next_action";
   if (/\b(?:milestones?|releases?|phases?)\b/.test(normalized)) return "milestone";
+  if (/\b(?:interpretations?|social context|human observations?|team dynamics?)\b/.test(normalized))
+    return "interpretation";
   return "context";
 };
 
@@ -197,6 +219,8 @@ const objectKindForTopic = (topic: VaultSectionTopic): DeliveryObjectKind => {
       return "action";
     case "ownership":
       return "team";
+    case "interpretation":
+      return "assumption";
     default:
       return "extension";
   }
@@ -226,6 +250,7 @@ const deliveryProjection = (
   passages: KnowledgeSourceDocument["passages"],
   updatedAt: string,
   canonicalUrl: string,
+  metadata?: AttributedDeliveryAssertionEnvelope | undefined,
 ): DeliveryProjection => {
   const projectRef = {
     kind: "project" as const,
@@ -243,6 +268,14 @@ const deliveryProjection = (
       ) === index,
   );
   const status = sections.find((passage) => sectionTopic(passage.title) === "status");
+  const metadataSubjectRef =
+    metadata === undefined
+      ? undefined
+      : { kind: metadata.subject.kind, externalKey: metadata.subject.key };
+  const authorRef =
+    metadata === undefined
+      ? undefined
+      : { kind: "person" as const, externalKey: metadata.author.id };
   const objects: DeliveryObjectDraft[] = [
     {
       ...projectRef,
@@ -259,6 +292,32 @@ const deliveryProjection = (
       sensitivity: root.sensitivity,
     },
   ];
+  if (metadataSubjectRef !== undefined && metadata !== undefined && authorRef !== undefined) {
+    objects.push(
+      {
+        ...metadataSubjectRef,
+        title: metadata.subject.title,
+        lifecycleState: status === undefined ? undefined : lifecycleState(status.body),
+        attributes: {
+          aliases: metadata.subject.aliases,
+          assertionSource: "attributed-human",
+          confidence: metadata.confidence,
+          repository: root.repository,
+          path,
+        },
+        sensitivity: root.sensitivity,
+        effectiveFrom: metadata.effectiveFrom,
+        effectiveTo: metadata.effectiveTo,
+      },
+      {
+        ...authorRef,
+        title: metadata.author.displayName,
+        lifecycleState: "active",
+        attributes: { stableIdentity: true },
+        sensitivity: root.sensitivity,
+      },
+    );
+  }
   const relations: DeliveryProjection["relations"][number][] = [
     {
       kind: "contains",
@@ -268,6 +327,30 @@ const deliveryProjection = (
       sensitivity: root.sensitivity,
     },
   ];
+  if (metadataSubjectRef !== undefined && authorRef !== undefined)
+    relations.push(
+      {
+        kind: "contains",
+        from: projectRef,
+        to: metadataSubjectRef,
+        attributes: { aliases: metadata?.subject.aliases ?? [] },
+        sensitivity: root.sensitivity,
+      },
+      {
+        kind: "contains",
+        from: metadataSubjectRef,
+        to: documentRef,
+        attributes: {},
+        sensitivity: root.sensitivity,
+      },
+      {
+        kind: "participates_in",
+        from: authorRef,
+        to: metadataSubjectRef,
+        attributes: { role: "asserted_by" },
+        sensitivity: root.sensitivity,
+      },
+    );
   const claims: DeliveryProjection["claims"][number][] = [];
   const observations: DeliveryProjection["observations"][number][] = [];
   const seenJiraKeys = new Set<string>();
@@ -279,6 +362,7 @@ const deliveryProjection = (
       externalKey: `vault:${root.repository}:${path}${locator}`,
     };
     const summary = firstSummary(passage.body, passage.title);
+    const assertionSuffix = `${topic}:${locator.replace(/^#/, "")}`;
     objects.push({
       ...sectionRef,
       title: topic === "context" || topic === "status" ? passage.title : summary,
@@ -301,7 +385,7 @@ const deliveryProjection = (
     });
     relations.push({
       kind: "contains",
-      from: documentRef,
+      from: metadataSubjectRef ?? documentRef,
       to: sectionRef,
       attributes: {},
       sensitivity: root.sensitivity,
@@ -310,7 +394,7 @@ const deliveryProjection = (
       relations.push({
         kind: "owns",
         from: sectionRef,
-        to: documentRef,
+        to: metadataSubjectRef ?? documentRef,
         attributes: { locator },
         sensitivity: root.sensitivity,
       });
@@ -318,16 +402,27 @@ const deliveryProjection = (
       relations.push({
         kind: "contributes_to",
         from: sectionRef,
-        to: projectRef,
+        to: metadataSubjectRef ?? projectRef,
         attributes: { locator },
         sensitivity: root.sensitivity,
       });
     claims.push({
-      subject: sectionRef,
-      subjectKey: sectionRef.externalKey,
-      predicate: `vault.${topic}`,
+      subject: metadataSubjectRef ?? sectionRef,
+      subjectKey: metadataSubjectRef?.externalKey ?? sectionRef.externalKey,
+      predicate: metadata === undefined ? `vault.${topic}` : `delivery.${topic}`,
       value: summary,
-      assertedAt: updatedAt,
+      assertedBy: metadata?.author.id,
+      externalAssertionId:
+        metadata === undefined ? undefined : `${metadata.assertionId}:${assertionSuffix}`,
+      supersedesAssertionIds:
+        metadata === undefined
+          ? undefined
+          : metadata.supersedes.map((assertionId) => `${assertionId}:${assertionSuffix}`),
+      confidence: metadata?.confidence,
+      assertionSchemaVersion: metadata?.schemaVersion,
+      assertedAt: metadata?.assertedAt ?? updatedAt,
+      effectiveFrom: metadata?.effectiveFrom,
+      effectiveTo: metadata?.effectiveTo,
       citationUrl: `${canonicalUrl}${locator}`,
       sensitivity: root.sensitivity,
       authority: root.authority ?? 0.9,
@@ -335,10 +430,11 @@ const deliveryProjection = (
     observations.push({
       kind: topic === "decision" ? "decision" : "change",
       externalId: `${path}:${locator}:${updatedAt}`,
-      subject: sectionRef,
+      subject: metadataSubjectRef ?? sectionRef,
+      actorExternalKey: metadata?.author.id,
       summary: `Vault ${topic.replaceAll("_", " ")} updated: ${passage.title}`,
       dedupeKey: `vault:${root.repository}:${path}:${locator}`,
-      occurredAt: updatedAt,
+      occurredAt: metadata?.assertedAt ?? updatedAt,
       citationUrl: `${canonicalUrl}${locator}`,
       sensitivity: root.sensitivity,
       authority: root.authority ?? 0.9,
@@ -426,7 +522,8 @@ const rootDocuments = async (
       `/repos/${root.repository}/git/blobs/${encodeURIComponent(sha)}`,
     );
     const markdown = decodeMarkdown(content);
-    const passages = chunkVaultMarkdown(markdown);
+    const assertion = assertionFrontmatter(markdown);
+    const passages = chunkVaultMarkdown(assertion.body);
     if (passages.length === 0) {
       retiredExternalIds.push(`${root.repository}:${path}`);
       return undefined;
@@ -458,6 +555,7 @@ const rootDocuments = async (
         passages,
         updatedAt,
         canonicalUrl,
+        assertion.metadata,
       ),
     } satisfies KnowledgeSourceDocument;
   });
