@@ -6,6 +6,7 @@ export type SynchronizationTrigger =
   | "hourly-reconciliation"
   | "manual-reconciliation"
   | "historical-backfill";
+export type SynchronizationLeaseOperation = "source-synchronization" | SynchronizationTrigger;
 
 export type SynchronizationRunStatus = "running" | "succeeded" | "failed";
 export type SynchronizationDeliveryStatus =
@@ -70,7 +71,7 @@ export type SynchronizationSubscription = {
 export type SynchronizationLease = {
   readonly workspaceId: string;
   readonly sourceId: string;
-  readonly operation: SynchronizationTrigger;
+  readonly operation: SynchronizationLeaseOperation;
   readonly ownerId: string;
   readonly acquiredAt: string;
   readonly heartbeatAt: string;

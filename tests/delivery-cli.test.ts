@@ -110,6 +110,25 @@ describe("delivery CLI", () => {
     });
   });
 
+  it("routes durable synchronization operations without adding source content to the envelope", async () => {
+    const runSync = vi.fn(async () => ({
+      exitCode: 0,
+      output: {
+        ok: true,
+        operation: "delivery-sync-reconcile",
+        outcomes: [{ source: "jira", disposition: "succeeded", documentsObserved: 3 }],
+      },
+    }));
+    const environment = { SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1" };
+    const result = await runDeliveryCommand(["sync", "reconcile", "all"], environment, { runSync });
+    expect(runSync).toHaveBeenCalledWith(["reconcile", "all"], environment);
+    expect(result).toMatchObject({
+      exitCode: 0,
+      output: { operation: "delivery-sync-reconcile" },
+    });
+    expect(JSON.stringify(result)).not.toContain("source body");
+  });
+
   it("fails without exposing configuration or provider errors", async () => {
     const secret = "provider-secret-value";
     const result = await runDeliveryCommand(

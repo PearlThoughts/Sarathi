@@ -1,7 +1,8 @@
 import { count, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { runDeliverySyncCommand } from "../src/cli/commands/delivery-sync-runtime.ts";
 import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
@@ -28,6 +29,7 @@ import {
 import {
   type KnowledgeSourceSnapshot,
   synchronizationEventDeliveryId,
+  synchronizeKnowledgeSource,
 } from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
@@ -898,6 +900,92 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       { source_kind: "teams", active: "1" },
       { source_kind: "vault", active: "1" },
     ]);
+  });
+
+  test("runs a checkpointed hourly operation through the durable synchronization service", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const control = createPostgresSynchronizationControlRepository(opened.database);
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const initial = snapshot("sync-operation-v1", "Initial durable synchronization state.");
+    const sourceId = "sync-operation-jira";
+    const scopedInitial = {
+      ...initial,
+      sourceId,
+      cursor: "sync-operation-cursor-1",
+      documents: initial.documents.map((document) => ({ ...document, sourceId })),
+    };
+    await Effect.runPromise(repository.reconcile(scopedInitial, embeddings));
+    const readSnapshot = vi.fn((_workspaceId: string, _previousCursor?: string) =>
+      Effect.succeed({
+        ...scopedInitial,
+        cursor: "sync-operation-cursor-2",
+        mode: "delta" as const,
+        documents: [],
+        retiredExternalIds: [],
+      }),
+    );
+    const times = ["2026-07-22T11:00:00.000Z", "2026-07-22T11:00:05.000Z"];
+    const outcome = await Effect.runPromise(
+      synchronizeKnowledgeSource(
+        {
+          workspaceId: "workspace-example",
+          source: {
+            source: "jira",
+            sourceId,
+            reader: { readSnapshot },
+          },
+          trigger: "hourly-reconciliation",
+          ownerId: "integration-worker",
+          leaseSeconds: 300,
+          now: () => times.shift() ?? "2026-07-22T11:00:05.000Z",
+        },
+        repository,
+        embeddings,
+        control,
+      ),
+    );
+    expect(readSnapshot).toHaveBeenCalledWith("workspace-example", "sync-operation-cursor-1");
+    expect(outcome).toMatchObject({
+      disposition: "succeeded",
+      summary: { cursor: "sync-operation-cursor-2", versionsCreated: 0 },
+    });
+    await expect(
+      Effect.runPromise(control.readStatus("workspace-example", sourceId)),
+    ).resolves.toMatchObject({
+      checkpoint: { cursor: "sync-operation-cursor-2" },
+      latestRun: {
+        trigger: "hourly-reconciliation",
+        status: "succeeded",
+        cursorAfter: "sync-operation-cursor-2",
+      },
+    });
+    const status = await runDeliverySyncCommand(["status", "jira"], {
+      SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
+      SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-example",
+      SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON: JSON.stringify({ sourceId }),
+    });
+    expect(status).toMatchObject({
+      exitCode: 0,
+      output: {
+        ok: true,
+        operation: "delivery-sync-status",
+        statuses: [{ source: "jira", freshness: { status: "current" } }],
+      },
+    });
+    expect(JSON.stringify(status)).not.toContain("Initial durable synchronization state");
+    await expect(
+      runDeliverySyncCommand(["status", "vault"], {
+        SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
+        SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-example",
+        SARATHI_KNOWLEDGE_VAULT_SOURCE_ID: "missing-vault-checkpoint",
+      }),
+    ).resolves.toMatchObject({
+      exitCode: 1,
+      output: {
+        ok: false,
+        statuses: [{ source: "vault", freshness: { status: "unavailable" } }],
+      },
+    });
   });
 
   test("reuses an unchanged passage vector while a Vault rename retires the old path", async () => {
