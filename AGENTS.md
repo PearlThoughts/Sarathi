@@ -47,6 +47,45 @@ bun run runtime:smoke
 
 The local CI equivalent is `bun run check`.
 
+## Live Teams Acceptance Reporting
+
+Every agent that completes a live Sarathi test in Microsoft Teams must report the
+test in the active user conversation immediately after the response is observed.
+Do not defer this evidence to the final handoff, a Bead, a PR, or a log file.
+
+Each report must include:
+
+- the exact user-visible request sent to Sarathi;
+- the exact user-visible Sarathi response, preserving its line structure and
+  citation labels;
+- a clickable Teams permalink to the request or response thread that the user can
+  open to verify the exchange;
+- observed start and completion timestamps plus end-to-end latency;
+- the initiating identity, team, channel, thread, workspace, and audience when
+  available;
+- the inferred question intent and any scope, sprint, entity, time-window, or
+  confidentiality criteria used to plan the answer;
+- the sources requested, attempted, selected, excluded, unavailable, or in
+  conflict, identified by source type and resolvable citation rather than by
+  copying hidden source bodies;
+- privacy-safe execution diagnostics such as retrieval counts, duplicate
+  suppression, permission filtering, provider/fallback path, model timing, and
+  bounded failure classifications when observable.
+
+The conversation report is part of acceptance. A test is not complete until the
+user can review both the rendered exchange and its Teams permalink. If Teams does
+not expose a resolvable permalink, report that as a failed acceptance criterion;
+do not substitute a screenshot, message ID, or locally constructed URL and call
+the test complete.
+
+Never include provider keys, authorization headers, cookies, hidden prompts,
+chain-of-thought, private evidence bodies, or raw browser/network dumps in the
+conversation report, Beads, commits, PRs, CI output, or retained artifacts. If a
+user-visible request or response itself contains a credential, redact only the
+credential, label the redaction, and fail the privacy acceptance check. Keep
+underlying evidence access governed by the runtime even when the rendered answer
+is intentionally visible to the 1851 workspace.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
