@@ -27,7 +27,10 @@ import {
   type DeliveryAssistantAnswer,
   type DeliveryAssistantRequest,
   type DeliveryQuerySource,
+  type DeliveryResponseMode,
   deliveryResponseBudget,
+  deliveryResponseModePolicies,
+  selectDeliveryResponseMode,
 } from "../../modules/delivery-intelligence/index.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
@@ -59,6 +62,7 @@ const sensitivities = new Set<SensitivityTier>([
   "confidential",
   "restricted",
 ]);
+const responseModes = new Set<DeliveryResponseMode>(["fast", "structured", "deep_dive"]);
 
 const required = (name: string, value: string | undefined): string => {
   if (value === undefined || value.trim() === "") throw new Error(`${name} is required.`);
@@ -88,6 +92,10 @@ const queryRequest = (
     "internal";
   if (!sensitivities.has(maximumSensitivity as SensitivityTier))
     throw new Error("--maximum-sensitivity is invalid.");
+  const responseMode =
+    option(args, "--response-mode") ?? environment.SARATHI_DELIVERY_RESPONSE_MODE;
+  if (responseMode !== undefined && !responseModes.has(responseMode as DeliveryResponseMode))
+    throw new Error("--response-mode must be fast, structured, or deep_dive.");
   const actorId = required(
     "--actor-id",
     option(args, "--actor-id") ?? environment.SARATHI_DELIVERY_ACTOR_ID,
@@ -114,6 +122,7 @@ const queryRequest = (
       option(args, "--time-zone") ?? environment.SARATHI_WORKSPACE_TIMEZONE,
     ),
     question: required("--question", option(args, "--question")),
+    ...(responseMode === undefined ? {} : { responseMode: responseMode as DeliveryResponseMode }),
   };
 };
 
@@ -239,7 +248,8 @@ const answerFromRuntime = async (
   request: DeliveryAssistantRequest,
   environment: DeliveryRuntimeEnvironment,
 ): Promise<DeliveryAssistantAnswer> => {
-  const queryBudgetMs = deliveryResponseBudget.sourceTimeoutMs;
+  const responseMode = selectDeliveryResponseMode(request.question, request.responseMode);
+  const queryBudgetMs = deliveryResponseModePolicies[responseMode].sourceTimeoutMs;
   const opened = openKnowledgePostgresDatabase(
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
     queryBudgetMs,
@@ -332,6 +342,8 @@ export const runDeliveryCommand = async (
             status: answer.status,
             unavailableSources: answer.unavailableSources,
             conflicts: answer.conflicts.length,
+            responseMode: answer.responseMode,
+            acceptance: answer.acceptance,
           },
           intents: answer.plan.intents,
         },
@@ -342,7 +354,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone>.",
+          "Use delivery status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
       },
     };
   } catch (error) {

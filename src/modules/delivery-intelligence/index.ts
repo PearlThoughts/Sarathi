@@ -83,6 +83,14 @@ export {
   planDeliveryQuestion,
   validateDeliveryQueryPlan,
 } from "./domain/delivery-query.ts";
+export type {
+  DeliveryResponseMode,
+  DeliveryResponseModePolicy,
+} from "./domain/delivery-response-mode.ts";
+export {
+  deliveryResponseModePolicies,
+  selectDeliveryResponseMode,
+} from "./domain/delivery-response-mode.ts";
 export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
 export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {

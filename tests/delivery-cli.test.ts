@@ -32,6 +32,28 @@ describe("delivery CLI", () => {
         maximumLines: 3 as const,
         requiresFinance: false,
       },
+      responseMode: "structured" as const,
+      acceptance: {
+        mode: "structured" as const,
+        elapsedMs: 10,
+        latencyTargetMs: 15_000,
+        latencyPassed: true,
+        requestedIntents: 1,
+        coveredIntents: 1,
+        completenessRatio: 1,
+        completenessPassed: true,
+        materialStatements: 1,
+        citedStatements: 1,
+        citationCoverage: 1,
+        citationPassed: true,
+        groundingPassed: true,
+        freshEvidence: 1,
+        evaluatedEvidence: 1,
+        freshnessCoverage: 1,
+        freshnessPassed: true,
+        formatPassed: true,
+        passed: true,
+      },
       unavailableSources: [],
       conflicts: [],
     }));
@@ -46,6 +68,8 @@ describe("delivery CLI", () => {
         "Asia/Kolkata",
         "--requested-at",
         "2026-07-20T12:00:00.000Z",
+        "--response-mode",
+        "structured",
       ],
       {
         SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
@@ -60,13 +84,14 @@ describe("delivery CLI", () => {
         maximumSensitivity: "internal",
         financeAccess: true,
         requestedAt: "2026-07-20T12:00:00.000Z",
+        responseMode: "structured",
       }),
     );
     expect(result).toMatchObject({
       exitCode: 0,
       output: {
         operation: "delivery-query",
-        answer: { status: "ok", conflicts: 0 },
+        answer: { status: "ok", conflicts: 0, responseMode: "structured" },
         intents: ["status"],
       },
     });

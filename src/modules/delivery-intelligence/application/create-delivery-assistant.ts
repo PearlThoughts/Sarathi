@@ -4,6 +4,11 @@ import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
 import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delivery-query.ts";
 import { planDeliveryQuestion, validateDeliveryQueryPlan } from "../domain/delivery-query.ts";
+import {
+  type DeliveryResponseMode,
+  deliveryResponseModePolicies,
+  selectDeliveryResponseMode,
+} from "../domain/delivery-response-mode.ts";
 import type {
   DeliveryAnswerComposer,
   DeliveryAssistant,
@@ -12,6 +17,7 @@ import type {
   DeliveryModelPlanner,
   DeliveryQueryResult,
   DeliveryQuerySource,
+  DeliveryResponseAcceptance,
   DeliveryResultItem,
 } from "../ports/delivery-intelligence-ports.ts";
 
@@ -26,10 +32,12 @@ export type DeliveryAssistantConfiguration = {
 };
 
 export const deliveryResponseBudget = {
-  sourceTimeoutMs: 4_500,
-  compositionTimeoutMs: 2_500,
-  totalBudgetMs: 6_500,
+  sourceTimeoutMs: deliveryResponseModePolicies.fast.sourceTimeoutMs,
+  compositionTimeoutMs: deliveryResponseModePolicies.fast.compositionTimeoutMs,
+  totalBudgetMs: deliveryResponseModePolicies.fast.totalBudgetMs,
 } as const;
+
+type DeliveryAnswerDraft = Omit<DeliveryAssistantAnswer, "responseMode" | "acceptance">;
 
 const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
   jira: "Jira",
@@ -284,7 +292,12 @@ const composeAnswer = (
   _request: DeliveryAssistantRequest,
   plan: DeliveryQueryPlan,
   result: DeliveryQueryResult,
-): DeliveryAssistantAnswer => {
+  responseMode: DeliveryResponseMode,
+): DeliveryAnswerDraft => {
+  const responsePolicy = deliveryResponseModePolicies[responseMode];
+  const maximumDetailLines =
+    responseMode === "fast" ? plan.maximumLines : responsePolicy.maximumLines;
+  const itemsPerIntent = responseMode === "fast" ? 2 : responseMode === "structured" ? 3 : 5;
   const citations: { label: string; url: string }[] = [];
   const citationLabels = new Map<string, string>();
   const citation = (item: DeliveryResultItem): string => {
@@ -328,7 +341,7 @@ const composeAnswer = (
       const selected = rankedForIntent(
         items.filter((item) => item.intent === intent),
         intent,
-      ).slice(0, 2);
+      ).slice(0, itemsPerIntent);
       if (selected.length > 0) {
         historicalStatusOnly =
           intent === "status" &&
@@ -375,8 +388,8 @@ const composeAnswer = (
           return `${safeText(String(claim.value))} ${citation(item)}`;
         });
         const conflictLine = `- ⚖️ **Conflict — ${conflict.subjectKey} ${conflict.predicate}:** ${summaries.join(" vs ")}`;
-        if (detailLines.length >= plan.maximumLines)
-          detailLines.splice(Math.max(0, plan.maximumLines - 1));
+        if (detailLines.length >= maximumDetailLines)
+          detailLines.splice(Math.max(0, maximumDetailLines - 1));
         detailLines.push(conflictLine);
       }
     }
@@ -416,11 +429,11 @@ const composeAnswer = (
       mentions: [],
     };
   }
-  if (result.unavailableSources.length > 0 && detailLines.length < plan.maximumLines)
+  if (result.unavailableSources.length > 0 && detailLines.length < maximumDetailLines)
     detailLines.push(
       `- ⚠️ **Coverage:** ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")} unavailable.`,
     );
-  if ((result.missingRequiredSources?.length ?? 0) > 0 && detailLines.length < plan.maximumLines)
+  if ((result.missingRequiredSources?.length ?? 0) > 0 && detailLines.length < maximumDetailLines)
     detailLines.push(
       `- ⚠️ **Coverage:** No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
     );
@@ -458,7 +471,7 @@ const composeAnswer = (
       : undefined);
   const lines = [
     responseOpening(plan),
-    ...detailLines.slice(0, plan.maximumLines),
+    ...detailLines.slice(0, maximumDetailLines),
     ...(completeActionLine === undefined ? [] : [completeActionLine]),
   ];
   const text = lines.join("\n");
@@ -493,11 +506,13 @@ const composeWithModel = (
   plan: DeliveryQueryPlan,
   result: DeliveryQueryResult,
   timeoutMs: number,
-): Effect.Effect<DeliveryAssistantAnswer> => {
-  const deterministic = composeAnswer(request, plan, result);
+  responseMode: DeliveryResponseMode,
+): Effect.Effect<DeliveryAnswerDraft> => {
+  const deterministic = composeAnswer(request, plan, result, responseMode);
+  if (responseMode !== "fast") return Effect.succeed(deterministic);
   const items = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general").slice(
     0,
-    12,
+    deliveryResponseModePolicies[responseMode].maximumItems,
   );
   const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
   if (
@@ -538,7 +553,10 @@ const composeWithModel = (
               .split(/\r?\n/)
               .map((line) => line.trim())
               .filter(Boolean);
-            if (lines.length < 3 || lines.length > plan.maximumLines + 2)
+            if (
+              lines.length < 3 ||
+              lines.length > deliveryResponseModePolicies[responseMode].maximumLines + 2
+            )
               throw new Error("Composed delivery answer has an invalid line count.");
             if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
               throw new Error("Composed delivery answer lacks a short opening paragraph.");
@@ -568,6 +586,188 @@ const composeWithModel = (
       ),
       Effect.catchAll(() => Effect.succeed(deterministic)),
     );
+};
+
+const responseSources = (
+  answer: DeliveryAnswerDraft,
+  result: DeliveryQueryResult,
+): readonly DeliverySourceKind[] => [
+  ...new Set(
+    result.items
+      .filter((item) => answer.text.includes(item.citationUrl))
+      .map((item) => item.source),
+  ),
+];
+
+const latestTimestamp = (values: readonly (string | undefined)[]): string | undefined =>
+  values
+    .filter((value): value is string => value !== undefined && Number.isFinite(Date.parse(value)))
+    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
+
+const renderResponseMode = (
+  answer: DeliveryAnswerDraft,
+  request: DeliveryAssistantRequest,
+  result: DeliveryQueryResult,
+  responseMode: DeliveryResponseMode,
+  elapsedMs: number,
+): DeliveryAnswerDraft => {
+  if (responseMode === "fast") return answer;
+  const lines = answer.text.split(/\r?\n/).filter(Boolean);
+  const opening =
+    lines.find((line) => !/^(?:-|\d+\.)\s/.test(line)) ?? responseOpening(answer.plan);
+  const evidence = lines.filter((line) => line.startsWith("- "));
+  const action = lines.find((line) => /^\d+\.\s/.test(line));
+  if (responseMode === "structured") {
+    const text = [
+      "### Delivery brief",
+      opening,
+      "### Evidence",
+      ...(evidence.length === 0
+        ? ["- No source-backed evidence matched the requested scope."]
+        : evidence),
+      ...(action === undefined ? [] : ["### Action", action]),
+    ].join("\n");
+    return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
+  }
+  const sources = responseSources(answer, result);
+  const latestSourceUpdate = latestTimestamp(
+    result.items
+      .filter((item) => answer.text.includes(item.citationUrl))
+      .map((item) => item.sourceUpdatedAt ?? item.observedAt),
+  );
+  const gaps = [
+    ...(result.missingRequiredIntents ?? []).map((intent) => intentLabel[intent]),
+    ...(result.missingRequiredSources ?? []).map((source) => sourceLabel[source]),
+    ...result.unavailableSources.map((source) => `${sourceLabel[source]} unavailable`),
+  ];
+  const text = [
+    "### Scope and time window",
+    `${opening} Requested at ${request.requestedAt}.`,
+    "### Sources and freshness",
+    sources.length === 0
+      ? "No matching connected source produced authorized evidence."
+      : `${sources.map((source) => sourceLabel[source]).join(", ")} contributed evidence. Latest source update: ${latestSourceUpdate ?? "not reported"}.`,
+    "### Evidence",
+    ...(evidence.length === 0
+      ? ["- No source-backed evidence matched the requested scope."]
+      : evidence),
+    "### Conflicts and gaps",
+    answer.conflicts.length === 0
+      ? `No verified cross-source conflict was found. Gaps: ${gaps.length === 0 ? "none reported" : gaps.join(", ")}.`
+      : `${answer.conflicts.length} verified cross-source conflict(s) are disclosed above. Gaps: ${gaps.length === 0 ? "none reported" : gaps.join(", ")}.`,
+    "### Inference boundary",
+    "The evidence above is source-observed. Missing fields remain unknown; no uncited recommendation or ownership inference was added.",
+    ...(action === undefined ? [] : ["### Action", action]),
+    "### Timing",
+    `Completed in ${elapsedMs} ms.`,
+  ].join("\n");
+  return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
+};
+
+const ratio = (numerator: number, denominator: number): number =>
+  denominator === 0 ? 1 : Number((numerator / denominator).toFixed(4));
+
+const responseAcceptance = (
+  answer: DeliveryAnswerDraft,
+  request: DeliveryAssistantRequest,
+  result: DeliveryQueryResult,
+  responseMode: DeliveryResponseMode,
+  elapsedMs: number,
+): DeliveryResponseAcceptance => {
+  const policy = deliveryResponseModePolicies[responseMode];
+  const missingIntents = new Set(result.missingRequiredIntents ?? []);
+  const requestedIntents = answer.plan.intents.length;
+  const emittedIntents = new Set(
+    result.items
+      .filter((item) => answer.text.includes(item.citationUrl))
+      .map((item) => item.intent),
+  );
+  if (
+    result.conflicts.some((conflict) =>
+      conflict.claims.some((claim) => answer.text.includes(claim.source.citationUrl)),
+    )
+  )
+    emittedIntents.add("conflicts");
+  const coveredIntents = answer.plan.intents.filter(
+    (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
+  ).length;
+  const completenessRatio = ratio(coveredIntents, requestedIntents);
+  const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
+  const materialLines = lines.filter(
+    (line) =>
+      /^(?:-|\d+\.)\s/.test(line) &&
+      !line.includes("**Coverage:**") &&
+      !line.includes("No explicit source-backed") &&
+      !line.includes("No source-backed evidence"),
+  );
+  const citedLines = materialLines.filter((line) => /\]\(https:\/\//.test(line));
+  const allowedUrls = new Set([
+    ...result.items.map((item) => item.citationUrl),
+    ...result.conflicts.flatMap((conflict) =>
+      conflict.claims.map((claim) => claim.source.citationUrl),
+    ),
+  ]);
+  const linkedUrls = [...answer.text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
+    match[1] === undefined ? [] : [match[1]],
+  );
+  const evaluatedItems = result.items.filter((item) => answer.text.includes(item.citationUrl));
+  const requestedAt = Date.parse(request.requestedAt);
+  const freshEvidence = evaluatedItems.filter((item) => {
+    if (item.indexedAt === undefined) return true;
+    const indexedAt = Date.parse(item.indexedAt);
+    return (
+      Number.isFinite(indexedAt) && Math.max(0, requestedAt - indexedAt) <= policy.freshnessWindowMs
+    );
+  }).length;
+  const citationCoverage = ratio(citedLines.length, materialLines.length);
+  const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
+  const completenessPassed =
+    completenessRatio === 1 && (result.missingRequiredSources?.length ?? 0) === 0;
+  const citationPassed = citationCoverage === 1;
+  const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
+  const freshnessPassed = freshnessCoverage >= 0.95;
+  const headings = new Set(lines.filter((line) => line.startsWith("### ")));
+  const formatPassed =
+    responseMode === "fast"
+      ? headings.size === 0 && lines.length <= policy.maximumLines + 2
+      : responseMode === "structured"
+        ? headings.has("### Delivery brief") && headings.has("### Evidence")
+        : [
+            "### Scope and time window",
+            "### Sources and freshness",
+            "### Evidence",
+            "### Conflicts and gaps",
+            "### Inference boundary",
+            "### Timing",
+          ].every((heading) => headings.has(heading));
+  const latencyPassed = elapsedMs <= policy.latencyTargetMs;
+  return {
+    mode: responseMode,
+    elapsedMs,
+    latencyTargetMs: policy.latencyTargetMs,
+    latencyPassed,
+    requestedIntents,
+    coveredIntents,
+    completenessRatio,
+    completenessPassed,
+    materialStatements: materialLines.length,
+    citedStatements: citedLines.length,
+    citationCoverage,
+    citationPassed,
+    groundingPassed,
+    freshEvidence,
+    evaluatedEvidence: evaluatedItems.length,
+    freshnessCoverage,
+    freshnessPassed,
+    formatPassed,
+    passed:
+      latencyPassed &&
+      completenessPassed &&
+      citationPassed &&
+      groundingPassed &&
+      freshnessPassed &&
+      formatPassed,
+  };
 };
 
 const planQuestion = (
@@ -613,12 +813,31 @@ const planQuestion = (
   );
 };
 
+const planForResponseMode = (
+  plan: DeliveryQueryPlan,
+  responseMode: DeliveryResponseMode,
+): DeliveryQueryPlan => {
+  if (responseMode === "fast") return plan;
+  const minimumLimit = responseMode === "structured" ? 15 : 50;
+  return {
+    ...plan,
+    operations: plan.operations.map((operation) => ({
+      ...operation,
+      limit: Math.min(50, Math.max(operation.limit, minimumLimit)),
+    })),
+  };
+};
+
 export const createDeliveryAssistant = (
   configuration: DeliveryAssistantConfiguration,
 ): DeliveryAssistant => ({
-  answer: (request) =>
-    planQuestion(request, configuration.modelPlanner).pipe(
-      Effect.flatMap((plan) => {
+  answer: (request) => {
+    const startedAt = Date.now();
+    const responseMode = selectDeliveryResponseMode(request.question, request.responseMode);
+    const responsePolicy = deliveryResponseModePolicies[responseMode];
+    return planQuestion(request, configuration.modelPlanner).pipe(
+      Effect.flatMap((planned) => {
+        const plan = planForResponseMode(planned, responseMode);
         if (plan.requiresFinance && !request.financeAccess)
           return Effect.fail(
             new RepositoryError({
@@ -629,19 +848,28 @@ export const createDeliveryAssistant = (
         const now = configuration.now?.() ?? new Date();
         const totalBudgetMs = Math.max(
           100,
-          Math.min(configuration.totalBudgetMs ?? deliveryResponseBudget.totalBudgetMs, 8_000),
+          Math.min(
+            responseMode === "fast"
+              ? (configuration.totalBudgetMs ?? responsePolicy.totalBudgetMs)
+              : responsePolicy.totalBudgetMs,
+            responsePolicy.totalBudgetMs,
+          ),
         );
         const sourceTimeoutMs = Math.max(
           100,
           Math.min(
-            configuration.sourceTimeoutMs ?? deliveryResponseBudget.sourceTimeoutMs,
+            responseMode === "fast"
+              ? (configuration.sourceTimeoutMs ?? responsePolicy.sourceTimeoutMs)
+              : responsePolicy.sourceTimeoutMs,
             totalBudgetMs,
           ),
         );
         const compositionTimeoutMs = Math.max(
           100,
           Math.min(
-            configuration.compositionTimeoutMs ?? deliveryResponseBudget.compositionTimeoutMs,
+            responseMode === "fast"
+              ? (configuration.compositionTimeoutMs ?? responsePolicy.compositionTimeoutMs)
+              : responsePolicy.compositionTimeoutMs,
             totalBudgetMs,
           ),
         );
@@ -733,15 +961,40 @@ export const createDeliveryAssistant = (
               missingRequiredSources,
               missingRequiredIntents,
             };
-            return configuration.answerComposer === undefined
-              ? Effect.succeed(composeAnswer(request, plan, completed))
-              : composeWithModel(
-                  configuration.answerComposer,
+            const composed =
+              configuration.answerComposer === undefined
+                ? Effect.succeed(composeAnswer(request, plan, completed, responseMode))
+                : composeWithModel(
+                    configuration.answerComposer,
+                    request,
+                    plan,
+                    completed,
+                    compositionTimeoutMs,
+                    responseMode,
+                  );
+            return composed.pipe(
+              Effect.map((draft) => {
+                const elapsedMs = Math.max(0, Date.now() - startedAt);
+                const rendered = renderResponseMode(
+                  draft,
                   request,
-                  plan,
                   completed,
-                  compositionTimeoutMs,
+                  responseMode,
+                  elapsedMs,
                 );
+                return {
+                  ...rendered,
+                  responseMode,
+                  acceptance: responseAcceptance(
+                    rendered,
+                    request,
+                    completed,
+                    responseMode,
+                    elapsedMs,
+                  ),
+                };
+              }),
+            );
           }),
           Effect.timeoutFail({
             duration: totalBudgetMs,
@@ -753,5 +1006,6 @@ export const createDeliveryAssistant = (
           }),
         );
       }),
-    ),
+    );
+  },
 });
