@@ -56,7 +56,7 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 
 ## Reporting
 
-The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. Deterministic renderers produce a short acknowledgement or situation paraphrase followed by concise emoji-led, bold-labelled bullets and a numbered next action with resolvable citations. Native Teams mentions identify a person only when a related action is safely attributable. Tables and richer layouts are reserved for comparisons that materially benefit from them and are supported by Teams; optional model synthesis receives only the bounded result.
+The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. Deterministic renderers produce a short acknowledgement or situation paraphrase followed by concise emoji-led, bold-labelled bullets. A numbered next action appears only when a connected source supports it with a resolvable citation. Native Teams mentions identify a person only when that cited action safely resolves the person. Tables and richer layouts are reserved for comparisons that materially benefit from them and are supported by Teams; optional model synthesis receives only the bounded result.
 
 Supported fast-path queries must complete through Teams in less than ten seconds. Latency is a query acceptance property, not the domain boundary.
 
@@ -70,6 +70,9 @@ The 2026-07-22 delivery-manager matrix showed that latency and visual formatting
 - source-role exclusion for assistant prompts, bot replies, test-only messages, and malformed mention attempts;
 - first-class review-queue and conflict intents rather than generic nearest-message retrieval;
 - answer completeness for the requested fields, with a bounded coverage failure instead of invented ownership, blockers, mitigation, recurrence, or next actions;
+- conflict disclosure only when attributed claims about the same subject and predicate come from at least two distinct sources;
+- capacity answers only from explicit availability, allocation, leave, or bandwidth signals rather than generic activity or assignee changes;
+- model composition and deterministic recommendations may not manufacture a next action when no cited action evidence exists;
 - delegation only when a source-resolved Teams identity belongs to an action that is related to the material answer.
 
 ## Migration

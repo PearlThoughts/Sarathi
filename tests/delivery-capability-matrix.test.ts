@@ -78,7 +78,10 @@ const genericSource: DeliveryQuerySource = {
         intent: operation.purpose,
         title: plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose,
         summary: `Resolved ${plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose} from the delivery model`,
-        citationUrl: `https://example.com/${operation.purpose}/${index}`,
+        citationUrl:
+          operation.purpose === "next_actions"
+            ? "https://example.com/risks/0"
+            : `https://example.com/${operation.purpose}/${index}`,
         sensitivity: "internal" as const,
         authority: 0.9,
         observedAt: context.requestedAt,
@@ -111,7 +114,8 @@ describe("AI Delivery Assistant capability matrix", () => {
     expect(answer.text.split("\n").length).toBeLessThanOrEqual(5);
     expect(answer.text.split("\n")[0]).not.toMatch(/^(?:-|\d+\.)\s/);
     expect(answer.text).toMatch(/- .+ \*\*/u);
-    expect(answer.text).toContain("1. ➡️ **");
+    if (row.intents.includes("next_actions")) expect(answer.text).toContain("1. ➡️ **Next:**");
+    else expect(answer.text).not.toContain("Recommended next step");
     expect(answer.citations.length).toBeGreaterThan(0);
   });
 });

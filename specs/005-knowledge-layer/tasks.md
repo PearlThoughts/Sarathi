@@ -61,6 +61,7 @@
 - [x] KLG-513 Add permanent architecture, migration, authorization, deletion, deduplication, conflict, citation, query-family, log-redaction, and latency regression tests.
 - [ ] KLG-514 Prove exact-branch CI, governed merge, backup, production migration/deployment, bounded synchronization, real Delivery Manager question coverage, sub-ten-second Teams reporting, and rollback.
 - [x] KLG-515 Enforce source-role, entity-boundary, required-backend, answer-completeness, review-queue, conflict, and related-delegation rules derived from the 2026-07-22 ten-question live matrix.
+- [x] KLG-516 Require explicit intent evidence, same-item claims from distinct sources for conflicts, capacity-specific signals, and cited next actions; disclose partial compound answers without generic recommendations.
 
 ## Dependency Order
 
