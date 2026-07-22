@@ -21,7 +21,10 @@ type TeamsMessage = {
   readonly body?: { readonly content?: string };
   readonly from?: {
     readonly user?: { readonly id?: string; readonly displayName?: string };
-    readonly application?: { readonly id?: string; readonly displayName?: string };
+    readonly application?: {
+      readonly id?: string;
+      readonly displayName?: string;
+    };
   };
   readonly mentions?: readonly {
     readonly mentioned?: {
@@ -38,6 +41,8 @@ export type TeamsDeliveryChannel = {
   readonly workspaceId: string;
   readonly sensitivity: SensitivityTier;
   readonly allowedActorIds: ReadonlySet<string>;
+  readonly label?: string | undefined;
+  readonly topics?: readonly string[] | undefined;
 };
 
 export type TeamsDeliveryQueryConfiguration = {
@@ -84,6 +89,29 @@ const containsFinanceContent = (content: string): boolean =>
   /\b(?:budget|costs?|billing|invoice|revenue|profit|margin|burn rate|hourly rate|day rate|commercial rate|payment|payroll|salary|compensation|pricing)\b/i.test(
     content,
   );
+
+const routingTokens = (value: string): readonly string[] =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((token) => token.length > 2 && !["the", "and", "for", "with"].includes(token));
+
+const channelMatchesPlan = (
+  channel: TeamsDeliveryChannel,
+  plan: Parameters<DeliveryQuerySource["execute"]>[1],
+): boolean => {
+  if (channel.label === undefined && (channel.topics?.length ?? 0) === 0) return true;
+  const catalog = `${channel.label ?? ""} ${(channel.topics ?? []).join(" ")}`.toLowerCase();
+  if (plan.subject !== undefined) {
+    if (plan.subject.externalKey !== undefined) return true;
+    const subject = plan.subject.externalKey ?? plan.subject.phrase ?? "";
+    const tokens = routingTokens(subject);
+    return tokens.every((token) => catalog.includes(token));
+  }
+  const topics = new Set((channel.topics ?? []).map((topic) => topic.toLowerCase()));
+  return plan.intents.some((intent) => topics.has(intent));
+};
 
 const actionTargetFrom = (
   message: TeamsMessage,
@@ -172,11 +200,16 @@ const readChannel = async (
   limit: number,
 ): Promise<readonly TeamsMessage[]> => {
   const response = await (configuration.fetcher ?? fetch)(channelUrl(channel, limit), {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
     signal: AbortSignal.timeout(configuration.timeoutMs ?? 4_000),
   });
   if (!response.ok) throw new Error(`Teams delivery query failed with HTTP ${response.status}.`);
-  const payload = (await response.json()) as { readonly value?: readonly TeamsMessage[] };
+  const payload = (await response.json()) as {
+    readonly value?: readonly TeamsMessage[];
+  };
   return (payload.value ?? []).flatMap((message) => [message, ...(message.replies ?? [])]);
 };
 
@@ -192,7 +225,8 @@ export const createTeamsDeliveryQuerySource = (
           (channel) =>
             channel.workspaceId === context.workspaceId &&
             channel.allowedActorIds.has(context.actorId) &&
-            isSensitivityAtOrBelow(channel.sensitivity, context.maximumSensitivity),
+            isSensitivityAtOrBelow(channel.sensitivity, context.maximumSensitivity) &&
+            channelMatchesPlan(channel, plan),
         );
         const operations = plan.operations.filter((operation) =>
           ["objects", "relations", "observations", "claims"].includes(operation.select),
@@ -251,7 +285,7 @@ export const createTeamsDeliveryQuerySource = (
                     source: "teams",
                     selector: operation.select,
                     intent: operation.purpose,
-                    title: message.subject?.trim() || "Teams update",
+                    title: message.subject?.trim() || channel.label?.trim() || "Teams update",
                     summary: `${actor}: ${content}`,
                     citationUrl: message.webUrl,
                     sensitivity: channel.sensitivity,

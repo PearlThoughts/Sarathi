@@ -190,14 +190,14 @@
       "path": "tests/delivery-query-sources.test.ts",
       "command": "bunx vitest run tests/delivery-query-sources.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Pre-provider access checks plus live GitHub, Jira, Teams, and scoped project-email delivery query coverage."
+      "description": "Pre-provider access checks plus live GitHub, Jira, Teams channel-catalog routing, and scoped project-email delivery query coverage."
     },
     {
       "id": "teams-delivery-channel-projection",
       "path": "tests/teams-delivery-channel-projection.test.ts",
       "command": "bunx vitest run tests/teams-delivery-channel-projection.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Explicit bounded delivery-channel allowlists, ingress fallback, shared/private scope declarations, and ambiguity rejection."
+      "description": "Explicit bounded delivery-channel allowlists, ingress fallback, canonical labels and routing topics, shared/private scope declarations, and ambiguity rejection."
     },
     {
       "id": "delivery-cli",

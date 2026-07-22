@@ -24,7 +24,11 @@ describe("Teams delivery channel projection", () => {
     const channels = deliveryChannelProjectionFromEnvironment(
       {
         SARATHI_TEAMS_DELIVERY_CHANNELS_JSON: JSON.stringify([
-          fallback[0],
+          {
+            ...fallback[0],
+            label: "General delivery",
+            topics: ["activity", "status"],
+          },
           { ...fallback[0], channelId: "channel-shared", scope: "shared" },
           {
             ...fallback[0],
@@ -38,6 +42,10 @@ describe("Teams delivery channel projection", () => {
     );
 
     expect(channels.map(({ scope }) => scope)).toEqual(["standard", "shared", "private"]);
+    expect(channels[0]).toMatchObject({
+      label: "General delivery",
+      topics: ["activity", "status"],
+    });
   });
 
   it("rejects duplicate, malformed, empty, and oversized delivery allowlists", () => {
@@ -49,6 +57,10 @@ describe("Teams delivery channel projection", () => {
 
     expect(() => parse([fallback[0], fallback[0]])).toThrow(RepositoryError);
     expect(() => parse([{ ...fallback[0], scope: "tenant-wide" }])).toThrow(RepositoryError);
+    expect(() => parse([{ ...fallback[0], label: " " }])).toThrow(RepositoryError);
+    expect(() => parse([{ ...fallback[0], topics: ["status", "STATUS"] }])).toThrow(
+      RepositoryError,
+    );
     expect(() => parse([])).toThrow(RepositoryError);
     expect(() =>
       parse(
