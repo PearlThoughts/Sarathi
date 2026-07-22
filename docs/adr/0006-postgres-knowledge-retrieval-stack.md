@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. The live-only GitHub decision is superseded by ADR 0008 for configured
+continuous repository projections; GitHub remains the live authority.
 
 ## Context
 
@@ -32,7 +33,7 @@ Expose embeddings and answer generation through Vercel AI SDK-backed infrastruct
 
 - PostgreSQL extension availability, index tuning, vacuuming, embedding dimension changes, and migration recovery become operational responsibilities.
 - Hybrid search and ACL filtering require database integration tests; in-memory mocks alone are insufficient.
-- GitHub availability affects implementation-question completeness because there is intentionally no stored code fallback.
+- GitHub availability can affect exact-current implementation questions; ADR 0008 adds a bounded default-branch projection while retaining live verification.
 - Changing embedding model or dimension requires a bounded projection rebuild.
 
 ## Alternatives Considered
@@ -40,12 +41,13 @@ Expose embeddings and answer generation through Vercel AI SDK-backed infrastruct
 - **External vector database**: Pinecone, Weaviate, LanceDB, Azure AI Search, or a similar service could separate vector operations, but would add another security, synchronization, deletion, backup, cost, and operational boundary without a demonstrated need.
 - **Code and evidence graph store**: Neo4j could model relations explicitly, but would duplicate transactional authority and introduce a second query/storage model before graph-specific requirements exist.
 - **Live retrieval for every source**: avoids indexed copies but cannot provide consistent versions, deletions, checkpoints, hybrid ranking, or predictable latency across Jira and Vault.
-- **Index GitHub with Jira and Vault**: improves offline availability but duplicates code, creates deletion and ACL obligations, and weakens GitHub's live authority.
+- **Index GitHub with Jira and Vault**: originally rejected because an unbounded code copy would create avoidable version and deletion boundaries. ADR 0008 supersedes that live-only choice with a bounded default-branch projection, changed-file indexing, and live verification.
 - **Custom SQL and provider clients**: minimizes dependency changes but continues the current migration debt and binds application code to vendor protocols.
 
 ## References
 
-- [example Knowledge Layer Spec](../../specs/005-example-knowledge-layer/spec.md)
-- [example Knowledge Layer Plan](../../specs/005-example-knowledge-layer/plan.md)
+- [AI Delivery Assistant Intelligence Spec](../../specs/005-knowledge-layer/spec.md)
+- [AI Delivery Assistant Intelligence Plan](../../specs/005-knowledge-layer/plan.md)
 - [ADR 0004: Vault Allowlist Runtime Retrieval](./0004-vault-allowlist-runtime-retrieval.md)
 - [ADR 0005: Single Runtime With Private Organization Overlays](./0005-single-runtime-private-overlays.md)
+- [ADR 0008: Continuous Project Intelligence Synchronization](./0008-continuous-project-intelligence-synchronization.md)

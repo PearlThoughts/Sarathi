@@ -66,6 +66,20 @@
 - [x] KLG-518 Add canonical Teams channel labels and bounded routing topics so terse channel-local updates retain project context and queries do not fan out to unrelated inaccessible scopes.
 - [x] KLG-519 Render decision-ready compound delivery briefs with one bounded row per requested field and rank normalized active Jira lifecycle state ahead of terminal history.
 
+## Continuous Project Intelligence Synchronization
+
+- [x] KLG-520 Ratify the continuous synchronization sub-spec and ADR 0008; remove live-only and globally concise assumptions from the public contract.
+- [ ] KLG-521 Add framework-neutral event-delivery, subscription, lease, source cursor, freshness, lag, retry, and hourly reconciliation contracts to `knowledge-layer` ports and Drizzle schema.
+- [ ] KLG-522 Implement incremental Jira synchronization for project metadata, fields, board columns, sprints, issues, comments, changelog, relationships, and status wait intervals with bounded cursor overlap.
+- [ ] KLG-523 Implement immutable tree/blob delta synchronization for configured knowledge roots with rename/deletion reconciliation and unchanged-vector reuse.
+- [ ] KLG-524 Implement current default-branch repository bootstrap, symbol-aware code passages, activity history, verified push/merge changed-file indexing, deletion retirement, and live verification fallback.
+- [ ] KLG-525 Implement configured collaboration-history bootstrap, thread/reply passages, message version/edit/delete handling, change-notification renewal, and hourly repair reconciliation.
+- [ ] KLG-526 Add canonical entity/alias joins and comparable source/business timestamps across synchronized Jira, knowledge, repository, and collaboration projections.
+- [ ] KLG-527 Add explicit fast, structured-brief, and deep-dive response modes with independent completeness, citation, freshness, formatting, and latency acceptance.
+- [ ] KLG-528 Add permanent PostgreSQL connector tests for bootstrap, pagination, unchanged replay, changed-only embeddings, missed/duplicate/out-of-order events, expired subscriptions, deletion, scope removal, hourly convergence, and privacy-safe observability.
+- [ ] KLG-529 Add durable `delivery sync backfill|events|reconcile|status` operations and production freshness acceptance without source bodies in logs.
+- [ ] KLG-530 Evaluate an agent graph framework only after a production workflow satisfies ADR 0008's branching, durable pause/resume, human-intervention, replay, and measured-maintainability gate.
+
 ## Dependency Order
 
-KLG-002 through KLG-004 block ingestion. KLG-101 and KLG-102 block source adapters. Jira/Vault ingestion and embedding projections block PostgreSQL hybrid retrieval. Retrieval and GitHub live search block fusion and answer composition. All implementation and permanent tests block exact-branch CI and governed merge. Merge, key rotation, and verified backup block production migration/deployment. Live ingestion blocks real-answer and reconciliation acceptance.
+KLG-002 through KLG-004 block ingestion. KLG-101 and KLG-102 block source adapters. Jira/Vault ingestion and embedding projections block PostgreSQL hybrid retrieval. Retrieval and GitHub live search block fusion and answer composition. All implementation and permanent tests block exact-branch CI and governed merge. Merge, key rotation, and verified backup block production migration/deployment. Historical bootstrap and continuous event/hourly convergence block cadence, deep-dive, and freshness acceptance.

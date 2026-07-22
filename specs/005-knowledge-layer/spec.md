@@ -27,28 +27,29 @@ The objective is to maintain a policy-bounded delivery representation once and r
 3. **Observation and assertion remain distinct.** A commit, transition, or message is trusted as an event that occurred. Statements inside a source are attributed claims and may conflict.
 4. **Connected scope replaces record approval.** Read-only reporting uses every record available through configured project connectors. There is no per-message or per-record approval state.
 5. **Workspace and finance boundaries precede content access.** Mapped workspace members may query non-financial project data. Finance is isolated and denied without an explicit confidential audience.
-6. **Sources retain authority and provenance.** Jira and Vault are synchronized; GitHub remains live; Teams and project email are bounded by configured project connections. Derived state never overwrites its source.
+6. **Sources retain authority and provenance.** Jira, configured knowledge roots, source-code repositories, and collaboration channels are continuously synchronized; live reads verify exact current state when required. Derived state never overwrites its source.
 7. **Knowledge retrieval supports delivery reasoning.** Versioned documents, passages, full-text search, vectors, citations, and deletion reconciliation enrich structured delivery queries.
 8. **Frameworks remain at the edge.** Domain and application code do not depend on Drizzle, PostgreSQL, Graph, Jira, GitHub, Vault, Railway, or model-provider SDK types.
-9. **Answers are concise, decision-ready, and auditable.** Normal Teams answers open with one short acknowledgement or paraphrase, present material facts as scan-friendly Markdown bullets, and close with one numbered next action. Resolvable citations remain inline; a person is tagged only through a source-resolved Teams identity.
+9. **Response depth follows intent.** Operational answers prefer concise, decision-ready formatting, while requested briefs and deep dives may use the length, structure, and latency needed for completeness. Resolvable citations remain inline; a person is tagged only through a source-resolved Teams identity.
 
 ## 4. Capability Architecture
 
 ```mermaid
 flowchart LR
-  J[Jira] --> C[Connected-source adapters]
-  V[Vault] --> C
-  T[Teams] --> C
+  J[Jira] --> C[Continuous source synchronization]
+  V[Versioned knowledge roots] --> C
+  T[Collaboration channels] --> C
+  G[Source-code repositories] --> C
   M[Project email] --> C
   C --> K[Versioned source records and knowledge passages]
   C --> D[Delivery objects, relations, observations, claims, metrics]
   K --> Q[Authorized query execution]
   D --> Q
-  G[GitHub live API] --> Q
+  L[Live source verification] --> Q
   U[Delivery question] --> P[Validated delivery query plan]
   P --> Q
   Q --> X[Conflict and completeness evaluation]
-  X --> A[Concise cited summary and next action]
+  X --> A[Adaptive cited answer, brief, or deep dive]
 ```
 
 `delivery-intelligence` owns the delivery vocabulary, normalized query plan, conflict rules, result model, and concise report composition. `knowledge-layer` owns source items, immutable versions, passages, ACL metadata, embeddings, hybrid retrieval, citations, checkpoints, and deletion reconciliation. `boundary-policy` and identity capabilities authorize the request before either capability retrieves content. Infrastructure adapters translate external APIs and PostgreSQL rows into capability ports.
@@ -71,7 +72,7 @@ A member asks who is waiting for whom, whether anyone is stuck, or for the top r
 
 A member asks what the team delivered last sprint, is doing this week, or did today. Sarathi applies the requested sprint or calendar window as a filter over work, observations, and live activity.
 
-**Independent test**: today, week, current-sprint, and previous-sprint questions use the same domain model with different optional boundaries and return in less than ten seconds.
+**Independent test**: yesterday, today, week, current-sprint, previous-sprint, and quarter questions use the same domain model with different optional boundaries. Fast operational questions return in less than ten seconds; requested deep dives follow an explicit completeness-first response mode.
 
 The response opens by acknowledging the requested reporting scope, uses concise
 visual bullets for the material status, and ends with one numbered action. When
@@ -87,9 +88,15 @@ A member asks what keeps going wrong. Sarathi groups repeated issue categories, 
 
 ### Story 5 — Implementation Questions
 
-A member asks a question that requires repository truth. Sarathi uses GitHub's live API or search within configured repositories and cites the current resource without persisting repository bodies or embeddings.
+A member asks a question that requires repository truth. Sarathi retrieves from the continuously synchronized default-branch code projection, verifies live source state when freshness or exactness requires it, and returns commit-pinned citations.
 
-**Independent test**: the answer contains a resolvable GitHub citation and the database contains no copied codebase body.
+**Independent test**: the answer contains a resolvable, commit-pinned repository citation; changed files are re-indexed without re-embedding unchanged files; and a stale checkpoint triggers live verification or an explicit freshness warning.
+
+### Story 6 — Continuously Current Project Knowledge
+
+An operator can bootstrap a configured historical window and then rely on source events plus hourly reconciliation to keep Jira, knowledge roots, repositories, and collaboration messages current without full re-indexing.
+
+**Independent test**: create, edit, rename, delete, duplicate-event, missed-event, expired-subscription, and unchanged-replay scenarios converge to the authoritative source state with correct versions, vectors, tombstones, checkpoints, and privacy-safe freshness metrics.
 
 ## 6. Functional Requirements
 
@@ -99,10 +106,10 @@ A member asks a question that requires repository truth. Sarathi uses GitHub's l
 - **FR-004**: Reject arbitrary database queries and unknown plan operators before executing a source or loading content.
 - **FR-005**: Use Drizzle schema definitions and generated, versioned migrations for all new production tables. Do not replace existing audit or knowledge tables.
 - **FR-006**: Enable and verify pgvector in the existing PostgreSQL service and retain full-text/vector retrieval for unstructured knowledge.
-- **FR-007**: Synchronize the full configured Jira project boundary, including hierarchy, sprint, status, assignee, reporter, priority, components, versions, estimates, time tracking, links, changelog, descriptions, and comments.
-- **FR-008**: Synchronize configured Vault project roots by heading and project metadata rather than exemplar documents.
-- **FR-009**: Read configured Teams surfaces and scoped project email without per-record approval. Exclude assistant prompts and bot replies from team-progress observations.
-- **FR-010**: Query configured GitHub repositories live for pull requests, commits, reviews, checks, issues, and code search. Do not persist repository bodies or embeddings.
+- **FR-007**: Continuously synchronize the full configured Jira project boundary, including project metadata, fields, hierarchy, board columns, sprint, status, assignee, reporter, priority, components, versions, estimates, time tracking, links, changelog, descriptions, and comments; derive status wait intervals from changelog timestamps.
+- **FR-008**: Continuously synchronize configured version-controlled knowledge roots by immutable tree/blob identity, heading, project metadata, edit, rename, deletion, and scope change rather than re-embedding unchanged documents.
+- **FR-009**: Bootstrap and continuously synchronize configured collaboration channels without per-record approval. Preserve threads, replies, edits, deletions, authors, mentions, native links, and attachment metadata; exclude assistant prompts, bot replies, tests, finance content, and unauthorized channels before embedding.
+- **FR-010**: Bootstrap configured source-code repositories at the current default-branch revision; persist file, symbol, snippet, line-range, commit, pull-request, review, check, release, and deployment projections; apply changed-file delta indexing on verified events; and retain live API/search verification.
 - **FR-011**: Treat source-native events as observations; represent statements as attributed claims with subject, predicate, value, source, author, authority, citation, and observation metadata.
 - **FR-012**: Preserve simultaneously active conflicting claims and disclose disagreement. Authority and recency may rank claims but must not silently erase conflict.
 - **FR-013**: Make non-financial project data visible to mapped workspace members. Store finance metrics and finance-classified content in an isolated confidential boundary that fails closed for general queries.
@@ -110,9 +117,13 @@ A member asks a question that requires repository truth. Sarathi uses GitHub's l
 - **FR-015**: Suppress duplicate observations and claims using stable source identity, version, content hashes, and cross-source equivalence keys.
 - **FR-016**: Use Vercel AI SDK provider abstractions with OpenRouter as the only production model/embedding provider. Tests use deterministic implementations.
 - **FR-017**: Answer deterministic delivery queries without a model when possible. Model-assisted planning or synthesis receives only an authorized, bounded result envelope.
-- **FR-018**: Produce a concise Teams-native Markdown response with one short prose opening, one to four cited evidence bullets, and exactly one cited numbered next action. Complete the response path in less than ten seconds for supported delivery questions.
+- **FR-018**: Select a declared response-depth mode from the request. Fast operational answers target less than ten seconds and the smallest complete Teams-native shape; structured briefs and explicit deep dives may exceed the fast budget and must preserve requested scope, completeness, citations, conflicts, freshness, and gaps.
 - **FR-019**: Provide durable ingestion, reconciliation, query, status, and projection-rebuild CLI operations with counts, checksums, checkpoints, and no private bodies in logs.
 - **FR-020**: Emit Teams mention entities only for `<at>` tokens backed by a source-resolved Graph user identifier. Do not invent, guess, or resolve people from display text during answer composition.
+- **FR-021**: Prefer authenticated source events for low-latency synchronization and run hourly checkpointed reconciliation for every configured source as the correctness and repair path.
+- **FR-022**: Store idempotent event deliveries, subscription lifecycle, leases, cursors, scope hashes, freshness, lag, retries, and safe failure classes without logging source bodies or private scope values.
+- **FR-023**: Re-embed only changed passages and prove that unchanged vectors are reused across event, hourly, and manual reconciliation.
+- **FR-024**: Keep orchestration framework-neutral. Use the existing typed application workflows and PostgreSQL checkpoints unless measured autonomous workflows satisfy the adoption gate in ADR 0008.
 
 ## 7. Core Data Contracts
 
@@ -140,12 +151,12 @@ A member asks a question that requires repository truth. Sarathi uses GitHub's l
 
 Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, and source-resolved Teams mention transport.
 
-Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, bounded connector synchronization, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint delivery, current work, recurring issues, and a daily summary under ten seconds.
+Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, historical bootstrap plus continuous event/hourly reconciliation, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint and quarter delivery, current work, recurring issues, and daily/weekly summaries. Fast operational questions must meet the ten-second target; requested deep dives are evaluated for completeness and disclosed elapsed time.
 
 ## 10. Non-Goals
 
 - No separate graph or vector database.
-- No copied GitHub codebase.
+- No unbounded repository history, binary/build/dependency indexing, or source scope outside configured repositories and branches.
 - No cross-workspace synthesis.
 - No autonomous source-system writes or external publication in this capability.
 - No unrestricted mailbox or personal-message search.
@@ -160,7 +171,9 @@ Stop on backup failure, migration drift, connector-scope ambiguity, unauthorized
 
 - [Implementation Plan](./plan.md)
 - [Delivery Intelligence Redesign](./delivery-intelligence.md)
+- [Continuous Source Synchronization](./continuous-source-synchronization.md)
 - [ADR 0006](../../docs/adr/0006-postgres-knowledge-retrieval-stack.md)
 - [ADR 0007](../../docs/adr/0007-delivery-intelligence-projection.md)
+- [ADR 0008](../../docs/adr/0008-continuous-project-intelligence-synchronization.md)
 - [Module Boundaries](../../docs/architecture/module-boundaries.md)
 - [Workspace and Capability Model](../../docs/architecture/workspace-capability-model.md)
