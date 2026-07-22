@@ -3,6 +3,8 @@ export {
   createDeliveryAssistant,
   deliveryResponseBudget,
 } from "./application/create-delivery-assistant.ts";
+export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";
+export { parseAttributedDeliveryAssertion } from "./domain/attributed-assertion.ts";
 export type {
   ChannelPreference,
   CoachingDepth,

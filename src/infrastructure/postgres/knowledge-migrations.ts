@@ -78,6 +78,7 @@ export const knowledgeMigrationPlan = {
     "0001_knowledge-layer",
     "0002_delivery-intelligence-core",
     "0003_continuous-sync-control-plane",
+    "0004_attributed-delivery-assertions",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,

@@ -114,6 +114,10 @@ export type DeliveryClaim = DeliveryRecordBoundary & {
   readonly value: DeliveryClaimValue;
   readonly valueHash: string;
   readonly assertedBy?: string | undefined;
+  readonly externalAssertionId?: string | undefined;
+  readonly supersedesAssertionIds?: readonly string[] | undefined;
+  readonly confidence?: number | undefined;
+  readonly assertionSchemaVersion?: number | undefined;
   readonly authority: number;
 };
 
@@ -167,9 +171,26 @@ export const deliveryClaimValueHash = (value: DeliveryClaimValue): string =>
 export const findDeliveryConflicts = (
   claims: readonly DeliveryClaim[],
 ): readonly DeliveryConflict[] => {
+  const superseded = new Set(
+    claims
+      .filter((claim) => claim.active && !claim.deleted)
+      .flatMap((claim) =>
+        (claim.supersedesAssertionIds ?? []).map(
+          (assertionId) => `${claim.subjectKey}\u0000${claim.predicate}\u0000${assertionId}`,
+        ),
+      ),
+  );
   const groups = new Map<string, DeliveryClaim[]>();
   for (const claim of claims) {
-    if (!claim.active || claim.deleted) continue;
+    if (
+      !claim.active ||
+      claim.deleted ||
+      (claim.externalAssertionId !== undefined &&
+        superseded.has(
+          `${claim.subjectKey}\u0000${claim.predicate}\u0000${claim.externalAssertionId}`,
+        ))
+    )
+      continue;
     const key = `${claim.workspaceId}\u0000${claim.subjectKey}\u0000${claim.predicate}`;
     const group = groups.get(key) ?? [];
     group.push(claim);
@@ -185,6 +206,7 @@ export const findDeliveryConflicts = (
       claims: [...group].sort(
         (left, right) =>
           right.authority - left.authority ||
+          (right.confidence ?? 0) - (left.confidence ?? 0) ||
           Date.parse(right.observedAt) - Date.parse(left.observedAt) ||
           left.id.localeCompare(right.id),
       ),
