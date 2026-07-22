@@ -71,6 +71,7 @@ export {
 export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
 export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {
+  DeliveryActionTarget,
   DeliveryAnswerComposer,
   DeliveryAnswerComposition,
   DeliveryAnswerCompositionInput,

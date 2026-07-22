@@ -32,6 +32,13 @@ export type DeliveryResultItem = {
   readonly authority: number;
   readonly observedAt?: string | undefined;
   readonly dedupeKey: string;
+  readonly actionTarget?: DeliveryActionTarget | undefined;
+};
+
+export type DeliveryActionTarget = {
+  readonly source: "teams";
+  readonly externalId: string;
+  readonly displayName: string;
 };
 
 export type DeliveryQueryResult = {
@@ -64,6 +71,7 @@ export type DeliveryAssistantAnswer = {
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];
+  readonly mentions?: readonly DeliveryActionTarget[];
 };
 
 export type DeliveryAnswerCompositionInput = {

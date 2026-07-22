@@ -345,7 +345,14 @@ describe("delivery intelligence live query sources", () => {
               messageType: "message",
               createdDateTime: "2026-07-20T12:00:00.000Z",
               body: { content: "Released the delivery dashboard." },
-              from: { user: { displayName: "Delivery Lead" } },
+              from: { user: { id: "lead-id", displayName: "Delivery Lead" } },
+              mentions: [
+                {
+                  mentioned: {
+                    user: { id: "reviewer-id", displayName: "Delivery Reviewer" },
+                  },
+                },
+              ],
               webUrl: "https://teams.microsoft.com/l/message/message-1",
               replies: [
                 {
@@ -363,7 +370,15 @@ describe("delivery intelligence live query sources", () => {
     });
     const result = await Effect.runPromise(source.execute(context, activityPlan));
     expect(result.items).toMatchObject([
-      { selector: "observations", summary: "Delivery Lead: Released the delivery dashboard." },
+      {
+        selector: "observations",
+        summary: "Delivery Lead: Released the delivery dashboard.",
+        actionTarget: {
+          source: "teams",
+          externalId: "reviewer-id",
+          displayName: "Delivery Reviewer",
+        },
+      },
     ]);
   });
 

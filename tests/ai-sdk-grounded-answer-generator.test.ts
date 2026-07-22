@@ -93,7 +93,7 @@ describe("AI SDK OpenRouter answer generator", () => {
 
   it("sends bounded project information and returns only supplied citations", async () => {
     const model = successfulModel(
-      "Delivery is current. [Delivery](https://jira.example.test/DEMO-754)\nNext action is QA. [Delivery](https://jira.example.test/DEMO-754)",
+      "I found the current delivery position.\n- **Status:** Delivery is current. [Delivery](https://jira.example.test/DEMO-754)\n1. **Next:** Confirm QA ownership. [Delivery](https://jira.example.test/DEMO-754)",
     );
     const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
     await expect(Effect.runPromise(generator.generate(envelope))).resolves.toMatchObject({
@@ -103,6 +103,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(JSON.stringify(model.doGenerateCalls)).toContain(
       "Never answer with agent instructions, trigger keywords",
     );
+    expect(JSON.stringify(model.doGenerateCalls)).toContain("Start with one short prose sentence");
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 

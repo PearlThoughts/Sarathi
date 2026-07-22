@@ -913,7 +913,7 @@ export const createTeamsIngressApplication = (
           Effect.tryPromise({
             try: async () => {
               await context.sendActivity(
-                sameThreadReplyActivity(command.rootActivityId, answer.text),
+                sameThreadReplyActivity(command.rootActivityId, answer.text, answer.mentions),
               );
             },
             catch: () => new RepositoryError({ message: "Teams delivery failed" }),
@@ -945,8 +945,27 @@ export const createTeamsIngressApplication = (
   return application;
 };
 
-export const sameThreadReplyActivity = (replyToId: string, text: string): Activity =>
-  Activity.fromObject({ type: ActivityTypes.Message, replyToId, text });
+export const sameThreadReplyActivity = (
+  replyToId: string,
+  text: string,
+  mentions: readonly {
+    readonly source: "teams";
+    readonly externalId: string;
+    readonly displayName: string;
+  }[] = [],
+): Activity =>
+  Activity.fromObject({
+    type: ActivityTypes.Message,
+    replyToId,
+    text,
+    entities: mentions
+      .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
+      .map(({ externalId, displayName }) => ({
+        type: "mention",
+        mentioned: { id: externalId, name: displayName },
+        text: `<at>${displayName}</at>`,
+      })),
+  });
 
 export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();

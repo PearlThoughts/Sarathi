@@ -80,7 +80,7 @@ describe("delivery intelligence application", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("deduplicates cross-source facts and returns at most three cited lines", async () => {
+  it("deduplicates cross-source facts and returns a decision-ready cited response", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["observations"],
@@ -102,10 +102,83 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [source] }).answer(request),
     );
-    expect(answer.text.split("\n").length).toBeLessThanOrEqual(3);
+    expect(answer.text.split("\n").length).toBeLessThanOrEqual(5);
+    expect(answer.text.split("\n")[0]).toBe(
+      "Here’s the current project activity across connected sources.",
+    );
+    expect(answer.text).toContain("- 🧩 **Code:**");
+    expect(answer.text).toContain("1. ➡️ **Recommended next step:**");
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
     expect(answer.status).toBe("ok");
+  });
+
+  it("delegates with a real Teams mention only when the source resolves the target identity", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("teams", "review", "Pavithra, please review the delivery issue"),
+              actionTarget: {
+                source: "teams",
+                externalId: "pavithra-entra-id",
+                displayName: "Pavithra",
+              },
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer(request),
+    );
+
+    expect(answer.text).toContain(
+      "1. ➡️ **Next:** <at>Pavithra</at>, please confirm the next step and due date",
+    );
+    expect(answer.mentions).toEqual([
+      {
+        source: "teams",
+        externalId: "pavithra-entra-id",
+        displayName: "Pavithra",
+      },
+    ]);
+  });
+
+  it("does not delegate merely because a non-actionable update mentions a person", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("teams", "thanks", "Delivery Lead: Thanks to Pavithra for the update"),
+              actionTarget: {
+                source: "teams",
+                externalId: "pavithra-entra-id",
+                displayName: "Pavithra",
+              },
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer(request),
+    );
+
+    expect(answer.text).not.toContain("<at>Pavithra</at>");
+    expect(answer.mentions).toEqual([]);
   });
 
   it("preserves each requested intent when one Jira issue supports a compound answer", async () => {
@@ -140,8 +213,10 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.text.split("\n")).toEqual([
-      `Risks: DEMO-9 is a high delivery risk [Jira 1](${sharedCitation})`,
-      `Next action: Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
+      "Here’s the delivery situation that needs attention.",
+      `- ⚠️ **Risks:** DEMO-9 is a high delivery risk [Jira 1](${sharedCitation})`,
+      `- ➡️ **Next action:** Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
+      `1. ➡️ **Recommended next step:** Assign a mitigation owner and checkpoint to the highest risk. [Jira 2](${sharedCitation})`,
     ]);
     expect(answer.citations).toHaveLength(2);
   });
@@ -230,9 +305,9 @@ describe("delivery intelligence application", () => {
         },
       }),
     );
-    expect(answer.text.split("\n")).toHaveLength(2);
+    expect(answer.text.split("\n")).toHaveLength(4);
     expect(answer.text).not.toContain("Dependencies:");
-    expect(answer.text).toContain("Conflict — DEMO-1 status: blocked");
+    expect(answer.text).toContain("**Conflict — DEMO-1 status:** blocked");
     expect(answer.text).toContain("vs ready");
     expect(answer.conflicts).toHaveLength(1);
   });
@@ -282,13 +357,13 @@ describe("delivery intelligence application", () => {
     );
     expect(answer.status).toBe("partial");
     expect(answer.unavailableSources).toEqual(["jira", "vault"]);
-    expect(answer.text).toContain("Partial: Jira, Vault unavailable.");
+    expect(answer.text).toContain("- ⚠️ **Coverage:** Jira, Vault unavailable.");
   });
 
   it("synthesizes only authorized deduplicated records and validates model citations", async () => {
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
       Effect.succeed({
-        text: `Merged code and project activity. [Code](https://example.com/github/code)\nThe team confirmed the next step. [Team](https://example.com/teams/team)`,
+        text: `I found the current delivery activity.\n- **Delivery:** Merged code and project activity. [Code](https://example.com/github/code)\n1. **Next:** Confirm the team-owned follow-up. [Team](https://example.com/teams/team)`,
         citations: [
           { label: "Code", url: "https://example.com/github/code" },
           { label: "Team", url: "https://example.com/teams/team" },

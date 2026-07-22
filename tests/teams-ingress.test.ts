@@ -289,6 +289,36 @@ describe("Teams ingress configuration", () => {
     });
   });
 
+  it("renders only resolved action targets as real Teams mention entities", () => {
+    expect(
+      sameThreadReplyActivity(
+        "root-activity",
+        "1. **Next:** <at>Delivery Reviewer</at>, please confirm the next step.",
+        [
+          {
+            source: "teams",
+            externalId: "reviewer-id",
+            displayName: "Delivery Reviewer",
+          },
+          {
+            source: "teams",
+            externalId: "not-rendered-id",
+            displayName: "Not Rendered",
+          },
+        ],
+      ),
+    ).toMatchObject({
+      replyToId: "root-activity",
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Delivery Reviewer</at>",
+          mentioned: { id: "reviewer-id", name: "Delivery Reviewer" },
+        },
+      ],
+    });
+  });
+
   it("fails closed for Finance scheduling until an explicit workspace projection is present", () => {
     const incomplete = hostedFinanceReminderCompositionFromEnvironment({
       SARATHI_REMINDERS_ENABLED: "true",
