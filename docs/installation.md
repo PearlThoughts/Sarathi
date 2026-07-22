@@ -134,6 +134,7 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON`
 - `SARATHI_KNOWLEDGE_VAULT_SOURCE_ID`
 - `SARATHI_KNOWLEDGE_VAULT_ROOTS_JSON`
+- `SARATHI_TEAMS_DELIVERY_CHANNELS_JSON` (optional explicit 1–32 channel allowlist; each entry declares `graphTeamId`, `channelId`, `workspaceId`, `scope`, and `sensitivity`; current ingress mappings remain the fallback)
 - `SARATHI_PROJECT_MAIL_SCOPES_JSON` (empty until a project-mail boundary is configured)
 
 ### Delivery intelligence

@@ -195,6 +195,13 @@
 - Scope: Pre-provider workspace/actor checks, live GitHub PR/commit retrieval, Jira query projection, Teams channel reads, project-email scoping, assistant-prompt exclusion, finance exclusion, and resolvable source citations.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## teams-delivery-channel-projection
+
+- Command: `bunx vitest run tests/teams-delivery-channel-projection.test.ts`
+- Location: `tests/teams-delivery-channel-projection.test.ts`
+- Scope: Explicit bounded Teams delivery-channel allowlists, current ingress-mapping fallback, declared standard/shared/private scopes, and fail-closed ambiguity or size validation.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-capability-matrix
 
 - Command: `bunx vitest run tests/delivery-capability-matrix.test.ts tests/delivery-knowledge-query-source.test.ts`

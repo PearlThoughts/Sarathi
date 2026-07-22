@@ -193,6 +193,13 @@
       "description": "Pre-provider access checks plus live GitHub, Jira, Teams, and scoped project-email delivery query coverage."
     },
     {
+      "id": "teams-delivery-channel-projection",
+      "path": "tests/teams-delivery-channel-projection.test.ts",
+      "command": "bunx vitest run tests/teams-delivery-channel-projection.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Explicit bounded delivery-channel allowlists, ingress fallback, shared/private scope declarations, and ambiguity rejection."
+    },
+    {
       "id": "delivery-cli",
       "path": "tests/delivery-cli.test.ts",
       "command": "bunx vitest run tests/delivery-cli.test.ts",

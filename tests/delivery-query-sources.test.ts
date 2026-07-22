@@ -514,6 +514,13 @@ describe("delivery intelligence live query sources", () => {
               body: { content: "@" },
               webUrl: "https://teams.microsoft.com/l/message/malformed-test",
             },
+            {
+              id: "finance",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "Project budget and commercial rate need review." },
+              webUrl: "https://teams.microsoft.com/l/message/finance",
+            },
           ],
         }),
     });
@@ -526,12 +533,78 @@ describe("delivery intelligence live query sources", () => {
 
     const reviews = await Effect.runPromise(source.execute(context, reviewPlan));
     const capacity = await Effect.runPromise(source.execute(context, capacityPlan));
+    const activity = await Effect.runPromise(source.execute(context, activityPlan));
 
     expect(reviews.items.map(({ id }) => id)).toEqual(["teams:team-1:channel-1:review:reviews"]);
     expect(capacity.items.map(({ id }) => id)).toEqual([
       "teams:team-1:channel-1:availability:capacity",
     ]);
     expect(capacityPlan.intents).toEqual(["capacity"]);
+    expect(activity.items.map(({ id }) => id)).not.toContain(
+      "teams:team-1:channel-1:finance:activity",
+    );
+  });
+
+  it("queries more than ten explicitly authorized Teams channels without opening the scope", async () => {
+    const fetched: string[] = [];
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: Array.from({ length: 11 }, (_, index) => ({
+        teamId: "team-1",
+        channelId: `channel-${index}`,
+        workspaceId: context.workspaceId,
+        sensitivity: "internal" as const,
+        allowedActorIds: new Set([context.actorId]),
+      })),
+      fetcher: async (input) => {
+        fetched.push(String(input));
+        return Response.json({ value: [] });
+      },
+    });
+    const plan = planDeliveryQuestion("Who has availability constraints today?");
+    if (plan === undefined) throw new Error("Expected capacity plan");
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(result.complete).toBe(true);
+    expect(fetched).toHaveLength(11);
+  });
+
+  it("keeps readable Teams channels when another explicit channel is inaccessible", async () => {
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: ["readable", "inaccessible"].map((channelId) => ({
+        teamId: "team-1",
+        channelId,
+        workspaceId: context.workspaceId,
+        sensitivity: "internal" as const,
+        allowedActorIds: new Set([context.actorId]),
+      })),
+      fetcher: async (input) =>
+        String(input).includes("inaccessible")
+          ? new Response(undefined, { status: 403 })
+          : Response.json({
+              value: [
+                {
+                  id: "availability",
+                  messageType: "message",
+                  createdDateTime: "2026-07-20T12:00:00.000Z",
+                  body: { content: "I am unavailable until 2 PM." },
+                  webUrl: "https://teams.microsoft.com/l/message/availability",
+                },
+              ],
+            }),
+    });
+    const plan = planDeliveryQuestion("Who has availability constraints today?");
+    if (plan === undefined) throw new Error("Expected capacity plan");
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(result.items.map(({ id }) => id)).toEqual([
+      "teams:team-1:readable:availability:capacity",
+    ]);
+    expect(result.unavailableSources).toEqual(["teams"]);
+    expect(result.complete).toBe(false);
   });
 
   it("treats project progress fields as compound delivery facts rather than generic activity", () => {
