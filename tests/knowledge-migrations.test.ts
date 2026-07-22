@@ -29,6 +29,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 0, tag: "0000_enable-pgvector" },
       { idx: 1, tag: "0001_knowledge-layer" },
       { idx: 2, tag: "0002_delivery-intelligence-core" },
+      { idx: 3, tag: "0003_continuous-sync-control-plane" },
     ]);
   });
 
@@ -83,5 +84,31 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).toContain('"observation_kind" text NOT NULL');
     expect(schema).toContain('"dedupe_key" text NOT NULL');
     expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+  });
+
+  it("adds an additive privacy-safe continuous synchronization control plane", async () => {
+    const schema = await migration("0003_continuous-sync-control-plane.sql");
+    const createdTables = [...schema.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]);
+
+    expect(createdTables).toEqual([
+      "knowledge_sync_event_delivery",
+      "knowledge_sync_lease",
+      "knowledge_sync_run",
+      "knowledge_sync_subscription",
+    ]);
+    expect(schema).toContain('ALTER TABLE "knowledge_sync_checkpoint" ADD COLUMN "last_event_at"');
+    expect(schema).toContain(
+      'ALTER TABLE "knowledge_sync_checkpoint" ADD COLUMN "last_reconciled_at"',
+    );
+    expect(schema).toContain(
+      'ALTER TABLE "knowledge_sync_checkpoint" ADD COLUMN "next_reconcile_at"',
+    );
+    expect(schema).toContain('"provider_event_id" text NOT NULL');
+    expect(schema).toContain('"resource_hash" text NOT NULL');
+    expect(schema).not.toContain("payload_body");
+    expect(schema).not.toContain("resource_url");
+    expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+    expect(schema).not.toContain("teams_mention_audit");
+    expect(schema).not.toContain("compliance_reminder_audit");
   });
 });

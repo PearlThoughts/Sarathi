@@ -147,7 +147,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "create table if not exists compliance_reminder_audit (id text primary key); create table if not exists compliance_reminder_dry_run_evidence (id text primary key); create table if not exists teams_mention_audit (id text primary key)",
     );
     const verification = await Effect.runPromise(applyKnowledgePostgresMigrations(databaseUrl));
-    expect(verification.knowledgeTableCount).toBe(7);
+    expect(verification.knowledgeTableCount).toBe(11);
     expect(verification.deliveryTableCount).toBe(7);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
@@ -458,13 +458,17 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       exitCode: 0,
       output: {
         status: {
-          knowledgeTableCount: 7,
-          appliedMigrationCount: 3,
+          knowledgeTableCount: 11,
+          appliedMigrationCount: 4,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
               documentsObserved: 0,
               itemsDeleted: 1,
+              lastReconciledAt: expect.any(String),
+              lastSucceededAt: expect.any(String),
+              retryCount: 0,
+              nextReconcileAt: expect.any(String),
             }),
           ],
         },

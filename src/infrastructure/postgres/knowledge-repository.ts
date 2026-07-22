@@ -1272,12 +1272,46 @@ const reconcileSnapshot = async (
         itemsDeleted: deletedItems.length,
         checksum,
       } as const;
+      const newestSourceUpdatedAt = snapshot.documents.reduce<string | null>(
+        (latest, document) =>
+          latest === null || Date.parse(document.sourceUpdatedAt) > Date.parse(latest)
+            ? document.sourceUpdatedAt
+            : latest,
+        null,
+      );
+      const operationalCheckpoint = {
+        lastReconciledAt: now,
+        newestSourceUpdatedAt,
+        lastSucceededAt: now,
+        lagSeconds:
+          newestSourceUpdatedAt === null
+            ? null
+            : Math.max(
+                0,
+                Math.floor((Date.parse(now) - Date.parse(newestSourceUpdatedAt)) / 1_000),
+              ),
+        retryCount: 0,
+        nextReconcileAt: new Date(Date.parse(now) + 60 * 60 * 1_000).toISOString(),
+        failureClass: null,
+      } as const;
       await transaction
         .insert(knowledgeSyncCheckpointTable)
-        .values({ ...summary, status: "succeeded", errorCode: null, syncedAt: now })
+        .values({
+          ...summary,
+          ...operationalCheckpoint,
+          status: "succeeded",
+          errorCode: null,
+          syncedAt: now,
+        })
         .onConflictDoUpdate({
           target: [knowledgeSyncCheckpointTable.sourceId, knowledgeSyncCheckpointTable.workspaceId],
-          set: { ...summary, status: "succeeded", errorCode: null, syncedAt: now },
+          set: {
+            ...summary,
+            ...operationalCheckpoint,
+            status: "succeeded",
+            errorCode: null,
+            syncedAt: now,
+          },
         });
       return summary;
     });
