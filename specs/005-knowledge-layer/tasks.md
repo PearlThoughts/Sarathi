@@ -76,7 +76,7 @@
 - [x] KLG-525 Implement configured collaboration-history bootstrap, thread/reply passages, message version/edit/delete handling, change-notification renewal, and hourly repair reconciliation.
 - [x] KLG-526 Add canonical entity/alias joins and comparable source/business timestamps across synchronized Jira, knowledge, repository, and collaboration projections.
 - [x] KLG-527 Add explicit fast, structured-brief, and deep-dive response modes with independent completeness, citation, freshness, formatting, and latency acceptance.
-- [ ] KLG-528 Add permanent PostgreSQL connector tests for bootstrap, pagination, unchanged replay, changed-only embeddings, missed/duplicate/out-of-order events, expired subscriptions, deletion, scope removal, hourly convergence, and privacy-safe observability.
+- [x] KLG-528 Add permanent PostgreSQL connector tests for bootstrap, pagination, unchanged replay, changed-only embeddings, missed/duplicate/out-of-order events, expired subscriptions, deletion, scope removal, hourly convergence, and privacy-safe observability.
 - [ ] KLG-529 Add durable `delivery sync backfill|events|reconcile|status` operations and production freshness acceptance without source bodies in logs.
 - [ ] KLG-530 Evaluate an agent graph framework only after a production workflow satisfies ADR 0008's branching, durable pause/resume, human-intervention, replay, and measured-maintainability gate.
 

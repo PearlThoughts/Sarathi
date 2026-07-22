@@ -171,7 +171,7 @@
 
 - Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
 - Location: `tests/knowledge-postgres.integration.test.ts`
-- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, full-vs-delta deletion safety, unchanged-vector reuse across Vault renames, authorization-safe attributed-claim supersession and correction deletion, source-qualified Jira/GitHub canonical joins and cross-source conflicts, explicit source/index timestamps, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint event/reconciliation freshness, and deletion tombstones.
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, full-vs-delta deletion safety, unchanged-vector reuse across Vault renames, authorization-safe attributed-claim supersession and correction deletion, source-qualified Jira/GitHub canonical joins and cross-source conflicts, explicit source/index timestamps, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint event/reconciliation freshness, and deletion tombstones. The four continuous connectors also prove durable duplicate/out-of-order event handling, changed-only embeddings, expired-subscription renewal, atomic repair leases, missed-deletion hourly convergence, and metadata-only status output.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
 
 ## delivery-intelligence-domain

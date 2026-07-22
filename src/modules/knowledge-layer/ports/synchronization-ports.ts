@@ -3,6 +3,7 @@ import type { RepositoryError } from "../../../domain/errors.ts";
 import type {
   SynchronizationCheckpoint,
   SynchronizationEventDelivery,
+  SynchronizationFailureClass,
   SynchronizationLease,
   SynchronizationRunStatus,
   SynchronizationSubscription,
@@ -26,6 +27,9 @@ export type SynchronizationRun = {
   readonly startedAt: string;
   readonly completedAt?: string | undefined;
   readonly attemptCount: number;
+  readonly newestSourceUpdatedAt?: string | undefined;
+  readonly lagSeconds?: number | undefined;
+  readonly failureClass?: SynchronizationFailureClass | undefined;
 };
 
 export type SynchronizationStatus = {
@@ -46,6 +50,10 @@ export type SynchronizationControlRepository = {
   readonly heartbeatLease: (lease: SynchronizationLease) => Effect.Effect<boolean, RepositoryError>;
   readonly releaseLease: (lease: SynchronizationLease) => Effect.Effect<void, RepositoryError>;
   readonly startRun: (run: SynchronizationRun) => Effect.Effect<void, RepositoryError>;
+  readonly completeRun: (run: SynchronizationRun) => Effect.Effect<void, RepositoryError>;
+  readonly updateEvent: (
+    delivery: SynchronizationEventDelivery,
+  ) => Effect.Effect<void, RepositoryError>;
   readonly readStatus: (
     workspaceId: string,
     sourceId: string,
