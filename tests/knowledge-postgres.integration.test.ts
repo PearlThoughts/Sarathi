@@ -8,6 +8,7 @@ import {
   applyKnowledgePostgresMigrations,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
+  createPostgresSynchronizationControlRepository,
   openKnowledgePostgresDatabase,
 } from "../src/infrastructure/postgres/index.ts";
 import {
@@ -24,7 +25,10 @@ import {
   type DeliveryQueryPlan,
   planDeliveryQuestion,
 } from "../src/modules/delivery-intelligence/index.ts";
-import type { KnowledgeSourceSnapshot } from "../src/modules/knowledge-layer/index.ts";
+import {
+  type KnowledgeSourceSnapshot,
+  synchronizationEventDeliveryId,
+} from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
@@ -51,7 +55,11 @@ const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
       authority: 1,
       provenance: { projectKey: "DEMO" },
       acl: [
-        { subjectType: "workspace", subjectId: "workspace-example", effect: "allow" },
+        {
+          subjectType: "workspace",
+          subjectId: "workspace-example",
+          effect: "allow",
+        },
         { subjectType: "actor", subjectId: "blocked-actor", effect: "deny" },
         { subjectType: "audience", subjectId: "delivery", effect: "allow" },
         { subjectType: "audience", subjectId: "blocked", effect: "deny" },
@@ -192,8 +200,16 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         embeddings,
       ),
     );
-    expect(first).toMatchObject({ versionsCreated: 1, passagesActive: 1, itemsDeleted: 0 });
-    expect(replay).toMatchObject({ versionsCreated: 0, passagesActive: 1, itemsDeleted: 0 });
+    expect(first).toMatchObject({
+      versionsCreated: 1,
+      passagesActive: 1,
+      itemsDeleted: 0,
+    });
+    expect(replay).toMatchObject({
+      versionsCreated: 0,
+      passagesActive: 1,
+      itemsDeleted: 0,
+    });
     expect(replay.checksum).toBe(first.checksum);
     expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
     const projectionTimestampChanged = snapshot(
@@ -242,7 +258,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           documents: [
             {
               ...provenanceDocument,
-              provenance: { ...provenanceDocument.provenance, revision: "new-repository-commit" },
+              provenance: {
+                ...provenanceDocument.provenance,
+                revision: "new-repository-commit",
+              },
             },
           ],
         },
@@ -343,7 +362,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         (await Effect.runPromise(embeddings.embed(["builder status"])))[0] ?? [],
       ),
     );
-    expect(authorized[0]).toMatchObject({ source: "jira", sourceId: "DEMO-635" });
+    expect(authorized[0]).toMatchObject({
+      source: "jira",
+      sourceId: "DEMO-635",
+    });
     expect(authorized[0]?.citationUrl).toBe("https://jira.example/browse/DEMO-635#description");
 
     for (const audience of [
@@ -462,7 +484,11 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     }>(
       "select bool_and(i.deleted_at is not null) as deleted, count(distinct p.id) filter (where p.active) as active_passages, count(distinct v.id) filter (where v.tombstone) as tombstones from knowledge_item i left join knowledge_passage p on p.item_id = i.id left join knowledge_version v on v.item_id = i.id",
     );
-    expect(state.rows[0]).toMatchObject({ deleted: true, active_passages: "0", tombstones: "3" });
+    expect(state.rows[0]).toMatchObject({
+      deleted: true,
+      active_passages: "0",
+      tombstones: "3",
+    });
     expect(
       await Promise.all([
         activeCount(deliveryObjectTable),
@@ -563,6 +589,317 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(stored.rows).toEqual([{ passage_count: "0" }]);
   });
 
+  test("converges every continuous connector after duplicate, out-of-order, missed, expired, and deleted state", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const control = createPostgresSynchronizationControlRepository(opened.database);
+    const deterministic = createDeterministicKnowledgeEmbedding();
+    const embeddingBatches: string[][] = [];
+    const embeddings = {
+      ...deterministic,
+      embed: (values: readonly string[]) => {
+        embeddingBatches.push([...values]);
+        return deterministic.embed(values);
+      },
+    };
+    const workspaceId = "connector-convergence";
+    const sourceKinds = ["jira", "vault", "github", "teams"] as const;
+    const canonicalBase = {
+      jira: "https://jira.example/browse",
+      vault: "https://github.com/example/vault/blob/main",
+      github: "https://github.com/example/repository/blob/main",
+      teams: "https://teams.microsoft.com/l/message",
+    } satisfies Record<(typeof sourceKinds)[number], string>;
+    const connectorSnapshot = (
+      source: (typeof sourceKinds)[number],
+      revision: "bootstrap" | "event" | "repair",
+    ): KnowledgeSourceSnapshot => {
+      const sourceId = `${source}-convergence`;
+      const changed = revision !== "bootstrap";
+      const documents = [
+        {
+          source,
+          sourceId,
+          workspaceId,
+          externalId: `${source}-current`,
+          sourceType: source === "github" ? "code" : source === "teams" ? "message" : "record",
+          sourceVersion: changed ? "v2" : "v1",
+          canonicalUrl: `${canonicalBase[source]}/${source}-current`,
+          title: `${source} current delivery record`,
+          sourceUpdatedAt: changed ? "2026-07-22T10:30:00.000Z" : "2026-07-22T10:00:00.000Z",
+          sensitivity: "internal" as const,
+          authority: 0.9,
+          provenance: { connector: source, revision },
+          acl: [
+            {
+              effect: "allow" as const,
+              subjectType: "workspace" as const,
+              subjectId: workspaceId,
+            },
+          ],
+          passages: [
+            {
+              kind: "summary",
+              locator: "#summary",
+              ordinal: 0,
+              title: "Delivery summary",
+              body: changed
+                ? `${source} changed delivery state`
+                : `${source} initial delivery state`,
+              contentHash: `sha256-${source}-${changed ? "changed" : "initial"}`,
+            },
+          ],
+        },
+        ...(revision === "repair"
+          ? []
+          : [
+              {
+                source,
+                sourceId,
+                workspaceId,
+                externalId: `${source}-deleted`,
+                sourceType: "record",
+                sourceVersion: "v1",
+                canonicalUrl: `${canonicalBase[source]}/${source}-deleted`,
+                title: `${source} record deleted upstream`,
+                sourceUpdatedAt: "2026-07-22T10:00:00.000Z",
+                sensitivity: "internal" as const,
+                authority: 0.9,
+                provenance: { connector: source, revision: "bootstrap" },
+                acl: [
+                  {
+                    effect: "allow" as const,
+                    subjectType: "workspace" as const,
+                    subjectId: workspaceId,
+                  },
+                ],
+                passages: [
+                  {
+                    kind: "summary",
+                    locator: "#summary",
+                    ordinal: 0,
+                    title: "Deleted upstream",
+                    body: `${source} content awaiting deletion repair`,
+                    contentHash: `sha256-${source}-deleted`,
+                  },
+                ],
+              },
+            ]),
+      ];
+      return {
+        sourceId,
+        source,
+        workspaceId,
+        cursor: `${source}-${revision}`,
+        scopeHash: `sha256-${source}-scope-${revision === "repair" ? "reduced" : "full"}`,
+        mode: revision === "event" ? "delta" : "full",
+        retiredExternalIds: [],
+        documents,
+      };
+    };
+
+    for (const source of sourceKinds) {
+      const sourceId = `${source}-convergence`;
+      const bootstrap = await Effect.runPromise(
+        repository.reconcile(connectorSnapshot(source, "bootstrap"), embeddings),
+      );
+      expect(bootstrap).toMatchObject({
+        documentsObserved: 2,
+        passagesActive: 2,
+      });
+
+      const newerIdentity = {
+        workspaceId,
+        sourceId,
+        source,
+        providerEventId: `${source}-event-newer`,
+      };
+      const newer = {
+        ...newerIdentity,
+        id: synchronizationEventDeliveryId(newerIdentity),
+        payloadHash: `sha256-${source}-newer-payload`,
+        sourceVersion: "v2",
+        sourceOccurredAt: "2026-07-22T10:30:00.000Z",
+        receivedAt: "2026-07-22T10:31:00.000Z",
+        status: "received" as const,
+        attemptCount: 0,
+      };
+      expect(await Effect.runPromise(control.registerEvent(newer))).toMatchObject({
+        disposition: "accepted",
+      });
+      expect(
+        await Effect.runPromise(
+          control.registerEvent({
+            ...newer,
+            payloadHash: "sha256-replayed-body",
+          }),
+        ),
+      ).toMatchObject({
+        disposition: "duplicate",
+        delivery: { payloadHash: `sha256-${source}-newer-payload` },
+      });
+      const olderIdentity = {
+        ...newerIdentity,
+        providerEventId: `${source}-event-older`,
+      };
+      const older = {
+        ...olderIdentity,
+        id: synchronizationEventDeliveryId(olderIdentity),
+        payloadHash: `sha256-${source}-older-payload`,
+        sourceVersion: "v1",
+        sourceOccurredAt: "2026-07-22T09:00:00.000Z",
+        receivedAt: "2026-07-22T10:32:00.000Z",
+        status: "received" as const,
+        attemptCount: 0,
+      };
+      expect(await Effect.runPromise(control.registerEvent(older))).toMatchObject({
+        disposition: "accepted",
+      });
+
+      const eventResult = await Effect.runPromise(
+        repository.reconcile(connectorSnapshot(source, "event"), embeddings),
+      );
+      expect(eventResult).toMatchObject({
+        documentsObserved: 2,
+        itemsDeleted: 0,
+      });
+      await Effect.runPromise(
+        control.updateEvent({
+          ...newer,
+          status: "succeeded",
+          attemptCount: 1,
+          processedAt: "2026-07-22T10:33:00.000Z",
+        }),
+      );
+
+      const subscription = {
+        id: `${source}-subscription`,
+        workspaceId,
+        sourceId,
+        source,
+        provider: source === "teams" ? "microsoft-graph" : `${source}-provider`,
+        resourceHash: `sha256-${source}-resource`,
+        status: "expired" as const,
+        expiresAt: "2026-07-22T10:00:00.000Z",
+        retryCount: 1,
+        failureClass: "subscription-expired" as const,
+        updatedAt: "2026-07-22T10:34:00.000Z",
+      };
+      await Effect.runPromise(control.saveSubscription(subscription));
+      await Effect.runPromise(
+        control.saveSubscription({
+          ...subscription,
+          id: `${source}-subscription-renewed`,
+          status: "active",
+          expiresAt: "2026-07-23T10:00:00.000Z",
+          renewedAt: "2026-07-22T10:35:00.000Z",
+          nextRenewalAt: "2026-07-23T09:45:00.000Z",
+          retryCount: 0,
+          failureClass: undefined,
+          updatedAt: "2026-07-22T10:35:00.000Z",
+        }),
+      );
+
+      const firstLease = {
+        workspaceId,
+        sourceId,
+        operation: "hourly-reconciliation" as const,
+        ownerId: `${source}-worker-1`,
+        acquiredAt: "2026-07-22T11:00:00.000Z",
+        heartbeatAt: "2026-07-22T11:00:00.000Z",
+        expiresAt: "2026-07-22T11:05:00.000Z",
+      };
+      expect(await Effect.runPromise(control.acquireLease(firstLease))).toBe(true);
+      expect(
+        await Effect.runPromise(
+          control.acquireLease({
+            ...firstLease,
+            ownerId: `${source}-worker-2`,
+            acquiredAt: "2026-07-22T11:01:00.000Z",
+            heartbeatAt: "2026-07-22T11:01:00.000Z",
+            expiresAt: "2026-07-22T11:06:00.000Z",
+          }),
+        ),
+      ).toBe(false);
+      const repairLease = {
+        ...firstLease,
+        ownerId: `${source}-worker-2`,
+        acquiredAt: "2026-07-22T11:05:00.000Z",
+        heartbeatAt: "2026-07-22T11:05:00.000Z",
+        expiresAt: "2026-07-22T11:10:00.000Z",
+      };
+      expect(await Effect.runPromise(control.acquireLease(repairLease))).toBe(true);
+
+      const run = {
+        id: `${source}-repair-run`,
+        workspaceId,
+        sourceId,
+        trigger: "hourly-reconciliation" as const,
+        status: "running" as const,
+        cursorBefore: `${source}-event`,
+        scopeHash: `sha256-${source}-scope-reduced`,
+        startedAt: "2026-07-22T11:05:00.000Z",
+        attemptCount: 1,
+      };
+      await Effect.runPromise(control.startRun(run));
+      const repair = await Effect.runPromise(
+        repository.reconcile(connectorSnapshot(source, "repair"), embeddings),
+      );
+      expect(repair).toMatchObject({
+        documentsObserved: 1,
+        passagesActive: 1,
+        itemsDeleted: 1,
+      });
+      await Effect.runPromise(
+        control.completeRun({
+          ...run,
+          status: "succeeded",
+          cursorAfter: `${source}-repair`,
+          newestSourceUpdatedAt: "2026-07-22T10:30:00.000Z",
+          lagSeconds: 2_100,
+          completedAt: "2026-07-22T11:05:30.000Z",
+        }),
+      );
+      await Effect.runPromise(control.releaseLease(repairLease));
+
+      const status = await Effect.runPromise(control.readStatus(workspaceId, sourceId));
+      expect(status).toMatchObject({
+        checkpoint: {
+          cursor: `${source}-repair`,
+          indexedSourceRevision: `${source}-repair`,
+          scopeHash: `sha256-${source}-scope-reduced`,
+        },
+        subscription: {
+          id: `${source}-subscription-renewed`,
+          status: "active",
+          retryCount: 0,
+        },
+        latestRun: {
+          trigger: "hourly-reconciliation",
+          status: "succeeded",
+          cursorAfter: `${source}-repair`,
+        },
+      });
+      expect(status.activeLease).toBeUndefined();
+      expect(JSON.stringify(status)).not.toContain("changed delivery state");
+      expect(JSON.stringify(status)).not.toContain("replayed-body");
+    }
+
+    expect(embeddingBatches.map((batch) => batch.length)).toEqual([2, 1, 2, 1, 2, 1, 2, 1]);
+    const active = await pool.query<{
+      readonly source_kind: string;
+      readonly active: string;
+    }>(
+      "select s.kind as source_kind, count(*) filter (where p.active)::text as active from knowledge_source s join knowledge_item i on i.source_id = s.id join knowledge_passage p on p.item_id = i.id where s.workspace_id = $1 group by s.kind order by s.kind",
+      [workspaceId],
+    );
+    expect(active.rows).toEqual([
+      { source_kind: "github", active: "1" },
+      { source_kind: "jira", active: "1" },
+      { source_kind: "teams", active: "1" },
+      { source_kind: "vault", active: "1" },
+    ]);
+  });
+
   test("reuses an unchanged passage vector while a Vault rename retires the old path", async () => {
     const repository = createPostgresKnowledgeRepository(opened.database);
     const deterministic = createDeterministicKnowledgeEmbedding();
@@ -588,7 +925,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       sourceType: "note",
       canonicalUrl:
         "https://github.com/example/Connected-Vault/blob/commit-1/Projects/example/Old.md",
-      provenance: { repository: "example/Connected-Vault", path: "Projects/example/Old.md" },
+      provenance: {
+        repository: "example/Connected-Vault",
+        path: "Projects/example/Old.md",
+      },
       deliveryProjection: undefined,
     };
     await Effect.runPromise(
@@ -634,7 +974,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
 
     expect(renamed).toMatchObject({ versionsCreated: 1, itemsDeleted: 1 });
     expect(embeddingBatches).toEqual([["Stable attributed project knowledge."]]);
-    const paths = await pool.query<{ readonly external_id: string; readonly active: boolean }>(
+    const paths = await pool.query<{
+      readonly external_id: string;
+      readonly active: boolean;
+    }>(
       "select external_id, deleted_at is null as active from knowledge_item where source_id = 'vault-rename-test' order by external_id",
     );
     expect(paths.rows).toEqual([
@@ -705,7 +1048,11 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       },
     ];
     const correctionAcl = [
-      { effect: "allow" as const, subjectType: "actor" as const, subjectId: "correction-author" },
+      {
+        effect: "allow" as const,
+        subjectType: "actor" as const,
+        subjectId: "correction-author",
+      },
     ];
     const oldExternalId = "context-old";
     const correctionExternalId = "context-correction";
@@ -746,7 +1093,13 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           id: "attributed-status",
           purpose: "general",
           select: "claims",
-          predicates: [{ field: "subjectKey", operator: "equals", value: "product-builder" }],
+          predicates: [
+            {
+              field: "subjectKey",
+              operator: "equals",
+              value: "product-builder",
+            },
+          ],
           limit: 10,
         },
       ],
@@ -812,11 +1165,17 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         },
       ],
     };
-    const repository = createPostgresKnowledgeRepository(opened.database, { entityCatalog });
+    const repository = createPostgresKnowledgeRepository(opened.database, {
+      entityCatalog,
+    });
     const embeddings = createDeterministicKnowledgeEmbedding();
     const workspaceId = "workspace-canonical-alias";
     const acl = [
-      { effect: "allow" as const, subjectType: "workspace" as const, subjectId: workspaceId },
+      {
+        effect: "allow" as const,
+        subjectType: "workspace" as const,
+        subjectId: workspaceId,
+      },
     ];
     const sourceSnapshot = (
       source: "github" | "jira",
@@ -954,7 +1313,11 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           purpose: "conflicts",
           select: "conflicts",
           predicates: [
-            { field: "subjectKey", operator: "equals", value: "module:product-builder" },
+            {
+              field: "subjectKey",
+              operator: "equals",
+              value: "module:product-builder",
+            },
           ],
           limit: 10,
         },

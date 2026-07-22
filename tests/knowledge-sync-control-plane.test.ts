@@ -21,6 +21,7 @@ const checkpoint = (
   workspaceId: "example",
   sourceId: "jira-example",
   cursor: "cursor-1",
+  scopeHash: "sha256-scope",
   retryCount: 0,
   lastSucceededAt: "2026-07-22T10:00:00.000Z",
   newestSourceUpdatedAt: "2026-07-22T09:58:00.000Z",
@@ -39,9 +40,12 @@ describe("knowledge synchronization control plane", () => {
     expect(synchronizationEventDeliveryId(identity)).toBe(
       synchronizationEventDeliveryId({ ...identity }),
     );
-    expect(synchronizationEventDeliveryId({ ...identity, providerEventId: "event-43" })).not.toBe(
-      synchronizationEventDeliveryId(identity),
-    );
+    expect(
+      synchronizationEventDeliveryId({
+        ...identity,
+        providerEventId: "event-43",
+      }),
+    ).not.toBe(synchronizationEventDeliveryId(identity));
     expect(synchronizationEventDeliveryId(identity)).toMatch(/^sha256-/);
     expect(() => synchronizationEventDeliveryId({ ...identity, providerEventId: " " })).toThrow(
       "providerEventId must not be blank",
@@ -111,7 +115,10 @@ describe("knowledge synchronization control plane", () => {
         attemptCount: 0,
       },
     };
-    const status: SynchronizationStatus = { checkpoint: checkpoint(), latestRun: run };
+    const status: SynchronizationStatus = {
+      checkpoint: checkpoint(),
+      latestRun: run,
+    };
     const repository: SynchronizationControlRepository = {
       registerEvent: () => Effect.succeed(registration),
       saveSubscription: () => Effect.void,
@@ -119,6 +126,8 @@ describe("knowledge synchronization control plane", () => {
       heartbeatLease: () => Effect.succeed(true),
       releaseLease: () => Effect.void,
       startRun: () => Effect.void,
+      completeRun: () => Effect.void,
+      updateEvent: () => Effect.void,
       readStatus: () => Effect.succeed(status),
     };
 

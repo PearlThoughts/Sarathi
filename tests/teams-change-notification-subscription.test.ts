@@ -30,11 +30,16 @@ describe("Teams change-notification subscription", () => {
       heartbeatLease: () => Effect.die("not used"),
       releaseLease: () => Effect.die("not used"),
       startRun: () => Effect.die("not used"),
+      completeRun: () => Effect.die("not used"),
+      updateEvent: () => Effect.die("not used"),
       readStatus: () => Effect.die("not used"),
     };
     const requests: { readonly url: string; readonly init?: RequestInit }[] = [];
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      requests.push({ url: String(input), ...(init === undefined ? {} : { init }) });
+      requests.push({
+        url: String(input),
+        ...(init === undefined ? {} : { init }),
+      });
       if (init?.method === "PATCH") return new Response("expired", { status: 410 });
       return Response.json({
         id: "subscription-new",
@@ -93,6 +98,8 @@ describe("Teams change-notification subscription", () => {
       heartbeatLease: () => Effect.die("not used"),
       releaseLease: () => Effect.die("not used"),
       startRun: () => Effect.die("not used"),
+      completeRun: () => Effect.die("not used"),
+      updateEvent: () => Effect.die("not used"),
       readStatus: () => Effect.die("not used"),
     };
     const fetcher = vi.fn<typeof fetch>();

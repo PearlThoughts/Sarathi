@@ -81,6 +81,7 @@ export type SynchronizationCheckpoint = {
   readonly workspaceId: string;
   readonly sourceId: string;
   readonly cursor: string;
+  readonly scopeHash: string;
   readonly indexedSourceRevision?: string | undefined;
   readonly lastEventAt?: string | undefined;
   readonly lastReconciledAt?: string | undefined;
