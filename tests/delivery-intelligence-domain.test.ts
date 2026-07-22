@@ -29,6 +29,19 @@ describe("delivery intelligence domain", () => {
     expect(plan?.operations[1]?.time).toEqual({ kind: "workspace_week" });
   });
 
+  it("recognizes activity summaries regardless of phrase order and keeps activity primary", () => {
+    const plan = planDeliveryQuestion(
+      "Summarize today's team activity with highlights and exactly one next action.",
+    );
+
+    expect(plan?.intents).toEqual(["activity", "next_actions"]);
+    expect(plan?.operations[0]).toMatchObject({
+      purpose: "activity",
+      select: "observations",
+      time: { kind: "workspace_day" },
+    });
+  });
+
   it("uses relation traversal for dependency and ownership questions", () => {
     const plan = planDeliveryQuestion(
       "Who owns the work and who is waiting for whom in the active sprint?",
