@@ -46,6 +46,7 @@ export type DeliveryQueryResult = {
   readonly conflicts: readonly DeliveryConflict[];
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly complete: boolean;
+  readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
 };
 
 export type DeliveryQuerySource = {
@@ -71,6 +72,7 @@ export type DeliveryAssistantAnswer = {
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];
+  readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly mentions?: readonly DeliveryActionTarget[];
 };
 

@@ -430,4 +430,57 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("evil.example.test");
     expect(answer.text).toContain("Merged code");
   });
+
+  it("fails closed when an implementation answer has no matching live GitHub result", async () => {
+    const source: DeliveryQuerySource = {
+      source: "knowledge",
+      selectors: ["github_live", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("vault", "unrelated", "Generic repository workflow", "status"),
+              selector: "knowledge",
+              intent: "implementation",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question:
+          "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",
+      }),
+    );
+    expect(answer.status).toBe("partial");
+    expect(answer.missingRequiredSources).toEqual(["github"]);
+    expect(answer.text).toContain("No matching GitHub result");
+    expect(answer.text).not.toContain("Generic repository workflow");
+  });
+
+  it("does not compose records outside a named entity boundary", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [item("jira", "other", "F1851-812 Modern lead form is In Progress", "status")],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is the current status of Admin Portal Migration?",
+      }),
+    );
+    expect(answer.status).toBe("empty");
+    expect(answer.text).not.toContain("Modern lead form");
+  });
 });

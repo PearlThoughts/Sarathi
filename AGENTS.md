@@ -49,6 +49,14 @@ The local CI equivalent is `bun run check`.
 
 ## Live Teams Acceptance Reporting
 
+Sarathi's user-visible Teams answers must be concise but visually structured
+using formatting that Teams reliably preserves: one short acknowledgement or
+situation-paraphrase, emoji-led bold labels, compact bullets or numbered actions,
+resolvable inline citations, and native `<at>` mentions when delegation is
+appropriate. Use tables or other richer layouts only when they materially improve
+a comparison and Teams renders them correctly. Do not use long walls of text,
+decorative formatting without information value, or unsupported color markup.
+
 Every agent that completes a live Sarathi test in Microsoft Teams must report the
 test in the active user conversation immediately after the response is observed.
 Do not defer this evidence to the final handoff, a Bead, a PR, or a log file.

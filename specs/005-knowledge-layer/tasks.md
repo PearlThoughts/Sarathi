@@ -60,6 +60,7 @@
 - [x] KLG-512 Replace evidence-led user-facing identity with `AI Delivery Assistant` while retaining internal provenance controls.
 - [x] KLG-513 Add permanent architecture, migration, authorization, deletion, deduplication, conflict, citation, query-family, log-redaction, and latency regression tests.
 - [ ] KLG-514 Prove exact-branch CI, governed merge, backup, production migration/deployment, bounded synchronization, real Delivery Manager question coverage, sub-ten-second Teams reporting, and rollback.
+- [x] KLG-515 Enforce source-role, entity-boundary, required-backend, answer-completeness, review-queue, conflict, and related-delegation rules derived from the 2026-07-22 ten-question live matrix.
 
 ## Dependency Order
 

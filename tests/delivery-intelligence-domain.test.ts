@@ -59,6 +59,39 @@ describe("delivery intelligence domain", () => {
     });
   });
 
+  it("models review queues as observations instead of generic message retrieval", () => {
+    const plan = planDeliveryQuestion(
+      "Which items are waiting for review, and who needs to review each?",
+    );
+    expect(plan?.intents).toEqual(["reviews"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "reviews",
+        select: "observations",
+        predicates: [{ field: "kind", operator: "equals", value: "review" }],
+      }),
+    ]);
+  });
+
+  it("requires live GitHub and carries the implementation subject", () => {
+    const plan = planDeliveryQuestion(
+      "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",
+    );
+    expect(plan?.subject).toEqual({ phrase: "Lead Routing Dashboard" });
+    expect(plan?.requiredSources).toEqual(["github"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({ purpose: "implementation", select: "github_live" }),
+    ]);
+  });
+
+  it("requires all compared sources for disagreement questions", () => {
+    const plan = planDeliveryQuestion(
+      "Where do Jira, Teams, and GitHub currently disagree about delivery status?",
+    );
+    expect(plan?.intents).toEqual(["conflicts"]);
+    expect(plan?.requiredSources).toEqual(["jira", "teams", "github"]);
+  });
+
   it("models next actions and milestones without making time the aggregate root", () => {
     const plan = planDeliveryQuestion(
       "What are the next actions and upcoming milestones for the project?",

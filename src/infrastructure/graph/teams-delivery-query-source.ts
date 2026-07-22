@@ -67,11 +67,18 @@ const textContent = (value: string | undefined): string =>
     .trim()
     .slice(0, 220);
 
-const containsAssistantMention = (body: string | undefined, assistantName: string): boolean =>
-  new RegExp(
-    `<at\\b[^>]*>\\s*${assistantName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</at>`,
-    "i",
-  ).test(body ?? "");
+const containsAssistantMention = (body: string | undefined, assistantName: string): boolean => {
+  const escaped = assistantName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    new RegExp(`<at\\b[^>]*>\\s*${escaped}\\s*</at>`, "i").test(body ?? "") ||
+    new RegExp(`(?:^|\\s)@${escaped}(?:\\s|$)`, "i").test(textContent(body))
+  );
+};
+
+const isTestShapedMessage = (body: string | undefined): boolean => {
+  const content = textContent(body);
+  return content === "@" || /^test(?:ing)?\b/i.test(content);
+};
 
 const actionTargetFrom = (
   message: TeamsMessage,
@@ -93,6 +100,12 @@ const actionTargetFrom = (
 
 const matchesOperation = (content: string, operation: DeliveryQueryOperation): boolean => {
   switch (operation.purpose) {
+    case "ownership":
+      return /\b(?:owner|owns|assigned to|working on)\b/i.test(content);
+    case "reviews":
+      return /\b(?:please review|needs? review|waiting for review|in review|review requested|approved|do not merge)\b/i.test(
+        content,
+      );
     case "dependencies":
       return /\b(?:waiting for|waits? on|depends? on|dependency on|blocked by)\b/i.test(content);
     case "blockers":
@@ -101,6 +114,14 @@ const matchesOperation = (content: string, operation: DeliveryQueryOperation): b
       return /\b(?:risk|concern|delay|slip|uncertain)\b/i.test(content);
     case "recurring":
       return /\b(?:again|recurring|repeated|keeps happening)\b/i.test(content);
+    case "capacity":
+      return /\b(?:available|availability|unavailable|bandwidth|capacity|leave|out of office|personal emergency|start(?:ing)? (?:at|late)|back online)\b/i.test(
+        content,
+      );
+    case "conflicts":
+      return /\b(?:but|however|disagree|conflict|not merged|do not merge|still|already|status)\b/i.test(
+        content,
+      );
     case "decisions":
       return /\b(?:decided|decision|agreed|approved|rejected)\b/i.test(content);
     case "next_actions":
@@ -194,6 +215,7 @@ export const createTeamsDeliveryQuerySource = (
                   !message.webUrl.startsWith("https://teams.microsoft.com/") ||
                   !inOperationWindow(observedAt, operation, context) ||
                   containsAssistantMention(body, configuration.assistantName ?? "Sarathi") ||
+                  isTestShapedMessage(body) ||
                   (configuration.botApplicationId !== undefined &&
                     message.from?.application?.id === configuration.botApplicationId)
                 )
