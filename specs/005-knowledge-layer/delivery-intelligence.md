@@ -51,7 +51,7 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 - Jira projects objects, hierarchy, ownership, status, sprint, estimates, dependencies, blockers, risk indicators, changes, descriptions, and comments.
 - Vault projects durable requirements, decisions, risks, milestones, owners, policies, and unstructured passages from configured project roots.
 - GitHub remains live for repository truth. Normalized results may enter a response, but repository bodies and embeddings are not stored.
-- Teams and scoped project email provide observations and attributed claims from all records visible through the configured project connector. There is no per-message approval field.
+- Teams and scoped project email provide observations and attributed claims from all records visible through the configured project connector. A separate bounded Teams delivery-channel allowlist may declare standard, shared, and private scopes without widening the narrower ingress mapping; every read still requires workspace, actor, sensitivity, and explicit channel authorization. There is no per-message approval field.
 - Conflicting claims remain active together until their source records converge or are deleted.
 
 ## Reporting
@@ -72,6 +72,7 @@ The 2026-07-22 delivery-manager matrix showed that latency and visual formatting
 - answer completeness for the requested fields, with a bounded coverage failure instead of invented ownership, blockers, mitigation, recurrence, or next actions;
 - conflict disclosure only when attributed claims about the same subject and predicate come from at least two distinct sources;
 - capacity answers only from explicit availability, allocation, leave, or bandwidth signals rather than generic activity or assignee changes;
+- finance-shaped Teams messages remain excluded at the adapter boundary even when their channel is otherwise allowlisted;
 - model composition and deterministic recommendations may not manufacture a next action when no cited action evidence exists;
 - delegation only when a source-resolved Teams identity belongs to an action that is related to the material answer.
 

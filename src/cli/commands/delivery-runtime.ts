@@ -18,7 +18,10 @@ import {
   openKnowledgePostgresDatabase,
   readKnowledgePostgresStatus,
 } from "../../infrastructure/postgres/index.ts";
-import { workspaceProjectionFromEnvironment } from "../../infrastructure/teams/index.ts";
+import {
+  deliveryChannelProjectionFromEnvironment,
+  workspaceProjectionFromEnvironment,
+} from "../../infrastructure/teams/index.ts";
 import {
   createDeliveryAssistant,
   type DeliveryAssistantAnswer,
@@ -175,11 +178,21 @@ const liveSources = (
   )
     return sources;
   const projection = workspaceProjectionFromEnvironment(environment);
-  const channels = projection.channels.filter(
+  const ingressChannels = projection.channels.filter(
     (channel) =>
       channel.workspaceId === workspaceId &&
       channel.actors.some((actor) => actor.actorId === actorId),
   );
+  const channels = deliveryChannelProjectionFromEnvironment(
+    environment,
+    ingressChannels.map((channel) => ({
+      graphTeamId: channel.graphTeamId,
+      channelId: channel.channelId,
+      workspaceId: channel.workspaceId,
+      scope: channel.scope,
+      sensitivity: channel.sensitivity,
+    })),
+  ).filter((channel) => channel.workspaceId === workspaceId);
   const tokenProvider = createEntraClientCredentialsTokenProvider({
     tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
     clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),

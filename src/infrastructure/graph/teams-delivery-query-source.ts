@@ -80,6 +80,11 @@ const isTestShapedMessage = (body: string | undefined): boolean => {
   return content === "@" || /^test(?:ing)?\b/i.test(content);
 };
 
+const containsFinanceContent = (content: string): boolean =>
+  /\b(?:budget|costs?|billing|invoice|revenue|profit|margin|burn rate|hourly rate|day rate|commercial rate|payment|payroll|salary|compensation|pricing)\b/i.test(
+    content,
+  );
+
 const actionTargetFrom = (
   message: TeamsMessage,
 ): DeliveryResultItem["actionTarget"] | undefined => {
@@ -192,16 +197,24 @@ export const createTeamsDeliveryQuerySource = (
         const operations = plan.operations.filter((operation) =>
           ["objects", "relations", "observations", "claims"].includes(operation.select),
         );
-        if (channels.length === 0 || channels.length > 10 || operations.length === 0)
+        if (channels.length === 0 || channels.length > 32 || operations.length === 0)
           return emptyResult();
         const accessToken = await configuration.tokenProvider.getAccessToken();
         const maximumLimit = Math.max(...operations.map(({ limit }) => limit));
-        const messages = await Promise.all(
-          channels.map(async (channel) => ({
-            channel,
-            messages: await readChannel(configuration, channel, accessToken, maximumLimit),
-          })),
+        const channelReads = await Promise.all(
+          channels.map(async (channel) => {
+            try {
+              return {
+                channel,
+                messages: await readChannel(configuration, channel, accessToken, maximumLimit),
+              };
+            } catch (error) {
+              return error instanceof Error ? error : new Error("Teams channel read failed.");
+            }
+          }),
         );
+        const messages = channelReads.flatMap((read) => (read instanceof Error ? [] : [read]));
+        const partial = channelReads.some((read) => read instanceof Error);
         const items = messages.flatMap(({ channel, messages: channelMessages }) =>
           operations.flatMap((operation) =>
             channelMessages
@@ -221,7 +234,12 @@ export const createTeamsDeliveryQuerySource = (
                 )
                   return [];
                 const content = textContent(body);
-                if (content === "" || !matchesOperation(content, operation)) return [];
+                if (
+                  content === "" ||
+                  containsFinanceContent(content) ||
+                  !matchesOperation(content, operation)
+                )
+                  return [];
                 const actor =
                   message.from?.user?.displayName ??
                   message.from?.application?.displayName ??
@@ -247,7 +265,12 @@ export const createTeamsDeliveryQuerySource = (
               .slice(0, operation.limit),
           ),
         );
-        return { items, conflicts: [], unavailableSources: [], complete: true };
+        return {
+          items,
+          conflicts: [],
+          unavailableSources: partial ? (["teams"] as const) : [],
+          complete: !partial,
+        };
       },
       catch: () =>
         new RepositoryError({

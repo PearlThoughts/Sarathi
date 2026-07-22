@@ -50,6 +50,7 @@ import {
 import {
   createKnowledgeTeamsContextSearch,
   createWorkspaceProjectionResolver,
+  deliveryChannelProjectionFromEnvironment,
   workspaceProjectionFromEnvironment,
 } from "../infrastructure/teams/index.ts";
 import {
@@ -567,6 +568,16 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           const workspaceChannels = projection.channels.filter(
             (channel) => channel.workspaceId === workspaceId,
           );
+          const deliveryChannels = deliveryChannelProjectionFromEnvironment(
+            environment,
+            workspaceChannels.map((channel) => ({
+              graphTeamId: channel.graphTeamId,
+              channelId: channel.channelId,
+              workspaceId: channel.workspaceId,
+              scope: channel.scope,
+              sensitivity: channel.sensitivity,
+            })),
+          ).filter((channel) => channel.workspaceId === workspaceId);
           const allowedActorIds = new Set(
             workspaceChannels.flatMap((channel) => channel.actors.map((actor) => actor.actorId)),
           );
@@ -614,12 +625,12 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               createTeamsDeliveryQuerySource({
                 tokenProvider: graphTokenProvider,
                 botApplicationId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
-                channels: workspaceChannels.map((channel) => ({
+                channels: deliveryChannels.map((channel) => ({
                   teamId: channel.graphTeamId,
                   channelId: channel.channelId,
                   workspaceId: channel.workspaceId,
                   sensitivity: channel.sensitivity,
-                  allowedActorIds: new Set(channel.actors.map((actor) => actor.actorId)),
+                  allowedActorIds,
                 })),
                 timeoutMs: 4_000,
               }),
