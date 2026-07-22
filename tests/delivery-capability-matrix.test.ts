@@ -68,11 +68,16 @@ const genericSource: DeliveryQuerySource = {
       items: plan.operations.map((operation, index) => ({
         id: operation.id,
         workspaceId: context.workspaceId,
-        source: operation.select === "github_live" ? ("github" as const) : ("jira" as const),
+        source:
+          operation.select === "github_live"
+            ? ("github" as const)
+            : plan.requiredSources?.includes("teams") === true
+              ? ("teams" as const)
+              : ("jira" as const),
         selector: operation.select,
         intent: operation.purpose,
-        title: operation.purpose,
-        summary: `Resolved ${operation.purpose} from the delivery model`,
+        title: plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose,
+        summary: `Resolved ${plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose} from the delivery model`,
         citationUrl: `https://example.com/${operation.purpose}/${index}`,
         sensitivity: "internal" as const,
         authority: 0.9,

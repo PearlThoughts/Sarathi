@@ -2,6 +2,7 @@ import type {
   DeliveryMetricCategory,
   DeliveryObjectKind,
   DeliveryRelationKind,
+  DeliverySourceKind,
 } from "./delivery-model.ts";
 
 export type DeliveryQuestionIntent =
@@ -12,6 +13,8 @@ export type DeliveryQuestionIntent =
   | "scope"
   | "requirements"
   | "ownership"
+  | "reviews"
+  | "conflicts"
   | "dependencies"
   | "blockers"
   | "delivered"
@@ -25,6 +28,11 @@ export type DeliveryQuestionIntent =
   | "finance"
   | "activity"
   | "implementation";
+
+export type DeliveryQuerySubject = {
+  readonly externalKey?: string | undefined;
+  readonly phrase?: string | undefined;
+};
 
 export type DeliveryQuerySelector =
   | "objects"
@@ -110,6 +118,8 @@ export type DeliveryQueryPlan = {
   readonly answerMode: "deterministic" | "model_assisted";
   readonly maximumLines: 2 | 3;
   readonly requiresFinance: boolean;
+  readonly subject?: DeliveryQuerySubject | undefined;
+  readonly requiredSources?: readonly DeliverySourceKind[] | undefined;
 };
 
 const selectors = new Set<DeliveryQuerySelector>([
@@ -130,6 +140,8 @@ const purposes = new Set<DeliveryQuestionIntent>([
   "scope",
   "requirements",
   "ownership",
+  "reviews",
+  "conflicts",
   "dependencies",
   "blockers",
   "delivered",
@@ -206,6 +218,20 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
     throw new DeliveryQueryPlanValidationError(
       "Finance operations and the plan finance boundary must agree.",
     );
+  if (
+    plan.requiredSources !== undefined &&
+    (!Array.isArray(plan.requiredSources) ||
+      !plan.requiredSources.every((source) =>
+        ["jira", "vault", "github", "teams", "email"].includes(source),
+      ))
+  )
+    throw new DeliveryQueryPlanValidationError("Delivery required sources are invalid.");
+  if (plan.subject !== undefined) {
+    const key = plan.subject.externalKey?.trim();
+    const phrase = plan.subject.phrase?.trim();
+    if ((key === undefined || key === "") && (phrase === undefined || phrase === ""))
+      throw new DeliveryQueryPlanValidationError("Delivery query subject is empty.");
+  }
   return plan as DeliveryQueryPlan;
 };
 
@@ -227,6 +253,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     });
   };
   const top = Math.max(1, Math.min(Number(/\btop\s+(\d{1,2})\b/.exec(value)?.[1] ?? 5), 10));
+  const requestedLookbackDays = Math.max(
+    1,
+    Math.min(Number(/\blast\s+(\d{1,3})\s+days?\b/.exec(value)?.[1] ?? 120), 366),
+  );
   const sprintTime: DeliveryTimeConstraint | undefined = has(value, /\blast sprint\b/)
     ? { kind: "jira_sprint", sprint: "previous" }
     : has(value, /\b(?:current|active|this) sprint\b/)
@@ -236,6 +266,18 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
     ?.trim();
+  const implementationTarget =
+    /\b(?:implement(?:s|ed|ing)?|code for)\s+(?:the\s+)?(.+?)(?:,|\band what\b|\?|$)/i
+      .exec(question)?.[1]
+      ?.trim();
+  const subject: DeliveryQuerySubject | undefined =
+    exactKey !== undefined
+      ? { externalKey: exactKey }
+      : statusTarget !== undefined
+        ? { phrase: statusTarget }
+        : implementationTarget !== undefined
+          ? { phrase: implementationTarget }
+          : undefined;
   const activityQuestion =
     has(value, /\b(?:activity|progress)\b/) ||
     (has(value, /\b(?:team|delivery|work)\b/) &&
@@ -270,6 +312,13 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         direction: "both",
         maximumDepth: 1,
       },
+      limit: top,
+    });
+  if (has(value, /\b(?:waiting for review|review queue|needs? to review|review each|in review)\b/))
+    add("reviews", {
+      select: "observations",
+      predicates: [{ field: "kind", operator: "equals", value: "review" }],
+      time: sprintTime,
       limit: top,
     });
   if (has(value, /\b(?:waiting for whom|waits? on|dependenc(?:y|ies)|depends? on|blocked by)\b/))
@@ -338,7 +387,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       select: "observations",
       groupBy: ["dedupeKey"],
       measures: [{ operator: "count", minimumOccurrences: 2 }],
-      time: { kind: "lookback", days: 120 },
+      time: { kind: "lookback", days: requestedLookbackDays },
       orderBy: { field: "observedAt", direction: "desc" },
       limit: top,
     });
@@ -387,13 +436,18 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     add("capacity", {
       select: "metrics",
       metricCategories: ["capacity"],
-      time: has(value, /\bthis week\b/) ? { kind: "workspace_week" } : sprintTime,
+      time: has(value, /\btoday\b/)
+        ? { kind: "workspace_day" }
+        : has(value, /\bthis week\b/)
+          ? { kind: "workspace_week" }
+          : sprintTime,
       limit: top,
     });
     add("capacity", {
       select: "objects",
       objectKinds: ["person", "team"],
       predicates: [{ field: "label", operator: "equals", value: "capacity" }],
+      time: has(value, /\btoday\b/) ? { kind: "workspace_day" } : undefined,
       limit: top,
     });
   }
@@ -416,10 +470,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   if (
     has(
       value,
-      /\b(?:implementation|implemented|code|repository|pull request|commit|function|class)\b/,
+      /\b(?:implementation|implemented|code|repository|pull requests?|prs?|commits?|function|class)\b/,
     )
   )
     add("implementation", { select: "github_live", limit: top });
+  if (has(value, /\b(?:disagree|disagreement|conflict|conflicting)\b/)) {
+    add("conflicts", { select: "conflicts", limit: top });
+    add("conflicts", { select: "claims", limit: top });
+    add("conflicts", { select: "github_live", limit: top });
+  }
   if (has(value, /\b(?:current status|project status|status of|overall status)\b/))
     add("status", {
       select: "objects",
@@ -470,5 +529,13 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       : "deterministic",
     maximumLines: 3,
     requiresFinance: intents.includes("finance"),
+    subject,
+    requiredSources: intents.includes("implementation")
+      ? ["github"]
+      : intents.includes("conflicts")
+        ? ["jira", "teams", "github"]
+        : intents.includes("capacity")
+          ? ["teams"]
+          : undefined,
   });
 };

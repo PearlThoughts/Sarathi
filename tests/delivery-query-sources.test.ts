@@ -175,6 +175,33 @@ describe("delivery intelligence live query sources", () => {
     expect(result.items).toEqual([]);
   });
 
+  it("uses the planned entity target for live GitHub implementation search", async () => {
+    const requests: string[] = [];
+    const source = createGitHubDeliveryQuerySource({
+      token: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      allowedRepositories: ["example/repo"],
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return Response.json({ items: [] });
+      },
+    });
+    const question =
+      "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic implementation plan");
+
+    await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(requests.length).toBeGreaterThan(0);
+    for (const request of requests) {
+      const query = new URL(request).searchParams.get("q") ?? "";
+      expect(query).toContain("Lead Routing Dashboard");
+      expect(query).not.toContain("Which GitHub PR");
+    }
+  });
+
   it("reads date-bounded Jira transitions from connected project scope", async () => {
     const requests: string[] = [];
     const source = createJiraDeliveryQuerySource({
@@ -441,6 +468,68 @@ describe("delivery intelligence live query sources", () => {
     ]);
     expect(actions.items.map(({ id }) => id)).toEqual([
       "teams:team-1:channel-1:action:next_actions",
+    ]);
+  });
+
+  it("separates review and capacity signals while excluding plain-text assistant tests", async () => {
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "channel-1",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+        },
+      ],
+      fetcher: async () =>
+        Response.json({
+          value: [
+            {
+              id: "review",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "F1851-809 needs review from Manikandan." },
+              webUrl: "https://teams.microsoft.com/l/message/review",
+            },
+            {
+              id: "availability",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "I am unavailable until 2 PM because of a personal emergency." },
+              webUrl: "https://teams.microsoft.com/l/message/availability",
+            },
+            {
+              id: "plain-test",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "@Sarathi summarize today's team activity" },
+              webUrl: "https://teams.microsoft.com/l/message/plain-test",
+            },
+            {
+              id: "malformed-test",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "@" },
+              webUrl: "https://teams.microsoft.com/l/message/malformed-test",
+            },
+          ],
+        }),
+    });
+    const reviewPlan = planDeliveryQuestion(
+      "Which items are waiting for review, and who needs to review each?",
+    );
+    const capacityPlan = planDeliveryQuestion("Who has availability constraints today?");
+    if (reviewPlan === undefined || capacityPlan === undefined)
+      throw new Error("Expected review and capacity plans");
+
+    const reviews = await Effect.runPromise(source.execute(context, reviewPlan));
+    const capacity = await Effect.runPromise(source.execute(context, capacityPlan));
+
+    expect(reviews.items.map(({ id }) => id)).toEqual(["teams:team-1:channel-1:review:reviews"]);
+    expect(capacity.items.map(({ id }) => id)).toEqual([
+      "teams:team-1:channel-1:availability:capacity",
     ]);
   });
 

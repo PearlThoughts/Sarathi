@@ -56,9 +56,21 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 
 ## Reporting
 
-The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. Deterministic renderers produce two or three cited lines for common reports; optional model synthesis receives only the bounded result.
+The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. Deterministic renderers produce a short acknowledgement or situation paraphrase followed by concise emoji-led, bold-labelled bullets and a numbered next action with resolvable citations. Native Teams mentions identify a person only when a related action is safely attributable. Tables and richer layouts are reserved for comparisons that materially benefit from them and are supported by Teams; optional model synthesis receives only the bounded result.
 
 Supported fast-path queries must complete through Teams in less than ten seconds. Latency is a query acceptance property, not the domain boundary.
+
+### Live evaluation contract
+
+The 2026-07-22 delivery-manager matrix showed that latency and visual formatting can pass while the answer remains unsafe. Query execution therefore also enforces:
+
+- a named project/module/item boundary before unrelated records may enter synthesis;
+- exact selector and intent compatibility for every returned result;
+- required-source coverage for questions that explicitly depend on GitHub or compare named systems;
+- source-role exclusion for assistant prompts, bot replies, test-only messages, and malformed mention attempts;
+- first-class review-queue and conflict intents rather than generic nearest-message retrieval;
+- answer completeness for the requested fields, with a bounded coverage failure instead of invented ownership, blockers, mitigation, recurrence, or next actions;
+- delegation only when a source-resolved Teams identity belongs to an action that is related to the material answer.
 
 ## Migration
 

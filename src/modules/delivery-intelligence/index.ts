@@ -60,6 +60,7 @@ export type {
   DeliveryQueryPlan,
   DeliveryQueryPredicate,
   DeliveryQuerySelector,
+  DeliveryQuerySubject,
   DeliveryQuestionIntent,
   DeliveryRelationTraversal,
   DeliveryTimeConstraint,

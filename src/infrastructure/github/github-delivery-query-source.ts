@@ -367,7 +367,7 @@ export const createGitHubDeliveryQuerySource = (
               if (operation.select === "github_live") {
                 const matches = await Effect.runPromise(
                   liveSearch.search({
-                    question: context.question,
+                    question: plan.subject?.externalKey ?? plan.subject?.phrase ?? context.question,
                     audience: {
                       workspaceId: context.workspaceId,
                       audienceIds: [context.actorId],

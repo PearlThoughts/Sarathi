@@ -47,6 +47,8 @@ const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
   scope: "Scope",
   requirements: "Requirements",
   ownership: "Ownership",
+  reviews: "Review queue",
+  conflicts: "Conflicts",
   dependencies: "Dependencies",
   blockers: "Blockers",
   delivered: "Delivered",
@@ -70,6 +72,8 @@ const intentIcon: Readonly<Record<DeliveryQuestionIntent, string>> = {
   scope: "🧭",
   requirements: "📋",
   ownership: "👤",
+  reviews: "🔎",
+  conflicts: "⚖️",
   dependencies: "🔗",
   blockers: "⛔",
   delivered: "✅",
@@ -106,6 +110,8 @@ const responseOpening = (plan: DeliveryQueryPlan): string => {
   if (intents.has("risks") || intents.has("blockers"))
     return "Here’s the delivery situation that needs attention.";
   if (intents.has("dependencies")) return "Here’s who appears to be waiting on what.";
+  if (intents.has("reviews")) return "Here’s the current review queue and requested reviewers.";
+  if (intents.has("conflicts")) return "Here’s where connected delivery sources disagree.";
   if (intents.has("status")) return "Here’s the current delivery status I found.";
   if (intents.has("implementation")) return "Here’s the relevant implementation context I found.";
   return "Here’s the delivery context I found for your question.";
@@ -179,6 +185,28 @@ const rankedForIntent = (
       )
     : items;
 
+const subjectTokens = (value: string): readonly string[] =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((token) => token.length > 2 && !["the", "and", "for", "with"].includes(token));
+
+const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boolean => {
+  const operation = plan.operations.find(
+    (candidate) => candidate.purpose === item.intent && candidate.select === item.selector,
+  );
+  if (operation === undefined) return false;
+  if (operation.select === "github_live" && item.source !== "github") return false;
+  const subject = plan.subject;
+  if (subject === undefined) return true;
+  const searchable = `${item.title} ${item.summary}`.toLowerCase();
+  if (subject.externalKey !== undefined)
+    return searchable.includes(subject.externalKey.toLowerCase());
+  const tokens = subjectTokens(subject.phrase ?? "");
+  return tokens.every((token) => searchable.includes(token));
+};
+
 const uniqueConflicts = (conflicts: readonly DeliveryConflict[]): readonly DeliveryConflict[] => {
   const seen = new Set<string>();
   return conflicts.filter((conflict) => {
@@ -221,7 +249,7 @@ const composeAnswer = (
     return `[${label}](${item.citationUrl})`;
   };
   const detailLines: string[] = [];
-  const items = uniqueRanked(result.items);
+  const items = uniqueRanked(result.items.filter((item) => itemMatchesPlan(item, plan)));
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const groups = [
@@ -293,20 +321,33 @@ const composeAnswer = (
 
   if (detailLines.length === 0) {
     const unavailable = result.unavailableSources.map((source) => sourceLabel[source]).join(", ");
+    const missing = (result.missingRequiredSources ?? [])
+      .map((source) => sourceLabel[source])
+      .join(", ");
     return {
       text:
-        result.unavailableSources.length === 0
-          ? "I couldn’t find connected project information that answers this yet."
-          : [
-              "I couldn’t answer this yet because connected project sources are unavailable.",
-              `- ⚠️ **Coverage:** ${unavailable} unavailable.`,
-              "1. ➡️ **Next:** Retry after connected source access is restored.",
-            ].join("\n"),
+        missing !== ""
+          ? [
+              "I couldn’t verify this answer from every required project source.",
+              `- ⚠️ **Coverage:** No matching ${missing} result was available.`,
+              "1. ➡️ **Next:** Verify the required source connection or refine the project item.",
+            ].join("\n")
+          : result.unavailableSources.length === 0
+            ? "I couldn’t find connected project information that answers this yet."
+            : [
+                "I couldn’t answer this yet because connected project sources are unavailable.",
+                `- ⚠️ **Coverage:** ${unavailable} unavailable.`,
+                "1. ➡️ **Next:** Retry after connected source access is restored.",
+              ].join("\n"),
       citations: [],
-      status: result.unavailableSources.length > 0 ? "partial" : "empty",
+      status:
+        result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
+          ? "partial"
+          : "empty",
       plan,
       unavailableSources: result.unavailableSources,
       conflicts,
+      missingRequiredSources: result.missingRequiredSources,
       mentions: [],
     };
   }
@@ -314,12 +355,38 @@ const composeAnswer = (
     detailLines.push(
       `- ⚠️ **Coverage:** ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")} unavailable.`,
     );
+  if ((result.missingRequiredSources?.length ?? 0) > 0 && detailLines.length < plan.maximumLines)
+    detailLines.push(
+      `- ⚠️ **Coverage:** No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
+    );
 
+  const materialItems = items.filter((item) => item.intent !== "next_actions");
+  const relatedToMaterial = (candidate: DeliveryResultItem): boolean => {
+    if (materialItems.length === 0) return true;
+    const candidateKeys = new Set(candidate.summary.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []);
+    return materialItems.some(
+      (item) =>
+        item.citationUrl === candidate.citationUrl ||
+        [...candidateKeys].some((key) => item.summary.includes(key)),
+    );
+  };
   const mentionActionItem =
-    items.find((item) => item.intent === "next_actions" && item.actionTarget !== undefined) ??
-    items.find((item) => item.actionTarget !== undefined && actionableSummary.test(item.summary));
+    items.find(
+      (item) =>
+        item.intent === "next_actions" &&
+        item.actionTarget !== undefined &&
+        relatedToMaterial(item),
+    ) ??
+    items.find(
+      (item) =>
+        item.actionTarget !== undefined &&
+        actionableSummary.test(item.summary) &&
+        relatedToMaterial(item),
+    );
   const actionItem =
-    mentionActionItem ?? items.find((item) => item.intent === "next_actions") ?? items[0];
+    mentionActionItem ??
+    items.find((item) => item.intent === "next_actions" && relatedToMaterial(item)) ??
+    materialItems[0];
   const mentionName =
     mentionActionItem?.actionTarget === undefined
       ? undefined
@@ -341,10 +408,16 @@ const composeAnswer = (
   return {
     text,
     citations: citations.filter(({ url }) => text.includes(url)),
-    status: result.unavailableSources.length > 0 ? "partial" : items.length === 0 ? "empty" : "ok",
+    status:
+      result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
+        ? "partial"
+        : items.length === 0
+          ? "empty"
+          : "ok",
     plan,
     unavailableSources: result.unavailableSources,
     conflicts,
+    missingRequiredSources: result.missingRequiredSources,
     mentions:
       mentionActionItem?.actionTarget === undefined ||
       mentionName === undefined ||
@@ -559,7 +632,8 @@ export const createDeliveryAssistant = (
                 .filter(
                   (item) =>
                     item.workspaceId === request.workspaceId &&
-                    isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity),
+                    isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity) &&
+                    itemMatchesPlan(item, plan),
                 ),
               conflicts: authorizedConflicts(
                 successful.flatMap((result) => result.conflicts),
@@ -570,13 +644,27 @@ export const createDeliveryAssistant = (
               complete:
                 failures.length === 0 && successful.every((result) => result.complete === true),
             };
+            const representedSources = new Set([
+              ...merged.items.map((item) => item.source),
+              ...merged.conflicts.flatMap((conflict) =>
+                conflict.claims.map((claim) => claim.source.source),
+              ),
+            ]);
+            const missingRequiredSources = (plan.requiredSources ?? []).filter(
+              (source) => !representedSources.has(source),
+            );
+            const completed: DeliveryQueryResult = {
+              ...merged,
+              complete: merged.complete && missingRequiredSources.length === 0,
+              missingRequiredSources,
+            };
             return configuration.answerComposer === undefined
-              ? Effect.succeed(composeAnswer(request, plan, merged))
+              ? Effect.succeed(composeAnswer(request, plan, completed))
               : composeWithModel(
                   configuration.answerComposer,
                   request,
                   plan,
-                  merged,
+                  completed,
                   compositionTimeoutMs,
                 );
           }),
