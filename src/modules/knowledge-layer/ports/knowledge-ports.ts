@@ -33,6 +33,10 @@ export type KnowledgeSourceSnapshot = {
   readonly workspaceId: string;
   readonly cursor: string;
   readonly scopeHash: string;
+  /** Full inventories retire every previously active item not observed in this read. */
+  readonly mode?: "full" | "delta" | undefined;
+  /** Delta reads retire only these explicit source identities. */
+  readonly retiredExternalIds?: readonly string[] | undefined;
   readonly documents: readonly KnowledgeSourceDocument[];
 };
 

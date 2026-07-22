@@ -89,6 +89,8 @@ describe("Vault knowledge source", () => {
 
     const snapshot = await Effect.runPromise(source.readSnapshot("example"));
 
+    expect(snapshot.mode).toBe("full");
+    expect(snapshot.cursor).toMatch(/^vault-v1:/);
     expect(snapshot.documents).toHaveLength(1);
     expect(snapshot.documents[0]).toMatchObject({
       externalId: "example/Connected-Vault:Projects/example/Risks.md",
@@ -152,6 +154,78 @@ describe("Vault knowledge source", () => {
     expect(requests.some((url) => url.includes("private.md"))).toBe(false);
     expect(requests.some((url) => url.includes("/git/blobs/note-sha"))).toBe(true);
     expect(requests.some((url) => url.includes("/git/blobs/empty-note-sha"))).toBe(true);
+  });
+
+  it("uses immutable blob identities to fetch only changes and retire renames", async () => {
+    let revision = 1;
+    const requests: string[] = [];
+    const fetcher = async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("/git/trees/"))
+        return Response.json({
+          sha: `tree-${revision}`,
+          truncated: false,
+          tree:
+            revision === 1
+              ? [
+                  { path: "Projects/example/A.md", type: "blob", sha: "a-sha" },
+                  { path: "Projects/example/B.md", type: "blob", sha: "b-sha" },
+                ]
+              : [
+                  { path: "Projects/example/A.md", type: "blob", sha: "a-sha" },
+                  { path: "Projects/example/C.md", type: "blob", sha: "b-sha" },
+                ],
+        });
+      if (url.includes("/commits/"))
+        return Response.json({
+          sha: `commit-${revision}`,
+          commit: { committer: { date: `2026-07-2${revision}T03:00:00.000Z` } },
+        });
+      if (url.includes("/git/blobs/a-sha"))
+        return Response.json({
+          encoding: "base64",
+          content: Buffer.from("# A\nUnchanged knowledge.").toString("base64"),
+          sha: "a-sha",
+        });
+      if (url.includes("/git/blobs/b-sha"))
+        return Response.json({
+          encoding: "base64",
+          content: Buffer.from("# Renamed\nSame content, new path.").toString("base64"),
+          sha: "b-sha",
+        });
+      return new Response("not found", { status: 404 });
+    };
+    const source = createVaultKnowledgeSource({
+      sourceId: "vault-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      roots: [
+        {
+          repository: "example/Connected-Vault",
+          pathPrefix: "Projects/example",
+          sensitivity: "internal",
+          acl: [{ effect: "allow", subjectType: "workspace", subjectId: "example" }],
+        },
+      ],
+      fetcher: fetcher as typeof fetch,
+    });
+
+    const first = await Effect.runPromise(source.readSnapshot("example"));
+    revision = 2;
+    const delta = await Effect.runPromise(source.readSnapshot("example", first.cursor));
+
+    expect(first).toMatchObject({ mode: "full", retiredExternalIds: [] });
+    expect(first.documents).toHaveLength(2);
+    expect(delta).toMatchObject({
+      mode: "delta",
+      retiredExternalIds: ["example/Connected-Vault:Projects/example/B.md"],
+    });
+    expect(delta.documents.map(({ externalId }) => externalId)).toEqual([
+      "example/Connected-Vault:Projects/example/C.md",
+    ]);
+    expect(requests.filter((url) => url.includes("/git/blobs/a-sha"))).toHaveLength(1);
+    expect(requests.filter((url) => url.includes("/git/blobs/b-sha"))).toHaveLength(2);
   });
 
   it("fails on a truncated tree instead of silently claiming complete deletion reconciliation", async () => {

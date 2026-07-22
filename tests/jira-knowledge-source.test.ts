@@ -136,6 +136,75 @@ describe("Jira knowledge source", () => {
           total: 1,
         });
       }
+      if (url.includes("/changelog?")) {
+        return Response.json({
+          values: [
+            {
+              id: "history-0",
+              created: "2026-07-18T01:00:00.000Z",
+              author: { accountId: "owner-1", displayName: "Synthetic Owner" },
+              items: [{ field: "status", fromString: "Backlog", toString: "To Do" }],
+            },
+            {
+              id: "history-1",
+              created: "2026-07-19T01:00:00.000Z",
+              author: { accountId: "owner-1", displayName: "Synthetic Owner" },
+              items: [{ field: "status", fromString: "To Do", toString: "In Progress" }],
+            },
+          ],
+          startAt: 0,
+          maxResults: 100,
+          total: 1,
+          isLast: true,
+        });
+      }
+      if (url.endsWith("/rest/api/3/project/DEMO"))
+        return Response.json({
+          id: "project-1",
+          key: "DEMO",
+          name: "Example Delivery",
+          description: "Synthetic project metadata.",
+          projectTypeKey: "software",
+        });
+      if (url.endsWith("/rest/api/3/field"))
+        return Response.json([
+          { id: "status", name: "Status", custom: false, schema: { type: "status" } },
+          {
+            id: "implementationcost",
+            name: "Implementation Cost",
+            custom: true,
+            schema: { type: "number" },
+          },
+        ]);
+      if (url.includes("/rest/agile/1.0/board?"))
+        return Response.json({ values: [{ id: 7, name: "Delivery Board", type: "scrum" }] });
+      if (url.endsWith("/rest/agile/1.0/board/7/configuration"))
+        return Response.json({
+          id: 7,
+          name: "Delivery Board",
+          columnConfig: {
+            columns: [
+              { name: "To Do", statuses: [{ id: "1" }] },
+              { name: "In Progress", statuses: [{ id: "2" }] },
+            ],
+          },
+        });
+      if (url.includes("/rest/agile/1.0/board/7/sprint?"))
+        return Response.json({
+          values: [
+            {
+              id: 7,
+              name: "Sprint 7",
+              state: "active",
+              startDate: "2026-07-14T00:00:00.000Z",
+              endDate: "2026-07-27T00:00:00.000Z",
+            },
+          ],
+          startAt: 0,
+          maxResults: 100,
+          total: 1,
+          isLast: true,
+        });
       return new Response("not found", { status: 404 });
     };
 
@@ -150,8 +219,10 @@ describe("Jira knowledge source", () => {
     expect(searchBody.jql).toContain("statusCategory != Done");
     expect(snapshot).toMatchObject({
       sourceId: "jira-example",
-      cursor: "2026-07-20T01:00:00.000Z",
+      mode: "full",
     });
+    expect(snapshot.cursor).toMatch(/^jira-v1:/);
+    expect(snapshot.documents).toHaveLength(2);
     expect(snapshot.documents[0]).toMatchObject({
       externalId: "DEMO-100",
       title: "Example Delivery Portal",
@@ -180,6 +251,8 @@ describe("Jira knowledge source", () => {
           attributes: expect.objectContaining({
             priority: "High",
             dueAt: "2026-07-25",
+            statusEnteredAt: "2026-07-19T01:00:00.000Z",
+            previousStatus: "To Do",
           }),
         }),
         expect.objectContaining({
@@ -208,12 +281,32 @@ describe("Jira knowledge source", () => {
           kind: "estimate_remaining_seconds",
           value: "7200",
         }),
+        expect.objectContaining({
+          category: "delivery",
+          kind: "status_wait_seconds:to_do",
+          value: "86400",
+          effectiveFrom: "2026-07-18T01:00:00.000Z",
+          effectiveTo: "2026-07-19T01:00:00.000Z",
+        }),
       ]),
     });
     expect(JSON.stringify(snapshot)).not.toContain("synthetic-finance-value");
     expect(snapshot.documents[0]?.passages).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ locator: "#field-implementationcost" })]),
     );
+    expect(snapshot.documents[1]).toMatchObject({
+      externalId: "DEMO:catalog",
+      sourceType: "project-catalog",
+      title: "Example Delivery",
+      deliveryProjection: {
+        objects: expect.arrayContaining([
+          expect.objectContaining({ kind: "project", externalKey: "DEMO" }),
+          expect.objectContaining({ kind: "sprint", externalKey: "7" }),
+        ]),
+      },
+    });
+    expect(JSON.stringify(snapshot.documents[1])).not.toContain("Implementation Cost");
+    expect(JSON.stringify(snapshot.documents[1])).toContain("In Progress");
     const relations = snapshot.documents[0]?.deliveryProjection?.relations ?? [];
     const metrics = snapshot.documents[0]?.deliveryProjection?.metrics ?? [];
     expect(metrics.every((metric) => Number.isFinite(Number(metric.value)))).toBe(true);
@@ -228,6 +321,20 @@ describe("Jira knowledge source", () => {
     expect(requests.every(({ init }) => !String(init?.headers).includes("synthetic-token"))).toBe(
       true,
     );
+
+    const delta = await Effect.runPromise(
+      createJiraKnowledgeSource(configuration(fetcher as typeof fetch)).readSnapshot(
+        "example",
+        snapshot.cursor,
+      ),
+    );
+    const deltaSearch = [...requests]
+      .reverse()
+      .find(({ url }) => url.endsWith("/rest/api/3/search/jql"));
+    const deltaBody = JSON.parse(String(deltaSearch?.init?.body)) as { readonly jql: string };
+    expect(delta).toMatchObject({ mode: "delta", retiredExternalIds: [] });
+    expect(delta.cursor).toBe(snapshot.cursor);
+    expect(deltaBody.jql).toContain('updated >= "2026-07-20 00:55"');
   });
 
   it("fails closed for another workspace", async () => {

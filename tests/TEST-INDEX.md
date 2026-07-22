@@ -164,14 +164,14 @@
 
 - Command: `bun run test`
 - Location: `tests/knowledge-*.test.ts`, `tests/jira-knowledge-source.test.ts`, `tests/vault-knowledge-source.test.ts`, `tests/github-knowledge-search.test.ts`
-- Scope: Canonical Jira/Vault ingestion and delivery projections; continuous-sync event identity, subscription, lease, cursor, retry, freshness, and additive migration contracts; explicit exclusions; AI SDK and deterministic embeddings; ACL-first exact/full-text/vector retrieval; live GitHub search; RRF fusion; concise cited answer validation; Teams composition; CLI; and privacy-safe failures.
+- Scope: Canonical Jira/Vault ingestion and delivery projections; Jira overlap cursors, project/field/board/sprint catalog, changelog, and status-wait intervals; immutable Vault tree/blob deltas, rename/deletion retirement, and changed-only fetches; continuous-sync control contracts; explicit exclusions; AI SDK and deterministic embeddings; ACL-first exact/full-text/vector retrieval; live GitHub search; RRF fusion; concise cited answer validation; Teams composition; CLI; and privacy-safe failures.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## knowledge-postgres-integration
 
 - Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
 - Location: `tests/knowledge-postgres.integration.test.ts`
-- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint status, and deletion tombstones.
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, full-vs-delta deletion safety, unchanged-vector reuse across Vault renames, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint event/reconciliation freshness, and deletion tombstones.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
 
 ## delivery-intelligence-domain

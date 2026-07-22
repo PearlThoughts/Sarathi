@@ -997,7 +997,7 @@ const reconcileSnapshot = async (
           target: knowledgeSourceTable.id,
           set: {
             scopeHash: snapshot.scopeHash,
-            authority: firstDocument?.authority ?? 0,
+            ...(firstDocument === undefined ? {} : { authority: firstDocument.authority }),
             active: true,
             updatedAt: now,
           },
@@ -1015,8 +1015,11 @@ const reconcileSnapshot = async (
           ),
         );
       const observedExternalIds = snapshot.documents.map(({ externalId }) => externalId);
-      const deletedItems = existingItems.filter(
-        ({ externalId }) => !observedExternalIds.includes(externalId),
+      const retiredExternalIds = new Set(snapshot.retiredExternalIds ?? []);
+      const deletedItems = existingItems.filter(({ externalId }) =>
+        snapshot.mode === "delta"
+          ? retiredExternalIds.has(externalId)
+          : !observedExternalIds.includes(externalId),
       );
       if (deletedItems.length > 0) {
         const deletedIds = deletedItems.map(({ id }) => id);
@@ -1250,6 +1253,8 @@ const reconcileSnapshot = async (
           sourceId: snapshot.sourceId,
           cursor: snapshot.cursor,
           scopeHash: snapshot.scopeHash,
+          mode: snapshot.mode ?? "full",
+          retiredExternalIds: [...retiredExternalIds].sort(),
           documents: snapshot.documents.map(
             ({ externalId, sourceVersion, passages, acl, deliveryProjection }) => ({
               externalId,
@@ -1272,15 +1277,39 @@ const reconcileSnapshot = async (
         itemsDeleted: deletedItems.length,
         checksum,
       } as const;
-      const newestSourceUpdatedAt = snapshot.documents.reduce<string | null>(
+      const newestObservedAt = snapshot.documents.reduce<string | null>(
         (latest, document) =>
           latest === null || Date.parse(document.sourceUpdatedAt) > Date.parse(latest)
             ? document.sourceUpdatedAt
             : latest,
         null,
       );
+      const [previousCheckpoint] = await transaction
+        .select({
+          lastEventAt: knowledgeSyncCheckpointTable.lastEventAt,
+          lastReconciledAt: knowledgeSyncCheckpointTable.lastReconciledAt,
+          newestSourceUpdatedAt: knowledgeSyncCheckpointTable.newestSourceUpdatedAt,
+        })
+        .from(knowledgeSyncCheckpointTable)
+        .where(
+          and(
+            eq(knowledgeSyncCheckpointTable.sourceId, snapshot.sourceId),
+            eq(knowledgeSyncCheckpointTable.workspaceId, snapshot.workspaceId),
+          ),
+        )
+        .limit(1);
+      const newestSourceUpdatedAt =
+        snapshot.mode === "delta" &&
+        previousCheckpoint?.newestSourceUpdatedAt !== null &&
+        previousCheckpoint?.newestSourceUpdatedAt !== undefined &&
+        (newestObservedAt === null || previousCheckpoint.newestSourceUpdatedAt > newestObservedAt)
+          ? previousCheckpoint.newestSourceUpdatedAt
+          : newestObservedAt;
       const operationalCheckpoint = {
-        lastReconciledAt: now,
+        indexedSourceRevision: snapshot.cursor,
+        lastEventAt: snapshot.mode === "delta" ? now : (previousCheckpoint?.lastEventAt ?? null),
+        lastReconciledAt:
+          snapshot.mode === "delta" ? (previousCheckpoint?.lastReconciledAt ?? null) : now,
         newestSourceUpdatedAt,
         lastSucceededAt: now,
         lagSeconds:

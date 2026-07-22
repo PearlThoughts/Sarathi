@@ -399,6 +399,40 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       },
     ]);
 
+    const overlapWithNoChanges = await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId: "jira-example-test",
+          source: "jira",
+          workspaceId: "workspace-example",
+          cursor: "cursor-overlap-no-changes",
+          scopeHash: "sha256-scope",
+          mode: "delta",
+          retiredExternalIds: [],
+          documents: [],
+        },
+        embeddings,
+      ),
+    );
+    expect(overlapWithNoChanges.itemsDeleted).toBe(0);
+    expect(
+      (
+        await pool.query<{ readonly authority: number }>(
+          "select authority from knowledge_source where id = 'jira-example-test'",
+        )
+      ).rows,
+    ).toEqual([{ authority: 1 }]);
+    expect(
+      Number(
+        (
+          await opened.database
+            .select({ value: count() })
+            .from(deliveryObjectTable)
+            .where(eq(deliveryObjectTable.active, true))
+        )[0]?.value ?? 0,
+      ),
+    ).toBe(2);
+
     const deleted = await Effect.runPromise(
       repository.reconcile(
         {
@@ -407,6 +441,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           workspaceId: "workspace-example",
           cursor: "cursor-deleted",
           scopeHash: "sha256-scope",
+          mode: "delta",
+          retiredExternalIds: ["DEMO-635"],
           documents: [],
         },
         embeddings,
@@ -465,7 +501,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
               sourceId: "jira-example-test",
               documentsObserved: 0,
               itemsDeleted: 1,
+              indexedSourceRevision: "cursor-deleted",
+              lastEventAt: expect.any(String),
               lastReconciledAt: expect.any(String),
+              newestSourceUpdatedAt: "2026-07-20T00:00:00.000Z",
               lastSucceededAt: expect.any(String),
               retryCount: 0,
               nextReconcileAt: expect.any(String),
@@ -516,5 +555,85 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "select count(distinct p.id) as passage_count from knowledge_passage p join knowledge_item i on i.id = p.item_id where i.external_id = 'DEMO-636' and p.active",
     );
     expect(stored.rows).toEqual([{ passage_count: "0" }]);
+  });
+
+  test("reuses an unchanged passage vector while a Vault rename retires the old path", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const deterministic = createDeterministicKnowledgeEmbedding();
+    const embeddingBatches: string[][] = [];
+    const embeddings = {
+      ...deterministic,
+      embed: (values: readonly string[]) => {
+        embeddingBatches.push([...values]);
+        return deterministic.embed(values);
+      },
+    };
+    const base = snapshot("vault-blob-1", "Stable attributed project knowledge.");
+    const document = base.documents[0];
+    if (document === undefined) throw new Error("Synthetic snapshot document is required.");
+    const sourceId = "vault-rename-test";
+    const oldExternalId = "example/Connected-Vault:Projects/example/Old.md";
+    const newExternalId = "example/Connected-Vault:Projects/example/New.md";
+    const oldDocument = {
+      ...document,
+      source: "vault" as const,
+      sourceId,
+      externalId: oldExternalId,
+      sourceType: "note",
+      canonicalUrl:
+        "https://github.com/example/Connected-Vault/blob/commit-1/Projects/example/Old.md",
+      provenance: { repository: "example/Connected-Vault", path: "Projects/example/Old.md" },
+      deliveryProjection: undefined,
+    };
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId,
+          source: "vault",
+          workspaceId: "workspace-example",
+          cursor: "vault-cursor-1",
+          scopeHash: "vault-scope",
+          mode: "full",
+          documents: [oldDocument],
+        },
+        embeddings,
+      ),
+    );
+    const renamed = await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId,
+          source: "vault",
+          workspaceId: "workspace-example",
+          cursor: "vault-cursor-2",
+          scopeHash: "vault-scope",
+          mode: "delta",
+          retiredExternalIds: [oldExternalId],
+          documents: [
+            {
+              ...oldDocument,
+              externalId: newExternalId,
+              canonicalUrl:
+                "https://github.com/example/Connected-Vault/blob/commit-2/Projects/example/New.md",
+              provenance: {
+                repository: "example/Connected-Vault",
+                path: "Projects/example/New.md",
+              },
+            },
+          ],
+        },
+        embeddings,
+      ),
+    );
+
+    expect(renamed).toMatchObject({ versionsCreated: 1, itemsDeleted: 1 });
+    expect(embeddingBatches).toEqual([["Stable attributed project knowledge."]]);
+    const paths = await pool.query<{ readonly external_id: string; readonly active: boolean }>(
+      "select external_id, deleted_at is null as active from knowledge_item where source_id = 'vault-rename-test' order by external_id",
+    );
+    expect(paths.rows).toEqual([
+      { external_id: newExternalId, active: true },
+      { external_id: oldExternalId, active: false },
+    ]);
   });
 });

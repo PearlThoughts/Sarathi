@@ -94,6 +94,23 @@ describe("knowledge application service", () => {
         ),
       ),
     ).rejects.toThrow("explicit ACL");
+    await expect(
+      Effect.runPromise(
+        ingestKnowledgeSource(
+          {
+            readSnapshot: () =>
+              Effect.succeed({
+                ...snapshot,
+                mode: "delta",
+                retiredExternalIds: ["DEMO-100", "DEMO-100"],
+              }),
+          },
+          repository,
+          embeddings,
+          "example",
+        ),
+      ),
+    ).rejects.toThrow("ambiguous delta retirements");
     expect(reconciles).toBe(0);
   });
 

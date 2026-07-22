@@ -45,6 +45,19 @@ export const ingestKnowledgeSource = (
         }),
       );
     }
+    const observedExternalIds = new Set(snapshot.documents.map(({ externalId }) => externalId));
+    const retiredExternalIds = snapshot.retiredExternalIds ?? [];
+    if (
+      new Set(retiredExternalIds).size !== retiredExternalIds.length ||
+      retiredExternalIds.some((externalId) => observedExternalIds.has(externalId))
+    ) {
+      return yield* Effect.fail(
+        new RepositoryError({
+          message: "Knowledge source returned ambiguous delta retirements; ingestion was rejected.",
+          operation: "knowledge-ingest",
+        }),
+      );
+    }
     return yield* repository.reconcile(snapshot, embeddings);
   });
 
