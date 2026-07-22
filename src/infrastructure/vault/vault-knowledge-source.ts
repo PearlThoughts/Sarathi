@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { parse as parseYaml } from "yaml";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
@@ -126,6 +127,7 @@ type VaultSectionTopic =
   | "ownership"
   | "next_action"
   | "milestone"
+  | "interpretation"
   | "context";
 
 const sectionTopic = (heading: string): VaultSectionTopic => {
@@ -145,6 +147,8 @@ const sectionTopic = (heading: string): VaultSectionTopic => {
   if (/\b(?:owner|ownership|responsib|team)\b/.test(normalized)) return "ownership";
   if (/\b(?:next actions?|next steps?|action items?)\b/.test(normalized)) return "next_action";
   if (/\b(?:milestones?|releases?|phases?)\b/.test(normalized)) return "milestone";
+  if (/\b(?:interpretations?|social context|human observations?|team dynamics?)\b/.test(normalized))
+    return "interpretation";
   return "context";
 };
 
@@ -172,6 +176,8 @@ const objectKindForTopic = (topic: VaultSectionTopic): DeliveryObjectKind => {
       return "action";
     case "ownership":
       return "team";
+    case "interpretation":
+      return "assumption";
     default:
       return "extension";
   }
@@ -194,6 +200,108 @@ const lifecycleState = (value: string): string | undefined => {
   return undefined;
 };
 
+type DeliveryNoteMetadata = {
+  readonly subject: {
+    readonly kind: DeliveryObjectKind;
+    readonly key: string;
+    readonly title: string;
+  };
+  readonly assertedBy: string;
+  readonly assertedAt: string;
+  readonly effectiveFrom?: string | undefined;
+  readonly effectiveTo?: string | undefined;
+  readonly authority: number;
+};
+
+const objectKinds = new Set<DeliveryObjectKind>([
+  "project",
+  "goal",
+  "commitment",
+  "action",
+  "assumption",
+  "policy",
+  "person",
+  "team",
+  "module",
+  "requirement",
+  "milestone",
+  "sprint",
+  "work_item",
+  "deliverable",
+  "risk",
+  "decision",
+  "extension",
+]);
+
+const timestampValue = (value: unknown): string | undefined => {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return undefined;
+  return new Date(value).toISOString();
+};
+
+const deliveryNoteMetadata = (
+  markdown: string,
+  rootAuthority: number,
+): DeliveryNoteMetadata | undefined => {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(markdown)?.[1];
+  if (frontmatter === undefined) return undefined;
+  const parsed = parseYaml(frontmatter) as unknown;
+  if (typeof parsed !== "object" || parsed === null || !("sarathi_delivery" in parsed))
+    return undefined;
+  const record = (parsed as { readonly sarathi_delivery?: unknown }).sarathi_delivery;
+  if (typeof record !== "object" || record === null)
+    throw new Error("Structured Vault delivery metadata is invalid.");
+  const values = record as Readonly<Record<string, unknown>>;
+  const subject = values.subject;
+  if (typeof subject !== "object" || subject === null)
+    throw new Error("Structured Vault delivery metadata requires a subject.");
+  const subjectValues = subject as Readonly<Record<string, unknown>>;
+  const kind = subjectValues.kind;
+  const key = subjectValues.key;
+  const subjectTitle = subjectValues.title;
+  const assertedBy = values.asserted_by;
+  const assertedAt = timestampValue(values.asserted_at);
+  const authority = typeof values.authority === "number" ? values.authority : 0.8;
+  if (
+    typeof kind !== "string" ||
+    !objectKinds.has(kind as DeliveryObjectKind) ||
+    typeof key !== "string" ||
+    !/^[a-z0-9][a-z0-9._:-]{1,119}$/i.test(key) ||
+    typeof subjectTitle !== "string" ||
+    subjectTitle.trim() === "" ||
+    subjectTitle.trim().length > 160 ||
+    typeof assertedBy !== "string" ||
+    assertedBy.trim() === "" ||
+    assertedBy.trim().length > 120 ||
+    assertedAt === undefined ||
+    !Number.isFinite(authority) ||
+    authority < 0 ||
+    authority > 1
+  )
+    throw new Error("Structured Vault delivery metadata is invalid.");
+  const effectiveFrom = timestampValue(values.effective_from);
+  const effectiveTo = timestampValue(values.effective_to);
+  if (
+    (values.effective_from !== undefined && effectiveFrom === undefined) ||
+    (values.effective_to !== undefined && effectiveTo === undefined) ||
+    (effectiveFrom !== undefined &&
+      effectiveTo !== undefined &&
+      Date.parse(effectiveFrom) >= Date.parse(effectiveTo))
+  )
+    throw new Error("Structured Vault delivery metadata has invalid effective dates.");
+  return {
+    subject: {
+      kind: kind as DeliveryObjectKind,
+      key,
+      title: subjectTitle.trim(),
+    },
+    assertedBy: assertedBy.trim(),
+    assertedAt,
+    ...(effectiveFrom === undefined ? {} : { effectiveFrom }),
+    ...(effectiveTo === undefined ? {} : { effectiveTo }),
+    authority: Math.min(authority, rootAuthority),
+  };
+};
+
 const deliveryProjection = (
   root: VaultKnowledgeRoot,
   path: string,
@@ -201,6 +309,7 @@ const deliveryProjection = (
   passages: KnowledgeSourceDocument["passages"],
   updatedAt: string,
   canonicalUrl: string,
+  metadata?: DeliveryNoteMetadata | undefined,
 ): DeliveryProjection => {
   const projectRef = {
     kind: "project" as const,
@@ -218,6 +327,11 @@ const deliveryProjection = (
       ) === index,
   );
   const status = sections.find((passage) => sectionTopic(passage.title) === "status");
+  const statusSummary = status === undefined ? undefined : firstSummary(status.body, status.title);
+  const metadataSubjectRef =
+    metadata === undefined
+      ? undefined
+      : { kind: metadata.subject.kind, externalKey: metadata.subject.key };
   const objects: DeliveryObjectDraft[] = [
     {
       ...projectRef,
@@ -234,6 +348,22 @@ const deliveryProjection = (
       sensitivity: root.sensitivity,
     },
   ];
+  if (metadataSubjectRef !== undefined && metadata !== undefined)
+    objects.push({
+      ...metadataSubjectRef,
+      title: metadata.subject.title,
+      lifecycleState: status === undefined ? undefined : lifecycleState(status.body),
+      attributes: {
+        repository: root.repository,
+        path,
+        assertionSource: "human",
+        assertedBy: metadata.assertedBy,
+        ...(statusSummary === undefined ? {} : { summary: statusSummary }),
+      },
+      sensitivity: root.sensitivity,
+      effectiveFrom: metadata.effectiveFrom,
+      effectiveTo: metadata.effectiveTo,
+    });
   const relations: DeliveryProjection["relations"][number][] = [
     {
       kind: "contains",
@@ -243,6 +373,23 @@ const deliveryProjection = (
       sensitivity: root.sensitivity,
     },
   ];
+  if (metadataSubjectRef !== undefined)
+    relations.push(
+      {
+        kind: "contains",
+        from: projectRef,
+        to: metadataSubjectRef,
+        attributes: {},
+        sensitivity: root.sensitivity,
+      },
+      {
+        kind: "contains",
+        from: metadataSubjectRef,
+        to: documentRef,
+        attributes: {},
+        sensitivity: root.sensitivity,
+      },
+    );
   const claims: DeliveryProjection["claims"][number][] = [];
   const observations: DeliveryProjection["observations"][number][] = [];
   const seenJiraKeys = new Set<string>();
@@ -270,13 +417,14 @@ const deliveryProjection = (
         path,
         locator,
         topic,
+        summary,
         ...(topic === "capacity" ? { label: "capacity" } : {}),
       },
       sensitivity: root.sensitivity,
     });
     relations.push({
       kind: "contains",
-      from: documentRef,
+      from: metadataSubjectRef ?? documentRef,
       to: sectionRef,
       attributes: {},
       sensitivity: root.sensitivity,
@@ -285,7 +433,7 @@ const deliveryProjection = (
       relations.push({
         kind: "owns",
         from: sectionRef,
-        to: documentRef,
+        to: metadataSubjectRef ?? documentRef,
         attributes: { locator },
         sensitivity: root.sensitivity,
       });
@@ -293,19 +441,22 @@ const deliveryProjection = (
       relations.push({
         kind: "contributes_to",
         from: sectionRef,
-        to: projectRef,
+        to: metadataSubjectRef ?? projectRef,
         attributes: { locator },
         sensitivity: root.sensitivity,
       });
     claims.push({
-      subject: sectionRef,
-      subjectKey: sectionRef.externalKey,
-      predicate: `vault.${topic}`,
+      subject: metadataSubjectRef ?? sectionRef,
+      subjectKey: metadataSubjectRef?.externalKey ?? sectionRef.externalKey,
+      predicate: metadata === undefined ? `vault.${topic}` : `delivery.${topic}`,
       value: summary,
-      assertedAt: updatedAt,
+      assertedBy: metadata?.assertedBy,
+      assertedAt: metadata?.assertedAt ?? updatedAt,
+      effectiveFrom: metadata?.effectiveFrom,
+      effectiveTo: metadata?.effectiveTo,
       citationUrl: `${canonicalUrl}${locator}`,
       sensitivity: root.sensitivity,
-      authority: root.authority ?? 0.9,
+      authority: metadata?.authority ?? root.authority ?? 0.9,
     });
     observations.push({
       kind: topic === "decision" ? "decision" : "change",
@@ -386,6 +537,7 @@ const rootDocuments = async (
       `/repos/${root.repository}/git/blobs/${encodeURIComponent(sha)}`,
     );
     const markdown = decodeMarkdown(content);
+    const metadata = deliveryNoteMetadata(markdown, root.authority ?? 0.9);
     const passages = chunkVaultMarkdown(markdown);
     if (passages.length === 0) return undefined;
     const documentTitle = title(markdown, path);
@@ -415,6 +567,7 @@ const rootDocuments = async (
         passages,
         updatedAt,
         canonicalUrl,
+        metadata,
       ),
     } satisfies KnowledgeSourceDocument;
   });

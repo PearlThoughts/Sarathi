@@ -5,6 +5,7 @@ import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   type DeliveryClaim,
+  type DeliveryLifecycleState,
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
   type DeliveryQueryPredicate,
@@ -48,6 +49,17 @@ const sourceKind = (value: string): DeliverySourceKind =>
 
 const sensitivity = (value: string): SensitivityTier =>
   sensitivityOrder.includes(value as SensitivityTier) ? (value as SensitivityTier) : "restricted";
+
+const lifecycleState = (value: string | null): DeliveryLifecycleState | undefined => {
+  if (value === null) return undefined;
+  const normalized = value.toLowerCase();
+  if (/block|imped|stuck/.test(normalized)) return "blocked";
+  if (/cancel|abandon|declin/.test(normalized)) return "canceled";
+  if (/done|complete|delivered|released|resolved|closed/.test(normalized)) return "done";
+  if (/progress|active|underway|ongoing|review|testing/.test(normalized)) return "active";
+  if (/plan|ready|todo|to do|backlog|open/.test(normalized)) return "planned";
+  return "unknown";
+};
 
 const allowedSensitivities = (maximum: SensitivityTier): readonly SensitivityTier[] =>
   sensitivityOrder.slice(0, sensitivityOrder.indexOf(maximum) + 1);
@@ -253,11 +265,15 @@ const queryObjects = async (
         selector: "objects" as const,
         intent: operation.purpose,
         title: row.title,
-        summary: `${row.externalKey}: ${row.title}${row.lifecycleState === null ? "" : ` — ${row.lifecycleState}`}`,
+        summary:
+          typeof row.attributes.summary === "string" && row.attributes.summary.trim() !== ""
+            ? row.attributes.summary.trim()
+            : `${row.externalKey}: ${row.title}${row.lifecycleState === null ? "" : ` — ${row.lifecycleState}`}`,
         citationUrl: row.canonicalUrl,
         sensitivity: sensitivity(row.sensitivity),
         authority: row.authority,
         observedAt: row.observedAt,
+        lifecycleState: lifecycleState(row.lifecycleState),
         dedupeKey: `${row.externalKey}:${row.lifecycleState ?? ""}`,
       })),
   );
