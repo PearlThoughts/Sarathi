@@ -776,6 +776,9 @@ export type TeamsIngressDiagnosticEvent = {
   readonly reason?: string;
   readonly statusCode?: number;
   readonly missingFields?: readonly string[];
+  readonly responseMode?: "fast" | "structured" | "deep_dive";
+  readonly elapsedMs?: number;
+  readonly acceptancePassed?: boolean;
 };
 
 export type TeamsIngressDiagnosticSink = (event: TeamsIngressDiagnosticEvent) => void;
@@ -940,11 +943,28 @@ export const createTeamsIngressApplication = (
     };
     try {
       const outcome = await Effect.runPromise(handleTeamsMention(command, turnDependencies));
+      const acceptance =
+        outcome.kind === "answered" && "acceptance" in outcome.answer
+          ? (outcome.answer.acceptance as {
+              readonly mode?: unknown;
+              readonly elapsedMs?: unknown;
+              readonly passed?: unknown;
+            })
+          : undefined;
+      const responseMode =
+        acceptance?.mode === "fast" ||
+        acceptance?.mode === "structured" ||
+        acceptance?.mode === "deep_dive"
+          ? acceptance.mode
+          : undefined;
       diagnostics({
         event: "teams_ingress",
         stage: "handler",
         outcome: outcome.kind,
         ...(hash === undefined ? {} : { activityHash: hash }),
+        ...(responseMode === undefined ? {} : { responseMode }),
+        ...(typeof acceptance?.elapsedMs === "number" ? { elapsedMs: acceptance.elapsedMs } : {}),
+        ...(typeof acceptance?.passed === "boolean" ? { acceptancePassed: acceptance.passed } : {}),
       });
       if (outcome.kind === "denied") {
         await context.sendActivity(sameThreadReplyActivity(command.rootActivityId, outcome.reason));

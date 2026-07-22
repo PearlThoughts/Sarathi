@@ -7,6 +7,7 @@ import type {
   DeliveryQuerySelector,
   DeliveryQuestionIntent,
 } from "../domain/delivery-query.ts";
+import type { DeliveryResponseMode } from "../domain/delivery-response-mode.ts";
 
 export type DeliveryQueryContext = {
   readonly workspaceId: string;
@@ -74,6 +75,29 @@ export type DeliveryQuerySource = {
 
 export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt"> & {
   readonly plan?: DeliveryQueryPlan | undefined;
+  readonly responseMode?: DeliveryResponseMode | undefined;
+};
+
+export type DeliveryResponseAcceptance = {
+  readonly mode: DeliveryResponseMode;
+  readonly elapsedMs: number;
+  readonly latencyTargetMs: number;
+  readonly latencyPassed: boolean;
+  readonly requestedIntents: number;
+  readonly coveredIntents: number;
+  readonly completenessRatio: number;
+  readonly completenessPassed: boolean;
+  readonly materialStatements: number;
+  readonly citedStatements: number;
+  readonly citationCoverage: number;
+  readonly citationPassed: boolean;
+  readonly groundingPassed: boolean;
+  readonly freshEvidence: number;
+  readonly evaluatedEvidence: number;
+  readonly freshnessCoverage: number;
+  readonly freshnessPassed: boolean;
+  readonly formatPassed: boolean;
+  readonly passed: boolean;
 };
 
 export type DeliveryAssistantAnswer = {
@@ -83,6 +107,8 @@ export type DeliveryAssistantAnswer = {
     readonly url: string;
   }[];
   readonly status: "ok" | "partial" | "empty";
+  readonly responseMode: DeliveryResponseMode;
+  readonly acceptance: DeliveryResponseAcceptance;
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];

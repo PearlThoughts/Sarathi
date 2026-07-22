@@ -9,7 +9,9 @@ import {
   type DeliveryResultItem,
   deliveryClaimValueHash,
   deliveryResponseBudget,
+  deliveryResponseModePolicies,
   planDeliveryQuestion,
+  selectDeliveryResponseMode,
 } from "../src/modules/delivery-intelligence/index.ts";
 
 const request = {
@@ -53,10 +55,23 @@ describe("delivery intelligence application", () => {
     expect(deliveryResponseBudget.sourceTimeoutMs).toBeLessThan(
       deliveryResponseBudget.totalBudgetMs,
     );
+    expect(deliveryResponseModePolicies.structured.totalBudgetMs).toBeGreaterThan(
+      deliveryResponseBudget.totalBudgetMs,
+    );
+    expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBe(50);
+  });
+
+  it("selects response depth before retrieval and honors an explicit mode", () => {
+    expect(selectDeliveryResponseMode("Who owns DEMO-1 today?")).toBe("fast");
+    expect(selectDeliveryResponseMode("Give me a weekly status report")).toBe("structured");
+    expect(selectDeliveryResponseMode("Investigate the full history and root cause")).toBe(
+      "deep_dive",
+    );
+    expect(selectDeliveryResponseMode("Quick status", "deep_dive")).toBe("deep_dive");
   });
 
   it("rejects finance before any source call", async () => {
-    const execute = vi.fn(() =>
+    const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
       Effect.succeed({
         items: [],
         conflicts: [],
@@ -111,6 +126,153 @@ describe("delivery intelligence application", () => {
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
     expect(answer.status).toBe("ok");
+    expect(answer.responseMode).toBe("fast");
+    expect(answer.acceptance).toMatchObject({
+      mode: "fast",
+      completenessRatio: 1,
+      citationCoverage: 1,
+      groundingPassed: true,
+      freshnessPassed: true,
+      formatPassed: true,
+      passed: true,
+    });
+  });
+
+  it("renders a structured brief with independent format and quality acceptance", async () => {
+    const plan = planDeliveryQuestion(request.question);
+    if (plan === undefined) throw new Error("Expected a structured activity plan");
+    const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
+      Effect.succeed({
+        items: [
+          {
+            ...item("github", "structured-code", "Merged the delivery dashboard"),
+            indexedAt: "2026-07-20T12:30:00.000Z",
+          },
+          {
+            ...item("teams", "structured-team", "Confirmed rollout readiness"),
+            indexedAt: "2026-07-20T12:45:00.000Z",
+          },
+        ],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute,
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        now: () => new Date(request.requestedAt),
+      }).answer({
+        ...request,
+        question: "Give me a structured weekly report",
+        responseMode: "structured",
+        plan,
+      }),
+    );
+
+    expect(answer.responseMode).toBe("structured");
+    expect(answer.text).toContain("### Delivery brief");
+    expect(answer.text).toContain("### Evidence");
+    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:09:12.000Z");
+    expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 15)).toBe(true);
+    expect(answer.acceptance).toMatchObject({
+      completenessPassed: true,
+      citationPassed: true,
+      groundingPassed: true,
+      freshnessPassed: true,
+      formatPassed: true,
+      passed: true,
+    });
+  });
+
+  it("preserves deep-dive scope, freshness, gaps, inference boundary, and timing", async () => {
+    const plan = planDeliveryQuestion("What is the current status of DEMO-1?");
+    if (plan === undefined) throw new Error("Expected a deep-dive status plan");
+    const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
+      Effect.succeed({
+        items: [
+          {
+            ...item("jira", "deep-status", "DEMO-1 is actively in review", "status"),
+            lifecycleState: "active" as const,
+            sourceUpdatedAt: "2026-07-20T12:30:00.000Z",
+            indexedAt: "2026-07-20T12:45:00.000Z",
+          },
+        ],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "knowledge"],
+      execute,
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        now: () => new Date(request.requestedAt),
+      }).answer({
+        ...request,
+        question: "Investigate DEMO-1 in a comprehensive deep dive",
+        responseMode: "deep_dive",
+        plan,
+      }),
+    );
+
+    expect(answer.responseMode).toBe("deep_dive");
+    for (const heading of [
+      "### Scope and time window",
+      "### Sources and freshness",
+      "### Evidence",
+      "### Conflicts and gaps",
+      "### Inference boundary",
+      "### Timing",
+    ])
+      expect(answer.text).toContain(heading);
+    expect(answer.text).toContain("Latest source update: 2026-07-20T12:30:00.000Z");
+    expect(answer.text).toMatch(/Completed in \d+ ms\./);
+    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:09:30.000Z");
+    expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 50)).toBe(true);
+    expect(answer.acceptance.formatPassed).toBe(true);
+    expect(answer.acceptance.passed).toBe(true);
+  });
+
+  it("fails freshness acceptance for an hourly projection that is stale", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("github", "stale-code", "Merged an old delivery report"),
+              indexedAt: "2026-07-20T08:00:00.000Z",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer(request),
+    );
+
+    expect(answer.acceptance).toMatchObject({
+      evaluatedEvidence: 1,
+      freshEvidence: 0,
+      freshnessCoverage: 0,
+      freshnessPassed: false,
+      passed: false,
+    });
   });
 
   it("delegates with a real Teams mention only when the source resolves the target identity", async () => {
@@ -429,6 +591,13 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("**Conflict — DEMO-1 status:** blocked");
     expect(answer.text).toContain("vs ready");
     expect(answer.conflicts).toHaveLength(1);
+    expect(answer.acceptance).toMatchObject({
+      requestedIntents: 2,
+      coveredIntents: 1,
+      completenessRatio: 0.5,
+      completenessPassed: false,
+      passed: false,
+    });
   });
 
   it("does not call two messages from one source a cross-source conflict", async () => {

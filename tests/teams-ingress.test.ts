@@ -264,6 +264,9 @@ describe("Teams ingress configuration", () => {
       activityHash: "already-hashed-activity",
       reason: "missing_matching_mention",
       missingFields: ["callerEntraObjectId"],
+      responseMode: "structured",
+      elapsedMs: 8123,
+      acceptancePassed: false,
     });
 
     expect(lines).toEqual([
@@ -274,6 +277,9 @@ describe("Teams ingress configuration", () => {
         activityHash: "already-hashed-activity",
         reason: "missing_matching_mention",
         missingFields: ["callerEntraObjectId"],
+        responseMode: "structured",
+        elapsedMs: 8123,
+        acceptancePassed: false,
       }),
     ]);
     expect(lines[0]).not.toContain("Hello from a private thread");
