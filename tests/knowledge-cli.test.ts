@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { describe, expect, test } from "vitest";
+import { deliverySyncFailureOutput } from "../src/cli/commands/delivery-sync-runtime.ts";
 import {
   runKnowledgeCliOperation,
   runKnowledgeCommand,
@@ -8,6 +9,21 @@ import { runReleaseCli } from "../src/cli/release.ts";
 import { RepositoryError } from "../src/domain/errors.ts";
 
 describe("knowledge CLI", () => {
+  test("retains only the privacy-safe synchronization failure class", () => {
+    const result = deliverySyncFailureOutput(
+      new RepositoryError({
+        message: "private provider response",
+        operation: "github-knowledge-sync",
+      }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      message: "Delivery synchronization failed; inspect privacy-safe control diagnostics.",
+      failureOperation: "github-knowledge-sync",
+    });
+    expect(JSON.stringify(result)).not.toContain("private provider response");
+  });
+
   test("exposes the additive migration and rollback plan through the Effect CLI handler", async () => {
     const result = await runKnowledgeCommand(["migrate", "plan"], {});
     expect(result).toMatchObject({
