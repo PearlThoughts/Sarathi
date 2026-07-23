@@ -35,6 +35,7 @@ export type GitHubKnowledgeSourceConfiguration = {
   readonly historySince?: string | undefined;
   readonly now?: (() => Date) | undefined;
   readonly fetcher?: Fetcher | undefined;
+  readonly delay?: ((milliseconds: number) => Promise<void>) | undefined;
 };
 
 type GitHubRepository = { readonly default_branch?: string };
@@ -219,15 +220,58 @@ class GitHubKnowledgeHttpError extends Error {
   }
 }
 
+const maximumRateLimitWaitMilliseconds = 65 * 60 * 1_000;
+const maximumRateLimitRetries = 4;
+
+const numericHeader = (value: string | null): number | undefined => {
+  if (value === null || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const rateLimitWaitMilliseconds = (response: Response, now: number): number | undefined => {
+  if (response.status !== 403 && response.status !== 429) return undefined;
+  const retryAfterSeconds = numericHeader(response.headers.get("retry-after"));
+  const remaining = response.headers.get("x-ratelimit-remaining");
+  const resetSeconds = numericHeader(response.headers.get("x-ratelimit-reset"));
+  if (response.status === 403 && remaining !== "0" && retryAfterSeconds === undefined)
+    return undefined;
+  const milliseconds =
+    retryAfterSeconds !== undefined
+      ? retryAfterSeconds * 1_000
+      : resetSeconds !== undefined
+        ? resetSeconds * 1_000 - now + 1_000
+        : undefined;
+  if (
+    milliseconds === undefined ||
+    milliseconds <= 0 ||
+    milliseconds > maximumRateLimitWaitMilliseconds
+  )
+    return undefined;
+  return Math.ceil(milliseconds);
+};
+
+const defaultDelay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 const request = async (
   configuration: GitHubKnowledgeSourceConfiguration,
   path: string,
 ): Promise<Response> => {
-  const response = await (configuration.fetcher ?? fetch)(`https://api.github.com${path}`, {
-    headers: headers(configuration.token),
-  });
-  if (!response.ok) throw new GitHubKnowledgeHttpError(response.status);
-  return response;
+  for (let attempt = 0; attempt <= maximumRateLimitRetries; attempt += 1) {
+    const response = await (configuration.fetcher ?? fetch)(`https://api.github.com${path}`, {
+      headers: headers(configuration.token),
+    });
+    if (response.ok) return response;
+    const wait = rateLimitWaitMilliseconds(
+      response,
+      (configuration.now?.() ?? new Date()).getTime(),
+    );
+    if (wait === undefined || attempt === maximumRateLimitRetries)
+      throw new GitHubKnowledgeHttpError(response.status);
+    await (configuration.delay ?? defaultDelay)(wait);
+  }
+  throw new GitHubKnowledgeHttpError(429);
 };
 
 const requestJson = async <Value>(

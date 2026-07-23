@@ -19,6 +19,8 @@ bun run delivery sync status all
 
 `status` exits successfully only when every selected source has a successful checkpoint inside `SARATHI_SYNC_STALE_AFTER_SECONDS`, which defaults to two hours. Output is limited to source identity, scope hashes, timestamps, lag, subscription state, lease metadata, run state, counts, and checksums. Raw provider cursors and indexed source revisions remain private in PostgreSQL and are never printed.
 
+GitHub synchronization honors provider reset and retry headers. When the approved portfolio exhausts the core API quota, the active operation keeps its lease heartbeat, waits within a bounded retry budget, and resumes the exact failed request instead of restarting the snapshot.
+
 ## Configuration boundary
 
 The existing Jira and Vault settings remain authoritative. Continuous repository and collaboration configuration use:
