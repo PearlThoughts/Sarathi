@@ -92,6 +92,8 @@ A member asks a question that requires repository truth. Sarathi retrieves from 
 
 **Independent test**: the answer contains a resolvable, commit-pinned repository citation; changed files are re-indexed without re-embedding unchanged files; and a stale checkpoint triggers live verification or an explicit freshness warning.
 
+[Code-Derived Delivery Intelligence](./code-delivery-intelligence.md) defines the deeper model for capability boundaries, ownership, recurring work, estimate-versus-observation analysis, delivery truth, historical synthesis, and leadership alignment. Its current-implementation boundary is authoritative: the richer design is not implied complete by FR-010 ingestion.
+
 ### Story 6 — Continuously Current Project Knowledge
 
 An operator can bootstrap a configured historical window and then rely on source events plus hourly reconciliation to keep Jira, knowledge roots, repositories, and collaboration messages current without full re-indexing.
