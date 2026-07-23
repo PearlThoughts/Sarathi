@@ -44,7 +44,7 @@ SARATHI_TEAMS_LIFECYCLE_NOTIFICATION_URL
 SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE
 ```
 
-The GitHub configuration declares a source ID, approved repositories, ACLs, sensitivity, exclusions, and optional history boundary. The Teams configuration declares a source ID, approved channels, labels, ACLs, sensitivity, and optional history boundary. Values belong in the private overlay or protected runtime variables, not the public repository.
+The GitHub configuration declares a source ID, approved repositories, ACLs, sensitivity, exclusions, and optional history boundary. The Teams configuration declares a source ID, approved channels, labels, ACLs, sensitivity, and optional history boundary. `SARATHI_SYNC_OWNER_ID` is a deployment-owner prefix; every command derives a unique hashed execution owner so an overlapping tick or replacement process cannot re-enter another invocation's lease. Values belong in the private overlay or protected runtime variables, not the public repository.
 
 Every source body is authorized and normalized inside its adapter, then persisted only through the existing knowledge and delivery repositories. Provider credentials, event bodies, message bodies, document bodies, code bodies, and private configuration are excluded from command output and synchronization-control records.
 

@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
+import { stableSha256 } from "../../domain/hash.ts";
 import {
   createGitHubKnowledgeSource,
   type GitHubKnowledgeRepository,
@@ -180,6 +182,11 @@ const sourceSelection = (value: string | undefined): SourceSelection => {
 };
 
 const continuousKinds = ["jira", "vault", "github", "teams"] as const;
+
+export const synchronizationExecutionOwnerId = (
+  configuredOwnerId: string,
+  executionId: string = randomUUID(),
+): string => stableSha256(`${configuredOwnerId}:${executionId}`);
 
 const selectedKinds = (selection: SourceSelection): readonly ContinuousSourceKind[] =>
   selection === "all" ? continuousKinds : [selection];
@@ -435,7 +442,9 @@ export const runDeliverySyncCommand = async (
       const embeddings = createAiSdkKnowledgeEmbedding(
         knowledgeEmbeddingConfigurationFromEnvironment(environment),
       );
-      const ownerId = required("SARATHI_SYNC_OWNER_ID", environment.SARATHI_SYNC_OWNER_ID);
+      const ownerId = synchronizationExecutionOwnerId(
+        required("SARATHI_SYNC_OWNER_ID", environment.SARATHI_SYNC_OWNER_ID),
+      );
       const leaseSeconds = positiveInteger(
         "SARATHI_SYNC_LEASE_SECONDS",
         environment.SARATHI_SYNC_LEASE_SECONDS,
