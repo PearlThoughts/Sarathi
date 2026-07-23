@@ -12,6 +12,7 @@ import {
 import { Effect } from "effect";
 import express from "express";
 import { runDeliverySyncCommand } from "../cli/commands/delivery-sync-runtime.ts";
+import { startDeliverySyncScheduler } from "../cli/commands/delivery-sync-scheduler.ts";
 import { RepositoryError } from "../domain/errors.ts";
 import { stableSha256 } from "../domain/hash.ts";
 import type { TrustTier } from "../domain/policy.ts";
@@ -1011,6 +1012,7 @@ export const startTeamsIngress = (): void => {
   const configuration = teamsIngressConfigurationFromEnvironment();
   const composition = hostedTeamsIngressCompositionFromEnvironment();
   const finance = hostedFinanceReminderCompositionFromEnvironment();
+  const continuousSync = startDeliverySyncScheduler();
   const auth = teamsIngressAuthConfiguration(configuration);
   const adapter = new CloudAdapter(auth);
   const diagnostics = createPrivacySafeTeamsIngressDiagnosticSink();
@@ -1125,6 +1127,7 @@ export const startTeamsIngress = (): void => {
       components: {
         teamsMention: teamsReady ? "ready" : "unavailable",
         finance: financeReadiness,
+        continuousSync: continuousSync.status(),
       },
     });
   });

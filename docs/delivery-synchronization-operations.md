@@ -16,9 +16,9 @@ bun run delivery sync status all
 
 `events` accepts one provider event identity and a precomputed payload hash. It never accepts or stores an event body. A duplicate completed identity returns without fetching the source again. Accepted and retryable identities fetch the authoritative source before advancing a checkpoint.
 
-`reconcile` reads the durable cursor, takes one expiring lease shared by every trigger for that source, renews it during long reads, fetches authoritative changes, commits projections and tombstones, then records the terminal run. Invoke `reconcile all` hourly through the existing deployment scheduler.
+`reconcile` reads the durable cursor, takes one expiring lease shared by every trigger for that source, renews it during long reads, fetches authoritative changes, commits projections and tombstones, then records the terminal run. The hosted runtime invokes each source independently every 45 minutes by default, so one unavailable provider cannot prevent the other repair paths. Configure `SARATHI_SYNC_SCHEDULER_ENABLED=true` in production; `SARATHI_SYNC_RECONCILE_INTERVAL_SECONDS` and `SARATHI_SYNC_INITIAL_DELAY_SECONDS` may override the interval and first-run delay.
 
-`subscriptions teams` creates, renews, or recreates one Microsoft Graph change-notification subscription for every configured channel. Invoke it on the hourly repair schedule as well as during deployment. Provider resource URLs and client state remain outside command output; PostgreSQL stores only provider identity, a resource hash, and lifecycle timestamps.
+`subscriptions teams` creates, renews, or recreates one Microsoft Graph change-notification subscription for every configured channel. The hosted repair loop invokes it before source reconciliation, and it should also run during bounded deployment verification. Provider resource URLs and client state remain outside command output; PostgreSQL stores only provider identity, a resource hash, and lifecycle timestamps.
 
 Microsoft Graph posts validation and change/lifecycle notifications to `/api/teams/notifications` on the strict API host. Validation tokens are echoed as plain text. Accepted notifications are reduced to one stable event identity and payload hash, acknowledged with HTTP 202, and then cause an authoritative Teams source refresh. Lifecycle events renew subscriptions before refreshing. Notification bodies and client state are neither persisted nor logged; hourly reconciliation repairs any event lost during process interruption.
 
@@ -36,6 +36,9 @@ SARATHI_KNOWLEDGE_TEAMS_CONFIG_JSON
 SARATHI_SYNC_OWNER_ID
 SARATHI_SYNC_LEASE_SECONDS
 SARATHI_SYNC_STALE_AFTER_SECONDS
+SARATHI_SYNC_SCHEDULER_ENABLED
+SARATHI_SYNC_RECONCILE_INTERVAL_SECONDS
+SARATHI_SYNC_INITIAL_DELAY_SECONDS
 SARATHI_TEAMS_NOTIFICATION_URL
 SARATHI_TEAMS_LIFECYCLE_NOTIFICATION_URL
 SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE
