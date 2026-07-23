@@ -236,6 +236,40 @@ describe("GitHub knowledge source", () => {
     expect(requests.filter((url) => url.includes("/git/blobs/renamed-1"))).toHaveLength(2);
   });
 
+  it("treats an authorized empty repository as zero evidence", async () => {
+    const requests: string[] = [];
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      historySince: "2026-01-20T00:00:00.000Z",
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({ message: "Git Repository is empty." }, { status: 409 });
+        return new Response("unexpected request", { status: 500 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(snapshot).toMatchObject({
+      source: "github",
+      mode: "full",
+      documents: [],
+      retiredExternalIds: [],
+    });
+    expect(snapshot.cursor).toMatch(/^github-v1:/);
+    expect(requests).toEqual([
+      "https://api.github.com/repos/example/sarathi",
+      "https://api.github.com/repos/example/sarathi/commits/main",
+    ]);
+  });
+
   it("fails closed for truncated inventories", async () => {
     const source = createGitHubKnowledgeSource({
       sourceId: "github-example",

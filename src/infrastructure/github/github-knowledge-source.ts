@@ -209,6 +209,16 @@ const headers = (token: string): HeadersInit => ({
   "X-GitHub-Api-Version": "2022-11-28",
 });
 
+class GitHubKnowledgeHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`GitHub knowledge read failed with HTTP ${status}.`);
+    this.name = "GitHubKnowledgeHttpError";
+    this.status = status;
+  }
+}
+
 const request = async (
   configuration: GitHubKnowledgeSourceConfiguration,
   path: string,
@@ -216,7 +226,7 @@ const request = async (
   const response = await (configuration.fetcher ?? fetch)(`https://api.github.com${path}`, {
     headers: headers(configuration.token),
   });
-  if (!response.ok) throw new Error(`GitHub knowledge read failed with HTTP ${response.status}.`);
+  if (!response.ok) throw new GitHubKnowledgeHttpError(response.status);
   return response;
 };
 
@@ -647,10 +657,26 @@ const readRepository = async (
   const branch = repository.branch ?? metadata.default_branch;
   if (branch === undefined || branch.trim() === "")
     throw new Error("GitHub repository default branch could not be resolved.");
-  const commit = await requestJson<GitHubCommit>(
-    configuration,
-    `/repos/${repoPath}/commits/${encodeURIComponent(branch)}`,
-  );
+  let commit: GitHubCommit;
+  try {
+    commit = await requestJson<GitHubCommit>(
+      configuration,
+      `/repos/${repoPath}/commits/${encodeURIComponent(branch)}`,
+    );
+  } catch (error) {
+    if (error instanceof GitHubKnowledgeHttpError && error.status === 409)
+      return {
+        documents: [],
+        retiredExternalIds: Object.keys(previous?.blobs ?? {}).sort(),
+        cursor: {
+          branch,
+          commitSha: "empty",
+          blobs: {},
+          activityUpdatedAt: previous?.activityUpdatedAt ?? historySince,
+        },
+      };
+    throw error;
+  }
   const tree = await requestJson<GitHubTree>(
     configuration,
     `/repos/${repoPath}/git/trees/${encodeURIComponent(commit.sha)}?recursive=1`,
