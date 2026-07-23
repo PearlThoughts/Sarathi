@@ -46,6 +46,10 @@ export type SynchronizationControlRepository = {
   readonly saveSubscription: (
     subscription: SynchronizationSubscription,
   ) => Effect.Effect<void, RepositoryError>;
+  readonly readSubscriptions: (
+    workspaceId: string,
+    sourceId: string,
+  ) => Effect.Effect<readonly SynchronizationSubscription[], RepositoryError>;
   readonly acquireLease: (lease: SynchronizationLease) => Effect.Effect<boolean, RepositoryError>;
   readonly heartbeatLease: (lease: SynchronizationLease) => Effect.Effect<boolean, RepositoryError>;
   readonly releaseLease: (lease: SynchronizationLease) => Effect.Effect<void, RepositoryError>;

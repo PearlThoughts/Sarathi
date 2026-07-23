@@ -15,6 +15,9 @@ describe("strict host routing", () => {
   it("allows Bot ingress and machine operations only on the API surface", () => {
     expect(classifyHostSurface(configuration.apiHost, "/api/messages", configuration)).toBe("api");
     expect(
+      classifyHostSurface(configuration.apiHost, "/api/teams/notifications", configuration),
+    ).toBe("api");
+    expect(
       classifyHostSurface(
         configuration.apiHost,
         "/internal/finance/reminders/dry-run",

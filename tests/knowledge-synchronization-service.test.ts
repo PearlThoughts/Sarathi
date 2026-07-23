@@ -69,6 +69,7 @@ const controlRepository = (overrides: Partial<SynchronizationControlRepository> 
   const control: SynchronizationControlRepository = {
     registerEvent: (delivery) => Effect.succeed({ disposition: "accepted" as const, delivery }),
     saveSubscription: () => Effect.void,
+    readSubscriptions: () => Effect.succeed([]),
     acquireLease: () => Effect.succeed(true),
     heartbeatLease: () => Effect.succeed(true),
     releaseLease: () => Effect.void,

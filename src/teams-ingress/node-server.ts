@@ -11,6 +11,7 @@ import {
 } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import express from "express";
+import { runDeliverySyncCommand } from "../cli/commands/delivery-sync-runtime.ts";
 import { RepositoryError } from "../domain/errors.ts";
 import { stableSha256 } from "../domain/hash.ts";
 import type { TrustTier } from "../domain/policy.ts";
@@ -80,6 +81,7 @@ import {
   classifyHostSurface,
   strictHostRoutingConfigurationFromEnvironment,
 } from "./host-routing.ts";
+import { parseTeamsChangeNotificationBatch } from "./teams-change-notification-ingress.ts";
 
 export type TeamsIngressConfiguration = {
   readonly appId: string;
@@ -1025,6 +1027,56 @@ export const startTeamsIngress = (): void => {
     });
   }
   server.use(express.json());
+  server.post("/api/teams/notifications", (request, response) => {
+    const validationToken =
+      typeof request.query.validationToken === "string" ? request.query.validationToken : undefined;
+    if (validationToken !== undefined && validationToken !== "") {
+      response.status(200).type("text/plain").send(validationToken);
+      return;
+    }
+    const clientState = process.env.SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE;
+    if (clientState === undefined || clientState.trim() === "") {
+      response.status(503).json({ ok: false, error: "notification_ingress_unavailable" });
+      return;
+    }
+    try {
+      const batch = parseTeamsChangeNotificationBatch(request.body, clientState);
+      response.status(202).json({ ok: true, accepted: batch.notificationCount });
+      void (async () => {
+        const renewal = batch.includesLifecycleEvent
+          ? await runDeliverySyncCommand(["subscriptions", "teams"])
+          : undefined;
+        const synchronization = await runDeliverySyncCommand([
+          "events",
+          "teams",
+          "--event-id",
+          batch.providerEventId,
+          "--payload-hash",
+          batch.payloadHash,
+        ]);
+        console.info(
+          JSON.stringify({
+            event: "teams_change_notification",
+            outcome: synchronization.exitCode === 0 ? "accepted" : "failed",
+            notificationCount: batch.notificationCount,
+            ...(renewal === undefined
+              ? {}
+              : { renewal: renewal.exitCode === 0 ? "succeeded" : "failed" }),
+          }),
+        );
+      })().catch(() => {
+        console.error(
+          JSON.stringify({
+            event: "teams_change_notification",
+            outcome: "failed",
+            notificationCount: batch.notificationCount,
+          }),
+        );
+      });
+    } catch {
+      response.status(400).json({ ok: false, error: "invalid_notification" });
+    }
+  });
   server.post(
     "/api/messages",
     (request, response, next) => {

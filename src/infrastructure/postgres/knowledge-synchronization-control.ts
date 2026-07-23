@@ -242,6 +242,20 @@ export const createPostgresSynchronizationControlRepository = (
           },
         });
     }),
+  readSubscriptions: (workspaceId, sourceId) =>
+    effect("knowledge-sync.read-subscriptions", async () => {
+      const rows = await database
+        .select()
+        .from(knowledgeSyncSubscriptionTable)
+        .where(
+          and(
+            eq(knowledgeSyncSubscriptionTable.workspaceId, workspaceId),
+            eq(knowledgeSyncSubscriptionTable.sourceId, sourceId),
+          ),
+        )
+        .orderBy(desc(knowledgeSyncSubscriptionTable.updatedAt));
+      return rows.map(subscriptionFromRow);
+    }),
   acquireLease: (lease) =>
     effect("knowledge-sync.acquire-lease", async () => {
       const result = await database.execute(sql`

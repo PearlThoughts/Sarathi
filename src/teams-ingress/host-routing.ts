@@ -13,6 +13,7 @@ const normalizedHost = (host: string): string => host.trim().toLowerCase().split
 
 const isApiPath = (path: string): boolean =>
   path === "/api/messages" ||
+  path === "/api/teams/notifications" ||
   path === "/health" ||
   path === "/ready" ||
   path.startsWith("/internal/");
