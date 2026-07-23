@@ -270,6 +270,50 @@ describe("GitHub knowledge source", () => {
     ]);
   });
 
+  it("waits for the declared GitHub core reset and resumes the exact request", async () => {
+    const now = new Date("2026-07-22T00:00:00.000Z");
+    const waits: number[] = [];
+    let metadataRequests = 0;
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      historySince: "2026-01-20T00:00:00.000Z",
+      now: () => now,
+      delay: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/repos/example/sarathi")) {
+          metadataRequests += 1;
+          if (metadataRequests === 1)
+            return Response.json(
+              { message: "API rate limit exceeded." },
+              {
+                status: 403,
+                headers: {
+                  "x-ratelimit-remaining": "0",
+                  "x-ratelimit-reset": String(now.getTime() / 1_000 + 1),
+                },
+              },
+            );
+          return Response.json({ default_branch: "main" });
+        }
+        if (url.endsWith("/commits/main"))
+          return Response.json({ message: "Git Repository is empty." }, { status: 409 });
+        return new Response("unexpected request", { status: 500 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(snapshot.documents).toEqual([]);
+    expect(metadataRequests).toBe(2);
+    expect(waits).toEqual([2_000]);
+  });
+
   it("fails closed for truncated inventories", async () => {
     const source = createGitHubKnowledgeSource({
       sourceId: "github-example",
