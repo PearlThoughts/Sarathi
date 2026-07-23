@@ -22,9 +22,11 @@ import { createVaultKnowledgeSource } from "../../infrastructure/vault/index.ts"
 import { parseDeliveryEntityCatalog } from "../../modules/delivery-intelligence/index.ts";
 import {
   type KnowledgeAclRule,
+  type KnowledgeIngestionSummary,
   type KnowledgeSourceKind,
   readSynchronizationSourceStatus,
   type SynchronizationSource,
+  type SynchronizationStatus,
   synchronizationEventDeliveryId,
   synchronizeKnowledgeSource,
 } from "../../modules/knowledge-layer/index.ts";
@@ -65,6 +67,70 @@ type TeamsProjection = {
   readonly historySince?: string | undefined;
   readonly assistantName?: string | undefined;
 };
+
+const privacySafeControlStatus = (status: {
+  readonly sourceId: string;
+  readonly source: KnowledgeSourceKind;
+  readonly freshness: unknown;
+  readonly control: SynchronizationStatus;
+}) => ({
+  sourceId: status.sourceId,
+  source: status.source,
+  freshness: status.freshness,
+  control: {
+    ...(status.control.checkpoint === undefined
+      ? {}
+      : {
+          checkpoint: {
+            workspaceId: status.control.checkpoint.workspaceId,
+            sourceId: status.control.checkpoint.sourceId,
+            scopeHash: status.control.checkpoint.scopeHash,
+            lastEventAt: status.control.checkpoint.lastEventAt,
+            lastReconciledAt: status.control.checkpoint.lastReconciledAt,
+            newestSourceUpdatedAt: status.control.checkpoint.newestSourceUpdatedAt,
+            lastSucceededAt: status.control.checkpoint.lastSucceededAt,
+            retryCount: status.control.checkpoint.retryCount,
+            nextReconcileAt: status.control.checkpoint.nextReconcileAt,
+            failureClass: status.control.checkpoint.failureClass,
+          },
+        }),
+    ...(status.control.subscription === undefined
+      ? {}
+      : { subscription: status.control.subscription }),
+    ...(status.control.activeLease === undefined
+      ? {}
+      : { activeLease: status.control.activeLease }),
+    ...(status.control.latestRun === undefined
+      ? {}
+      : {
+          latestRun: {
+            id: status.control.latestRun.id,
+            workspaceId: status.control.latestRun.workspaceId,
+            sourceId: status.control.latestRun.sourceId,
+            trigger: status.control.latestRun.trigger,
+            status: status.control.latestRun.status,
+            scopeHash: status.control.latestRun.scopeHash,
+            startedAt: status.control.latestRun.startedAt,
+            completedAt: status.control.latestRun.completedAt,
+            attemptCount: status.control.latestRun.attemptCount,
+            newestSourceUpdatedAt: status.control.latestRun.newestSourceUpdatedAt,
+            lagSeconds: status.control.latestRun.lagSeconds,
+            failureClass: status.control.latestRun.failureClass,
+          },
+        }),
+  },
+});
+
+const privacySafeSummary = (summary: KnowledgeIngestionSummary) => ({
+  sourceId: summary.sourceId,
+  workspaceId: summary.workspaceId,
+  scopeHash: summary.scopeHash,
+  documentsObserved: summary.documentsObserved,
+  versionsCreated: summary.versionsCreated,
+  passagesActive: summary.passagesActive,
+  itemsDeleted: summary.itemsDeleted,
+  checksum: summary.checksum,
+});
 
 const required = (name: string, value: string | undefined): string => {
   if (value === undefined || value.trim() === "") throw new Error(`${name} is required.`);
@@ -273,7 +339,7 @@ export const runDeliverySyncCommand = async (
             ok: statuses.every(({ freshness }) => freshness.status === "current"),
             operation: "delivery-sync-status",
             staleAfterSeconds,
-            statuses,
+            statuses: statuses.map(privacySafeControlStatus),
           },
         };
       }
@@ -350,7 +416,16 @@ export const runDeliverySyncCommand = async (
       const accepted = outcomes.every(({ disposition }) => disposition !== "lease-unavailable");
       return {
         exitCode: accepted ? 0 : 1,
-        output: { ok: accepted, operation: `delivery-sync-${operation}`, outcomes },
+        output: {
+          ok: accepted,
+          operation: `delivery-sync-${operation}`,
+          outcomes: outcomes.map((outcome) => ({
+            ...outcome,
+            ...(outcome.summary === undefined
+              ? {}
+              : { summary: privacySafeSummary(outcome.summary) }),
+          })),
+        },
       };
     } finally {
       await opened.pool.end();

@@ -17,7 +17,7 @@ bun run delivery sync status all
 
 `reconcile` reads the durable cursor, takes one expiring lease shared by every trigger for that source, renews it during long reads, fetches authoritative changes, commits projections and tombstones, then records the terminal run. Invoke `reconcile all` hourly through the existing deployment scheduler.
 
-`status` exits successfully only when every selected source has a successful checkpoint inside `SARATHI_SYNC_STALE_AFTER_SECONDS`, which defaults to two hours. Output is limited to source identity, cursor and scope hashes, timestamps, lag, subscription state, lease metadata, run state, counts, and checksums.
+`status` exits successfully only when every selected source has a successful checkpoint inside `SARATHI_SYNC_STALE_AFTER_SECONDS`, which defaults to two hours. Output is limited to source identity, scope hashes, timestamps, lag, subscription state, lease metadata, run state, counts, and checksums. Raw provider cursors and indexed source revisions remain private in PostgreSQL and are never printed.
 
 ## Configuration boundary
 
