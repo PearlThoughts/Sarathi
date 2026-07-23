@@ -43,6 +43,13 @@
       "when": 1784741143952,
       "tag": "0005_canonical-entity-time",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784783000000,
+      "tag": "0006_independent-sync-control",
+      "breakpoints": true
     }
   ]
 }

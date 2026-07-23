@@ -40,6 +40,7 @@ describe("knowledge CLI", () => {
             "0003_continuous-sync-control-plane",
             "0004_attributed-delivery-assertions",
             "0005_canonical-entity-time",
+            "0006_independent-sync-control",
           ],
           protectedTables: [
             "compliance_reminder_audit",
