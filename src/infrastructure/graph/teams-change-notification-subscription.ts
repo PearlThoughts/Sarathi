@@ -52,6 +52,9 @@ const subscriptionResource = (channel: TeamsKnowledgeChannel): string => {
   return `teams/${channel.teamId}/channels/${channel.channelId}/messages`;
 };
 
+export const teamsSubscriptionResourceHash = (channel: TeamsKnowledgeChannel): string =>
+  stableSha256(subscriptionResource(channel));
+
 const expiration = (now: Date, lifetimeMinutes: number): string =>
   new Date(now.getTime() + lifetimeMinutes * 60_000).toISOString();
 

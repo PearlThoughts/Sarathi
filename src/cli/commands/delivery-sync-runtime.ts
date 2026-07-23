@@ -7,7 +7,9 @@ import {
 import {
   createEntraClientCredentialsTokenProvider,
   createTeamsKnowledgeSource,
+  ensureTeamsChangeNotificationSubscription,
   type TeamsKnowledgeChannel,
+  teamsSubscriptionResourceHash,
 } from "../../infrastructure/graph/index.ts";
 import { createJiraKnowledgeSource } from "../../infrastructure/jira/index.ts";
 import {
@@ -298,6 +300,7 @@ export const runDeliverySyncCommand = async (
       operation !== "backfill" &&
       operation !== "events" &&
       operation !== "reconcile" &&
+      operation !== "subscriptions" &&
       operation !== "status"
     )
       return {
@@ -305,12 +308,14 @@ export const runDeliverySyncCommand = async (
         output: {
           ok: false,
           message:
-            "Use delivery sync backfill|reconcile|status <source|all> or events <source> --event-id <id> --payload-hash <sha256>.",
+            "Use delivery sync backfill|reconcile|status <source|all>, subscriptions teams, or events <source> --event-id <id> --payload-hash <sha256>.",
         },
       };
     const selection = sourceSelection(args[1] ?? "all");
     if (operation === "events" && selection === "all")
       throw new Error("Event synchronization requires one source.");
+    if (operation === "subscriptions" && selection !== "teams")
+      throw new Error("Subscription synchronization currently supports only Teams.");
     const workspaceId = required(
       "SARATHI_KNOWLEDGE_WORKSPACE_ID",
       environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
@@ -321,6 +326,78 @@ export const runDeliverySyncCommand = async (
     );
     try {
       const control = createPostgresSynchronizationControlRepository(opened.database);
+      if (operation === "subscriptions") {
+        const teams = parseJson<TeamsProjection>(
+          "SARATHI_KNOWLEDGE_TEAMS_CONFIG_JSON",
+          environment.SARATHI_KNOWLEDGE_TEAMS_CONFIG_JSON,
+        );
+        const existing = await runRepositoryEffect(
+          control.readSubscriptions(workspaceId, teams.sourceId),
+        );
+        const tokenProvider = createEntraClientCredentialsTokenProvider({
+          tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
+          clientId: required("MICROSOFT_APP_ID", environment.MICROSOFT_APP_ID),
+          clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
+        });
+        const subscriptions = [];
+        for (const channel of teams.channels) {
+          const resourceHash = teamsSubscriptionResourceHash(channel);
+          const current = existing.find(
+            (subscription) =>
+              subscription.provider === "microsoft-graph" &&
+              subscription.resourceHash === resourceHash &&
+              subscription.expiresAt !== undefined,
+          );
+          const providerSubscription =
+            current?.expiresAt === undefined
+              ? undefined
+              : { id: current.id, expiresAt: current.expiresAt };
+          subscriptions.push(
+            await runRepositoryEffect(
+              ensureTeamsChangeNotificationSubscription(
+                {
+                  workspaceId,
+                  sourceId: teams.sourceId,
+                  tokenProvider,
+                  controlRepository: control,
+                  notificationUrl: required(
+                    "SARATHI_TEAMS_NOTIFICATION_URL",
+                    environment.SARATHI_TEAMS_NOTIFICATION_URL,
+                  ),
+                  lifecycleNotificationUrl: required(
+                    "SARATHI_TEAMS_LIFECYCLE_NOTIFICATION_URL",
+                    environment.SARATHI_TEAMS_LIFECYCLE_NOTIFICATION_URL,
+                  ),
+                  clientState: required(
+                    "SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE",
+                    environment.SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE,
+                  ),
+                },
+                channel,
+                providerSubscription,
+              ),
+            ),
+          );
+        }
+        return {
+          exitCode: 0,
+          output: {
+            ok: true,
+            operation: "delivery-sync-subscriptions",
+            sourceId: teams.sourceId,
+            subscriptions: subscriptions.map(
+              ({ id, provider, resourceHash, status, expiresAt, nextRenewalAt }) => ({
+                id,
+                provider,
+                resourceHash,
+                status,
+                expiresAt,
+                nextRenewalAt,
+              }),
+            ),
+          },
+        };
+      }
       if (operation === "status") {
         const now = new Date().toISOString();
         const staleAfterSeconds = positiveInteger(

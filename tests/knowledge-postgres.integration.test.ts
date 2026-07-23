@@ -800,6 +800,13 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           updatedAt: "2026-07-22T10:35:00.000Z",
         }),
       );
+      expect(await Effect.runPromise(control.readSubscriptions(workspaceId, sourceId))).toEqual([
+        expect.objectContaining({
+          id: `${source}-subscription-renewed`,
+          resourceHash: `sha256-${source}-resource`,
+          status: "active",
+        }),
+      ]);
 
       const firstLease = {
         workspaceId,

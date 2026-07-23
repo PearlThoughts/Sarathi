@@ -122,6 +122,7 @@ describe("knowledge synchronization control plane", () => {
     const repository: SynchronizationControlRepository = {
       registerEvent: () => Effect.succeed(registration),
       saveSubscription: () => Effect.void,
+      readSubscriptions: () => Effect.succeed([]),
       acquireLease: () => Effect.succeed(true),
       heartbeatLease: () => Effect.succeed(true),
       releaseLease: () => Effect.void,
