@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { RepositoryError } from "../../domain/errors.ts";
 import {
   createGitHubKnowledgeSource,
   type GitHubKnowledgeRepository,
@@ -130,6 +131,14 @@ const privacySafeSummary = (summary: KnowledgeIngestionSummary) => ({
   passagesActive: summary.passagesActive,
   itemsDeleted: summary.itemsDeleted,
   checksum: summary.checksum,
+});
+
+export const deliverySyncFailureOutput = (error: unknown) => ({
+  ok: false,
+  message: "Delivery synchronization failed; inspect privacy-safe control diagnostics.",
+  ...(error instanceof RepositoryError && error.operation !== undefined
+    ? { failureOperation: error.operation }
+    : {}),
 });
 
 const required = (name: string, value: string | undefined): string => {
@@ -430,13 +439,10 @@ export const runDeliverySyncCommand = async (
     } finally {
       await opened.pool.end();
     }
-  } catch {
+  } catch (error) {
     return {
       exitCode: 1,
-      output: {
-        ok: false,
-        message: "Delivery synchronization failed; inspect privacy-safe control diagnostics.",
-      },
+      output: deliverySyncFailureOutput(error),
     };
   }
 };
