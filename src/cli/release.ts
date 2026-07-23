@@ -89,19 +89,6 @@ type RuntimeSmokeReport = {
 };
 
 const defaultBaseUrl = "http://localhost:3000";
-const previewOverlayBody = {
-  version: 1,
-  organizationId: "acme",
-  teams: [
-    {
-      teamId: "engineering",
-      sensitivity: "confidential",
-      minimumTrustTier: "trusted",
-      modelEgress: "approval-required",
-    },
-  ],
-} as const;
-
 const normalizeBaseUrl = (value: string | undefined): string =>
   (value ?? defaultBaseUrl).replace(/\/+$/, "");
 
@@ -149,15 +136,7 @@ export const checkRuntimeSmoke = async (
   const normalized = normalizeBaseUrl(baseUrl);
   const checks = await Promise.all([
     readEndpoint(normalized, "/health", fetcher),
-    readEndpoint(normalized, "/platform/foundation", fetcher),
-    readEndpoint(normalized, "/workspace-model", fetcher),
-    readEndpoint(normalized, "/workspace-model/preview", fetcher, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(previewOverlayBody),
-    }),
+    readEndpoint(normalized, "/ready", fetcher),
   ]);
 
   return {
