@@ -50,7 +50,7 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 
 - Jira projects objects, hierarchy, ownership, status, sprint, estimates, dependencies, blockers, risk indicators, changes, descriptions, and comments.
 - Vault projects durable requirements, decisions, risks, milestones, owners, policies, and unstructured passages from configured project roots.
-- GitHub remains live for repository truth. Normalized results may enter a response, but repository bodies and embeddings are not stored.
+- GitHub provides both a continuously synchronized, commit-pinned projection and live verification when freshness or exactness requires it. Sarathi stores authorized file/symbol passages and delivery metadata, but does not replicate every branch or raw repository revision. [Code-Derived Delivery Intelligence](./code-delivery-intelligence.md) defines the richer delivery-aligned artifact model and clearly separates current implementation from proposed capability.
 - Teams and scoped project email provide observations and attributed claims from all records visible through the configured project connector. A separate bounded Teams delivery-channel allowlist may declare standard, shared, and private scopes without widening the narrower ingress mapping; every read still requires workspace, actor, sensitivity, and explicit channel authorization. There is no per-message approval field.
 - Conflicting claims remain active together until their source records converge or are deleted.
 
