@@ -13,47 +13,20 @@ const jsonResponse = (body: unknown, init: ResponseInit = {}): Response =>
 describe("release CLI", () => {
   it("checks runtime smoke endpoints", async () => {
     const requested: string[] = [];
-    const fetcher = async (
-      input: string | URL | Request,
-      init?: RequestInit,
-    ): Promise<Response> => {
+    const fetcher = async (input: string | URL | Request): Promise<Response> => {
       requested.push(String(input));
-      if (String(input).endsWith("/workspace-model/preview")) {
-        expect(init).toMatchObject({
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-        });
-        expect(JSON.parse(String(init?.body))).toMatchObject({
-          organizationId: "acme",
-          teams: [
-            {
-              teamId: "engineering",
-              sensitivity: "confidential",
-              minimumTrustTier: "trusted",
-              modelEgress: "approval-required",
-            },
-          ],
-        });
-      }
       return jsonResponse({ ok: true });
     };
 
     const smoke = await checkRuntimeSmoke("http://localhost:3000/", fetcher);
 
     expect(smoke.ok).toBe(true);
-    expect(requested).toEqual([
-      "http://localhost:3000/health",
-      "http://localhost:3000/platform/foundation",
-      "http://localhost:3000/workspace-model",
-      "http://localhost:3000/workspace-model/preview",
-    ]);
+    expect(requested).toEqual(["http://localhost:3000/health", "http://localhost:3000/ready"]);
   });
 
   it("returns non-zero when any runtime smoke endpoint fails", async () => {
     const fetcher = async (input: string | URL | Request): Promise<Response> =>
-      String(input).endsWith("/workspace-model")
+      String(input).endsWith("/ready")
         ? jsonResponse({ error: "not ready" }, { status: 503 })
         : jsonResponse({ ok: true });
 
