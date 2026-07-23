@@ -8,6 +8,7 @@ export {
 export type { SynchronizationSource } from "./application/synchronization-service.ts";
 export {
   readSynchronizationSourceStatus,
+  synchronizationHeartbeatIntervalSeconds,
   synchronizeKnowledgeSource,
 } from "./application/synchronization-service.ts";
 export type {

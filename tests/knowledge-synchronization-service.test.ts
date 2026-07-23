@@ -10,6 +10,7 @@ import {
   type SynchronizationEventDelivery,
   type SynchronizationRun,
   type SynchronizationStatus,
+  synchronizationHeartbeatIntervalSeconds,
   synchronizeKnowledgeSource,
 } from "../src/modules/knowledge-layer/index.ts";
 
@@ -86,6 +87,12 @@ const times = (...values: readonly string[]) => {
 };
 
 describe("knowledge synchronization service", () => {
+  it("heartbeats long production leases at least once per minute", () => {
+    expect(synchronizationHeartbeatIntervalSeconds(3_600)).toBe(60);
+    expect(synchronizationHeartbeatIntervalSeconds(300)).toBe(60);
+    expect(synchronizationHeartbeatIntervalSeconds(30)).toBe(10);
+  });
+
   it("uses the checkpoint for hourly repair and records a privacy-safe terminal run", async () => {
     const readSnapshot = vi.fn(() => Effect.succeed(snapshot));
     const acquired: string[] = [];

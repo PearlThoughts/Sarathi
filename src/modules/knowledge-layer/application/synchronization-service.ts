@@ -68,6 +68,9 @@ const failure = (operation: string): RepositoryError =>
     operation,
   });
 
+export const synchronizationHeartbeatIntervalSeconds = (leaseSeconds: number): number =>
+  Math.max(10, Math.min(60, Math.floor(leaseSeconds / 3)));
+
 export const synchronizeKnowledgeSource = (
   request: SynchronizationRequest,
   repository: KnowledgeRepository,
@@ -211,7 +214,7 @@ export const synchronizeKnowledgeSource = (
       Effect.ensuring(control.releaseLease(lease).pipe(Effect.ignore)),
     );
     const heartbeat = Effect.sleep(
-      Duration.seconds(Math.max(10, Math.floor(request.leaseSeconds / 3))),
+      Duration.seconds(synchronizationHeartbeatIntervalSeconds(request.leaseSeconds)),
     ).pipe(
       Effect.flatMap(() => {
         const heartbeatAt = request.now();

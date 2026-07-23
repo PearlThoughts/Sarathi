@@ -535,7 +535,6 @@ describeDatabase("knowledge PostgreSQL integration", () => {
               sourceId: "jira-example-test",
               documentsObserved: 0,
               itemsDeleted: 1,
-              indexedSourceRevision: "cursor-deleted",
               lastEventAt: expect.any(String),
               lastReconciledAt: expect.any(String),
               newestSourceUpdatedAt: "2026-07-20T00:00:00.000Z",
@@ -547,6 +546,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         },
       },
     });
+    expect(JSON.stringify(cliStatus)).not.toContain("cursor-deleted");
   });
 
   test("rejects duplicate source locators before persistence", async () => {
@@ -972,6 +972,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         statuses: [{ source: "jira", freshness: { status: "current" } }],
       },
     });
+    expect(JSON.stringify(status)).not.toContain("sync-operation-cursor");
     expect(JSON.stringify(status)).not.toContain("Initial durable synchronization state");
     await expect(
       runDeliverySyncCommand(["status", "vault"], {

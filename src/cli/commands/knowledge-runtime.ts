@@ -12,6 +12,7 @@ import {
 import {
   applyKnowledgePostgresMigrations,
   createPostgresKnowledgeRepository,
+  type KnowledgeMigrationStatus,
   knowledgeMigrationPlan,
   openKnowledgePostgresDatabase,
   readKnowledgePostgresStatus,
@@ -72,6 +73,17 @@ const databaseUrl = (environment: KnowledgeRuntimeEnvironment): string =>
 
 const workspaceId = (environment: KnowledgeRuntimeEnvironment): string =>
   required("SARATHI_KNOWLEDGE_WORKSPACE_ID", environment.SARATHI_KNOWLEDGE_WORKSPACE_ID);
+
+const privacySafeMigrationStatus = (status: KnowledgeMigrationStatus) => ({
+  vectorExtensionVersion: status.vectorExtensionVersion,
+  knowledgeTableCount: status.knowledgeTableCount,
+  deliveryTableCount: status.deliveryTableCount,
+  appliedMigrationCount: status.appliedMigrationCount,
+  checkpoints: status.checkpoints.map(
+    ({ cursor: _cursor, indexedSourceRevision: _indexedSourceRevision, ...checkpoint }) =>
+      checkpoint,
+  ),
+});
 
 const sources = (environment: KnowledgeRuntimeEnvironment) => {
   const workspace = workspaceId(environment);
@@ -254,7 +266,9 @@ export const runKnowledgeCommand = async (
         output: {
           ok: true,
           operation: "status",
-          status: await runRepositoryEffect(readKnowledgePostgresStatus(databaseUrl(environment))),
+          status: privacySafeMigrationStatus(
+            await runRepositoryEffect(readKnowledgePostgresStatus(databaseUrl(environment))),
+          ),
         },
       };
     }
