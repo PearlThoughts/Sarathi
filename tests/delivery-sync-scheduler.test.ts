@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { synchronizationExecutionOwnerId } from "../src/cli/commands/delivery-sync-runtime.ts";
 import {
   type DeliverySyncSchedulerDiagnostic,
   runDeliverySyncSchedulerTick,
@@ -98,5 +99,15 @@ describe("delivery sync scheduler", () => {
     ]);
     active.stop();
     expect(active.status().state).toBe("stopped");
+  });
+
+  it("derives an exclusive privacy-safe lease owner for every execution", () => {
+    const first = synchronizationExecutionOwnerId("railway-production", "execution-1");
+    const second = synchronizationExecutionOwnerId("railway-production", "execution-2");
+
+    expect(first).toMatch(/^sha256-[a-f0-9]{64}$/);
+    expect(second).toMatch(/^sha256-[a-f0-9]{64}$/);
+    expect(first).not.toBe(second);
+    expect(first).not.toContain("railway-production");
   });
 });
