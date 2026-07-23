@@ -529,7 +529,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 11,
-          appliedMigrationCount: 6,
+          appliedMigrationCount: 7,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
@@ -985,6 +985,74 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         ok: false,
         statuses: [{ source: "vault", freshness: { status: "unavailable" } }],
+      },
+    });
+  });
+
+  test("starts synchronization control before a new content source has been registered", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const control = createPostgresSynchronizationControlRepository(opened.database);
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const sourceId = "first-run-github";
+    const initial = snapshot("first-run-github-v1", "A newly configured GitHub source.");
+    const scopedInitial = {
+      ...initial,
+      source: "github" as const,
+      sourceId,
+      cursor: "first-run-github-cursor-1",
+      documents: initial.documents.map((document) => ({
+        ...document,
+        source: "github" as const,
+        sourceId,
+      })),
+    };
+    const before = await pool.query<{ readonly count: string }>(
+      "select count(*)::text as count from knowledge_source where id = $1",
+      [sourceId],
+    );
+    expect(before.rows).toEqual([{ count: "0" }]);
+
+    const outcome = await Effect.runPromise(
+      synchronizeKnowledgeSource(
+        {
+          workspaceId: "workspace-example",
+          source: {
+            source: "github",
+            sourceId,
+            reader: {
+              readSnapshot: () => Effect.succeed(scopedInitial),
+            },
+          },
+          trigger: "historical-backfill",
+          ownerId: "first-run-integration-worker",
+          leaseSeconds: 300,
+          now: () => "2026-07-23T06:30:00.000Z",
+        },
+        repository,
+        embeddings,
+        control,
+      ),
+    );
+
+    expect(outcome).toMatchObject({
+      disposition: "succeeded",
+      summary: {
+        cursor: "first-run-github-cursor-1",
+        documentsObserved: 1,
+      },
+    });
+    const after = await pool.query<{ readonly count: string }>(
+      "select count(*)::text as count from knowledge_source where id = $1",
+      [sourceId],
+    );
+    expect(after.rows).toEqual([{ count: "1" }]);
+    await expect(
+      Effect.runPromise(control.readStatus("workspace-example", sourceId)),
+    ).resolves.toMatchObject({
+      checkpoint: { cursor: "first-run-github-cursor-1" },
+      latestRun: {
+        trigger: "historical-backfill",
+        status: "succeeded",
       },
     });
   });

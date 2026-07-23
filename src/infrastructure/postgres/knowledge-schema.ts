@@ -208,9 +208,7 @@ export const knowledgeSyncEventDeliveryTable = pgTable(
   "knowledge_sync_event_delivery",
   {
     id: text("id").primaryKey(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => knowledgeSourceTable.id),
+    sourceId: text("source_id").notNull(),
     workspaceId: text("workspace_id").notNull(),
     sourceKind: text("source_kind").notNull(),
     providerEventId: text("provider_event_id").notNull(),
@@ -244,9 +242,7 @@ export const knowledgeSyncSubscriptionTable = pgTable(
   "knowledge_sync_subscription",
   {
     id: text("id").primaryKey(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => knowledgeSourceTable.id),
+    sourceId: text("source_id").notNull(),
     workspaceId: text("workspace_id").notNull(),
     sourceKind: text("source_kind").notNull(),
     provider: text("provider").notNull(),
@@ -275,9 +271,7 @@ export const knowledgeSyncLeaseTable = pgTable(
   "knowledge_sync_lease",
   {
     workspaceId: text("workspace_id").notNull(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => knowledgeSourceTable.id),
+    sourceId: text("source_id").notNull(),
     operation: text("operation").notNull(),
     ownerId: text("owner_id").notNull(),
     acquiredAt: timestampColumn("acquired_at").notNull(),
@@ -295,9 +289,7 @@ export const knowledgeSyncRunTable = pgTable(
   "knowledge_sync_run",
   {
     id: text("id").primaryKey(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => knowledgeSourceTable.id),
+    sourceId: text("source_id").notNull(),
     workspaceId: text("workspace_id").notNull(),
     trigger: text("trigger").notNull(),
     status: text("status").notNull(),

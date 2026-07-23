@@ -32,6 +32,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 3, tag: "0003_continuous-sync-control-plane" },
       { idx: 4, tag: "0004_attributed-delivery-assertions" },
       { idx: 5, tag: "0005_canonical-entity-time" },
+      { idx: 6, tag: "0006_independent-sync-control" },
     ]);
   });
 
@@ -141,5 +142,14 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
     expect(schema).not.toContain("teams_mention_audit");
     expect(schema).not.toContain("compliance_reminder_audit");
+  });
+
+  it("allows control metadata to precede first source content", async () => {
+    const schema = await migration("0006_independent-sync-control.sql");
+
+    expect(schema.match(/DROP CONSTRAINT IF EXISTS/g)).toHaveLength(4);
+    expect(schema).toContain('"knowledge_sync_lease_source_id_knowledge_source_id_fk"');
+    expect(schema).toContain('"knowledge_sync_event_delivery_source_id_knowledge_source_id_fk"');
+    expect(schema).not.toMatch(/\b(?:DROP TABLE|TRUNCATE|DELETE)\b/i);
   });
 });
