@@ -81,7 +81,28 @@ export const resolveDeliveryTimeConstraint = (
   }
   const daysSinceMonday = (currentDate.getUTCDay() + 6) % 7;
   const monday = new Date(currentDate.getTime() - daysSinceMonday * 86_400_000);
+  const previousMonday = new Date(monday.getTime() - 7 * 86_400_000);
   const nextMonday = new Date(monday.getTime() + 7 * 86_400_000);
+  if (constraint.kind === "workspace_previous_week") {
+    return {
+      fromInclusive: zonedMidnight(
+        {
+          year: previousMonday.getUTCFullYear(),
+          month: previousMonday.getUTCMonth() + 1,
+          day: previousMonday.getUTCDate(),
+        },
+        timeZone,
+      ).toISOString(),
+      toExclusive: zonedMidnight(
+        {
+          year: monday.getUTCFullYear(),
+          month: monday.getUTCMonth() + 1,
+          day: monday.getUTCDate(),
+        },
+        timeZone,
+      ).toISOString(),
+    };
+  }
   return {
     fromInclusive: zonedMidnight(
       {

@@ -64,6 +64,33 @@ describe("delivery intelligence domain", () => {
     });
   });
 
+  it("carries the named subject for a standalone ownership question", () => {
+    const plan = planDeliveryQuestion("Who owns Modern Website Builder?");
+
+    expect(plan?.subject).toEqual({ phrase: "Modern Website Builder" });
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "ownership",
+        select: "relations",
+        relationKinds: ["owns", "assigned_to"],
+      }),
+    ]);
+    expect(
+      planDeliveryQuestion("Who owns it, what is blocked, and what should happen next?")?.subject,
+    ).toBeUndefined();
+  });
+
+  it("uses the previous workspace week for delivered-last-week questions", () => {
+    const plan = planDeliveryQuestion("What was delivered last week?");
+
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "delivered",
+        time: { kind: "workspace_previous_week" },
+      }),
+    ]);
+  });
+
   it("models review queues as observations instead of generic message retrieval", () => {
     const plan = planDeliveryQuestion(
       "Which items are waiting for review, and who needs to review each?",
@@ -277,6 +304,19 @@ describe("delivery intelligence domain", () => {
     ).toEqual({
       fromInclusive: "2026-07-19T18:30:00.000Z",
       toExclusive: "2026-07-20T18:30:00.000Z",
+    });
+  });
+
+  it("resolves the previous workspace week as a closed calendar window", () => {
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "workspace_previous_week" },
+        "2026-07-22T13:09:00.000Z",
+        "Asia/Kolkata",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-07-12T18:30:00.000Z",
+      toExclusive: "2026-07-19T18:30:00.000Z",
     });
   });
 

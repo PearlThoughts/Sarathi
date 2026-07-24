@@ -84,6 +84,7 @@ export type DeliveryTimeConstraint =
     }
   | { readonly kind: "workspace_day" }
   | { readonly kind: "workspace_week" }
+  | { readonly kind: "workspace_previous_week" }
   | { readonly kind: "jira_sprint"; readonly sprint: "current" | "previous" }
   | { readonly kind: "lookback"; readonly days: number };
 
@@ -276,6 +277,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     /\b(?:implement(?:s|ed|ing)?|code for)\s+(?:the\s+)?(.+?)(?:,|\band what\b|\?|$)/i
       .exec(question)?.[1]
       ?.trim();
+  const ownershipTarget =
+    /^\s*(?:who owns|who is (?:the )?owner of|owner of|ownership of)\s+(?:the\s+)?([^,?]+?)\s*\??\s*$/i
+      .exec(question)?.[1]
+      ?.trim();
   const subject: DeliveryQuerySubject | undefined =
     exactKey !== undefined
       ? { externalKey: exactKey }
@@ -283,7 +288,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         ? { phrase: statusTarget }
         : implementationTarget !== undefined
           ? { phrase: implementationTarget }
-          : undefined;
+          : ownershipTarget !== undefined
+            ? { phrase: ownershipTarget }
+            : undefined;
   const activityQuestion =
     has(value, /\bactivity\b/) ||
     (has(value, /\b(?:team|delivery|work)\b/) &&
@@ -365,7 +372,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           value: ["done", "delivered"],
         },
       ],
-      time: sprintTime,
+      time:
+        sprintTime ??
+        (has(value, /\blast week\b/) ? { kind: "workspace_previous_week" } : undefined),
       limit: top,
     });
   if (has(value, /\b(?:doing|working on|current work|in progress|this week)\b/))
