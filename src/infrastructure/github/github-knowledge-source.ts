@@ -388,6 +388,30 @@ const languageFromPath = (path: string): string => path.split(".").at(-1)?.toLow
 
 type SymbolSection = { readonly name: string; readonly start: number; readonly end: number };
 
+const maximumPassageCharacters = 6_000;
+
+const boundedTypedPassages = (
+  kind: string,
+  locator: string,
+  startingOrdinal: number,
+  title: string,
+  body: string,
+): readonly KnowledgePassageDraft[] => {
+  const chunks: string[] = [];
+  for (let offset = 0; offset < body.length; offset += maximumPassageCharacters)
+    chunks.push(body.slice(offset, offset + maximumPassageCharacters));
+  return chunks.flatMap((chunk, index) => {
+    const passage = createTypedPassage(
+      kind,
+      chunks.length === 1 ? locator : `${locator}:part-${index + 1}`,
+      startingOrdinal + index,
+      title,
+      chunk,
+    );
+    return passage === undefined ? [] : [passage];
+  });
+};
+
 const symbolSections = (body: string): readonly SymbolSection[] => {
   const lines = body.split(/\r?\n/);
   const starts = lines.flatMap((line, index) => {
@@ -422,22 +446,20 @@ const codePassages = (body: string, path: string): readonly KnowledgePassageDraf
       let characters = 0;
       while (chunkEnd <= end) {
         const length = (lines[chunkEnd - 1]?.length ?? 0) + 1;
-        if (characters > 0 && characters + length > 6_000) break;
+        if (characters > 0 && characters + length > maximumPassageCharacters) break;
         characters += length;
         chunkEnd += 1;
       }
       const inclusiveEnd = Math.max(chunkStart, chunkEnd - 1);
-      const passage = createTypedPassage(
+      const bounded = boundedTypedPassages(
         "symbol",
         `#L${chunkStart}-L${inclusiveEnd}:${encodeURIComponent(name)}`,
         ordinal,
         `${path} — ${name}`,
         lines.slice(chunkStart - 1, inclusiveEnd).join("\n"),
       );
-      if (passage !== undefined) {
-        passages.push(passage);
-        ordinal += 1;
-      }
+      passages.push(...bounded);
+      ordinal += bounded.length;
       chunkStart = inclusiveEnd + 1;
     }
     return passages;
@@ -536,8 +558,8 @@ const activityDocument = (
   activity: Activity,
 ): KnowledgeSourceDocument | undefined => {
   const body = [activity.title, activity.body, activity.state].filter(Boolean).join("\n\n");
-  const passage = createTypedPassage("activity", "#activity", 0, activity.title, body);
-  if (passage === undefined) return undefined;
+  const passages = boundedTypedPassages("activity", "#activity", 0, activity.title, body);
+  if (passages.length === 0) return undefined;
   return {
     source: "github",
     sourceId: configuration.sourceId,
@@ -561,7 +583,7 @@ const activityDocument = (
         : { changedFiles: activity.changedFiles.join(",") }),
     },
     acl: repository.acl,
-    passages: [passage],
+    passages,
     deliveryProjection: activityProjection(repository, activity),
   };
 };
