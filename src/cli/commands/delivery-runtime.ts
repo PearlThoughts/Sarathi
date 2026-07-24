@@ -15,6 +15,8 @@ import {
 import {
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
+  createPostgresStrategyKernelRepository,
+  createStrategyKernelDeliveryQuerySource,
   openKnowledgePostgresDatabase,
   readKnowledgePostgresStatus,
 } from "../../infrastructure/postgres/index.ts";
@@ -265,6 +267,11 @@ const answerFromRuntime = async (
       createDeliveryAssistant({
         sources: [
           createPostgresDeliveryQuerySource(opened.database),
+          createStrategyKernelDeliveryQuerySource({
+            repository: createPostgresStrategyKernelRepository(opened.pool),
+            workspaceId: request.workspaceId,
+            allowedActorIds: new Set([request.actorId]),
+          }),
           createDeliveryKnowledgeQuerySource({
             repository: createPostgresKnowledgeRepository(opened.database),
             workspaceId: request.workspaceId,

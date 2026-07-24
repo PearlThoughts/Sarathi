@@ -352,7 +352,7 @@ const composeAnswer = (
           ? `${intentLabel[intent]} — historical only`
           : intentLabel[intent];
         detailLines.push(
-          `- ${intentIcon[intent]} **${label}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join(" · ")}`,
+          `- ${intentIcon[intent]} **${label}:** ${selected.map((item) => `${item.evidenceRole === "declared_intent" ? "Declared intent — " : ""}${safeText(item.summary)} ${citation(item)}`).join(" · ")}`,
         );
       } else if (missingIntents.has(intent)) {
         detailLines.push(
@@ -932,6 +932,7 @@ export const createDeliveryAssistant = (
               ...failures.flatMap(({ source }) => {
                 if (source.source === "projection") return ["jira", "vault"] as const;
                 if (source.source === "knowledge") return ["jira", "vault"] as const;
+                if (source.source === "intent") return [] as const;
                 return [source.source];
               }),
             ].filter(
