@@ -15,7 +15,7 @@ export const createAiSdkDeliveryAnswerComposer = (
       source: item.source,
       sourceId: item.id,
       sourceUrl: item.citationUrl,
-      title: `${item.intent.replaceAll("_", " ")}: ${item.title}`,
+      title: `${item.evidenceRole === "declared_intent" ? "Declared intent" : "Observed evidence"} — ${item.intent.replaceAll("_", " ")}: ${item.title}`,
       excerpt: item.summary,
       occurredAt: item.observedAt ?? input.requestedAt,
       updatedAt: item.sourceUpdatedAt ?? item.observedAt ?? input.requestedAt,

@@ -57,6 +57,7 @@ export type DeliveryResultItem = {
   readonly lifecycleState?: DeliveryLifecycleState | undefined;
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
+  readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
 };
 
 export type DeliveryLifecycleState =
@@ -83,7 +84,7 @@ export type DeliveryQueryResult = {
 };
 
 export type DeliveryQuerySource = {
-  readonly source: DeliverySourceKind | "projection" | "knowledge";
+  readonly source: DeliverySourceKind | "projection" | "knowledge" | "intent";
   readonly selectors: readonly DeliveryQuerySelector[];
   readonly execute: (
     context: DeliveryQueryContext,

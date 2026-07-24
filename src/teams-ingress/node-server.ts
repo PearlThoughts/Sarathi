@@ -45,7 +45,9 @@ import {
   createPostgresComplianceReminderAudit,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
+  createPostgresStrategyKernelRepository,
   createPostgresTeamsMentionAudit,
+  createStrategyKernelDeliveryQuerySource,
   openKnowledgePostgresDatabase,
   openStrategyKernelPostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
@@ -603,6 +605,15 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               ...(knowledgeDatabase === undefined
                 ? []
                 : [createPostgresDeliveryQuerySource(knowledgeDatabase.database)]),
+              ...(knowledgeDatabase === undefined
+                ? []
+                : [
+                    createStrategyKernelDeliveryQuerySource({
+                      repository: createPostgresStrategyKernelRepository(knowledgeDatabase.pool),
+                      workspaceId,
+                      allowedActorIds,
+                    }),
+                  ]),
               ...(knowledgeRepository === undefined
                 ? []
                 : [
