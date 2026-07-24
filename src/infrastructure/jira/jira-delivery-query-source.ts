@@ -6,6 +6,7 @@ import {
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
   type DeliveryQuerySource,
+  type DeliveryQuerySubject,
   type DeliveryResultItem,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
@@ -16,6 +17,7 @@ type JiraSupportedIntent =
   | "blockers"
   | "delivered"
   | "current_work"
+  | "ownership"
   | "next_actions"
   | "risks"
   | "recurring"
@@ -26,6 +28,7 @@ type JiraDeliveryQuery = DeliveryQueryContext & {
   readonly fromInclusive: string;
   readonly toExclusive: string;
   readonly limit: number;
+  readonly subject?: DeliveryQuerySubject | undefined;
 };
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -106,6 +109,7 @@ const supportedIntents = new Set<JiraSupportedIntent>([
   "blockers",
   "delivered",
   "current_work",
+  "ownership",
   "next_actions",
   "risks",
   "recurring",
@@ -120,6 +124,7 @@ const supportedSelectors = new Set<DeliveryQueryOperation["select"]>([
 const asJiraQuery = (
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
+  subject: DeliveryQuerySubject | undefined,
 ): JiraDeliveryQuery | undefined => {
   if (!supportedIntents.has(operation.purpose as JiraSupportedIntent)) return undefined;
   const dayEnd = new Date(context.requestedAt);
@@ -137,6 +142,7 @@ const asJiraQuery = (
     fromInclusive: window.fromInclusive,
     toExclusive: window.toExclusive,
     limit: operation.limit,
+    subject,
   };
 };
 
@@ -264,6 +270,16 @@ const statusTargetClause = (query: JiraDeliveryQuery): string => {
     : "";
 };
 
+const ownershipTargetClause = (query: JiraDeliveryQuery): string => {
+  const externalKey = query.subject?.externalKey?.trim();
+  if (externalKey !== undefined && /^[A-Z][A-Z0-9]+-\d+$/.test(externalKey))
+    return ` AND key = "${externalKey}"`;
+  const phrase = query.subject?.phrase?.trim();
+  return phrase === undefined || phrase === ""
+    ? ""
+    : ` AND (component = "${escapedJqlText(phrase)}" OR summary ~ "\\"${escapedJqlText(phrase)}\\"")`;
+};
+
 const jqlForView = (
   view: JiraSupportedIntent,
   projects: string,
@@ -277,6 +293,8 @@ const jqlForView = (
     case "blockers":
     case "current_work":
       return `${scope} AND sprint in openSprints() AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
+    case "ownership":
+      return `${scope}${ownershipTargetClause(query)} AND statusCategory != Done ORDER BY updated DESC`;
     case "next_actions":
       return `${scope} AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
     case "delivered":
@@ -464,6 +482,35 @@ const currentWorkItems = (
     return item === undefined ? [] : [item];
   });
 
+const ownershipItems = (
+  configuration: JiraDeliveryQueryConfiguration,
+  query: JiraDeliveryQuery,
+  issues: readonly JiraIssue[],
+): readonly DeliveryResultItem[] =>
+  issues.flatMap((issue) => {
+    const owner = issue.fields?.assignee?.displayName?.trim();
+    if (owner === undefined || owner === "") return [];
+    const item = baseItem(
+      configuration,
+      query,
+      issue,
+      "practical_ownership",
+      "practical-owner",
+      `Practical ownership signal — ${owner} is assigned to ${issue.key}: ${issueTitle(issue)}`,
+    );
+    return item === undefined
+      ? []
+      : [
+          {
+            ...item,
+            subjectAliases:
+              issue.fields?.components?.flatMap(({ name }) =>
+                name === undefined || name.trim() === "" ? [] : [name.trim()],
+              ) ?? [],
+          },
+        ];
+  });
+
 const nextActionItems = (
   configuration: JiraDeliveryQueryConfiguration,
   query: JiraDeliveryQuery,
@@ -591,7 +638,7 @@ export const createJiraDeliveryQuerySource = (
         const projects = configuration.projectKeys.map((key) => `"${key}"`).join(", ");
         const queries = plan.operations.flatMap((operation) => {
           if (!supportedSelectors.has(operation.select)) return [];
-          const query = asJiraQuery(context, operation);
+          const query = asJiraQuery(context, operation, plan.subject);
           return query === undefined ? [] : [query];
         });
         const searches = await Promise.all(
@@ -624,6 +671,8 @@ export const createJiraDeliveryQuerySource = (
                 return deliveredItems(configuration, query, connectedIssues);
               case "current_work":
                 return currentWorkItems(configuration, query, connectedIssues);
+              case "ownership":
+                return ownershipItems(configuration, query, connectedIssues);
               case "next_actions":
                 return nextActionItems(configuration, query, connectedIssues);
               case "risks":

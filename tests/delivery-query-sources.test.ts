@@ -294,6 +294,58 @@ describe("delivery intelligence live query sources", () => {
     expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
   });
 
+  it("returns named Jira assignees as practical ownership evidence", async () => {
+    let observedJql = "";
+    const question = "Who owns Modern Website Builder?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic ownership plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { readonly jql: string };
+        observedJql = body.jql;
+        return Response.json({
+          issues: [
+            {
+              key: "DEMO-12",
+              fields: {
+                summary: "Complete production readiness",
+                updated: "2026-07-22T09:00:00.000Z",
+                status: {
+                  name: "In Progress",
+                  statusCategory: { key: "indeterminate" },
+                },
+                assignee: { displayName: "Delivery Builder" },
+                components: [{ name: "Modern Website Builder" }],
+              },
+            },
+          ],
+        });
+      },
+    });
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(observedJql).toContain(
+      'component = "Modern Website Builder" OR summary ~ "\\"Modern Website Builder\\""',
+    );
+    expect(result.items).toMatchObject([
+      {
+        intent: "ownership",
+        selector: "relations",
+        summary:
+          "Practical ownership signal — Delivery Builder is assigned to DEMO-12: Complete production readiness",
+        citationUrl: "https://jira.example.test/browse/DEMO-12",
+        subjectAliases: ["Modern Website Builder"],
+      },
+    ]);
+  });
+
   it("normalizes Jira lifecycle state and returns active status ahead of terminal history", async () => {
     const question = "What is the current status of Modern Website Builder?";
     const plan = planDeliveryQuestion(question);
