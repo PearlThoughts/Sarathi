@@ -20,6 +20,24 @@ export type DeliveryQueryContext = {
   readonly question: string;
 };
 
+type DeliveryQuestionContextEvidence = {
+  readonly source: DeliverySourceKind | "intent";
+  readonly sourceId: string;
+  readonly citationUrl: string;
+  readonly title: string;
+  readonly excerpt: string;
+  readonly observedAt: string;
+  readonly contextRole: "conversation";
+};
+
+export type DeliveryQuestionContext = {
+  readonly channelId: string;
+  readonly conversationId: string;
+  readonly rootMessageId: string;
+  readonly currentMessageId: string;
+  readonly evidence: readonly DeliveryQuestionContextEvidence[];
+};
+
 export type DeliveryResultItem = {
   readonly id: string;
   readonly workspaceId: string;
@@ -76,6 +94,7 @@ export type DeliveryQuerySource = {
 export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt"> & {
   readonly plan?: DeliveryQueryPlan | undefined;
   readonly responseMode?: DeliveryResponseMode | undefined;
+  readonly questionContext?: DeliveryQuestionContext | undefined;
 };
 
 export type DeliveryResponseAcceptance = {

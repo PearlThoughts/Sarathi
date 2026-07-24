@@ -95,6 +95,61 @@ describe("delivery intelligence application", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("inherits a named subject from the authorized Teams thread for a contextual follow-up", async () => {
+    const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
+      Effect.succeed({
+        items: [],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["relations", "objects"],
+      execute,
+    };
+
+    await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Who owns it, what is blocked, and what should happen next?",
+        questionContext: {
+          channelId: "channel-1",
+          conversationId: "conversation-1",
+          rootMessageId: "root-1",
+          currentMessageId: "reply-2",
+          evidence: [
+            {
+              source: "teams",
+              sourceId: "root-1",
+              citationUrl: "https://teams.example.test/root-1",
+              title: "Teams thread",
+              excerpt: "What is the current status of Modern Website Builder?",
+              observedAt: "2026-07-20T12:00:00.000Z",
+              contextRole: "conversation",
+            },
+            {
+              source: "teams",
+              sourceId: "reply-2",
+              citationUrl: "https://teams.example.test/reply-2",
+              title: "Current question",
+              excerpt: "Who owns it, what is blocked, and what should happen next?",
+              observedAt: "2026-07-20T12:05:00.000Z",
+              contextRole: "conversation",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({
+      subject: { phrase: "Modern Website Builder" },
+      intents: ["ownership", "blockers", "next_actions"],
+    });
+  });
+
   it("deduplicates cross-source facts and returns a decision-ready cited response", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",

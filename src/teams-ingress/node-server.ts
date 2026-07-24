@@ -457,29 +457,29 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     );
     const projection = workspaceProjectionFromEnvironment(environment);
     const resolver = createWorkspaceProjectionResolver(projection);
+    const teamsThreadContextSource = {
+      contextRole: "conversation" as const,
+      reader: createTeamsGraphThreadReader({
+        tokenProvider: graphTokenProvider,
+        allowedStandardChannels: new Set(
+          projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
+        ),
+      }),
+      sourceKey: (command: TeamsMentionCommand) =>
+        teamsThreadSourceKey({
+          teamId: command.graphTeamId,
+          channelId: command.channelId,
+          rootId: command.rootActivityId,
+        }),
+    } as const;
     const contextSources = knowledgeEnabled
-      ? []
+      ? [teamsThreadContextSource]
       : (() => {
           const sourceKeys = JSON.parse(
             required("SARATHI_TEAMS_SOURCE_KEYS_JSON", environment.SARATHI_TEAMS_SOURCE_KEYS_JSON),
           ) as { jira: string; github: string; vault: string };
           return [
-            {
-              reader: createTeamsGraphThreadReader({
-                tokenProvider: graphTokenProvider,
-                allowedStandardChannels: new Set(
-                  projection.channels.map(
-                    (channel) => `${channel.graphTeamId}:${channel.channelId}`,
-                  ),
-                ),
-              }),
-              sourceKey: (command: TeamsMentionCommand) =>
-                teamsThreadSourceKey({
-                  teamId: command.graphTeamId,
-                  channelId: command.channelId,
-                  rootId: command.rootActivityId,
-                }),
-            },
+            teamsThreadContextSource,
             {
               reader: createJiraEvidenceReader({
                 baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
