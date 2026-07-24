@@ -139,8 +139,16 @@ export const handleTeamsMention = (
       }
     }
 
+    const topLevelDeliveryQuestion =
+      deliveryQuestionPlan !== undefined && command.rootActivityId === command.activityId;
     const envelopeResult = yield* Effect.either(
-      dependencies.contextAssembler.assemble(command, resolved),
+      topLevelDeliveryQuestion
+        ? Effect.succeed({
+            workspaceId: resolved.workspaceId,
+            question: command.question,
+            evidence: [],
+          })
+        : dependencies.contextAssembler.assemble(command, resolved),
     );
     if (envelopeResult._tag === "Left") {
       yield* dependencies.audit
