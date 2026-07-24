@@ -331,6 +331,77 @@ describe("teams mention", () => {
     expect(fixture.calls.delivered()).toBe(1);
   });
 
+  it("answers a top-level delivery question without redundant context assembly", async () => {
+    const fixture = dependencies();
+    let contextCalls = 0;
+    let reporterCalls = 0;
+    const topLevelCommand = {
+      ...command,
+      rootActivityId: command.activityId,
+      question: "What is planned this week?",
+    };
+    const deliveryDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      deliveryTimeZone: "Asia/Kolkata",
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          return Effect.fail(new RepositoryError({ message: "Supplemental search unavailable" }));
+        },
+      },
+      deliveryAssistant: {
+        answer: (request) => {
+          reporterCalls += 1;
+          expect(request.questionContext).toMatchObject({
+            rootMessageId: command.activityId,
+            currentMessageId: command.activityId,
+            evidence: [],
+          });
+          if (request.plan === undefined) throw new Error("Expected compiled delivery plan");
+          return Effect.succeed({
+            text: "Planned work is source-backed.",
+            citations: [],
+            unavailableSources: [],
+            status: "ok",
+            plan: request.plan,
+            conflicts: [],
+            responseMode: "fast",
+            acceptance: {
+              mode: "fast",
+              elapsedMs: 10,
+              latencyTargetMs: 10_000,
+              latencyPassed: true,
+              requestedIntents: 1,
+              coveredIntents: 1,
+              completenessRatio: 1,
+              completenessPassed: true,
+              materialStatements: 0,
+              citedStatements: 0,
+              citationCoverage: 1,
+              citationPassed: true,
+              groundingPassed: true,
+              freshEvidence: 0,
+              evaluatedEvidence: 0,
+              freshnessCoverage: 1,
+              freshnessPassed: true,
+              formatPassed: true,
+              passed: true,
+            },
+          });
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(handleTeamsMention(topLevelCommand, deliveryDependencies)),
+    ).resolves.toMatchObject({
+      kind: "answered",
+      answer: { text: "Planned work is source-backed." },
+    });
+    expect(contextCalls).toBe(0);
+    expect(reporterCalls).toBe(1);
+  });
+
   it("denies a delivery question before context retrieval when the boundary disallows it", async () => {
     const fixture = dependencies();
     let contextCalls = 0;
