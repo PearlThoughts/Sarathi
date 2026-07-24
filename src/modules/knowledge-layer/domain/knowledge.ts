@@ -48,7 +48,7 @@ export type FusedKnowledgeCandidate = RankedKnowledgeCandidate & {
   readonly componentRanks: Readonly<Record<string, number>>;
 };
 
-const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
+const normalizeWhitespace = (value: string): string => value.replace(/[\p{C}\s]+/gu, " ").trim();
 
 const subjectMatches = (rule: KnowledgeAclRule, audience: KnowledgeAudience): boolean => {
   switch (rule.subjectType) {
@@ -83,7 +83,7 @@ const splitWithOverlap = (
   maximumCharacters: number,
   overlapCharacters: number,
 ): readonly string[] => {
-  if (body.trim() === "") return [];
+  if (normalizeWhitespace(body) === "") return [];
   if (body.length <= maximumCharacters) return [body];
   const chunks: string[] = [];
   let offset = 0;
@@ -96,7 +96,7 @@ const splitWithOverlap = (
     if (end >= body.length) break;
     offset = Math.max(end - overlapCharacters, offset + 1);
   }
-  return chunks.filter((chunk) => chunk !== "");
+  return chunks.filter((chunk) => normalizeWhitespace(chunk) !== "");
 };
 
 const slug = (value: string): string =>
