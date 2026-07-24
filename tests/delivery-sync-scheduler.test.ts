@@ -29,8 +29,8 @@ describe("delivery sync scheduler", () => {
       ["subscriptions", "teams"],
       ["reconcile", "jira"],
       ["reconcile", "vault"],
-      ["reconcile", "github"],
       ["reconcile", "teams"],
+      ["reconcile", "github"],
     ]);
     expect(result).toEqual({ succeeded: 4, failed: 1 });
     expect(diagnostics).toContainEqual({
@@ -99,6 +99,48 @@ describe("delivery sync scheduler", () => {
     ]);
     active.stop();
     expect(active.status().state).toBe("stopped");
+  });
+
+  it("starts the next repair interval only after the active tick finishes", async () => {
+    vi.useFakeTimers();
+    let releaseFirst: (() => void) | undefined;
+    let first = true;
+    const commands: string[][] = [];
+    const active = startDeliverySyncScheduler(
+      {
+        SARATHI_SYNC_SCHEDULER_ENABLED: "true",
+        SARATHI_SYNC_RECONCILE_INTERVAL_SECONDS: "2",
+        SARATHI_SYNC_INITIAL_DELAY_SECONDS: "1",
+      },
+      async (args) => {
+        commands.push([...args]);
+        if (first) {
+          first = false;
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return { exitCode: 0, output: {} };
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(commands).toEqual([["subscriptions", "teams"]]);
+    expect(active.status().state).toBe("running");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(commands).toHaveLength(1);
+
+    releaseFirst?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(commands).toHaveLength(5);
+    expect(active.status().state).toBe("scheduled");
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(commands).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(commands).toHaveLength(10);
+    active.stop();
   });
 
   it("derives an exclusive privacy-safe lease owner for every execution", () => {
