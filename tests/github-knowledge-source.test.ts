@@ -69,7 +69,7 @@ describe("GitHub knowledge source", () => {
           {
             number: 42,
             title: "KLG-524 add repository synchronization",
-            body: "Implements SAR-42 with changed-file repair.",
+            body: `Implements SAR-42 with changed-file repair. ${"x".repeat(6_500)}`,
             html_url: "https://github.com/example/sarathi/pull/42",
             state: "closed",
             created_at: "2026-07-18T08:00:00.000Z",
@@ -172,10 +172,54 @@ describe("GitHub knowledge source", () => {
         ],
       },
     });
+    expect(pull?.passages.map(({ locator }) => locator)).toEqual([
+      "#activity:part-1",
+      "#activity:part-2",
+    ]);
+    expect(pull?.passages.every(({ body }) => body.length <= 6_000)).toBe(true);
     expect(requests.some((url) => url.includes("/git/trees/commit-1"))).toBe(true);
     expect(requests.filter((url) => url.includes("/tarball/commit-1"))).toHaveLength(1);
     expect(requests.some((url) => url.includes("/git/blobs/"))).toBe(false);
     expect(requests.some((url) => /generated-1|secret-1|image-1/.test(url))).toBe(false);
+  });
+
+  it("bounds a single long source line before embedding", async () => {
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        const empty = emptyActivities(url);
+        if (empty !== undefined) return empty;
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({
+            sha: "commit-1",
+            commit: { committer: { date: "2026-07-20T12:00:00.000Z" } },
+          });
+        if (url.includes("/git/trees/commit-1"))
+          return Response.json({
+            tree: [{ path: "src/long.ts", type: "blob", sha: "long-1" }],
+          });
+        if (url.includes("/tarball/commit-1"))
+          return archiveResponse({
+            "src/long.ts": `export const payload = "${"x".repeat(6_500)}";`,
+          });
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+    const code = snapshot.documents.find(({ sourceType }) => sourceType === "code");
+
+    expect(code?.passages.map(({ locator }) => locator)).toEqual([
+      "#L1-L1:payload:part-1",
+      "#L1-L1:payload:part-2",
+    ]);
+    expect(code?.passages.every(({ body }) => body.length <= 6_000)).toBe(true);
   });
 
   it("fetches only changed blobs and retires deleted or renamed paths on repair", async () => {
