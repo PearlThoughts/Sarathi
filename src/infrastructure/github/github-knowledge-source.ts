@@ -1,4 +1,8 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import { Effect } from "effect";
+import { extract } from "tar-stream";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
@@ -56,13 +60,6 @@ type GitHubTree = {
     readonly type?: string;
     readonly sha?: string;
   }[];
-};
-type GitHubBlob = {
-  readonly type?: string;
-  readonly encoding?: string;
-  readonly content?: string;
-  readonly sha?: string;
-  readonly size?: number;
 };
 type GitHubPull = {
   readonly number: number;
@@ -315,6 +312,64 @@ const mapBounded = async <Input, Output>(
   return results;
 };
 
+const maximumCodeFileBytes = 1_000_000;
+
+const archiveEntryPath = (name: string): string | undefined => {
+  const separator = name.indexOf("/");
+  if (separator < 0 || separator === name.length - 1) return undefined;
+  return name.slice(separator + 1);
+};
+
+const readChangedCodeFromArchive = async (
+  configuration: GitHubKnowledgeSourceConfiguration,
+  repository: string,
+  commitSha: string,
+  changedPaths: readonly { readonly path: string; readonly sha: string }[],
+): Promise<ReadonlyMap<string, Buffer | undefined>> => {
+  if (changedPaths.length === 0) return new Map();
+  const response = await request(
+    configuration,
+    `/repos/${repositoryPath(repository)}/tarball/${encodeURIComponent(commitSha)}`,
+  );
+  if (response.body === null) throw new Error("GitHub repository archive had no response body.");
+  const expected = new Set(changedPaths.map(({ path }) => path));
+  const files = new Map<string, Buffer | undefined>();
+  const extractor = extract();
+  extractor.on("entry", (header, stream, next) => {
+    const path = archiveEntryPath(header.name);
+    if (path === undefined || header.type !== "file" || !expected.has(path)) {
+      stream.on("end", () => next());
+      stream.resume();
+      return;
+    }
+    void (async () => {
+      if ((header.size ?? 0) > maximumCodeFileBytes) {
+        files.set(path, undefined);
+        for await (const _chunk of stream) {
+          // Drain oversized entries without retaining their contents.
+        }
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of stream) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += bytes.length;
+        if (size <= maximumCodeFileBytes) chunks.push(bytes);
+      }
+      files.set(path, size > maximumCodeFileBytes ? undefined : Buffer.concat(chunks));
+    })().then(
+      () => next(),
+      (error) => next(error),
+    );
+  });
+  await pipeline(Readable.fromWeb(response.body as never), createGunzip(), extractor);
+  const missing = changedPaths.filter(({ path }) => !files.has(path));
+  if (missing.length > 0)
+    throw new Error("GitHub repository archive did not match its commit tree inventory.");
+  return files;
+};
+
 const pathExcluded = (path: string, configured: readonly string[]): boolean => {
   const segments = path.split("/");
   return (
@@ -330,12 +385,6 @@ const isCodePath = (path: string): boolean => {
 };
 
 const languageFromPath = (path: string): string => path.split(".").at(-1)?.toLowerCase() ?? "text";
-
-const decodeBlob = (blob: GitHubBlob): string => {
-  if (blob.encoding !== "base64" || blob.content === undefined || blob.type === "tree")
-    throw new Error("GitHub code blob was not a decodable file.");
-  return Buffer.from(blob.content.replace(/\n/g, ""), "base64").toString("utf8");
-};
 
 type SymbolSection = { readonly name: string; readonly start: number; readonly end: number };
 
@@ -752,16 +801,19 @@ const readRepository = async (
   const changedPaths = paths.filter(
     ({ path, sha }) => previous?.blobs[`${repository.repository}:${path}`] !== sha,
   );
-  const codeDocuments = await mapBounded(changedPaths, 6, async ({ path, sha }) => {
-    const blob = await requestJson<GitHubBlob>(
-      configuration,
-      `/repos/${repoPath}/git/blobs/${sha}`,
-    );
-    if ((blob.size ?? 0) > 1_000_000) {
+  const archiveFiles = await readChangedCodeFromArchive(
+    configuration,
+    repository.repository,
+    commit.sha,
+    changedPaths,
+  );
+  const codeDocuments = changedPaths.map(({ path, sha }) => {
+    const content = archiveFiles.get(path);
+    if (content === undefined) {
       retiredExternalIds.push(`${repository.repository}:${path}`);
       return undefined;
     }
-    const body = decodeBlob(blob);
+    const body = content.toString("utf8");
     if (body.includes("\u0000")) {
       retiredExternalIds.push(`${repository.repository}:${path}`);
       return undefined;
@@ -777,7 +829,7 @@ const readRepository = async (
       workspaceId: configuration.workspaceId,
       externalId: `${repository.repository}:${path}`,
       sourceType: "code",
-      sourceVersion: blob.sha ?? sha,
+      sourceVersion: sha,
       canonicalUrl: `https://github.com/${repository.repository}/blob/${commit.sha}/${path
         .split("/")
         .map(encodeURIComponent)
@@ -790,7 +842,7 @@ const readRepository = async (
         repository: repository.repository,
         branch,
         revision: commit.sha,
-        blob: blob.sha ?? sha,
+        blob: sha,
         path,
         language: languageFromPath(path),
       },

@@ -1,4 +1,6 @@
+import { gzipSync } from "node:zlib";
 import { Effect } from "effect";
+import { pack } from "tar-stream";
 import { describe, expect, it } from "vitest";
 import {
   createGitHubKnowledgeSource,
@@ -11,6 +13,20 @@ const configuredRepository = (): GitHubKnowledgeRepository => ({
   sensitivity: "internal",
   acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
 });
+
+const archiveResponse = async (
+  entries: Readonly<Record<string, string>>,
+  root = "sarathi-snapshot",
+): Promise<Response> => {
+  const archive = pack();
+  for (const [path, body] of Object.entries(entries))
+    archive.entry({ name: `${root}/${path}`, type: "file" }, Buffer.from(body));
+  archive.finalize();
+  const chunks: Buffer[] = [];
+  for await (const chunk of archive)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return new Response(gzipSync(Buffer.concat(chunks)));
+};
 
 const emptyActivities = (url: string): Response | undefined => {
   if (url.includes("/pulls?")) return Response.json([]);
@@ -43,15 +59,10 @@ describe("GitHub knowledge source", () => {
             { path: "assets/logo.png", type: "blob", sha: "image-1" },
           ],
         });
-      if (url.includes("/git/blobs/service-1"))
-        return Response.json({
-          type: "blob",
-          encoding: "base64",
-          content: Buffer.from(
+      if (url.includes("/tarball/commit-1"))
+        return archiveResponse({
+          "src/service.ts":
             "export function synchronize(): void {\n  console.log('sync');\n}\n\nexport class RepairWorker {}",
-          ).toString("base64"),
-          sha: "service-1",
-          size: 102,
         });
       if (url.includes("/pulls?"))
         return Response.json([
@@ -162,6 +173,8 @@ describe("GitHub knowledge source", () => {
       },
     });
     expect(requests.some((url) => url.includes("/git/trees/commit-1"))).toBe(true);
+    expect(requests.filter((url) => url.includes("/tarball/commit-1"))).toHaveLength(1);
+    expect(requests.some((url) => url.includes("/git/blobs/"))).toBe(false);
     expect(requests.some((url) => /generated-1|secret-1|image-1/.test(url))).toBe(false);
   });
 
@@ -192,18 +205,18 @@ describe("GitHub knowledge source", () => {
                   { path: "src/new.ts", type: "blob", sha: "renamed-1" },
                 ],
         });
-      if (url.includes("/git/blobs/a-1"))
-        return Response.json({
-          encoding: "base64",
-          content: Buffer.from("export const a = 1;").toString("base64"),
-          sha: "a-1",
-        });
-      if (url.includes("/git/blobs/renamed-1"))
-        return Response.json({
-          encoding: "base64",
-          content: Buffer.from("export const renamed = true;").toString("base64"),
-          sha: "renamed-1",
-        });
+      if (url.includes(`/tarball/commit-${revision}`))
+        return archiveResponse(
+          revision === 1
+            ? {
+                "src/a.ts": "export const a = 1;",
+                "src/old.ts": "export const renamed = true;",
+              }
+            : {
+                "src/a.ts": "export const a = 1;",
+                "src/new.ts": "export const renamed = true;",
+              },
+        );
       return new Response("not found", { status: 404 });
     };
     const source = createGitHubKnowledgeSource({
@@ -232,8 +245,8 @@ describe("GitHub knowledge source", () => {
     expect(delta.documents.map(({ externalId }) => externalId)).toEqual([
       "example/sarathi:src/new.ts",
     ]);
-    expect(requests.filter((url) => url.includes("/git/blobs/a-1"))).toHaveLength(1);
-    expect(requests.filter((url) => url.includes("/git/blobs/renamed-1"))).toHaveLength(2);
+    expect(requests.filter((url) => url.includes("/tarball/"))).toHaveLength(2);
+    expect(requests.some((url) => url.includes("/git/blobs/"))).toBe(false);
   });
 
   it("treats an authorized empty repository as zero evidence", async () => {
@@ -312,6 +325,80 @@ describe("GitHub knowledge source", () => {
     expect(snapshot.documents).toEqual([]);
     expect(metadataRequests).toBe(2);
     expect(waits).toEqual([2_000]);
+  });
+
+  it("fails closed when the commit archive disagrees with the tree inventory", async () => {
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        const empty = emptyActivities(url);
+        if (empty !== undefined) return empty;
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({
+            sha: "commit-1",
+            commit: { committer: { date: "2026-07-20T12:00:00.000Z" } },
+          });
+        if (url.includes("/git/trees/commit-1"))
+          return Response.json({
+            tree: [{ path: "src/expected.ts", type: "blob", sha: "expected-1" }],
+          });
+        if (url.includes("/tarball/commit-1"))
+          return archiveResponse({ "src/other.ts": "export const other = true;" });
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured GitHub knowledge synchronization failed",
+    );
+  });
+
+  it("retires binary and oversized archive entries without persisting their bodies", async () => {
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        const empty = emptyActivities(url);
+        if (empty !== undefined) return empty;
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({
+            sha: "commit-1",
+            commit: { committer: { date: "2026-07-20T12:00:00.000Z" } },
+          });
+        if (url.includes("/git/trees/commit-1"))
+          return Response.json({
+            tree: [
+              { path: "src/binary.ts", type: "blob", sha: "binary-1" },
+              { path: "src/oversized.ts", type: "blob", sha: "oversized-1" },
+            ],
+          });
+        if (url.includes("/tarball/commit-1"))
+          return archiveResponse({
+            "src/binary.ts": "export const binary = '\u0000';",
+            "src/oversized.ts": "x".repeat(1_000_001),
+          });
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(snapshot.documents).toEqual([]);
+    expect(snapshot.retiredExternalIds).toEqual([
+      "example/sarathi:src/binary.ts",
+      "example/sarathi:src/oversized.ts",
+    ]);
   });
 
   it("fails closed for truncated inventories", async () => {

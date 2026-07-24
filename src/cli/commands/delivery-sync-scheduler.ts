@@ -26,7 +26,7 @@ type DeliverySyncSchedulerController = {
 
 type DiagnosticSink = (diagnostic: DeliverySyncSchedulerDiagnostic) => void;
 
-const continuousSources = ["jira", "vault", "github", "teams"] as const;
+const continuousSources = ["jira", "vault", "teams", "github"] as const;
 const defaultIntervalSeconds = 45 * 60;
 const defaultInitialDelaySeconds = 60;
 
@@ -96,13 +96,10 @@ export const startDeliverySyncScheduler = (
     defaultInitialDelaySeconds,
   );
   let state: DeliverySyncSchedulerStatus["state"] = schedulerEnabled ? "scheduled" : "disabled";
-  let initialTimer: ReturnType<typeof setTimeout> | undefined;
-  let intervalTimer: ReturnType<typeof setInterval> | undefined;
-  let activeTicks = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const trigger = (): void => {
     if (state === "stopped" || !schedulerEnabled) return;
-    activeTicks += 1;
     state = "running";
     void runDeliverySyncSchedulerTick(runCommand, diagnostics)
       .catch(() => {
@@ -113,8 +110,9 @@ export const startDeliverySyncScheduler = (
         });
       })
       .finally(() => {
-        activeTicks -= 1;
-        if (state !== "stopped" && activeTicks === 0) state = "scheduled";
+        if (state === "stopped") return;
+        state = "scheduled";
+        timer = setTimeout(trigger, intervalSeconds * 1_000);
       });
   };
 
@@ -125,10 +123,7 @@ export const startDeliverySyncScheduler = (
       outcome: "scheduled",
       intervalSeconds,
     });
-    initialTimer = setTimeout(() => {
-      trigger();
-      intervalTimer = setInterval(trigger, intervalSeconds * 1_000);
-    }, initialDelaySeconds * 1_000);
+    timer = setTimeout(trigger, initialDelaySeconds * 1_000);
   }
 
   return {
@@ -139,8 +134,7 @@ export const startDeliverySyncScheduler = (
       initialDelaySeconds,
     }),
     stop: () => {
-      if (initialTimer !== undefined) clearTimeout(initialTimer);
-      if (intervalTimer !== undefined) clearInterval(intervalTimer);
+      if (timer !== undefined) clearTimeout(timer);
       state = "stopped";
       diagnostics({
         event: "delivery_sync_scheduler",
