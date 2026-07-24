@@ -2,6 +2,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { type EmbeddingModel, embedMany } from "ai";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
+import { stableSha256 } from "../../domain/hash.ts";
 import type { KnowledgeEmbeddingPort } from "../../modules/knowledge-layer/index.ts";
 
 export type KnowledgeEmbeddingProvider = "openrouter";
@@ -95,19 +96,58 @@ const resolveEmbeddingModel = (configuration: KnowledgeEmbeddingConfiguration): 
     compatibility: "strict",
   }).textEmbeddingModel(configuration.model);
 
+type EmbeddingBatchDiagnostics = {
+  readonly offset: number;
+  readonly count: number;
+  readonly minimumCharacters: number;
+  readonly maximumCharacters: number;
+  readonly fingerprint: string;
+};
+
+const batchDiagnostics = (
+  values: readonly string[],
+  offset: number,
+): EmbeddingBatchDiagnostics => ({
+  offset,
+  count: values.length,
+  minimumCharacters: Math.min(...values.map((value) => value.length)),
+  maximumCharacters: Math.max(...values.map((value) => value.length)),
+  fingerprint: stableSha256(values.map((value) => stableSha256(value)).join(":")),
+});
+
+const diagnosticOperation = (diagnostics: EmbeddingBatchDiagnostics | undefined): string =>
+  diagnostics === undefined
+    ? "knowledge-embedding"
+    : [
+        "knowledge-embedding",
+        `offset-${diagnostics.offset}`,
+        `count-${diagnostics.count}`,
+        `chars-${diagnostics.minimumCharacters}-${diagnostics.maximumCharacters}`,
+        diagnostics.fingerprint,
+      ].join(".");
+
+const hasEmbeddableText = (value: string): boolean => value.replace(/[\p{C}\s]+/gu, "").length > 0;
+
 export const createAiSdkKnowledgeEmbedding = (
   configuration: KnowledgeEmbeddingConfiguration,
   runner: EmbedManyRunner = embedMany,
 ): KnowledgeEmbeddingPort => ({
   model: `${configuration.provider}:${configuration.model}`,
   dimensions: configuration.dimensions,
-  embed: (values) =>
-    Effect.tryPromise({
+  embed: (values) => {
+    let activeBatch: EmbeddingBatchDiagnostics | undefined;
+    return Effect.tryPromise({
       try: async () => {
+        const invalidIndex = values.findIndex((value) => !hasEmbeddableText(value));
+        if (invalidIndex >= 0) {
+          activeBatch = batchDiagnostics([values[invalidIndex] ?? ""], invalidIndex);
+          throw new Error("Embedding input does not contain textual content.");
+        }
         const vectors: (readonly number[])[] = [];
         const model = resolveEmbeddingModel(configuration);
         for (let offset = 0; offset < values.length; offset += configuration.batchSize) {
           const batch = values.slice(offset, offset + configuration.batchSize);
+          activeBatch = batchDiagnostics(batch, offset);
           const result = await runner({
             model,
             values: [...batch],
@@ -127,7 +167,8 @@ export const createAiSdkKnowledgeEmbedding = (
       catch: () =>
         new RepositoryError({
           message: "Approved embedding service is unavailable.",
-          operation: "knowledge-embedding",
+          operation: diagnosticOperation(activeBatch),
         }),
-    }),
+    });
+  },
 });

@@ -73,6 +73,7 @@ describe("knowledge domain", () => {
       }),
     ]);
     expect(chunkVaultMarkdown("  \n\n")).toEqual([]);
+    expect(chunkVaultMarkdown("\u200b\u0000")).toEqual([]);
   });
 
   it("creates stable typed Jira passages and omits empty fields", () => {
@@ -82,6 +83,7 @@ describe("knowledge domain", () => {
       contentHash: expect.stringMatching(/^sha256-/),
     });
     expect(createTypedPassage("comment", "comment-1", 1, "Comment", "   ")).toBeUndefined();
+    expect(createTypedPassage("code", "zero-width", 2, "Code", "\u200b\u0000")).toBeUndefined();
   });
 
   it("fuses independent ranks, suppresses duplicates, and applies bounded authority/freshness", () => {
