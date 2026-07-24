@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createAuthorizedContextAssembler } from "../src/modules/teams-mention/index.ts";
 
 const command = {
@@ -121,5 +121,23 @@ describe("authorized context assembler", () => {
     await expect(Effect.runPromise(assembler.assemble(command, resolved))).rejects.toThrow(
       "Connected context retrieval failed",
     );
+  });
+
+  it("skips a context source when the request has no prior conversational context", async () => {
+    const readEvidence = vi.fn();
+    const assembler = createAuthorizedContextAssembler([
+      {
+        contextRole: "conversation",
+        sourceKey: () => undefined,
+        reader: { readEvidence },
+      },
+    ]);
+
+    await expect(Effect.runPromise(assembler.assemble(command, resolved))).resolves.toEqual({
+      workspaceId: "workspace",
+      question: "What changed?",
+      evidence: [],
+    });
+    expect(readEvidence).not.toHaveBeenCalled();
   });
 });
