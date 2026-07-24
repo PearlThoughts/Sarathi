@@ -35,6 +35,7 @@ export type ContextEvidence = {
   readonly updatedAt: string;
   readonly sensitivity: SensitivityTier;
   readonly freshness: "current" | "stale" | "unavailable";
+  readonly contextRole?: "conversation" | "retrieved" | undefined;
   readonly actorId?: string | undefined;
 };
 

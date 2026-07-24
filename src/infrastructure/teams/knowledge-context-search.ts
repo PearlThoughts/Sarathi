@@ -22,7 +22,7 @@ export type KnowledgeTeamsContextConfiguration = {
 
 const teamsThreadContext = (evidence: readonly ContextEvidence[]): readonly TeamsThreadContext[] =>
   evidence
-    .filter(({ source }) => source === "teams")
+    .filter(({ source, contextRole }) => source === "teams" && contextRole === "conversation")
     .map((record) => ({
       sourceId: record.sourceId,
       title: record.title,

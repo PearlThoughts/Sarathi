@@ -218,7 +218,7 @@ describe("teams mention", () => {
     expect(fixture.calls.delivered()).toBe(1);
   });
 
-  it("routes delivery-manager questions through delivery intelligence without the legacy context path", async () => {
+  it("authorizes and passes the bounded thread context to delivery intelligence", async () => {
     const fixture = dependencies();
     let reporterCalls = 0;
     let contextCalls = 0;
@@ -229,7 +229,7 @@ describe("teams mention", () => {
       authorizer: {
         authorizeContext: () => {
           genericAuthorizationCalls += 1;
-          return Effect.succeed({ allowed: false });
+          return Effect.succeed({ allowed: true });
         },
       },
       deliveryTimeZone: "Asia/Kolkata",
@@ -243,6 +243,12 @@ describe("teams mention", () => {
             requestedAt: command.receivedAt,
             question: "Sarathi post team work summary",
             plan: { intents: ["activity"], maximumLines: 3, requiresFinance: false },
+            questionContext: {
+              channelId: "channel-1",
+              conversationId: "conversation-1",
+              rootMessageId: "root-1",
+              currentMessageId: "activity-1",
+            },
           });
           return Effect.succeed({
             text: "GitHub: shipped.\nJira: advanced.\nTeams: decided.",
@@ -279,20 +285,23 @@ describe("teams mention", () => {
       contextAssembler: {
         assemble: () => {
           contextCalls += 1;
-          return fixture.dependencies.contextAssembler.assemble(command, {
+          return Effect.succeed({
             workspaceId: "workspace-1",
-            callerId: "actor-1",
-            callerTrustTier: "trusted",
-            channelSensitivity: "internal",
-            boundary: {
-              sensitivity: "internal",
-              minimumTrustTier: "member",
-              allowedDelegationStages: ["answer"],
-              modelEgress: "allow",
-              requiresHumanApproval: false,
-              requiresPreRetrievalAuthorization: true,
-              requiresToolAuthorization: true,
-            },
+            question: command.question,
+            evidence: [
+              {
+                source: "teams",
+                sourceId: "root-1",
+                sourceUrl: "https://teams.example.test/root-1",
+                title: "Modern Website Builder",
+                excerpt: "What is the current status of Modern Website Builder?",
+                occurredAt: "2026-07-10T00:00:00.000Z",
+                updatedAt: "2026-07-10T00:00:00.000Z",
+                sensitivity: "internal",
+                freshness: "current",
+                contextRole: "conversation",
+              },
+            ],
           });
         },
       },
@@ -316,10 +325,50 @@ describe("teams mention", () => {
       answer: { text: "GitHub: shipped.\nJira: advanced.\nTeams: decided." },
     });
     expect(reporterCalls).toBe(1);
-    expect(contextCalls).toBe(0);
+    expect(contextCalls).toBe(1);
     expect(modelCalls).toBe(0);
-    expect(genericAuthorizationCalls).toBe(0);
+    expect(genericAuthorizationCalls).toBe(1);
     expect(fixture.calls.delivered()).toBe(1);
+  });
+
+  it("denies a delivery question before context retrieval when the boundary disallows it", async () => {
+    const fixture = dependencies();
+    let contextCalls = 0;
+    let deliveryCalls = 0;
+    const deniedDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      deliveryTimeZone: "Asia/Kolkata",
+      deliveryAssistant: {
+        answer: () => {
+          deliveryCalls += 1;
+          throw new Error("Delivery intelligence must not run before authorization.");
+        },
+      },
+      authorizer: {
+        authorizeContext: () => Effect.succeed({ allowed: false }),
+      },
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          throw new Error("Context retrieval must not run before authorization.");
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention(
+          { ...command, question: "What is the current project status?" },
+          deniedDependencies,
+        ),
+      ),
+    ).resolves.toEqual({
+      kind: "denied",
+      reason: "Sarathi cannot use this thread's context.",
+    });
+    expect(contextCalls).toBe(0);
+    expect(deliveryCalls).toBe(0);
+    expect(fixture.state()).toBe("failed-terminal");
   });
 
   it("records retryable failure without recording delivery", async () => {

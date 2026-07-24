@@ -62,14 +62,14 @@ export const handleTeamsMention = (
       } as const;
     }
 
+    const deliveryAssistant = dependencies.deliveryAssistant;
+    const deliveryTimeZone = dependencies.deliveryTimeZone;
     const deliveryQuestionPlan =
-      dependencies.deliveryAssistant === undefined || dependencies.deliveryTimeZone === undefined
+      deliveryAssistant === undefined || deliveryTimeZone === undefined
         ? undefined
         : planDeliveryQuestion(command.question);
     const authorizationResult = yield* Effect.either(
-      deliveryQuestionPlan === undefined
-        ? dependencies.authorizer.authorizeContext(command, resolved)
-        : Effect.succeed({ allowed: true }),
+      dependencies.authorizer.authorizeContext(command, resolved),
     );
     if (authorizationResult._tag === "Left") {
       yield* dependencies.audit
@@ -113,21 +113,22 @@ export const handleTeamsMention = (
       return { kind: "answered", answer } as const;
     }
 
-    if (deliveryQuestionPlan !== undefined) {
-      if (
-        dependencies.deliveryAssistant === undefined ||
-        dependencies.deliveryTimeZone === undefined
-      ) {
-        yield* dependencies.audit
-          .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
-          .pipe(Effect.orElseSucceed(() => undefined));
-        return {
-          kind: "denied",
-          reason: "Sarathi's delivery intelligence is not configured here.",
-        } as const;
-      }
-      const financeAccess = dependencies.deliveryFinanceActorIds?.has(resolved.callerId) === true;
-      if (deliveryQuestionPlan.requiresFinance && !financeAccess) {
+    const financeAccess = dependencies.deliveryFinanceActorIds?.has(resolved.callerId) === true;
+    const deliveryConfiguration =
+      deliveryAssistant === undefined || deliveryTimeZone === undefined
+        ? undefined
+        : { assistant: deliveryAssistant, timeZone: deliveryTimeZone };
+    if (deliveryQuestionPlan !== undefined && deliveryConfiguration === undefined) {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return {
+        kind: "denied",
+        reason: "Sarathi's delivery intelligence is not configured here.",
+      } as const;
+    }
+    if (deliveryQuestionPlan?.requiresFinance === true) {
+      if (!financeAccess) {
         yield* dependencies.audit
           .markFailed(command.activityId, "failed-terminal", resolved.workspaceId)
           .pipe(Effect.orElseSucceed(() => undefined));
@@ -136,17 +137,51 @@ export const handleTeamsMention = (
           reason: "Finance delivery information is confidential.",
         } as const;
       }
+    }
+
+    const envelopeResult = yield* Effect.either(
+      dependencies.contextAssembler.assemble(command, resolved),
+    );
+    if (envelopeResult._tag === "Left") {
+      yield* dependencies.audit
+        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      return {
+        kind: "denied",
+        reason: "Sarathi cannot retrieve the connected context right now.",
+      } as const;
+    }
+
+    if (deliveryQuestionPlan !== undefined && deliveryConfiguration !== undefined) {
+      const envelope = envelopeResult.right;
       const reportResult = yield* Effect.either(
-        dependencies.deliveryAssistant
+        deliveryConfiguration.assistant
           .answer({
             workspaceId: resolved.workspaceId,
             actorId: resolved.callerId,
             maximumSensitivity: resolved.channelSensitivity,
             financeAccess,
             requestedAt: command.receivedAt,
-            timeZone: dependencies.deliveryTimeZone,
+            timeZone: deliveryConfiguration.timeZone,
             question: command.question,
             plan: deliveryQuestionPlan,
+            questionContext: {
+              channelId: command.channelId,
+              conversationId: command.conversationId,
+              rootMessageId: command.rootActivityId,
+              currentMessageId: command.activityId,
+              evidence: envelope.evidence
+                .filter((record) => record.contextRole === "conversation")
+                .map((record) => ({
+                  source: record.source,
+                  sourceId: record.sourceId,
+                  citationUrl: record.sourceUrl,
+                  title: record.title,
+                  excerpt: record.excerpt,
+                  observedAt: record.occurredAt,
+                  contextRole: "conversation" as const,
+                })),
+            },
           })
           .pipe(
             Effect.timeoutFail({
@@ -188,18 +223,6 @@ export const handleTeamsMention = (
       return { kind: "answered", answer } as const;
     }
 
-    const envelopeResult = yield* Effect.either(
-      dependencies.contextAssembler.assemble(command, resolved),
-    );
-    if (envelopeResult._tag === "Left") {
-      yield* dependencies.audit
-        .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
-        .pipe(Effect.orElseSucceed(() => undefined));
-      return {
-        kind: "denied",
-        reason: "Sarathi cannot retrieve the connected context right now.",
-      } as const;
-    }
     const answerResult = yield* Effect.either(
       dependencies.answerGenerator.generate(envelopeResult.right),
     );

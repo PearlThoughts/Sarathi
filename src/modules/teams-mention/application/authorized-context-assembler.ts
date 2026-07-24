@@ -14,6 +14,7 @@ import type { TeamsMentionContextAssembler } from "../ports/teams-mention-ports.
 type AuthorizedContextSource = {
   readonly reader: EvidenceSourceReader;
   readonly sourceKey: (command: TeamsMentionCommand, resolved: ResolvedTeamsMention) => string;
+  readonly contextRole?: "conversation" | "retrieved" | undefined;
 };
 
 export type TeamsMentionSupplementalContext = {
@@ -37,6 +38,7 @@ const validEvidenceUrl = (value: string | undefined): value is string => {
 const asContextEvidence = (
   record: NormalizedEvidenceRecord,
   maximumSensitivity: ResolvedTeamsMention["channelSensitivity"],
+  contextRole: "conversation" | "retrieved",
 ): ContextEvidence | undefined => {
   const sensitivity = record.sensitivity ?? "internal";
   if (
@@ -66,6 +68,7 @@ const asContextEvidence = (
     updatedAt: record.consent.recordedAt,
     sensitivity,
     freshness: "current",
+    contextRole,
     actorId: record.actorId,
   };
 };
@@ -78,16 +81,20 @@ export const createAuthorizedContextAssembler = (
     Effect.tryPromise({
       try: async (): Promise<AuthorizedContextEnvelope> => {
         const results = await Promise.all(
-          sources.map(async (source) =>
-            source.reader.readEvidence({
+          sources.map(async (source) => ({
+            result: await source.reader.readEvidence({
               workspaceId: resolved.workspaceId,
               sourceKey: source.sourceKey(command, resolved),
             }),
-          ),
+            contextRole: source.contextRole ?? ("retrieved" as const),
+          })),
         );
         const sourceEvidence = results
-          .flatMap((result) => result.records)
-          .map((record) => asContextEvidence(record, resolved.channelSensitivity))
+          .flatMap(({ result, contextRole }) =>
+            result.records.map((record) =>
+              asContextEvidence(record, resolved.channelSensitivity, contextRole),
+            ),
+          )
           .filter((record): record is ContextEvidence => record !== undefined);
         const supplementalEvidence =
           supplementalContext === undefined
@@ -96,7 +103,13 @@ export const createAuthorizedContextAssembler = (
                 supplementalContext.search(command, resolved, sourceEvidence),
               );
         const seen = new Set<string>();
-        const evidence = [...sourceEvidence, ...supplementalEvidence].filter((record) => {
+        const evidence = [
+          ...sourceEvidence,
+          ...supplementalEvidence.map((record) => ({
+            ...record,
+            contextRole: record.contextRole ?? ("retrieved" as const),
+          })),
+        ].filter((record) => {
           if (
             !validEvidenceUrl(record.sourceUrl) ||
             !isSensitivityAtOrBelow(record.sensitivity, resolved.channelSensitivity) ||

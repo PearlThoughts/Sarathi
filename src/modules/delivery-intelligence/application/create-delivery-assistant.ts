@@ -774,9 +774,27 @@ const planQuestion = (
   request: DeliveryAssistantRequest,
   planner: DeliveryModelPlanner | undefined,
 ): Effect.Effect<DeliveryQueryPlan, RepositoryError> => {
+  const contextualize = (plan: DeliveryQueryPlan): DeliveryQueryPlan => {
+    if (plan.subject !== undefined || request.questionContext === undefined) return plan;
+    const contextDependent = /\b(?:it|its|this|that|these|those|they|them|their)\b/i.test(
+      request.question,
+    );
+    if (!contextDependent) return plan;
+    const subject = request.questionContext.evidence
+      .filter(
+        (record) =>
+          record.source === "teams" &&
+          record.contextRole === "conversation" &&
+          record.sourceId !== request.questionContext?.currentMessageId,
+      )
+      .toSorted((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt))
+      .map((record) => planDeliveryQuestion(record.excerpt)?.subject)
+      .find((candidate) => candidate !== undefined);
+    return subject === undefined ? plan : { ...plan, subject };
+  };
   if (request.plan !== undefined)
     return Effect.try({
-      try: () => validateDeliveryQueryPlan(request.plan),
+      try: () => contextualize(validateDeliveryQueryPlan(request.plan)),
       catch: () =>
         new RepositoryError({
           message: "The delivery question produced an invalid bounded query plan.",
@@ -784,7 +802,7 @@ const planQuestion = (
         }),
     });
   const deterministic = planDeliveryQuestion(request.question);
-  if (deterministic !== undefined) return Effect.succeed(deterministic);
+  if (deterministic !== undefined) return Effect.succeed(contextualize(deterministic));
   if (planner === undefined)
     return Effect.fail(
       new RepositoryError({
@@ -802,7 +820,7 @@ const planQuestion = (
             }),
           )
         : Effect.try({
-            try: () => validateDeliveryQueryPlan(planned),
+            try: () => contextualize(validateDeliveryQueryPlan(planned)),
             catch: () =>
               new RepositoryError({
                 message: "The model proposed an invalid delivery query plan.",

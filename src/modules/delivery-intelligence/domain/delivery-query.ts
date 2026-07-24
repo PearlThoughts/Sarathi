@@ -416,7 +416,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   if (
     has(
       value,
-      /\b(?:next action|next actions|next step|next steps|follow[- ]?up|what (?:should|do) (?:we|they|the team) do next)\b/,
+      /\b(?:next action|next actions|next step|next steps|follow[- ]?up|what (?:should|do) (?:we|they|the team) do next|what should happen next)\b/,
     )
   )
     add("next_actions", {

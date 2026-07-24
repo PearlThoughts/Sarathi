@@ -37,6 +37,7 @@ describe("authorized context assembler", () => {
     const sourceKeys: string[] = [];
     const assembler = createAuthorizedContextAssembler([
       {
+        contextRole: "conversation",
         sourceKey: () => "teams:team:channel:root",
         reader: {
           readEvidence: async (request) => {
@@ -102,6 +103,7 @@ describe("authorized context assembler", () => {
           sourceId: "allowed",
           sourceUrl: "https://teams.example.test/message/allowed",
           sensitivity: "internal",
+          contextRole: "conversation",
         }),
       ],
     });
