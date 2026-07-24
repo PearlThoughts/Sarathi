@@ -13,7 +13,10 @@ import type { TeamsMentionContextAssembler } from "../ports/teams-mention-ports.
 
 type AuthorizedContextSource = {
   readonly reader: EvidenceSourceReader;
-  readonly sourceKey: (command: TeamsMentionCommand, resolved: ResolvedTeamsMention) => string;
+  readonly sourceKey: (
+    command: TeamsMentionCommand,
+    resolved: ResolvedTeamsMention,
+  ) => string | undefined;
   readonly contextRole?: "conversation" | "retrieved" | undefined;
 };
 
@@ -80,11 +83,15 @@ export const createAuthorizedContextAssembler = (
   assemble: (command, resolved) =>
     Effect.tryPromise({
       try: async (): Promise<AuthorizedContextEnvelope> => {
+        const selectedSources = sources.flatMap((source) => {
+          const sourceKey = source.sourceKey(command, resolved);
+          return sourceKey === undefined ? [] : [{ source, sourceKey }];
+        });
         const results = await Promise.all(
-          sources.map(async (source) => ({
+          selectedSources.map(async ({ source, sourceKey }) => ({
             result: await source.reader.readEvidence({
               workspaceId: resolved.workspaceId,
-              sourceKey: source.sourceKey(command, resolved),
+              sourceKey,
             }),
             contextRole: source.contextRole ?? ("retrieved" as const),
           })),

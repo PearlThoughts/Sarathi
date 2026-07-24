@@ -468,11 +468,13 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         ),
       }),
       sourceKey: (command: TeamsMentionCommand) =>
-        teamsThreadSourceKey({
-          teamId: command.graphTeamId,
-          channelId: command.channelId,
-          rootId: command.rootActivityId,
-        }),
+        command.rootActivityId === command.activityId
+          ? undefined
+          : teamsThreadSourceKey({
+              teamId: command.graphTeamId,
+              channelId: command.channelId,
+              rootId: command.rootActivityId,
+            }),
     } as const;
     const contextSources = knowledgeEnabled
       ? [teamsThreadContextSource]
