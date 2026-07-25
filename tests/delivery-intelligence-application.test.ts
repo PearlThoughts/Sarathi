@@ -28,7 +28,13 @@ const item = (
   source: "github" | "jira" | "teams" | "vault",
   id: string,
   summary: string,
-  intent: "activity" | "dependencies" | "status" | "risks" | "next_actions" = "activity",
+  intent:
+    | "activity"
+    | "dependencies"
+    | "status"
+    | "risks"
+    | "next_actions"
+    | "delivered" = "activity",
 ): DeliveryResultItem => ({
   id,
   workspaceId: request.workspaceId,
@@ -191,6 +197,44 @@ describe("delivery intelligence application", () => {
       formatPassed: true,
       passed: true,
     });
+  });
+
+  it("does not present Jira-only weekly delivery evidence as complete", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item(
+                "jira",
+                "DEMO-20",
+                "DEMO-20 Done: Published the website builder",
+                "delivered",
+              ),
+              lifecycleState: "done" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What was delivered this week?",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.missingRequiredSources).toEqual(["github"]);
+    expect(answer.text).toContain("DEMO-20 Done");
+    expect(answer.text).toContain("**Coverage:** No matching GitHub result was available.");
+    expect(answer.acceptance.completenessPassed).toBe(false);
+    expect(answer.acceptance.passed).toBe(false);
   });
 
   it("renders a structured brief with independent format and quality acceptance", async () => {

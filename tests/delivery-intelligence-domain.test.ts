@@ -83,6 +83,7 @@ describe("delivery intelligence domain", () => {
   it("uses the previous workspace week for delivered-last-week questions", () => {
     const plan = planDeliveryQuestion("What was delivered last week?");
 
+    expect(plan?.requiredSources).toEqual(["jira", "github"]);
     expect(plan?.operations).toEqual([
       expect.objectContaining({
         purpose: "delivered",
@@ -101,6 +102,7 @@ describe("delivery intelligence domain", () => {
   it("bounds delivered-this-week questions to the current workspace week", () => {
     const plan = planDeliveryQuestion("What was delivered this week?");
 
+    expect(plan?.requiredSources).toEqual(["jira", "github"]);
     expect(plan?.operations).toEqual([
       expect.objectContaining({
         purpose: "delivered",
