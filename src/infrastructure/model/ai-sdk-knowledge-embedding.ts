@@ -15,8 +15,27 @@ export type KnowledgeEmbeddingConfiguration = {
   readonly dimensions: 1536;
   readonly timeoutMs: number;
   readonly batchSize: number;
+  readonly concurrency?: number | undefined;
   readonly maxRetries?: number | undefined;
 };
+
+export type KnowledgeEmbeddingDiagnostic =
+  | {
+      readonly operation: "embedding-started";
+      readonly totalValues: number;
+      readonly totalBatches: number;
+      readonly batchSize: number;
+      readonly concurrency: number;
+    }
+  | {
+      readonly operation: "embedding-progress";
+      readonly totalValues: number;
+      readonly totalBatches: number;
+      readonly completedValues: number;
+      readonly completedBatches: number;
+    };
+
+type KnowledgeEmbeddingDiagnosticSink = (diagnostic: KnowledgeEmbeddingDiagnostic) => void;
 
 type EmbedManyRunner = (input: {
   readonly model: EmbeddingModel;
@@ -37,6 +56,17 @@ const positiveInteger = (key: string, value: string | undefined, fallback: numbe
   if (value === undefined) return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${key} must be positive.`);
+  return parsed;
+};
+
+const boundedPositiveInteger = (
+  key: string,
+  value: string | undefined,
+  fallback: number,
+  maximum: number,
+): number => {
+  const parsed = positiveInteger(key, value, fallback);
+  if (parsed > maximum) throw new Error(`${key} must not exceed ${maximum}.`);
   return parsed;
 };
 
@@ -74,6 +104,12 @@ export const knowledgeEmbeddingConfigurationFromEnvironment = (
         "SARATHI_EMBEDDING_BATCH_SIZE",
         environment.SARATHI_EMBEDDING_BATCH_SIZE,
         64,
+      ),
+      concurrency: boundedPositiveInteger(
+        "SARATHI_EMBEDDING_CONCURRENCY",
+        environment.SARATHI_EMBEDDING_CONCURRENCY,
+        4,
+        8,
       ),
       maxRetries: nonNegativeInteger(
         "SARATHI_EMBEDDING_MAX_RETRIES",
@@ -128,46 +164,103 @@ const diagnosticOperation = (diagnostics: EmbeddingBatchDiagnostics | undefined)
 
 const hasEmbeddableText = (value: string): boolean => value.replace(/[\p{C}\s]+/gu, "").length > 0;
 
+class EmbeddingBatchFailure extends Error {
+  constructor(readonly diagnostics: EmbeddingBatchDiagnostics) {
+    super("Embedding batch failed.");
+  }
+}
+
 export const createAiSdkKnowledgeEmbedding = (
   configuration: KnowledgeEmbeddingConfiguration,
   runner: EmbedManyRunner = embedMany,
+  diagnosticSink: KnowledgeEmbeddingDiagnosticSink = () => undefined,
 ): KnowledgeEmbeddingPort => ({
   model: `${configuration.provider}:${configuration.model}`,
   dimensions: configuration.dimensions,
   embed: (values) => {
-    let activeBatch: EmbeddingBatchDiagnostics | undefined;
     return Effect.tryPromise({
       try: async () => {
         const invalidIndex = values.findIndex((value) => !hasEmbeddableText(value));
         if (invalidIndex >= 0) {
-          activeBatch = batchDiagnostics([values[invalidIndex] ?? ""], invalidIndex);
-          throw new Error("Embedding input does not contain textual content.");
+          throw new EmbeddingBatchFailure(
+            batchDiagnostics([values[invalidIndex] ?? ""], invalidIndex),
+          );
         }
-        const vectors: (readonly number[])[] = [];
         const model = resolveEmbeddingModel(configuration);
-        for (let offset = 0; offset < values.length; offset += configuration.batchSize) {
-          const batch = values.slice(offset, offset + configuration.batchSize);
-          activeBatch = batchDiagnostics(batch, offset);
-          const result = await runner({
-            model,
-            values: [...batch],
-            maxRetries: configuration.maxRetries ?? 2,
-            abortSignal: AbortSignal.timeout(configuration.timeoutMs),
-            experimental_telemetry: { isEnabled: false },
-          });
-          if (
-            result.embeddings.length !== batch.length ||
-            result.embeddings.some((vector) => vector.length !== configuration.dimensions)
-          )
-            throw new Error("Embedding response shape mismatch.");
-          vectors.push(...result.embeddings);
-        }
-        return vectors;
+        const concurrency = Math.min(Math.max(configuration.concurrency ?? 4, 1), 8);
+        const batches = Array.from(
+          { length: Math.ceil(values.length / configuration.batchSize) },
+          (_, index) => {
+            const offset = index * configuration.batchSize;
+            const batch = values.slice(offset, offset + configuration.batchSize);
+            return { index, offset, batch, diagnostics: batchDiagnostics(batch, offset) };
+          },
+        );
+        diagnosticSink({
+          operation: "embedding-started",
+          totalValues: values.length,
+          totalBatches: batches.length,
+          batchSize: configuration.batchSize,
+          concurrency,
+        });
+        const vectorsByBatch: (readonly (readonly number[])[])[] = Array.from({
+          length: batches.length,
+        });
+        let nextBatch = 0;
+        let completedBatches = 0;
+        let completedValues = 0;
+        const batchFailures: EmbeddingBatchFailure[] = [];
+        const progressInterval = Math.max(1, Math.ceil(batches.length / 10));
+        const worker = async (): Promise<void> => {
+          while (nextBatch < batches.length && batchFailures.length === 0) {
+            const current = batches[nextBatch];
+            nextBatch += 1;
+            if (current === undefined) return;
+            try {
+              const result = await runner({
+                model,
+                values: [...current.batch],
+                maxRetries: configuration.maxRetries ?? 2,
+                abortSignal: AbortSignal.timeout(configuration.timeoutMs),
+                experimental_telemetry: { isEnabled: false },
+              });
+              if (
+                result.embeddings.length !== current.batch.length ||
+                result.embeddings.some((vector) => vector.length !== configuration.dimensions)
+              )
+                throw new Error("Embedding response shape mismatch.");
+              vectorsByBatch[current.index] = result.embeddings;
+              completedBatches += 1;
+              completedValues += current.batch.length;
+              if (completedBatches === batches.length || completedBatches % progressInterval === 0)
+                diagnosticSink({
+                  operation: "embedding-progress",
+                  totalValues: values.length,
+                  totalBatches: batches.length,
+                  completedValues,
+                  completedBatches,
+                });
+            } catch {
+              const failure = new EmbeddingBatchFailure(current.diagnostics);
+              batchFailures.push(failure);
+            }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(concurrency, batches.length) }, () => worker()),
+        );
+        const earliestFailure = batchFailures.sort(
+          (left, right) => left.diagnostics.offset - right.diagnostics.offset,
+        )[0];
+        if (earliestFailure !== undefined) throw earliestFailure;
+        return vectorsByBatch.flatMap((batch) => batch ?? []);
       },
-      catch: () =>
+      catch: (failure) =>
         new RepositoryError({
           message: "Approved embedding service is unavailable.",
-          operation: diagnosticOperation(activeBatch),
+          operation: diagnosticOperation(
+            failure instanceof EmbeddingBatchFailure ? failure.diagnostics : undefined,
+          ),
         }),
     });
   },

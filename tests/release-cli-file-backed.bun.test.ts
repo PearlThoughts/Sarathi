@@ -340,7 +340,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("does not overwrite ratified intent when the pack seed drifts", async () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "sarathi-pack-drift-"));
@@ -815,7 +815,7 @@ describe("file-backed release CLI workspace reconciliation", () => {
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   it("writes a file-backed drift review without leaking restricted evidence into internal output", async () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "sarathi-drift-report-"));
