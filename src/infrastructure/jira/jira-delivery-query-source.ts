@@ -78,7 +78,10 @@ type JiraIssue = {
     }
   >;
 };
-type JiraSearchResponse = { readonly issues?: readonly JiraIssue[] };
+type JiraSearchResponse = {
+  readonly issues?: readonly JiraIssue[];
+  readonly nextPageToken?: string;
+};
 type JiraHistory = {
   readonly id?: string;
   readonly created?: string;
@@ -331,9 +334,12 @@ const searchIssues = async (
   configuration: JiraDeliveryQueryConfiguration,
   jql: string,
   limit: number,
-): Promise<readonly JiraIssue[]> =>
-  (
-    await requestJson<JiraSearchResponse>(configuration, "/rest/api/3/search/jql", {
+): Promise<readonly JiraIssue[]> => {
+  const issues: JiraIssue[] = [];
+  const seenPageTokens = new Set<string>();
+  let nextPageToken: string | undefined;
+  while (issues.length < limit) {
+    const page = await requestJson<JiraSearchResponse>(configuration, "/rest/api/3/search/jql", {
       method: "POST",
       body: JSON.stringify({
         jql,
@@ -351,10 +357,23 @@ const searchIssues = async (
           "issuelinks",
           "sprint",
         ],
-        maxResults: limit,
+        maxResults: Math.min(100, limit - issues.length),
+        ...(nextPageToken === undefined ? {} : { nextPageToken }),
       }),
-    })
-  ).issues ?? [];
+    });
+    issues.push(...(page.issues ?? []));
+    if (
+      page.nextPageToken === undefined ||
+      page.nextPageToken === "" ||
+      seenPageTokens.has(page.nextPageToken) ||
+      (page.issues ?? []).length === 0
+    )
+      break;
+    seenPageTokens.add(page.nextPageToken);
+    nextPageToken = page.nextPageToken;
+  }
+  return issues.slice(0, limit);
+};
 
 const activityItems = async (
   configuration: JiraDeliveryQueryConfiguration,
@@ -653,10 +672,9 @@ export const createJiraDeliveryQuerySource = (
             issues: await searchIssues(
               configuration,
               jqlForView(query.operation.purpose, projects, query),
-              Math.min(
-                query.operation.purpose === "recurring" ? query.limit * 10 : query.limit * 3,
-                50,
-              ),
+              query.operation.purpose === "recurring"
+                ? Math.min(query.limit * 40, 500)
+                : Math.min(query.limit * 3, 50),
             ),
           })),
         );

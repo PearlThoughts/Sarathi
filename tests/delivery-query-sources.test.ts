@@ -492,6 +492,69 @@ describe("delivery intelligence live query sources", () => {
     );
   });
 
+  it("paginates the bounded Jira history before identifying recurring work", async () => {
+    const question = "What issues have recurred in the last 120 days?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic recurring plan");
+    const requests: Array<{ readonly maxResults: number; readonly nextPageToken?: string }> = [];
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          readonly maxResults: number;
+          readonly nextPageToken?: string;
+        };
+        requests.push({
+          maxResults: body.maxResults,
+          ...(body.nextPageToken === undefined ? {} : { nextPageToken: body.nextPageToken }),
+        });
+        if (body.nextPageToken === undefined)
+          return Response.json({
+            issues: Array.from({ length: 100 }, (_, index) => ({
+              key: `DEMO-${index + 1}`,
+              fields: {
+                summary:
+                  index === 0
+                    ? "Repair editor publish workflow failure"
+                    : `Distinct-${index} delivery work item`,
+                created: "2026-07-19T09:00:00.000Z",
+                updated: "2026-07-19T09:00:00.000Z",
+              },
+            })),
+            nextPageToken: "page-2",
+          });
+        return Response.json({
+          issues: [
+            {
+              key: "DEMO-101",
+              fields: {
+                summary: "Repair editor publish workflow failure",
+                created: "2026-07-18T09:00:00.000Z",
+                updated: "2026-07-18T09:00:00.000Z",
+              },
+            },
+          ],
+        });
+      },
+    });
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(requests).toEqual([{ maxResults: 100 }, { maxResults: 100, nextPageToken: "page-2" }]);
+    expect(result.items).toMatchObject([
+      {
+        intent: "recurring",
+        summary:
+          "Recurring pattern across 2 issues: DEMO-1, DEMO-101 — Repair editor publish workflow failure",
+      },
+    ]);
+  });
+
   it("filters Teams channels before requesting a token or Graph content", async () => {
     let tokenRequests = 0;
     let graphRequests = 0;
