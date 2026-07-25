@@ -27,7 +27,7 @@ type DeliverySyncSchedulerController = {
 type DiagnosticSink = (diagnostic: DeliverySyncSchedulerDiagnostic) => void;
 
 const continuousSources = ["jira", "vault", "teams", "github"] as const;
-const defaultIntervalSeconds = 45 * 60;
+const defaultIntervalSeconds = 15 * 60;
 const defaultInitialDelaySeconds = 60;
 
 const enabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === "true";
