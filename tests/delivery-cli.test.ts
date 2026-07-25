@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runDeliveryCommand } from "../src/cli/commands/delivery-runtime.ts";
 import { runReleaseCli } from "../src/cli/release.ts";
 import { RepositoryError } from "../src/domain/errors.ts";
+import { stableSha256 } from "../src/domain/hash.ts";
 
 describe("delivery CLI", () => {
   it("exposes privacy-safe durable status", async () => {
@@ -95,6 +96,121 @@ describe("delivery CLI", () => {
         intents: ["status"],
       },
     });
+  });
+
+  it("runs a privacy-safe representative evaluation set through the production answer path", async () => {
+    const answerText = [
+      "Here’s the current delivery status I found.",
+      "- 📊 **Status:** Internal status detail [Jira 1](https://jira.example/browse/DEMO-1)",
+    ].join("\n");
+    const answer = vi.fn(async (_request) => ({
+      text: answerText,
+      citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
+      status: "ok" as const,
+      plan: {
+        version: 1 as const,
+        intents: ["status" as const],
+        operations: [
+          { id: "status-1", purpose: "status" as const, select: "objects" as const, limit: 5 },
+        ],
+        answerMode: "deterministic" as const,
+        maximumLines: 3 as const,
+        requiresFinance: false,
+      },
+      responseMode: "fast" as const,
+      acceptance: {
+        mode: "fast" as const,
+        elapsedMs: 250,
+        latencyTargetMs: 10_000,
+        latencyPassed: true,
+        requestedIntents: 1,
+        coveredIntents: 1,
+        completenessRatio: 1,
+        completenessPassed: true,
+        materialStatements: 1,
+        citedStatements: 1,
+        citationCoverage: 1,
+        citationPassed: true,
+        groundingPassed: true,
+        freshEvidence: 1,
+        evaluatedEvidence: 1,
+        freshnessCoverage: 1,
+        freshnessPassed: true,
+        formatPassed: true,
+        passed: true,
+      },
+      unavailableSources: [],
+      conflicts: [],
+    }));
+    const evaluationSet = JSON.stringify({
+      version: 1,
+      thresholds: {
+        minimumPassRate: 1,
+        minimumHumanUsefulnessAverage: 4,
+      },
+      cases: [
+        {
+          id: "project-status",
+          question: "Private project status wording",
+          expected: {
+            outcome: "answer",
+            intents: ["status"],
+            status: "ok",
+            minimumCitations: 1,
+            citationSources: ["jira"],
+            acceptancePassed: true,
+            ratedAnswerFingerprint: stableSha256(answerText),
+            humanUsefulnessRating: 5,
+          },
+        },
+      ],
+    });
+
+    const result = await runDeliveryCommand(
+      [
+        "evaluate",
+        "--actor-id",
+        "actor-1",
+        "--time-zone",
+        "Asia/Kolkata",
+        "--set-json",
+        evaluationSet,
+      ],
+      {
+        SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
+      },
+      { answer },
+    );
+
+    expect(answer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: "Private project status wording",
+        actorId: "actor-1",
+      }),
+    );
+    expect(result).toMatchObject({
+      exitCode: 0,
+      output: {
+        ok: true,
+        operation: "delivery-evaluate",
+        report: {
+          passed: true,
+          total: 1,
+          passedCount: 1,
+          quality: {
+            completenessPassRate: 1,
+            citationPassRate: 1,
+            groundingPassRate: 1,
+            freshnessPassRate: 1,
+            latencyPassRate: 1,
+          },
+        },
+      },
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("Private project status wording");
+    expect(serialized).not.toContain("Internal status detail");
+    expect(serialized).not.toContain("https://jira.example");
   });
 
   it("implements rebuild as a non-destructive full reconciliation", async () => {

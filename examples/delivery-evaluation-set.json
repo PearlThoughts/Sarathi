@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "thresholds": {
+    "minimumPassRate": 1
+  },
+  "cases": [
+    {
+      "id": "project-status",
+      "question": "What is the current project status?",
+      "responseMode": "fast",
+      "expected": {
+        "outcome": "answer",
+        "intents": ["status"],
+        "status": "ok",
+        "minimumCitations": 1,
+        "citationSources": ["jira"],
+        "acceptancePassed": true
+      }
+    },
+    {
+      "id": "finance-denied",
+      "question": "What is the project budget?",
+      "expected": {
+        "outcome": "deny",
+        "failureOperation": "delivery-finance-authorization"
+      }
+    }
+  ]
+}

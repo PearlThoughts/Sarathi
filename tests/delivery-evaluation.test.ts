@@ -1,0 +1,220 @@
+import { describe, expect, it } from "vitest";
+import { stableSha256 } from "../src/domain/hash.ts";
+import {
+  type DeliveryAssistantAnswer,
+  evaluateDeliveryCase,
+  parseDeliveryEvaluationSet,
+  summarizeDeliveryEvaluation,
+} from "../src/modules/delivery-intelligence/index.ts";
+
+const acceptedAnswer = (): DeliveryAssistantAnswer => ({
+  text: [
+    "Here’s the current delivery status I found.",
+    "- 📊 **Status:** Release is ready [Jira 1](https://jira.example/browse/DEMO-1)",
+  ].join("\n"),
+  citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
+  status: "ok",
+  responseMode: "fast",
+  acceptance: {
+    mode: "fast",
+    elapsedMs: 350,
+    latencyTargetMs: 10_000,
+    latencyPassed: true,
+    requestedIntents: 1,
+    coveredIntents: 1,
+    completenessRatio: 1,
+    completenessPassed: true,
+    materialStatements: 1,
+    citedStatements: 1,
+    citationCoverage: 1,
+    citationPassed: true,
+    groundingPassed: true,
+    freshEvidence: 1,
+    evaluatedEvidence: 1,
+    freshnessCoverage: 1,
+    freshnessPassed: true,
+    formatPassed: true,
+    passed: true,
+  },
+  plan: {
+    version: 1,
+    intents: ["status"],
+    operations: [
+      {
+        id: "status-1",
+        purpose: "status",
+        select: "objects",
+        limit: 5,
+      },
+    ],
+    answerMode: "deterministic",
+    maximumLines: 3,
+    requiresFinance: false,
+  },
+  unavailableSources: [],
+  conflicts: [],
+});
+const acceptedAnswerFingerprint = stableSha256(acceptedAnswer().text);
+
+describe("delivery evaluation", () => {
+  it("validates a bounded versioned set and rejects duplicate case IDs", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: {
+        minimumPassRate: 1,
+        minimumHumanUsefulnessAverage: 4,
+      },
+      cases: [
+        {
+          id: "status",
+          question: "What is the status?",
+          expected: {
+            outcome: "answer",
+            intents: ["status"],
+            minimumCitations: 1,
+            citationSources: ["jira"],
+            ratedAnswerFingerprint: acceptedAnswerFingerprint,
+            humanUsefulnessRating: 4,
+          },
+        },
+      ],
+    });
+
+    expect(evaluationSet.cases).toHaveLength(1);
+    expect(() =>
+      parseDeliveryEvaluationSet({
+        ...evaluationSet,
+        cases: [evaluationSet.cases[0], evaluationSet.cases[0]],
+      }),
+    ).toThrow("unique safe identifiers");
+    expect(() =>
+      parseDeliveryEvaluationSet({
+        version: 1,
+        thresholds: { minimumPassRate: 1 },
+        cases: [
+          {
+            id: "unsafe-denial",
+            question: "Should this be denied?",
+            expected: { outcome: "deny" },
+          },
+        ],
+      }),
+    ).toThrow("exact failure operation");
+  });
+
+  it("scores answer and denial cases without returning question or answer bodies", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: {
+        minimumPassRate: 1,
+        minimumHumanUsefulnessAverage: 4,
+      },
+      cases: [
+        {
+          id: "status",
+          question: "What is the status?",
+          expected: {
+            outcome: "answer",
+            intents: ["status"],
+            status: "ok",
+            minimumCitations: 1,
+            citationSources: ["jira"],
+            requiredTerms: ["release is ready"],
+            forbiddenTerms: ["private finance"],
+            acceptancePassed: true,
+            ratedAnswerFingerprint: acceptedAnswerFingerprint,
+            humanUsefulnessRating: 5,
+          },
+        },
+        {
+          id: "finance-denied",
+          question: "What is the project budget?",
+          expected: {
+            outcome: "deny",
+            failureOperation: "delivery-finance-authorization",
+          },
+        },
+      ],
+    });
+    const statusCase = evaluationSet.cases[0];
+    const financeCase = evaluationSet.cases[1];
+    if (statusCase === undefined || financeCase === undefined)
+      throw new Error("Expected two evaluation cases.");
+    const results = [
+      evaluateDeliveryCase(statusCase, {
+        kind: "answer",
+        answer: acceptedAnswer(),
+      }),
+      evaluateDeliveryCase(financeCase, {
+        kind: "failure",
+        operation: "delivery-finance-authorization",
+      }),
+    ];
+    const report = summarizeDeliveryEvaluation(evaluationSet, results);
+
+    expect(report).toMatchObject({
+      passed: true,
+      total: 2,
+      passedCount: 2,
+      passRate: 1,
+      humanUsefulness: {
+        ratedCount: 1,
+        answerCount: 1,
+        average: 5,
+        minimum: 4,
+        passed: true,
+      },
+      quality: {
+        answeredCount: 1,
+        completenessPassRate: 1,
+        citationPassRate: 1,
+        groundingPassRate: 1,
+        freshnessPassRate: 1,
+        formatPassRate: 1,
+        latencyPassRate: 1,
+      },
+    });
+    expect(results[0]?.answerFingerprint).toMatch(/^sha256-[a-f0-9]{64}$/);
+    expect(JSON.stringify(report)).not.toContain("What is the status?");
+    expect(JSON.stringify(report)).not.toContain("Release is ready");
+    expect(JSON.stringify(report)).not.toContain("https://jira.example");
+  });
+
+  it("invalidates a human rating when the answer fingerprint changes", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: {
+        minimumPassRate: 1,
+        minimumHumanUsefulnessAverage: 4,
+      },
+      cases: [
+        {
+          id: "status",
+          question: "What is the status?",
+          expected: {
+            outcome: "answer",
+            ratedAnswerFingerprint: `sha256-${"0".repeat(64)}`,
+            humanUsefulnessRating: 5,
+          },
+        },
+      ],
+    });
+    const statusCase = evaluationSet.cases[0];
+    if (statusCase === undefined) throw new Error("Expected one evaluation case.");
+    const result = evaluateDeliveryCase(statusCase, {
+      kind: "answer",
+      answer: acceptedAnswer(),
+    });
+
+    expect(summarizeDeliveryEvaluation(evaluationSet, [result])).toMatchObject({
+      passed: false,
+      passRate: 0,
+      humanUsefulness: {
+        ratedCount: 0,
+        answerCount: 1,
+        passed: false,
+      },
+    });
+    expect(result.failures).toContain("human_rating_fingerprint_mismatch");
+  });
+});

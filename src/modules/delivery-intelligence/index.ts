@@ -3,6 +3,18 @@ export {
   createDeliveryAssistant,
   deliveryResponseBudget,
 } from "./application/create-delivery-assistant.ts";
+export type {
+  DeliveryEvaluationCase,
+  DeliveryEvaluationOutcome,
+  DeliveryEvaluationReport,
+  DeliveryEvaluationResult,
+  DeliveryEvaluationSet,
+} from "./application/delivery-evaluation.ts";
+export {
+  evaluateDeliveryCase,
+  parseDeliveryEvaluationSet,
+  summarizeDeliveryEvaluation,
+} from "./application/delivery-evaluation.ts";
 export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";
 export { parseAttributedDeliveryAssertion } from "./domain/attributed-assertion.ts";
 export type {

@@ -218,3 +218,5 @@ A representative evaluation set must include:
 - restricted-repository and mixed-ACL non-disclosure.
 
 Measure structured retrieval correctness, completeness, grounding, citation resolution, freshness, authorization, latency, confidence calibration, and human usefulness. Production acceptance requires real source changes, exact-branch CI, useful Teams answers, and rollback proof; schema shape or ingestion counts alone are insufficient.
+
+The versioned evaluation runner must execute the same authorized answer path as production. Its stored output is privacy-safe aggregate evidence: case IDs, failure codes, answer fingerprints, acceptance dimensions, citation counts, and human ratings. Real project questions, expected terms, and ratings remain in the private deployment overlay. A human rating is valid only for the exact reviewed answer fingerprint; declared human-usefulness thresholds fail closed when an answer is unrated or changes after review.
