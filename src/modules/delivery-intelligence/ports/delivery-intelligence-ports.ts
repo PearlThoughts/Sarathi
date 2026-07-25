@@ -54,10 +54,17 @@ export type DeliveryResultItem = {
   readonly sourceUpdatedAt?: string | undefined;
   readonly indexedAt?: string | undefined;
   readonly subjectAliases?: readonly string[] | undefined;
+  readonly owner?: DeliveryOwnerReference | undefined;
   readonly lifecycleState?: DeliveryLifecycleState | undefined;
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
   readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
+};
+
+export type DeliveryOwnerReference = {
+  readonly source: DeliverySourceKind;
+  readonly externalId?: string | undefined;
+  readonly displayName: string;
 };
 
 export type DeliveryLifecycleState =

@@ -72,7 +72,7 @@ A member asks who is waiting for whom, whether anyone is stuck, or for the top r
 
 A member asks what the team delivered last sprint, is doing this week, or did today. Sarathi applies the requested sprint or calendar window as a filter over work, observations, and live activity.
 
-**Independent test**: yesterday, today, week, current-sprint, previous-sprint, and quarter questions use the same domain model with different optional boundaries. Fast operational questions return in less than ten seconds; requested deep dives follow an explicit completeness-first response mode.
+**Independent test**: yesterday, today, week, current-sprint, previous-sprint, and quarter questions use the same domain model with different optional boundaries. Whole-team weekly work preserves source-stable assignee identity, represents distinct owners instead of only the newest items, and states the retrieved window, named-owner coverage, unassigned work, and any response-cap omission. Fast operational questions return in less than ten seconds; requested deep dives follow an explicit completeness-first response mode.
 
 The response opens by acknowledging the requested reporting scope, uses concise
 visual bullets for the material status, and ends with one numbered action. When

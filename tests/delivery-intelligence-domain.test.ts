@@ -111,6 +111,26 @@ describe("delivery intelligence domain", () => {
     ]);
   });
 
+  it("widens whole-team weekly work retrieval unless the user requests a top limit", () => {
+    const weekly = planDeliveryQuestion("What is planned this week?");
+    const limited = planDeliveryQuestion("What are the top 4 items planned this week?");
+
+    expect(weekly?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "current_work",
+        time: { kind: "workspace_week" },
+        limit: 20,
+      }),
+    ]);
+    expect(limited?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "current_work",
+        time: { kind: "workspace_week" },
+        limit: 4,
+      }),
+    ]);
+  });
+
   it("models review queues as observations instead of generic message retrieval", () => {
     const plan = planDeliveryQuestion(
       "Which items are waiting for review, and who needs to review each?",
