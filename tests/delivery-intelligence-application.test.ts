@@ -873,6 +873,46 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("- ⚠️ **Coverage:** Jira, Vault unavailable.");
   });
 
+  it("fails completeness acceptance when one source is unavailable despite useful evidence", async () => {
+    const projection: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [item("jira", "risk", "DEMO-21 is at risk", "risks")],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const teams: DeliveryQuerySource = {
+      source: "teams",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.fail(
+          new RepositoryError({
+            message: "test Teams failure",
+            operation: "test",
+          }),
+        ),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [projection, teams] }).answer({
+        ...request,
+        question: "What are the delivery risks?",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.unavailableSources).toEqual(["teams"]);
+    expect(answer.acceptance).toMatchObject({
+      completenessRatio: 1,
+      completenessPassed: false,
+      passed: false,
+    });
+  });
+
   it("synthesizes only authorized deduplicated records and validates model citations", async () => {
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
       Effect.succeed({

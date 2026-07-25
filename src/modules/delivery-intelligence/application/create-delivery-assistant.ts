@@ -778,7 +778,9 @@ const responseAcceptance = (
   const citationCoverage = ratio(citedLines.length, materialLines.length);
   const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
   const completenessPassed =
-    completenessRatio === 1 && (result.missingRequiredSources?.length ?? 0) === 0;
+    completenessRatio === 1 &&
+    (result.missingRequiredSources?.length ?? 0) === 0 &&
+    result.unavailableSources.length === 0;
   const citationPassed = citationCoverage === 1;
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;
