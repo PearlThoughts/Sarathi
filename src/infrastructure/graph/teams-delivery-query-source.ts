@@ -228,8 +228,11 @@ export const createTeamsDeliveryQuerySource = (
             isSensitivityAtOrBelow(channel.sensitivity, context.maximumSensitivity) &&
             channelMatchesPlan(channel, plan),
         );
-        const operations = plan.operations.filter((operation) =>
-          ["objects", "relations", "observations", "claims"].includes(operation.select),
+        const operations = plan.operations.filter(
+          (operation) =>
+            ["objects", "relations", "observations", "claims"].includes(operation.select) &&
+            operation.groupBy === undefined &&
+            operation.measures === undefined,
         );
         if (channels.length === 0 || channels.length > 32 || operations.length === 0)
           return emptyResult();
