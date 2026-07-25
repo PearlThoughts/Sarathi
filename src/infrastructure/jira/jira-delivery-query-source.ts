@@ -82,6 +82,10 @@ type JiraSearchResponse = {
   readonly issues?: readonly JiraIssue[];
   readonly nextPageToken?: string;
 };
+type JiraSearchResult = {
+  readonly issues: readonly JiraIssue[];
+  readonly exhausted: boolean;
+};
 type JiraHistory = {
   readonly id?: string;
   readonly created?: string;
@@ -176,6 +180,16 @@ const requestJson = async <Value>(
 
 const issueUrl = (configuration: JiraDeliveryQueryConfiguration, key: string): string =>
   new URL(`/browse/${encodeURIComponent(key)}`, configuration.baseUrl).toString();
+const issueSearchUrl = (
+  configuration: JiraDeliveryQueryConfiguration,
+  jql: string,
+  purpose: JiraSupportedIntent,
+): string => {
+  const url = new URL("/issues/", configuration.baseUrl);
+  url.searchParams.set("jql", jql);
+  url.hash = purpose;
+  return url.toString();
+};
 const issueTitle = (issue: JiraIssue): string =>
   issue.fields?.summary?.replace(/\s+/g, " ").trim() || issue.key || "Jira issue";
 const issueOwner = (issue: JiraIssue | JiraLinkedIssue): string =>
@@ -334,10 +348,11 @@ const searchIssues = async (
   configuration: JiraDeliveryQueryConfiguration,
   jql: string,
   limit: number,
-): Promise<readonly JiraIssue[]> => {
+): Promise<JiraSearchResult> => {
   const issues: JiraIssue[] = [];
   const seenPageTokens = new Set<string>();
   let nextPageToken: string | undefined;
+  let exhausted = false;
   while (issues.length < limit) {
     const page = await requestJson<JiraSearchResponse>(configuration, "/rest/api/3/search/jql", {
       method: "POST",
@@ -365,14 +380,44 @@ const searchIssues = async (
     if (
       page.nextPageToken === undefined ||
       page.nextPageToken === "" ||
-      seenPageTokens.has(page.nextPageToken) ||
       (page.issues ?? []).length === 0
-    )
+    ) {
+      exhausted = true;
       break;
+    }
+    if (seenPageTokens.has(page.nextPageToken)) break;
     seenPageTokens.add(page.nextPageToken);
     nextPageToken = page.nextPageToken;
   }
-  return issues.slice(0, limit);
+  return { issues: issues.slice(0, limit), exhausted };
+};
+
+const negativeRelationshipCoverageItem = (
+  configuration: JiraDeliveryQueryConfiguration,
+  query: JiraDeliveryQuery,
+  jql: string,
+  inspectedCount: number,
+): DeliveryResultItem => {
+  const purpose = query.operation.purpose;
+  const summary =
+    purpose === "dependencies"
+      ? `No explicit dependency or waiting relationship was recorded across ${inspectedCount} active-sprint Jira issues.`
+      : `No blocked status, blocker label, or blocking issue link was recorded across ${inspectedCount} active-sprint Jira issues.`;
+  return {
+    id: `jira:coverage:${purpose}`,
+    source: "jira",
+    workspaceId: query.workspaceId,
+    selector: query.operation.select,
+    intent: purpose,
+    title: purpose === "dependencies" ? "Jira dependency coverage" : "Jira blocker coverage",
+    summary,
+    citationUrl: issueSearchUrl(configuration, jql, purpose),
+    observedAt: query.requestedAt,
+    lifecycleState: "unknown",
+    sensitivity: configuration.sensitivity ?? "internal",
+    authority: configuration.authority ?? 0.95,
+    dedupeKey: `jira:coverage:${purpose}`,
+  };
 };
 
 const activityItems = async (
@@ -667,64 +712,81 @@ export const createJiraDeliveryQuerySource = (
           return query === undefined ? [] : [query];
         });
         const searches = await Promise.all(
-          queries.map(async (query) => ({
-            query,
-            issues: await searchIssues(
+          queries.map(async (query) => {
+            const jql = jqlForView(query.operation.purpose, projects, query);
+            const result = await searchIssues(
               configuration,
-              jqlForView(query.operation.purpose, projects, query),
-              query.operation.purpose === "recurring"
+              jql,
+              query.operation.purpose === "recurring" ||
+                query.operation.purpose === "dependencies" ||
+                query.operation.purpose === "blockers"
                 ? Math.min(query.limit * 40, 500)
                 : Math.min(query.limit * 3, 50),
-            ),
-          })),
+            );
+            return { query, jql, ...result };
+          }),
         );
         const items = await Promise.all(
-          searches.map(async ({ query, issues }) => {
+          searches.map(async ({ query, jql, issues, exhausted }) => {
             const connectedIssues = issues.filter(
               (issue) =>
                 issue.key !== undefined && configuration.projectKeys.includes(issueProject(issue)),
             );
-            switch (query.operation.purpose) {
-              case "activity":
-                return activityItems(configuration, query, connectedIssues);
-              case "dependencies":
-                return dependencyItems(configuration, query, connectedIssues);
-              case "blockers":
-                return blockedItems(configuration, query, connectedIssues);
-              case "delivered":
-                return deliveredItems(configuration, query, connectedIssues);
-              case "current_work":
-                return currentWorkItems(configuration, query, connectedIssues);
-              case "ownership":
-                return ownershipItems(configuration, query, connectedIssues);
-              case "next_actions":
-                return nextActionItems(configuration, query, connectedIssues);
-              case "risks":
-                return riskItems(configuration, query, connectedIssues);
-              case "recurring":
-                return recurringItems(configuration, query, connectedIssues);
-              case "status":
-                return currentWorkItems(
-                  configuration,
-                  query,
-                  [...connectedIssues].sort((left, right) => {
-                    const priority: Readonly<Record<DeliveryLifecycleState, number>> = {
-                      blocked: 0,
-                      active: 1,
-                      planned: 2,
-                      unknown: 3,
-                      done: 4,
-                      canceled: 5,
-                    };
-                    return (
-                      (priority[issueLifecycleState(left)] ?? 6) -
-                        (priority[issueLifecycleState(right)] ?? 6) ||
-                      Date.parse(right.fields?.updated ?? "") -
-                        Date.parse(left.fields?.updated ?? "")
-                    );
-                  }),
-                );
-            }
+            const selected = await (async () => {
+              switch (query.operation.purpose) {
+                case "activity":
+                  return activityItems(configuration, query, connectedIssues);
+                case "dependencies":
+                  return dependencyItems(configuration, query, connectedIssues);
+                case "blockers":
+                  return blockedItems(configuration, query, connectedIssues);
+                case "delivered":
+                  return deliveredItems(configuration, query, connectedIssues);
+                case "current_work":
+                  return currentWorkItems(configuration, query, connectedIssues);
+                case "ownership":
+                  return ownershipItems(configuration, query, connectedIssues);
+                case "next_actions":
+                  return nextActionItems(configuration, query, connectedIssues);
+                case "risks":
+                  return riskItems(configuration, query, connectedIssues);
+                case "recurring":
+                  return recurringItems(configuration, query, connectedIssues);
+                case "status":
+                  return currentWorkItems(
+                    configuration,
+                    query,
+                    [...connectedIssues].sort((left, right) => {
+                      const priority: Readonly<Record<DeliveryLifecycleState, number>> = {
+                        blocked: 0,
+                        active: 1,
+                        planned: 2,
+                        unknown: 3,
+                        done: 4,
+                        canceled: 5,
+                      };
+                      return (
+                        (priority[issueLifecycleState(left)] ?? 6) -
+                          (priority[issueLifecycleState(right)] ?? 6) ||
+                        Date.parse(right.fields?.updated ?? "") -
+                          Date.parse(left.fields?.updated ?? "")
+                      );
+                    }),
+                  );
+              }
+            })();
+            return selected.length === 0 &&
+              exhausted &&
+              (query.operation.purpose === "dependencies" || query.operation.purpose === "blockers")
+              ? [
+                  negativeRelationshipCoverageItem(
+                    configuration,
+                    query,
+                    jql,
+                    connectedIssues.length,
+                  ),
+                ]
+              : selected;
           }),
         );
         const seen = new Set<string>();
