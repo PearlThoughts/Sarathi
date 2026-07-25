@@ -441,6 +441,16 @@ export const runDeliverySyncCommand = async (
       });
       const embeddings = createAiSdkKnowledgeEmbedding(
         knowledgeEmbeddingConfigurationFromEnvironment(environment),
+        undefined,
+        (diagnostic) => {
+          console.error(
+            JSON.stringify({
+              event: "knowledge_embedding",
+              source: selection,
+              ...diagnostic,
+            }),
+          );
+        },
       );
       const ownerId = synchronizationExecutionOwnerId(
         required("SARATHI_SYNC_OWNER_ID", environment.SARATHI_SYNC_OWNER_ID),
