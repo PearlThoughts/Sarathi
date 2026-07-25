@@ -138,6 +138,7 @@ type Activity = {
   readonly url: string;
   readonly createdAt: string;
   readonly occurredAt: string;
+  readonly outcomeAt?: string | undefined;
   readonly actor?: string | undefined;
   readonly state?: string | undefined;
   readonly changedFiles?: readonly string[] | undefined;
@@ -475,6 +476,15 @@ const workItemKeys = (value: string): readonly string[] => [
   ...new Set(value.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []),
 ];
 
+const deliveryOutcomeState = (
+  activity: Activity,
+): "merged" | "released" | "deployed" | undefined => {
+  if (activity.kind === "pull_request" && activity.state === "merged") return "merged";
+  if (activity.sourceType === "release" && activity.state === "released") return "released";
+  if (activity.sourceType === "deployment") return "deployed";
+  return undefined;
+};
+
 const activityProjection = (
   repository: GitHubKnowledgeRepository,
   activity: Activity,
@@ -483,6 +493,14 @@ const activityProjection = (
     kind: "module",
     externalKey: `github:${repository.repository}`,
   };
+  const outcomeState = deliveryOutcomeState(activity);
+  const outcomeRef: DeliveryObjectRef | undefined =
+    outcomeState === undefined
+      ? undefined
+      : {
+          kind: "deliverable",
+          externalKey: `github:${repository.repository}:activity:${activity.sourceType}:${activity.id}`,
+        };
   const actorRef: DeliveryObjectRef | undefined =
     activity.actor === undefined
       ? undefined
@@ -506,8 +524,39 @@ const activityProjection = (
             sensitivity: repository.sensitivity,
           } satisfies DeliveryObjectDraft,
         ]),
+    ...(outcomeRef === undefined
+      ? []
+      : [
+          {
+            ...outcomeRef,
+            title: activity.title,
+            lifecycleState: outcomeState,
+            observedAt: activity.outcomeAt ?? activity.occurredAt,
+            attributes: {
+              repository: repository.repository,
+              activityKind: activity.kind,
+              sourceType: activity.sourceType,
+              state: activity.state ?? outcomeState,
+              ...(activity.changedFiles === undefined
+                ? {}
+                : { changedFiles: activity.changedFiles }),
+            },
+            sensitivity: repository.sensitivity,
+          } satisfies DeliveryObjectDraft,
+        ]),
   ];
-  const relations: DeliveryProjection["relations"][number][] = [];
+  const relations: DeliveryProjection["relations"][number][] =
+    outcomeRef === undefined
+      ? []
+      : [
+          {
+            kind: "contains",
+            from: repoRef,
+            to: outcomeRef,
+            attributes: { activityId: activity.id },
+            sensitivity: repository.sensitivity,
+          },
+        ];
   for (const key of activity.workItemKeys ?? []) {
     const workItem: DeliveryObjectRef = { kind: "work_item", externalKey: key };
     objects.push({
@@ -521,7 +570,7 @@ const activityProjection = (
         activity.kind === "commit" || activity.kind === "pull_request"
           ? "implements"
           : "relates_to",
-      from: repoRef,
+      from: outcomeRef ?? repoRef,
       to: workItem,
       attributes: { activityId: activity.id },
       sensitivity: repository.sensitivity,
@@ -531,7 +580,7 @@ const activityProjection = (
     relations.push({
       kind: "participates_in",
       from: actorRef,
-      to: repoRef,
+      to: outcomeRef ?? repoRef,
       attributes: { activityId: activity.id },
       sensitivity: repository.sensitivity,
     });
@@ -542,11 +591,11 @@ const activityProjection = (
       {
         kind: activity.kind,
         externalId: activity.id,
-        subject: repoRef,
+        subject: outcomeRef ?? repoRef,
         actorExternalKey: activity.actor === undefined ? undefined : `github:${activity.actor}`,
         summary: activity.title,
         dedupeKey: `github:${repository.repository}:${activity.kind}:${activity.id}`,
-        occurredAt: activity.occurredAt,
+        occurredAt: activity.outcomeAt ?? activity.occurredAt,
         citationUrl: activity.url,
         sensitivity: repository.sensitivity,
         authority: repository.authority ?? 0.92,
@@ -658,6 +707,7 @@ const readActivities = async (
         url: pull.html_url,
         createdAt: pull.created_at,
         occurredAt: pull.updated_at,
+        outcomeAt: pull.merged_at ?? undefined,
         actor: pull.user?.login,
         state: pull.merged_at == null ? pull.state : "merged",
         changedFiles: files.flatMap(({ filename }) => (filename === undefined ? [] : [filename])),

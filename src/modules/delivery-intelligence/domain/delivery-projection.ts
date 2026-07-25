@@ -12,6 +12,7 @@ export type DeliveryObjectDraft = DeliveryObjectRef & {
   readonly lifecycleState?: string | undefined;
   readonly attributes: Readonly<Record<string, unknown>>;
   readonly sensitivity: SensitivityTier;
+  readonly observedAt?: string | undefined;
   readonly effectiveFrom?: string | undefined;
   readonly effectiveTo?: string | undefined;
 };

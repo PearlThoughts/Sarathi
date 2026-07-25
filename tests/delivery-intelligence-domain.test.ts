@@ -86,7 +86,25 @@ describe("delivery intelligence domain", () => {
     expect(plan?.operations).toEqual([
       expect.objectContaining({
         purpose: "delivered",
+        predicates: [
+          {
+            field: "lifecycleState",
+            operator: "in",
+            value: ["done", "delivered", "merged", "released", "deployed"],
+          },
+        ],
         time: { kind: "workspace_previous_week" },
+      }),
+    ]);
+  });
+
+  it("bounds delivered-this-week questions to the current workspace week", () => {
+    const plan = planDeliveryQuestion("What was delivered this week?");
+
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "delivered",
+        time: { kind: "workspace_week" },
       }),
     ]);
   });

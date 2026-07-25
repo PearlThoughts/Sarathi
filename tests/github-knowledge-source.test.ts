@@ -163,11 +163,40 @@ describe("GitHub knowledge source", () => {
         objects: expect.arrayContaining([
           expect.objectContaining({ kind: "work_item", externalKey: "SAR-42" }),
           expect.objectContaining({ kind: "person", externalKey: "github:delivery-engineer" }),
+          expect.objectContaining({
+            kind: "deliverable",
+            externalKey: "github:example/sarathi:activity:pull_request:42",
+            lifecycleState: "merged",
+            observedAt: "2026-07-20T10:00:00.000Z",
+          }),
+        ]),
+        relations: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "contains",
+            from: { kind: "module", externalKey: "github:example/sarathi" },
+            to: {
+              kind: "deliverable",
+              externalKey: "github:example/sarathi:activity:pull_request:42",
+            },
+          }),
+          expect.objectContaining({
+            kind: "implements",
+            from: {
+              kind: "deliverable",
+              externalKey: "github:example/sarathi:activity:pull_request:42",
+            },
+            to: { kind: "work_item", externalKey: "SAR-42" },
+          }),
         ]),
         observations: [
           expect.objectContaining({
             kind: "pull_request",
             actorExternalKey: "github:delivery-engineer",
+            subject: {
+              kind: "deliverable",
+              externalKey: "github:example/sarathi:activity:pull_request:42",
+            },
+            occurredAt: "2026-07-20T10:00:00.000Z",
           }),
         ],
       },
@@ -181,6 +210,81 @@ describe("GitHub knowledge source", () => {
     expect(requests.filter((url) => url.includes("/tarball/commit-1"))).toHaveLength(1);
     expect(requests.some((url) => url.includes("/git/blobs/"))).toBe(false);
     expect(requests.some((url) => /generated-1|secret-1|image-1/.test(url))).toBe(false);
+  });
+
+  it("keeps released and deployed outcomes distinct in the delivery projection", async () => {
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      historySince: "2026-01-20T00:00:00.000Z",
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({
+            sha: "commit-1",
+            commit: { committer: { date: "2026-07-20T12:00:00.000Z" } },
+          });
+        if (url.includes("/git/trees/commit-1")) return Response.json({ tree: [] });
+        if (url.includes("/pulls?")) return Response.json([]);
+        if (url.includes("/commits?") && url.includes("since=")) return Response.json([]);
+        if (url.includes("/releases?"))
+          return Response.json([
+            {
+              id: 17,
+              tag_name: "v1.7.0",
+              name: "Delivery release",
+              body: "Production-ready delivery",
+              html_url: "https://github.com/example/sarathi/releases/tag/v1.7.0",
+              created_at: "2026-07-20T09:00:00.000Z",
+              published_at: "2026-07-20T10:00:00.000Z",
+              author: { login: "release-owner" },
+            },
+          ]);
+        if (url.includes("/deployments?"))
+          return Response.json([
+            {
+              id: 18,
+              sha: "commit-1",
+              ref: "main",
+              environment: "production",
+              description: "Production deployment",
+              created_at: "2026-07-20T11:00:00.000Z",
+              updated_at: "2026-07-20T11:30:00.000Z",
+              creator: { login: "deploy-owner" },
+            },
+          ]);
+        if (url.includes("/check-runs?")) return Response.json({ check_runs: [] });
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+    const outcomes = snapshot.documents
+      .flatMap(({ deliveryProjection }) => deliveryProjection?.objects ?? [])
+      .filter(({ kind }) => kind === "deliverable")
+      .map(({ externalKey, lifecycleState, observedAt }) => ({
+        externalKey,
+        lifecycleState,
+        observedAt,
+      }))
+      .sort((left, right) => left.externalKey.localeCompare(right.externalKey));
+
+    expect(outcomes).toEqual([
+      {
+        externalKey: "github:example/sarathi:activity:deployment:deployment:18",
+        lifecycleState: "deployed",
+        observedAt: "2026-07-20T11:30:00.000Z",
+      },
+      {
+        externalKey: "github:example/sarathi:activity:release:release:17",
+        lifecycleState: "released",
+        observedAt: "2026-07-20T10:00:00.000Z",
+      },
+    ]);
   });
 
   it("bounds a single long source line before embedding", async () => {
