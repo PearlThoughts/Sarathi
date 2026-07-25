@@ -173,7 +173,13 @@ describe("delivery evaluation", () => {
         formatPassRate: 1,
         latencyPassRate: 1,
       },
+      authorization: {
+        checkCount: 1,
+        passedCount: 1,
+        passRate: 1,
+      },
     });
+    expect(results.map(({ category }) => category)).toEqual(["quality", "authorization"]);
     expect(results[0]?.answerFingerprint).toMatch(/^sha256-[a-f0-9]{64}$/);
     expect(JSON.stringify(report)).not.toContain("What is the status?");
     expect(JSON.stringify(report)).not.toContain("Release is ready");
@@ -213,6 +219,11 @@ describe("delivery evaluation", () => {
         ratedCount: 0,
         answerCount: 1,
         passed: false,
+      },
+      authorization: {
+        checkCount: 0,
+        passedCount: 0,
+        passRate: 1,
       },
     });
     expect(result.failures).toContain("human_rating_fingerprint_mismatch");

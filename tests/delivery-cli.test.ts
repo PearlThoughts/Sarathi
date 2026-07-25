@@ -204,6 +204,11 @@ describe("delivery CLI", () => {
             freshnessPassRate: 1,
             latencyPassRate: 1,
           },
+          authorization: {
+            checkCount: 0,
+            passedCount: 0,
+            passRate: 1,
+          },
         },
       },
     });

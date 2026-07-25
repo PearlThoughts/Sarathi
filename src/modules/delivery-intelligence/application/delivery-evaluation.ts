@@ -38,6 +38,7 @@ export type DeliveryEvaluationOutcome =
 
 export type DeliveryEvaluationResult = {
   readonly id: string;
+  readonly category: "quality" | "authorization";
   readonly passed: boolean;
   readonly failures: readonly string[];
   readonly outcome: "answer" | "deny";
@@ -73,6 +74,11 @@ export type DeliveryEvaluationReport = {
     readonly freshnessPassRate: number;
     readonly formatPassRate: number;
     readonly latencyPassRate: number;
+  };
+  readonly authorization: {
+    readonly checkCount: number;
+    readonly passedCount: number;
+    readonly passRate: number;
   };
   readonly results: readonly DeliveryEvaluationResult[];
 };
@@ -242,6 +248,14 @@ export const parseDeliveryEvaluationSet = (value: unknown): DeliveryEvaluationSe
         expected.ratedAnswerFingerprint !== undefined)
     )
       throw new Error("Delivery evaluation denial cases cannot carry human answer ratings.");
+    if (
+      expected.acceptancePassed === false &&
+      (expected.humanUsefulnessRating !== undefined ||
+        expected.ratedAnswerFingerprint !== undefined)
+    )
+      throw new Error(
+        "Delivery evaluation authorization cases cannot carry human usefulness ratings.",
+      );
   }
   return value as DeliveryEvaluationSet;
 };
@@ -264,6 +278,10 @@ export const evaluateDeliveryCase = (
   outcome: DeliveryEvaluationOutcome,
 ): DeliveryEvaluationResult => {
   const failures: string[] = [];
+  const category =
+    evaluationCase.expected.outcome === "deny" || evaluationCase.expected.acceptancePassed === false
+      ? "authorization"
+      : "quality";
   if (outcome.kind === "failure") {
     if (evaluationCase.expected.outcome !== "deny") failures.push("unexpected_denial");
     if (
@@ -273,6 +291,7 @@ export const evaluateDeliveryCase = (
       failures.push("denial_operation_mismatch");
     return {
       id: evaluationCase.id,
+      category,
       passed: failures.length === 0,
       failures,
       outcome: "deny",
@@ -311,6 +330,7 @@ export const evaluateDeliveryCase = (
   if (!ratingMatches) failures.push("human_rating_fingerprint_mismatch");
   return {
     id: evaluationCase.id,
+    category,
     passed: failures.length === 0,
     failures,
     outcome: "answer",
@@ -338,8 +358,12 @@ export const summarizeDeliveryEvaluation = (
       result,
     ): result is DeliveryEvaluationResult & {
       readonly acceptance: DeliveryAssistantAnswer["acceptance"];
-    } => result.outcome === "answer" && result.acceptance !== undefined,
+    } =>
+      result.category === "quality" &&
+      result.outcome === "answer" &&
+      result.acceptance !== undefined,
   );
+  const authorization = results.filter((result) => result.category === "authorization");
   const ratings = answered.flatMap((result) =>
     result.humanUsefulnessRating === undefined ? [] : [result.humanUsefulnessRating],
   );
@@ -380,6 +404,11 @@ export const summarizeDeliveryEvaluation = (
       freshnessPassRate: rate(answered.map((result) => result.acceptance.freshnessPassed)),
       formatPassRate: rate(answered.map((result) => result.acceptance.formatPassed)),
       latencyPassRate: rate(answered.map((result) => result.acceptance.latencyPassed)),
+    },
+    authorization: {
+      checkCount: authorization.length,
+      passedCount: authorization.filter((result) => result.passed).length,
+      passRate: rate(authorization.map((result) => result.passed)),
     },
     results,
   };
