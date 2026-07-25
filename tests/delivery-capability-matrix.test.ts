@@ -4,6 +4,7 @@ import {
   createDeliveryAssistant,
   type DeliveryQuerySource,
   type DeliveryQuestionIntent,
+  type DeliveryResultItem,
 } from "../src/modules/delivery-intelligence/index.ts";
 
 const capabilityQuestions: readonly {
@@ -63,34 +64,56 @@ const genericSource: DeliveryQuerySource = {
     "knowledge",
     "github_live",
   ],
-  execute: (context, plan) =>
-    Effect.succeed({
-      items: plan.operations.map((operation, index) => ({
-        id: operation.id,
-        workspaceId: context.workspaceId,
-        source:
-          operation.select === "github_live"
-            ? ("github" as const)
-            : plan.requiredSources?.includes("teams") === true
-              ? ("teams" as const)
-              : ("jira" as const),
-        selector: operation.select,
-        intent: operation.purpose,
-        title: plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose,
-        summary: `Resolved ${plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose} from the delivery model`,
-        citationUrl:
-          operation.purpose === "next_actions"
-            ? "https://example.com/risks/0"
-            : `https://example.com/${operation.purpose}/${index}`,
-        sensitivity: "internal" as const,
-        authority: 0.9,
-        observedAt: context.requestedAt,
-        dedupeKey: `${operation.purpose}:${index}`,
-      })),
+  execute: (context, plan) => {
+    const items: DeliveryResultItem[] = plan.operations.map((operation, index) => ({
+      id: operation.id,
+      workspaceId: context.workspaceId,
+      source:
+        operation.select === "github_live"
+          ? ("github" as const)
+          : plan.requiredSources?.includes("teams") === true
+            ? ("teams" as const)
+            : ("jira" as const),
+      selector: operation.select,
+      intent: operation.purpose,
+      title: plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose,
+      summary: `Resolved ${plan.subject?.phrase ?? plan.subject?.externalKey ?? operation.purpose} from the delivery model`,
+      citationUrl:
+        operation.purpose === "next_actions"
+          ? "https://example.com/risks/0"
+          : `https://example.com/${operation.purpose}/${index}`,
+      sensitivity: "internal" as const,
+      authority: 0.9,
+      observedAt: context.requestedAt,
+      dedupeKey: `${operation.purpose}:${index}`,
+    }));
+    const representedSources = new Set(items.map(({ source }) => source));
+    const firstOperation = plan.operations[0];
+    if (firstOperation !== undefined)
+      for (const source of plan.requiredSources ?? []) {
+        if (representedSources.has(source)) continue;
+        items.push({
+          id: `${firstOperation.id}-${source}`,
+          workspaceId: context.workspaceId,
+          source,
+          selector: firstOperation.select,
+          intent: firstOperation.purpose,
+          title: plan.subject?.phrase ?? plan.subject?.externalKey ?? firstOperation.purpose,
+          summary: `Resolved ${plan.subject?.phrase ?? plan.subject?.externalKey ?? firstOperation.purpose} from the delivery model`,
+          citationUrl: `https://example.com/${source}/${firstOperation.purpose}`,
+          sensitivity: "internal",
+          authority: 0.9,
+          observedAt: context.requestedAt,
+          dedupeKey: `${firstOperation.purpose}:${source}`,
+        });
+      }
+    return Effect.succeed({
+      items,
       conflicts: [],
       unavailableSources: [],
       complete: true,
-    }),
+    });
+  },
 };
 
 describe("AI Delivery Assistant capability matrix", () => {

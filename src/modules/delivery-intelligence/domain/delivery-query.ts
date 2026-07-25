@@ -543,6 +543,14 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     });
     add("general", { select: "knowledge", limit: top });
   }
+  const requiredSources = [
+    ...new Set<DeliverySourceKind>([
+      ...(intents.includes("delivered") ? (["jira", "github"] as const) : []),
+      ...(intents.includes("implementation") ? (["github"] as const) : []),
+      ...(intents.includes("conflicts") ? (["jira", "teams", "github"] as const) : []),
+      ...(intents.includes("capacity") ? (["teams"] as const) : []),
+    ]),
+  ];
   return validateDeliveryQueryPlan({
     version: 1,
     intents,
@@ -553,12 +561,6 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     maximumLines: Math.max(3, Math.min(intents.length, 6)) as 3 | 4 | 5 | 6,
     requiresFinance: intents.includes("finance"),
     subject,
-    requiredSources: intents.includes("implementation")
-      ? ["github"]
-      : intents.includes("conflicts")
-        ? ["jira", "teams", "github"]
-        : intents.includes("capacity")
-          ? ["teams"]
-          : undefined,
+    requiredSources: requiredSources.length === 0 ? undefined : requiredSources,
   });
 };
