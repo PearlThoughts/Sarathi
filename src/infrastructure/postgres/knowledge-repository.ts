@@ -67,6 +67,15 @@ export const boundedPostgresBindBatches = <Value>(
   return batches;
 };
 
+export const queryPostgresBindBatches = async <Value, Result>(
+  values: readonly Value[],
+  query: (batch: readonly Value[]) => Promise<readonly Result[]>,
+): Promise<readonly Result[]> => {
+  const results: Result[] = [];
+  for (const batch of boundedPostgresBindBatches(values)) results.push(...(await query(batch)));
+  return results;
+};
+
 const canonicalize = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   if (typeof value === "object" && value !== null) {
@@ -109,24 +118,28 @@ const reusableProjectionVersions = async (
   const versionIds = [...expectedPassages.keys()];
   if (versionIds.length === 0) return new Set();
   const [versions, projections] = await Promise.all([
-    database
-      .select({ id: knowledgeVersionTable.id })
-      .from(knowledgeVersionTable)
-      .where(inArray(knowledgeVersionTable.id, versionIds)),
-    database
-      .select({ versionId: knowledgePassageTable.versionId })
-      .from(knowledgePassageTable)
-      .innerJoin(
-        knowledgeProjectionTable,
-        eq(knowledgeProjectionTable.passageId, knowledgePassageTable.id),
-      )
-      .where(
-        and(
-          inArray(knowledgePassageTable.versionId, versionIds),
-          eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
-          eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+    queryPostgresBindBatches(versionIds, (batch) =>
+      database
+        .select({ id: knowledgeVersionTable.id })
+        .from(knowledgeVersionTable)
+        .where(inArray(knowledgeVersionTable.id, batch)),
+    ),
+    queryPostgresBindBatches(versionIds, (batch) =>
+      database
+        .select({ versionId: knowledgePassageTable.versionId })
+        .from(knowledgePassageTable)
+        .innerJoin(
+          knowledgeProjectionTable,
+          eq(knowledgeProjectionTable.passageId, knowledgePassageTable.id),
+        )
+        .where(
+          and(
+            inArray(knowledgePassageTable.versionId, batch),
+            eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+            eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+          ),
         ),
-      ),
+    ),
   ]);
   const existingVersions = new Set(versions.map(({ id }) => id));
   const projectionCounts = new Map<string, number>();
@@ -157,19 +170,21 @@ const reusableProjectionVectors = async (
     ),
   ];
   if (contentHashes.length === 0) return new Map();
-  const projections = await database
-    .select({
-      contentHash: knowledgeProjectionTable.contentHash,
-      embedding: knowledgeProjectionTable.embedding,
-    })
-    .from(knowledgeProjectionTable)
-    .where(
-      and(
-        inArray(knowledgeProjectionTable.contentHash, contentHashes),
-        eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
-        eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+  const projections = await queryPostgresBindBatches(contentHashes, (batch) =>
+    database
+      .select({
+        contentHash: knowledgeProjectionTable.contentHash,
+        embedding: knowledgeProjectionTable.embedding,
+      })
+      .from(knowledgeProjectionTable)
+      .where(
+        and(
+          inArray(knowledgeProjectionTable.contentHash, batch),
+          eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+          eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+        ),
       ),
-    );
+  );
   const vectors = new Map<string, readonly number[]>();
   for (const projection of projections) {
     if (
