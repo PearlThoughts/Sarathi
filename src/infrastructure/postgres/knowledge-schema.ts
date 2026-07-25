@@ -166,6 +166,31 @@ export const knowledgeProjectionTable = pgTable(
   ],
 );
 
+export const knowledgeEmbeddingCacheTable = pgTable(
+  "knowledge_embedding_cache",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    contentHash: text("content_hash").notNull(),
+    embeddingModel: text("embedding_model").notNull(),
+    embeddingDimensions: integer("embedding_dimensions").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+    createdAt: timestampColumn("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.sourceId,
+        table.contentHash,
+        table.embeddingModel,
+        table.embeddingDimensions,
+      ],
+    }),
+    index("knowledge_embedding_cache_created").on(table.createdAt),
+  ],
+);
+
 export const knowledgeSyncCheckpointTable = pgTable(
   "knowledge_sync_checkpoint",
   {
@@ -733,6 +758,7 @@ export const knowledgePostgresSchema = {
   knowledgePassageTable,
   knowledgeAclBindingTable,
   knowledgeProjectionTable,
+  knowledgeEmbeddingCacheTable,
   knowledgeSyncCheckpointTable,
   knowledgeSyncEventDeliveryTable,
   knowledgeSyncSubscriptionTable,

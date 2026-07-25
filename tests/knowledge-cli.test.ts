@@ -41,6 +41,7 @@ describe("knowledge CLI", () => {
             "0004_attributed-delivery-assertions",
             "0005_canonical-entity-time",
             "0006_independent-sync-control",
+            "0007_restart-safe-embedding-cache",
           ],
           protectedTables: [
             "compliance_reminder_audit",

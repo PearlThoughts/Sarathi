@@ -22,6 +22,15 @@ export type KnowledgeMigrationStatus = {
   readonly knowledgeTableCount: number;
   readonly deliveryTableCount: number;
   readonly appliedMigrationCount: number;
+  readonly embeddingCacheProgress: readonly {
+    readonly workspaceId: string;
+    readonly sourceId: string;
+    readonly embeddingModel: string;
+    readonly embeddingDimensions: number;
+    readonly vectorsCached: number;
+    readonly firstCachedAt: string;
+    readonly lastCachedAt: string;
+  }[];
   readonly checkpoints: readonly {
     readonly sourceId: string;
     readonly workspaceId: string;
@@ -62,6 +71,15 @@ type RawKnowledgeCheckpoint = Omit<
   readonly syncedAt: string | Date;
 };
 
+type RawEmbeddingCacheProgress = Omit<
+  KnowledgeMigrationStatus["embeddingCacheProgress"][number],
+  "vectorsCached" | "firstCachedAt" | "lastCachedAt"
+> & {
+  readonly vectorsCached: string;
+  readonly firstCachedAt: string | Date;
+  readonly lastCachedAt: string | Date;
+};
+
 const isoTimestamp = (value: string | Date | null): string | null =>
   value instanceof Date ? value.toISOString() : value;
 
@@ -81,6 +99,7 @@ export const knowledgeMigrationPlan = {
     "0004_attributed-delivery-assertions",
     "0005_canonical-entity-time",
     "0006_independent-sync-control",
+    "0007_restart-safe-embedding-cache",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,
@@ -127,8 +146,8 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
     throw new Error("pgvector extension is not installed after migration.");
   const names = tables.rows.map(({ table_name }) => table_name);
   const knowledgeTableCount = names.filter((name) => name.startsWith("knowledge_")).length;
-  if (knowledgeTableCount !== 11)
-    throw new Error(`Expected 11 knowledge tables after migration; found ${knowledgeTableCount}.`);
+  if (knowledgeTableCount !== 12)
+    throw new Error(`Expected 12 knowledge tables after migration; found ${knowledgeTableCount}.`);
   const deliveryTableCount = names.filter((name) => name.startsWith("delivery_")).length;
   if (deliveryTableCount !== 8)
     throw new Error(
@@ -200,30 +219,47 @@ export const readKnowledgePostgresStatus = (
                 )
               : 0;
           const knowledgeTableCount = Number(tables.rows[0]?.count ?? 0);
-          const checkpoints =
-            knowledgeTableCount === 11
-              ? (
-                  await pool.query<RawKnowledgeCheckpoint>(
+          const [checkpointRows, embeddingCacheRows] =
+            knowledgeTableCount === 12
+              ? await Promise.all([
+                  pool.query<RawKnowledgeCheckpoint>(
                     'select source_id as "sourceId", workspace_id as "workspaceId", cursor, scope_hash as "scopeHash", documents_observed as "documentsObserved", passages_active as "passagesActive", items_deleted as "itemsDeleted", checksum, status, indexed_source_revision as "indexedSourceRevision", last_event_at as "lastEventAt", last_reconciled_at as "lastReconciledAt", newest_source_updated_at as "newestSourceUpdatedAt", last_succeeded_at as "lastSucceededAt", lag_seconds as "lagSeconds", retry_count as "retryCount", next_reconcile_at as "nextReconcileAt", failure_class as "failureClass", synced_at as "syncedAt" from knowledge_sync_checkpoint order by workspace_id, source_id',
-                  )
-                ).rows.map((checkpoint) => ({
-                  ...checkpoint,
-                  lastEventAt: isoTimestamp(checkpoint.lastEventAt),
-                  lastReconciledAt: isoTimestamp(checkpoint.lastReconciledAt),
-                  newestSourceUpdatedAt: isoTimestamp(checkpoint.newestSourceUpdatedAt),
-                  lastSucceededAt: isoTimestamp(checkpoint.lastSucceededAt),
-                  nextReconcileAt: isoTimestamp(checkpoint.nextReconcileAt),
-                  syncedAt:
-                    checkpoint.syncedAt instanceof Date
-                      ? checkpoint.syncedAt.toISOString()
-                      : checkpoint.syncedAt,
-                }))
-              : [];
+                  ),
+                  pool.query<RawEmbeddingCacheProgress>(
+                    'select workspace_id as "workspaceId", source_id as "sourceId", embedding_model as "embeddingModel", embedding_dimensions as "embeddingDimensions", count(*) as "vectorsCached", min(created_at) as "firstCachedAt", max(created_at) as "lastCachedAt" from knowledge_embedding_cache group by workspace_id, source_id, embedding_model, embedding_dimensions order by workspace_id, source_id, embedding_model, embedding_dimensions',
+                  ),
+                ])
+              : [{ rows: [] }, { rows: [] }];
+          const checkpoints = checkpointRows.rows.map((checkpoint) => ({
+            ...checkpoint,
+            lastEventAt: isoTimestamp(checkpoint.lastEventAt),
+            lastReconciledAt: isoTimestamp(checkpoint.lastReconciledAt),
+            newestSourceUpdatedAt: isoTimestamp(checkpoint.newestSourceUpdatedAt),
+            lastSucceededAt: isoTimestamp(checkpoint.lastSucceededAt),
+            nextReconcileAt: isoTimestamp(checkpoint.nextReconcileAt),
+            syncedAt:
+              checkpoint.syncedAt instanceof Date
+                ? checkpoint.syncedAt.toISOString()
+                : checkpoint.syncedAt,
+          }));
+          const embeddingCacheProgress = embeddingCacheRows.rows.map((progress) => ({
+            ...progress,
+            vectorsCached: Number(progress.vectorsCached),
+            firstCachedAt:
+              progress.firstCachedAt instanceof Date
+                ? progress.firstCachedAt.toISOString()
+                : progress.firstCachedAt,
+            lastCachedAt:
+              progress.lastCachedAt instanceof Date
+                ? progress.lastCachedAt.toISOString()
+                : progress.lastCachedAt,
+          }));
           return {
             vectorExtensionVersion: extension.rows[0]?.extversion ?? null,
             knowledgeTableCount,
             deliveryTableCount: Number(deliveryTables.rows[0]?.count ?? 0),
             appliedMigrationCount,
+            embeddingCacheProgress,
             checkpoints,
           };
         },

@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { runDeliverySyncCommand } from "../src/cli/commands/delivery-sync-runtime.ts";
 import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
+import { RepositoryError } from "../src/domain/errors.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
   applyKnowledgePostgresMigrations,
@@ -163,14 +164,16 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "create table if not exists compliance_reminder_audit (id text primary key); create table if not exists compliance_reminder_dry_run_evidence (id text primary key); create table if not exists teams_mention_audit (id text primary key)",
     );
     const verification = await Effect.runPromise(applyKnowledgePostgresMigrations(databaseUrl));
-    expect(verification.knowledgeTableCount).toBe(11);
+    expect(verification.knowledgeTableCount).toBe(12);
     expect(verification.deliveryTableCount).toBe(8);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
       "compliance_reminder_dry_run_evidence",
       "teams_mention_audit",
     ]);
-    await pool.query("truncate table knowledge_source cascade");
+    await pool.query(
+      "truncate table knowledge_sync_event_delivery, knowledge_sync_subscription, knowledge_sync_lease, knowledge_sync_run, knowledge_embedding_cache, knowledge_source cascade",
+    );
     opened = openKnowledgePostgresDatabase(databaseUrl);
   });
 
@@ -528,8 +531,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       exitCode: 0,
       output: {
         status: {
-          knowledgeTableCount: 11,
-          appliedMigrationCount: 7,
+          knowledgeTableCount: 12,
+          appliedMigrationCount: 8,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
@@ -589,6 +592,127 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "select count(distinct p.id) as passage_count from knowledge_passage p join knowledge_item i on i.id = p.item_id where i.external_id = 'DEMO-636' and p.active",
     );
     expect(stored.rows).toEqual([{ passage_count: "0" }]);
+  });
+
+  test("resumes embedding from durable cached chunks after interruption", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const deterministic = createDeterministicKnowledgeEmbedding();
+    const passages = Array.from({ length: 300 }, (_, ordinal) => ({
+      kind: "code",
+      locator: `#symbol-${ordinal}`,
+      ordinal,
+      title: `Symbol ${ordinal}`,
+      body: `export const symbol${ordinal} = "delivery capability ${ordinal}";`,
+      contentHash: `sha256-restart-safe-${ordinal}`,
+    }));
+    const largeSnapshot: KnowledgeSourceSnapshot = {
+      sourceId: "github-restart-safe-test",
+      source: "github",
+      workspaceId: "workspace-restart-safe",
+      cursor: "cursor-restart-safe",
+      scopeHash: "sha256-restart-safe-scope",
+      documents: [
+        {
+          source: "github",
+          sourceId: "github-restart-safe-test",
+          workspaceId: "workspace-restart-safe",
+          externalId: "example/repository:src/capability.ts",
+          sourceType: "code",
+          sourceVersion: "sha256-revision",
+          canonicalUrl:
+            "https://github.com/example/repository/blob/sha256-revision/src/capability.ts",
+          title: "src/capability.ts",
+          sourceUpdatedAt: "2026-07-25T00:00:00.000Z",
+          sensitivity: "internal",
+          authority: 0.86,
+          provenance: { repository: "example/repository" },
+          acl: [
+            {
+              subjectType: "workspace",
+              subjectId: "workspace-restart-safe",
+              effect: "allow",
+            },
+          ],
+          passages,
+        },
+      ],
+    };
+    let failedAttempt = 0;
+    const interruptedEmbeddings = {
+      ...deterministic,
+      embed: (values: readonly string[]) => {
+        failedAttempt += 1;
+        return failedAttempt === 1
+          ? deterministic.embed(values)
+          : Effect.fail(
+              new RepositoryError({
+                message: "Synthetic provider interruption.",
+                operation: "knowledge-embedding.synthetic-interruption",
+              }),
+            );
+      },
+    };
+
+    await expect(
+      Effect.runPromise(repository.reconcile(largeSnapshot, interruptedEmbeddings)),
+    ).rejects.toThrow("Knowledge embedding progress could not be cached");
+    const cachedAfterInterruption = await pool.query<{ readonly count: string }>(
+      "select count(*) from knowledge_embedding_cache where workspace_id = 'workspace-restart-safe' and source_id = 'github-restart-safe-test'",
+    );
+    expect(cachedAfterInterruption.rows).toEqual([{ count: "256" }]);
+    const interruptedStatus = await runKnowledgeCommand(["status"], {
+      SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
+    });
+    expect(interruptedStatus).toMatchObject({
+      exitCode: 0,
+      output: {
+        status: {
+          embeddingCacheProgress: [
+            expect.objectContaining({
+              workspaceId: "workspace-restart-safe",
+              sourceId: "github-restart-safe-test",
+              vectorsCached: 256,
+            }),
+          ],
+        },
+      },
+    });
+    expect(JSON.stringify(interruptedStatus)).not.toContain("delivery capability");
+
+    const retryBatches: string[][] = [];
+    const retryEmbeddings = {
+      ...deterministic,
+      embed: (values: readonly string[]) => {
+        retryBatches.push([...values]);
+        return deterministic.embed(values);
+      },
+    };
+    const summary = await Effect.runPromise(repository.reconcile(largeSnapshot, retryEmbeddings));
+
+    expect(summary).toMatchObject({
+      documentsObserved: 1,
+      versionsCreated: 1,
+      passagesActive: 300,
+    });
+    expect(retryBatches).toHaveLength(1);
+    expect(retryBatches[0]).toHaveLength(44);
+    const [cacheAfterSuccess, projectionsAfterSuccess] = await Promise.all([
+      pool.query<{ readonly count: string }>(
+        "select count(*) from knowledge_embedding_cache where workspace_id = 'workspace-restart-safe' and source_id = 'github-restart-safe-test'",
+      ),
+      pool.query<{ readonly count: string }>(
+        "select count(*) from knowledge_projection where workspace_id = 'workspace-restart-safe'",
+      ),
+    ]);
+    expect(cacheAfterSuccess.rows).toEqual([{ count: "0" }]);
+    expect(projectionsAfterSuccess.rows).toEqual([{ count: "300" }]);
+    const completedStatus = await runKnowledgeCommand(["status"], {
+      SARATHI_STRATEGY_DATABASE_URL: databaseUrl,
+    });
+    expect(completedStatus).toMatchObject({
+      exitCode: 0,
+      output: { status: { embeddingCacheProgress: [] } },
+    });
   });
 
   test("converges every continuous connector after duplicate, out-of-order, missed, expired, and deleted state", async () => {

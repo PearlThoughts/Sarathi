@@ -33,6 +33,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 4, tag: "0004_attributed-delivery-assertions" },
       { idx: 5, tag: "0005_canonical-entity-time" },
       { idx: 6, tag: "0006_independent-sync-control" },
+      { idx: 7, tag: "0007_restart-safe-embedding-cache" },
     ]);
   });
 
@@ -151,5 +152,17 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).toContain('"knowledge_sync_lease_source_id_knowledge_source_id_fk"');
     expect(schema).toContain('"knowledge_sync_event_delivery_source_id_knowledge_source_id_fk"');
     expect(schema).not.toMatch(/\b(?:DROP TABLE|TRUNCATE|DELETE)\b/i);
+  });
+
+  it("adds a workspace-scoped restart-safe embedding cache without source bodies", async () => {
+    const schema = await migration("0007_restart-safe-embedding-cache.sql");
+
+    expect(schema).toContain('CREATE TABLE "knowledge_embedding_cache"');
+    expect(schema).toContain('"embedding" vector(1536) NOT NULL');
+    expect(schema).toContain('"workspace_id" text NOT NULL');
+    expect(schema).toContain('"source_id" text NOT NULL');
+    expect(schema).toContain('"content_hash" text NOT NULL');
+    expect(schema).not.toContain("body");
+    expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE|DELETE)\b/i);
   });
 });

@@ -24,6 +24,8 @@ Microsoft Graph posts validation and change/lifecycle notifications to `/api/tea
 
 `status` exits successfully only when every selected source has a successful checkpoint inside `SARATHI_SYNC_STALE_AFTER_SECONDS`, which defaults to two hours. Output is limited to source identity, scope hashes, timestamps, lag, subscription state, lease metadata, run state, counts, and checksums. Raw provider cursors and indexed source revisions remain private in PostgreSQL and are never printed.
 
+`bun run knowledge status` also reports count-only embedding cache progress by workspace, source, model, and dimensions. The cache stores content hashes and vectors, never source bodies. Completed chunks survive provider failures and process replacement; the cache is cleared only in the same transaction that commits projections and the successful checkpoint.
+
 GitHub synchronization honors provider reset and retry headers. It uses the recursive Git tree as the authoritative path and blob-identity inventory, then streams one commit archive for each repository with changed eligible code instead of consuming one REST request per file. Only configured, non-sensitive, non-generated code paths from the tree are retained; binary, oversized, missing, and archive/tree-mismatched entries fail closed or become tombstones under the existing policy. When the approved portfolio exhausts the core API quota, the active operation keeps its lease heartbeat, waits within a bounded retry budget, and resumes the exact failed request instead of restarting the snapshot.
 
 ## Configuration boundary
@@ -50,4 +52,4 @@ Every source body is authorized and normalized inside its adapter, then persiste
 
 ## Recovery
 
-An expired lease can be acquired by another worker. Failed runs retain a failure class and do not advance the authoritative checkpoint. Replaying the event or running hourly reconciliation is safe. Application rollback uses the previous Sarathi revision; the additive synchronization tables and checkpoints remain available for the restored revision.
+An expired lease can be acquired by another worker. Failed runs retain a failure class and do not advance the authoritative checkpoint. Replaying the event or running hourly reconciliation is safe; successfully cached embedding chunks are reused on the retry. Application rollback uses the previous Sarathi revision; the additive synchronization tables, cached vectors, and checkpoints remain available for the restored revision.
