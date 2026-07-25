@@ -141,6 +141,26 @@ const safeMentionName = (value: string): string =>
     .trim()
     .slice(0, 80);
 
+const requestsRestrictedSecretMaterial = (question: string): boolean => {
+  const normalized = question.toLowerCase().replace(/[_/]+/g, " ");
+  const namesSecretMaterial =
+    /\b(?:credentials?|passwords?|passphrases?|private[\s-]+keys?|api[\s-]+keys?|access[\s-]+tokens?|client[\s-]+secrets?|secrets?)\b/.test(
+      normalized,
+    );
+  if (!namesSecretMaterial) return false;
+  if (
+    /\b(?:where|show|list|find|locate|give|reveal|expose|display|retrieve|provide|tell)\b/.test(
+      normalized,
+    )
+  )
+    return true;
+  const discussesDeliveryWork =
+    /\b(?:status|deliver(?:y|ed|able)?|rotat(?:e|ed|ing|ion)|remediat(?:e|ed|ing|ion)|incident|work[\s-]+item|ticket)\b/.test(
+      normalized,
+    );
+  return !discussesDeliveryWork && /\b(?:what|which|stored?|exist|available)\b/.test(normalized);
+};
+
 const responseOpening = (plan: DeliveryQueryPlan): string => {
   const subject = safeText(plan.subject?.externalKey ?? plan.subject?.phrase ?? "");
   if (subject !== "") {
@@ -911,6 +931,13 @@ export const createDeliveryAssistant = (
     const startedAt = Date.now();
     const responseMode = selectDeliveryResponseMode(request.question, request.responseMode);
     const responsePolicy = deliveryResponseModePolicies[responseMode];
+    if (requestsRestrictedSecretMaterial(request.question))
+      return Effect.fail(
+        new RepositoryError({
+          message: "Credential and secret material is excluded from delivery-assistant answers.",
+          operation: "delivery-restricted-content-authorization",
+        }),
+      );
     return planQuestion(request, configuration.modelPlanner).pipe(
       Effect.flatMap((planned) => {
         const plan = planForResponseMode(planned, responseMode);
