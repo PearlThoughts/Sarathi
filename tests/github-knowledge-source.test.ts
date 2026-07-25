@@ -371,6 +371,90 @@ describe("GitHub knowledge source", () => {
     expect(waits).toEqual([2_000]);
   });
 
+  it("stops pull pagination after the ordered history crosses the configured window", async () => {
+    const requests: string[] = [];
+    const source = createGitHubKnowledgeSource({
+      sourceId: "github-example",
+      workspaceId: "example",
+      token: "synthetic-token",
+      historySince: "2026-01-20T00:00:00.000Z",
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      repositories: [configuredRepository()],
+      fetcher: async (input: string | URL | Request) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.endsWith("/repos/example/sarathi"))
+          return Response.json({ default_branch: "main" });
+        if (url.endsWith("/commits/main"))
+          return Response.json({
+            sha: "commit-1",
+            commit: { committer: { date: "2026-07-20T12:00:00.000Z" } },
+          });
+        if (url.includes("/git/trees/commit-1"))
+          return Response.json({ truncated: false, tree: [] });
+        if (url.includes("/pulls?") && !url.includes("&page="))
+          return Response.json(
+            [
+              {
+                number: 42,
+                title: "F1851-754 recent delivery",
+                html_url: "https://github.com/example/sarathi/pull/42",
+                state: "closed",
+                created_at: "2026-07-18T08:00:00.000Z",
+                updated_at: "2026-07-20T11:00:00.000Z",
+                merged_at: "2026-07-20T10:00:00.000Z",
+                merge_commit_sha: "commit-1",
+                user: { login: "delivery-engineer" },
+                head: { sha: "head-42" },
+              },
+            ],
+            {
+              headers: {
+                link: '<https://api.github.com/repos/example/sarathi/pulls?state=all&page=2>; rel="next"',
+              },
+            },
+          );
+        if (url.includes("/pulls?") && url.includes("&page=2"))
+          return Response.json(
+            [
+              {
+                number: 1,
+                title: "Historical delivery outside the window",
+                html_url: "https://github.com/example/sarathi/pull/1",
+                state: "closed",
+                created_at: "2024-01-01T00:00:00.000Z",
+                updated_at: "2024-01-02T00:00:00.000Z",
+                merged_at: "2024-01-02T00:00:00.000Z",
+                merge_commit_sha: "historical",
+                user: { login: "historical-engineer" },
+                head: { sha: "historical-head" },
+              },
+            ],
+            {
+              headers: {
+                link: '<https://api.github.com/repos/example/sarathi/pulls?state=all&page=3>; rel="next"',
+              },
+            },
+          );
+        if (url.includes("/pulls/42/reviews")) return Response.json([]);
+        if (url.includes("/pulls/42/files")) return Response.json([]);
+        if (url.includes("/commits?") && url.includes("since=")) return Response.json([]);
+        if (url.includes("/releases?")) return Response.json([]);
+        if (url.includes("/deployments?")) return Response.json([]);
+        if (url.includes("/check-runs?")) return Response.json({ check_runs: [] });
+        return new Response("unexpected request", { status: 500 });
+      },
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(snapshot.documents.map(({ externalId }) => externalId)).toEqual([
+      "example/sarathi:activity:pull_request:42",
+    ]);
+    expect(requests.some((url) => url.includes("page=2"))).toBe(true);
+    expect(requests.some((url) => url.includes("page=3"))).toBe(false);
+  });
+
   it("fails closed when the commit archive disagrees with the tree inventory", async () => {
     const source = createGitHubKnowledgeSource({
       sourceId: "github-example",

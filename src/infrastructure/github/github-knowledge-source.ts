@@ -280,6 +280,7 @@ const paginated = async <Value>(
   configuration: GitHubKnowledgeSourceConfiguration,
   path: string,
   maximumPages = 20,
+  shouldContinue: (page: readonly Value[]) => boolean = () => true,
 ): Promise<readonly Value[]> => {
   const values: Value[] = [];
   let next: string | undefined = path;
@@ -288,14 +289,18 @@ const paginated = async <Value>(
     if (pages >= maximumPages)
       throw new Error("GitHub activity pagination exceeded its safety bound.");
     const response = await request(configuration, next);
-    values.push(...((await response.json()) as readonly Value[]));
+    const page = (await response.json()) as readonly Value[];
+    values.push(...page);
     const link = response.headers.get("link");
     const nextUrl = link
       ?.split(",")
       .map((part) => part.trim())
       .find((part) => part.endsWith('rel="next"'))
       ?.match(/^<([^>]+)>/)?.[1];
-    next = nextUrl === undefined ? undefined : new URL(nextUrl).pathname + new URL(nextUrl).search;
+    next =
+      nextUrl === undefined || !shouldContinue(page)
+        ? undefined
+        : new URL(nextUrl).pathname + new URL(nextUrl).search;
     pages += 1;
   }
   return values;
@@ -596,10 +601,19 @@ const readActivities = async (
   previousUpdatedAt?: string,
 ): Promise<readonly Activity[]> => {
   const repoPath = repositoryPath(repository.repository);
+  const threshold = Math.max(
+    Date.parse(historySince),
+    Date.parse(previousUpdatedAt ?? historySince),
+  );
   const [pulls, commits, releases, deployments, checks] = await Promise.all([
     paginated<GitHubPull>(
       configuration,
       `/repos/${repoPath}/pulls?state=all&sort=updated&direction=desc&per_page=100`,
+      20,
+      (page) => {
+        const oldest = page.at(-1);
+        return oldest !== undefined && Date.parse(oldest.updated_at) >= threshold;
+      },
     ),
     paginated<GitHubCommit>(
       configuration,
@@ -612,7 +626,6 @@ const readActivities = async (
       `/repos/${repoPath}/commits/${encodeURIComponent(branch)}/check-runs?per_page=100`,
     ),
   ]);
-  const threshold = Date.parse(previousUpdatedAt ?? historySince);
   const selectedPulls = pulls.filter(
     (pull) =>
       Date.parse(pull.updated_at) >= Date.parse(historySince) &&
