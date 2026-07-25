@@ -33,6 +33,12 @@ export type KnowledgeEmbeddingDiagnostic =
       readonly totalBatches: number;
       readonly completedValues: number;
       readonly completedBatches: number;
+    }
+  | {
+      readonly operation: "embedding-completed";
+      readonly totalValues: number;
+      readonly totalBatches: number;
+      readonly totalTokens: number;
     };
 
 type KnowledgeEmbeddingDiagnosticSink = (diagnostic: KnowledgeEmbeddingDiagnostic) => void;
@@ -43,7 +49,10 @@ type EmbedManyRunner = (input: {
   readonly maxRetries: number;
   readonly abortSignal: AbortSignal;
   readonly experimental_telemetry: { readonly isEnabled: false };
-}) => Promise<{ readonly embeddings: readonly (readonly number[])[] }>;
+}) => Promise<{
+  readonly embeddings: readonly (readonly number[])[];
+  readonly usage?: { readonly tokens: number } | undefined;
+}>;
 
 const defaultBaseUrl = "https://openrouter.ai/api/v1";
 
@@ -130,7 +139,9 @@ const resolveEmbeddingModel = (configuration: KnowledgeEmbeddingConfiguration): 
     apiKey: configuration.apiKey,
     baseURL: configuration.baseUrl,
     compatibility: "strict",
-  }).textEmbeddingModel(configuration.model);
+  }).textEmbeddingModel(configuration.model, {
+    extraBody: { dimensions: configuration.dimensions },
+  });
 
 type EmbeddingBatchDiagnostics = {
   readonly offset: number;
@@ -206,6 +217,7 @@ export const createAiSdkKnowledgeEmbedding = (
         const vectorsByBatch: (readonly (readonly number[])[])[] = Array.from({
           length: batches.length,
         });
+        const tokensByBatch: number[] = Array.from({ length: batches.length }, () => 0);
         let nextBatch = 0;
         let completedBatches = 0;
         let completedValues = 0;
@@ -230,6 +242,7 @@ export const createAiSdkKnowledgeEmbedding = (
               )
                 throw new Error("Embedding response shape mismatch.");
               vectorsByBatch[current.index] = result.embeddings;
+              tokensByBatch[current.index] = result.usage?.tokens ?? 0;
               completedBatches += 1;
               completedValues += current.batch.length;
               if (completedBatches === batches.length || completedBatches % progressInterval === 0)
@@ -253,6 +266,12 @@ export const createAiSdkKnowledgeEmbedding = (
           (left, right) => left.diagnostics.offset - right.diagnostics.offset,
         )[0];
         if (earliestFailure !== undefined) throw earliestFailure;
+        diagnosticSink({
+          operation: "embedding-completed",
+          totalValues: values.length,
+          totalBatches: batches.length,
+          totalTokens: tokensByBatch.reduce((total, tokens) => total + tokens, 0),
+        });
         return vectorsByBatch.flatMap((batch) => batch ?? []);
       },
       catch: (failure) =>
