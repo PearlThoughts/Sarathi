@@ -800,7 +800,7 @@ const syncDeliveryProjection = async (
         effectiveTo: object.effectiveTo ?? null,
         sourceCreatedAt: projected.document.sourceCreatedAt ?? null,
         sourceUpdatedAt: projected.document.sourceUpdatedAt,
-        observedAt: projected.document.sourceUpdatedAt,
+        observedAt: object.observedAt ?? projected.document.sourceUpdatedAt,
         indexedAt: now,
         active: true,
         deletedAt: null,

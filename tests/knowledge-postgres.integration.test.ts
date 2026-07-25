@@ -235,6 +235,11 @@ describeDatabase("knowledge PostgreSQL integration", () => {
               ...projectionDocument,
               deliveryProjection: {
                 ...projection,
+                objects: projection.objects.map((object) =>
+                  object.externalKey === "DEMO-635"
+                    ? { ...object, observedAt: "2026-07-19T10:00:00.000Z" }
+                    : object,
+                ),
                 observations: projection.observations.map((observation) => ({
                   ...observation,
                   occurredAt: "2026-07-21T00:00:00.000Z",
@@ -252,6 +257,12 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     );
     expect(timestampReplay.versionsCreated).toBe(0);
     expect(embeddingBatches).toEqual([["The builder is in QA with approved rollout risk."]]);
+    await expect(
+      opened.database
+        .select({ observedAt: deliveryObjectTable.observedAt })
+        .from(deliveryObjectTable)
+        .where(eq(deliveryObjectTable.externalKey, "DEMO-635")),
+    ).resolves.toEqual([{ observedAt: new Date("2026-07-19T10:00:00.000Z") }]);
     const provenanceChanged = snapshot("v1", "The builder is in QA with approved rollout risk.");
     const provenanceDocument = provenanceChanged.documents[0];
     if (provenanceDocument === undefined) throw new Error("Synthetic document is required.");

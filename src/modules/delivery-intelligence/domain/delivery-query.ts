@@ -369,15 +369,22 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         {
           field: "lifecycleState",
           operator: "in",
-          value: ["done", "delivered"],
+          value: ["done", "delivered", "merged", "released", "deployed"],
         },
       ],
       time:
         sprintTime ??
-        (has(value, /\blast week\b/) ? { kind: "workspace_previous_week" } : undefined),
+        (has(value, /\blast week\b/)
+          ? { kind: "workspace_previous_week" }
+          : has(value, /\bthis week\b/)
+            ? { kind: "workspace_week" }
+            : undefined),
       limit: top,
     });
-  if (has(value, /\b(?:doing|working on|current work|in progress|this week)\b/))
+  const currentWorkQuestion =
+    has(value, /\b(?:doing|working on|current work|in progress)\b/) ||
+    (has(value, /\bthis week\b/) && !intents.includes("delivered"));
+  if (currentWorkQuestion)
     add("current_work", {
       select: "objects",
       objectKinds: ["work_item"],
