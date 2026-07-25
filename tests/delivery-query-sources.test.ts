@@ -728,6 +728,38 @@ describe("delivery intelligence live query sources", () => {
     );
   });
 
+  it("leaves grouped recurring analysis to the durable projection", async () => {
+    let fetched = false;
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "channel-1",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+        },
+      ],
+      fetcher: async () => {
+        fetched = true;
+        return Response.json({ value: [] });
+      },
+    });
+    const plan = planDeliveryQuestion("What issues have recurred in the last 120 days?");
+    if (plan === undefined) throw new Error("Expected recurring-issue plan");
+
+    const recurring = await Effect.runPromise(source.execute(context, plan));
+
+    expect(fetched).toBe(false);
+    expect(recurring).toEqual({
+      items: [],
+      conflicts: [],
+      unavailableSources: [],
+      complete: true,
+    });
+  });
+
   it("queries more than ten explicitly authorized Teams channels without opening the scope", async () => {
     const fetched: string[] = [];
     const source = createTeamsDeliveryQuerySource({
