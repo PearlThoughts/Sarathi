@@ -19,6 +19,8 @@ describe("AI SDK knowledge embedding", () => {
   test("batches through the AI SDK boundary and validates projection dimensions", async () => {
     const calls: string[][] = [];
     const retries: number[] = [];
+    const configuredDimensions: unknown[] = [];
+    const diagnostics: unknown[] = [];
     const embedding = createAiSdkKnowledgeEmbedding(
       {
         provider: "openrouter",
@@ -29,22 +31,35 @@ describe("AI SDK knowledge embedding", () => {
         timeoutMs: 1_000,
         batchSize: 2,
       },
-      async ({ values, maxRetries }) => {
+      async ({ model, values, maxRetries }) => {
         calls.push(values);
         retries.push(maxRetries);
+        configuredDimensions.push(
+          (model as unknown as { settings?: { extraBody?: { dimensions?: unknown } } }).settings
+            ?.extraBody?.dimensions,
+        );
         return {
           embeddings: values.map(() => Array.from({ length: 1536 }, () => 0.25)),
+          usage: { tokens: values.length * 3 },
         };
       },
+      (diagnostic) => diagnostics.push(diagnostic),
     );
 
     const result = await Effect.runPromise(embedding.embed(["one", "two", "three"]));
 
     expect(calls).toEqual([["one", "two"], ["three"]]);
     expect(retries).toEqual([2, 2]);
+    expect(configuredDimensions).toEqual([1536, 1536]);
     expect(result).toHaveLength(3);
     expect(result[0]).toHaveLength(1536);
     expect(embedding.model).toBe("openrouter:openai/text-embedding-3-small");
+    expect(diagnostics.at(-1)).toEqual({
+      operation: "embedding-completed",
+      totalValues: 3,
+      totalBatches: 2,
+      totalTokens: 9,
+    });
   });
 
   test("accepts a bounded retry override without exposing the credential", () => {
@@ -99,12 +114,24 @@ describe("AI SDK knowledge embedding", () => {
       batchSize: 1,
       concurrency: 2,
     });
-    expect(diagnostics.at(-1)).toMatchObject({
+    expect(
+      diagnostics.find(
+        (diagnostic) =>
+          (diagnostic as { operation?: unknown }).operation === "embedding-progress" &&
+          (diagnostic as { completedBatches?: unknown }).completedBatches === 3,
+      ),
+    ).toMatchObject({
       operation: "embedding-progress",
       totalValues: 3,
       totalBatches: 3,
       completedValues: 3,
       completedBatches: 3,
+    });
+    expect(diagnostics.at(-1)).toEqual({
+      operation: "embedding-completed",
+      totalValues: 3,
+      totalBatches: 3,
+      totalTokens: 0,
     });
   });
 
