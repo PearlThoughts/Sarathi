@@ -177,6 +177,20 @@ const issueTitle = (issue: JiraIssue): string =>
   issue.fields?.summary?.replace(/\s+/g, " ").trim() || issue.key || "Jira issue";
 const issueOwner = (issue: JiraIssue | JiraLinkedIssue): string =>
   issue.fields?.assignee?.displayName?.trim() || "unassigned";
+const issueOwnerReference = (issue: JiraIssue): DeliveryResultItem["owner"] | undefined => {
+  const displayName = issue.fields?.assignee?.displayName?.trim();
+  if (displayName === undefined || displayName === "") return undefined;
+  const externalId = issue.fields?.assignee?.accountId?.trim();
+  return {
+    source: "jira",
+    displayName,
+    ...(externalId === undefined || externalId === "" ? {} : { externalId }),
+  };
+};
+const issueAliases = (issue: JiraIssue): readonly string[] =>
+  issue.fields?.components?.flatMap(({ name }) =>
+    name === undefined || name.trim() === "" ? [] : [name.trim()],
+  ) ?? [];
 const issueStatus = (issue: JiraIssue | JiraLinkedIssue): string =>
   issue.fields?.status?.name?.trim() || "status unavailable";
 const issueLifecycleState = (issue: JiraIssue | JiraLinkedIssue): DeliveryLifecycleState => {
@@ -214,6 +228,8 @@ const baseItem = (
         citationUrl: issueUrl(configuration, issue.key),
         observedAt: occurredAt,
         lifecycleState: issueLifecycleState(issue),
+        subjectAliases: issueAliases(issue),
+        owner: issueOwnerReference(issue),
         sensitivity: configuration.sensitivity ?? "internal",
         authority: configuration.authority ?? 0.95,
         dedupeKey: `jira:${issue.key}:${kind}:${idSuffix}`,
@@ -498,17 +514,7 @@ const ownershipItems = (
       "practical-owner",
       `Practical ownership signal — ${owner} is assigned to ${issue.key}: ${issueTitle(issue)}`,
     );
-    return item === undefined
-      ? []
-      : [
-          {
-            ...item,
-            subjectAliases:
-              issue.fields?.components?.flatMap(({ name }) =>
-                name === undefined || name.trim() === "" ? [] : [name.trim()],
-              ) ?? [],
-          },
-        ];
+    return item === undefined ? [] : [item];
   });
 
 const nextActionItems = (
