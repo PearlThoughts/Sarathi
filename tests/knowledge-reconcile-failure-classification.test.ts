@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundedPostgresBindBatches,
   classifyKnowledgeReconcileFailure,
+  queryPostgresBindBatches,
 } from "../src/infrastructure/postgres/knowledge-repository.ts";
 
 describe("knowledge reconcile failure classification", () => {
@@ -14,6 +15,29 @@ describe("knowledge reconcile failure classification", () => {
     expect(batches.reduce((total, batch) => total + batch.length, 0)).toBe(values.length);
     expect(batches[0]?.[0]).toBe(0);
     expect(batches.at(-1)?.at(-1)).toBe(65_536);
+  });
+
+  it("executes bind batches sequentially and preserves result order", async () => {
+    const activeBatches = new Set<number>();
+    const observedBatchSizes: number[] = [];
+    let maximumConcurrency = 0;
+    const values = Array.from({ length: 2_501 }, (_, index) => index);
+
+    const results = await queryPostgresBindBatches(values, async (batch) => {
+      const identity = batch[0] ?? -1;
+      activeBatches.add(identity);
+      maximumConcurrency = Math.max(maximumConcurrency, activeBatches.size);
+      observedBatchSizes.push(batch.length);
+      await Promise.resolve();
+      activeBatches.delete(identity);
+      return batch.map((value) => `result-${value}`);
+    });
+
+    expect(observedBatchSizes).toEqual([1_000, 1_000, 501]);
+    expect(maximumConcurrency).toBe(1);
+    expect(results).toHaveLength(values.length);
+    expect(results[0]).toBe("result-0");
+    expect(results.at(-1)).toBe("result-2500");
   });
 
   it("maps a nested known constraint without exposing database details", () => {
