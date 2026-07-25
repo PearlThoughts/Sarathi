@@ -236,6 +236,19 @@ const rankedForIntent = (
       )
     : items;
 
+const isWeeklyCurrentWork = (plan: DeliveryQueryPlan): boolean =>
+  plan.operations.some(
+    (operation) =>
+      operation.purpose === "current_work" && operation.time?.kind === "workspace_week",
+  );
+
+const ownerGroupKey = (item: DeliveryResultItem): string =>
+  item.owner === undefined
+    ? "unassigned"
+    : item.owner.externalId === undefined
+      ? `display\u0000${item.owner.displayName.toLocaleLowerCase("en")}`
+      : `${item.owner.source}\u0000${item.owner.externalId}`;
+
 const subjectTokens = (value: string): readonly string[] =>
   value
     .toLowerCase()
@@ -338,6 +351,49 @@ const composeAnswer = (
   } else {
     for (const intent of presentedIntents(plan)) {
       if (intent === "next_actions") continue;
+      if (intent === "current_work" && isWeeklyCurrentWork(plan)) {
+        const currentWork = rankedForIntent(
+          items.filter((item) => item.intent === intent),
+          intent,
+        );
+        const ownerGroups = new Map<string, DeliveryResultItem[]>();
+        for (const item of currentWork) {
+          const key = ownerGroupKey(item);
+          ownerGroups.set(key, [...(ownerGroups.get(key) ?? []), item]);
+        }
+        const representatives = [...ownerGroups.values()]
+          .map((group) => group[0])
+          .filter((item): item is DeliveryResultItem => item !== undefined)
+          .sort((left, right) => {
+            if (left.owner === undefined && right.owner !== undefined) return 1;
+            if (left.owner !== undefined && right.owner === undefined) return -1;
+            return sortableTimestamp(right.observedAt) - sortableTimestamp(left.observedAt);
+          })
+          .slice(0, responsePolicy.maximumItems);
+        if (representatives.length > 0) {
+          detailLines.push(
+            `- 🚧 **Planned/active this week:** ${representatives
+              .map(
+                (item) =>
+                  `${safeText(item.owner?.displayName ?? "Unassigned")} — ${safeText(item.title)} ${citation(item)}`,
+              )
+              .join(" · ")}`,
+          );
+          const namedOwners = [...ownerGroups.values()].filter(
+            (group) => group[0]?.owner !== undefined,
+          ).length;
+          const unassignedItems = currentWork.filter((item) => item.owner === undefined).length;
+          const omittedOwners = Math.max(0, ownerGroups.size - representatives.length);
+          detailLines.push(
+            `- 📊 **Coverage:** The retrieved window contains ${currentWork.length} source-backed item${currentWork.length === 1 ? "" : "s"} across ${namedOwners} named owner${namedOwners === 1 ? "" : "s"}${unassignedItems === 0 ? "" : `, with ${unassignedItems} unassigned`}; one representative per owner is shown${omittedOwners === 0 ? "" : ` and ${omittedOwners} owner${omittedOwners === 1 ? " is" : "s are"} omitted by the response cap`}.`,
+          );
+        } else if (missingIntents.has(intent)) {
+          detailLines.push(
+            `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
+          );
+        }
+        continue;
+      }
       const selected = rankedForIntent(
         items.filter((item) => item.intent === intent),
         intent,
@@ -722,7 +778,9 @@ const responseAcceptance = (
   const citationCoverage = ratio(citedLines.length, materialLines.length);
   const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
   const completenessPassed =
-    completenessRatio === 1 && (result.missingRequiredSources?.length ?? 0) === 0;
+    completenessRatio === 1 &&
+    (result.missingRequiredSources?.length ?? 0) === 0 &&
+    result.unavailableSources.length === 0;
   const citationPassed = citationCoverage === 1;
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;

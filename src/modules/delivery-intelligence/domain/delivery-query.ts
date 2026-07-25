@@ -260,6 +260,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     });
   };
   const top = Math.max(1, Math.min(Number(/\btop\s+(\d{1,2})\b/.exec(value)?.[1] ?? 5), 10));
+  const explicitlyLimited = /\btop\s+\d{1,2}\b/.test(value);
   const requestedLookbackDays = Math.max(
     1,
     Math.min(Number(/\blast\s+(\d{1,3})\s+days?\b/.exec(value)?.[1] ?? 120), 366),
@@ -396,7 +397,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         },
       ],
       time: has(value, /\bthis week\b/) ? { kind: "workspace_week" } : sprintTime,
-      limit: top,
+      limit: has(value, /\bthis week\b/) && !explicitlyLimited ? 20 : top,
     });
   if (has(value, /\b(?:risk|risks|at risk|concern|threat)\b/))
     add("risks", {

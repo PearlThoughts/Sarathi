@@ -34,7 +34,8 @@ const item = (
     | "status"
     | "risks"
     | "next_actions"
-    | "delivered" = "activity",
+    | "delivered"
+    | "current_work" = "activity",
 ): DeliveryResultItem => ({
   id,
   workspaceId: request.workspaceId,
@@ -235,6 +236,75 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("**Coverage:** No matching GitHub result was available.");
     expect(answer.acceptance.completenessPassed).toBe(false);
     expect(answer.acceptance.passed).toBe(false);
+  });
+
+  it("represents distinct owners and states the retrieved weekly-work coverage", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "DEMO-31", "Improve editor canvas", "current_work"),
+              title: "Improve editor canvas",
+              owner: {
+                source: "jira" as const,
+                externalId: "jira-person-sneha",
+                displayName: "Sneha K",
+              },
+            },
+            {
+              ...item("jira", "DEMO-32", "Fix editor toolbar", "current_work"),
+              title: "Fix editor toolbar",
+              owner: {
+                source: "jira" as const,
+                externalId: "jira-person-sneha",
+                displayName: "Sneha K",
+              },
+              observedAt: "2026-07-20T09:00:00.000Z",
+            },
+            {
+              ...item("jira", "DEMO-33", "Complete publishing workflow", "current_work"),
+              title: "Complete publishing workflow",
+              owner: {
+                source: "jira" as const,
+                externalId: "jira-person-manikandan",
+                displayName: "Manikandan",
+              },
+            },
+            {
+              ...item("jira", "DEMO-34", "Verify unassigned migration", "current_work"),
+              title: "Verify unassigned migration",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What is planned this week?",
+      }),
+    );
+
+    expect(answer.text).toContain("**Planned/active this week:**");
+    expect(answer.text).toContain("Sneha K — Improve editor canvas");
+    expect(answer.text).toContain("Manikandan — Complete publishing workflow");
+    expect(answer.text).toContain("Unassigned — Verify unassigned migration");
+    expect(answer.text).not.toContain("Fix editor toolbar");
+    expect(answer.text).toContain(
+      "retrieved window contains 4 source-backed items across 2 named owners, with 1 unassigned",
+    );
+    expect(answer.acceptance).toMatchObject({
+      completenessPassed: true,
+      citationCoverage: 1,
+      groundingPassed: true,
+      passed: true,
+    });
   });
 
   it("renders a structured brief with independent format and quality acceptance", async () => {
@@ -801,6 +871,46 @@ describe("delivery intelligence application", () => {
     expect(answer.status).toBe("partial");
     expect(answer.unavailableSources).toEqual(["jira", "vault"]);
     expect(answer.text).toContain("- ⚠️ **Coverage:** Jira, Vault unavailable.");
+  });
+
+  it("fails completeness acceptance when one source is unavailable despite useful evidence", async () => {
+    const projection: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [item("jira", "risk", "DEMO-21 is at risk", "risks")],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const teams: DeliveryQuerySource = {
+      source: "teams",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.fail(
+          new RepositoryError({
+            message: "test Teams failure",
+            operation: "test",
+          }),
+        ),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [projection, teams] }).answer({
+        ...request,
+        question: "What are the delivery risks?",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.unavailableSources).toEqual(["teams"]);
+    expect(answer.acceptance).toMatchObject({
+      completenessRatio: 1,
+      completenessPassed: false,
+      passed: false,
+    });
   });
 
   it("synthesizes only authorized deduplicated records and validates model citations", async () => {
