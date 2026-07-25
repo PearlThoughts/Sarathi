@@ -145,6 +145,19 @@ describe("delivery intelligence domain", () => {
     ]);
   });
 
+  it("recognizes delivery questions phrased with recurred", () => {
+    const plan = planDeliveryQuestion("What issues have recurred in the last 120 days?");
+
+    expect(plan?.intents).toEqual(["recurring"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "recurring",
+        select: "observations",
+        time: { kind: "lookback", days: 120 },
+      }),
+    ]);
+  });
+
   it("requires live GitHub and carries the implementation subject", () => {
     const plan = planDeliveryQuestion(
       "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",

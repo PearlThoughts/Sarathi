@@ -406,7 +406,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       orderBy: { field: "severity", direction: "desc" },
       limit: top,
     });
-  if (has(value, /\b(?:recurring|repeated|repeat issue|keeps happening|pattern)\b/))
+  if (has(value, /\b(?:recur(?:s|red|ring)?|repeated|repeat issue|keeps happening|pattern)\b/))
     add("recurring", {
       select: "observations",
       groupBy: ["dedupeKey"],
