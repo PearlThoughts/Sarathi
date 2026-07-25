@@ -79,6 +79,7 @@ const privacySafeMigrationStatus = (status: KnowledgeMigrationStatus) => ({
   knowledgeTableCount: status.knowledgeTableCount,
   deliveryTableCount: status.deliveryTableCount,
   appliedMigrationCount: status.appliedMigrationCount,
+  embeddingCacheProgress: status.embeddingCacheProgress,
   checkpoints: status.checkpoints.map(
     ({ cursor: _cursor, indexedSourceRevision: _indexedSourceRevision, ...checkpoint }) =>
       checkpoint,

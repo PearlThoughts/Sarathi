@@ -35,6 +35,7 @@ import {
   deliveryObservationTable,
   deliveryRelationTable,
   knowledgeAclBindingTable,
+  knowledgeEmbeddingCacheTable,
   knowledgeItemTable,
   knowledgePassageTable,
   knowledgeProjectionTable,
@@ -57,6 +58,7 @@ type SearchRow = {
 };
 
 const postgresBindBatchSize = 1_000;
+const embeddingCacheWriteBatchSize = 256;
 
 export const boundedPostgresBindBatches = <Value>(
   values: readonly Value[],
@@ -170,28 +172,86 @@ const reusableProjectionVectors = async (
     ),
   ];
   if (contentHashes.length === 0) return new Map();
-  const projections = await queryPostgresBindBatches(contentHashes, (batch) =>
-    database
-      .select({
-        contentHash: knowledgeProjectionTable.contentHash,
-        embedding: knowledgeProjectionTable.embedding,
-      })
-      .from(knowledgeProjectionTable)
-      .where(
-        and(
-          inArray(knowledgeProjectionTable.contentHash, batch),
-          eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
-          eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+  const [projections, cachedProjections] = await Promise.all([
+    queryPostgresBindBatches(contentHashes, (batch) =>
+      database
+        .select({
+          contentHash: knowledgeProjectionTable.contentHash,
+          embedding: knowledgeProjectionTable.embedding,
+        })
+        .from(knowledgeProjectionTable)
+        .where(
+          and(
+            inArray(knowledgeProjectionTable.contentHash, batch),
+            eq(knowledgeProjectionTable.workspaceId, snapshot.workspaceId),
+            eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+            eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+          ),
         ),
-      ),
-  );
+    ),
+    queryPostgresBindBatches(contentHashes, (batch) =>
+      database
+        .select({
+          contentHash: knowledgeEmbeddingCacheTable.contentHash,
+          embedding: knowledgeEmbeddingCacheTable.embedding,
+        })
+        .from(knowledgeEmbeddingCacheTable)
+        .where(
+          and(
+            inArray(knowledgeEmbeddingCacheTable.contentHash, batch),
+            eq(knowledgeEmbeddingCacheTable.workspaceId, snapshot.workspaceId),
+            eq(knowledgeEmbeddingCacheTable.sourceId, snapshot.sourceId),
+            eq(knowledgeEmbeddingCacheTable.embeddingModel, embeddings.model),
+            eq(knowledgeEmbeddingCacheTable.embeddingDimensions, embeddings.dimensions),
+          ),
+        ),
+    ),
+  ]);
   const vectors = new Map<string, readonly number[]>();
-  for (const projection of projections) {
+  for (const projection of [...projections, ...cachedProjections]) {
     if (
       !vectors.has(projection.contentHash) &&
       projection.embedding.length === embeddings.dimensions
     )
       vectors.set(projection.contentHash, projection.embedding);
+  }
+  return vectors;
+};
+
+const embedAndCacheProjectionVectors = async (
+  database: KnowledgePostgresDatabase,
+  snapshot: KnowledgeSourceSnapshot,
+  embeddings: KnowledgeEmbeddingPort,
+  missingPassages: ReadonlyMap<string, string>,
+): Promise<ReadonlyMap<string, readonly number[]>> => {
+  const vectors = new Map<string, readonly number[]>();
+  const entries = [...missingPassages.entries()];
+  for (let offset = 0; offset < entries.length; offset += embeddingCacheWriteBatchSize) {
+    const batch = entries.slice(offset, offset + embeddingCacheWriteBatchSize);
+    const embedded = await Effect.runPromise(embeddings.embed(batch.map(([, body]) => body)));
+    if (
+      embedded.length !== batch.length ||
+      embedded.some((vector) => vector.length !== embeddings.dimensions)
+    )
+      throw new RepositoryError({
+        message: "Embedding result count did not match changed passages.",
+        operation: "knowledge-reconcile.embedding-cache",
+      });
+    const createdAt = new Date().toISOString();
+    const rows = batch.map(([contentHash], index) => ({
+      workspaceId: snapshot.workspaceId,
+      sourceId: snapshot.sourceId,
+      contentHash,
+      embeddingModel: embeddings.model,
+      embeddingDimensions: embeddings.dimensions,
+      embedding: embedded[index] as number[],
+      createdAt,
+    }));
+    await database.insert(knowledgeEmbeddingCacheTable).values(rows).onConflictDoNothing();
+    for (const [index, [contentHash]] of batch.entries()) {
+      const vector = embedded[index];
+      if (vector !== undefined) vectors.set(contentHash, vector);
+    }
   }
   return vectors;
 };
@@ -1490,6 +1550,14 @@ const reconcileSnapshot = async (
             syncedAt: now,
           },
         });
+      await transaction
+        .delete(knowledgeEmbeddingCacheTable)
+        .where(
+          and(
+            eq(knowledgeEmbeddingCacheTable.workspaceId, snapshot.workspaceId),
+            eq(knowledgeEmbeddingCacheTable.sourceId, snapshot.sourceId),
+          ),
+        );
       return summary;
     });
   } catch (cause) {
@@ -1565,18 +1633,30 @@ export const createPostgresKnowledgeRepository = (
               for (const passage of document.passages)
                 if (!reusableVectors.has(passage.contentHash))
                   missingPassages.set(passage.contentHash, passage.body);
-            const passageBodies = [...missingPassages.values()];
-            const embedded =
-              passageBodies.length === 0
-                ? Effect.succeed([] as readonly number[][])
-                : embeddings.embed(passageBodies);
-            return embedded.pipe(
-              Effect.flatMap((vectors) => {
+            const embeddedAndCached =
+              missingPassages.size === 0
+                ? Effect.succeed(new Map<string, readonly number[]>())
+                : Effect.tryPromise({
+                    try: () =>
+                      embedAndCacheProjectionVectors(
+                        database,
+                        snapshot,
+                        embeddings,
+                        missingPassages,
+                      ),
+                    catch: (failure) =>
+                      failure instanceof RepositoryError
+                        ? failure
+                        : new RepositoryError({
+                            message: "Knowledge embedding progress could not be cached.",
+                            operation: classifyKnowledgeReconcileFailure(failure),
+                          }),
+                  });
+            return embeddedAndCached.pipe(
+              Effect.flatMap((cachedVectors) => {
                 const vectorsByContentHash = new Map(reusableVectors);
-                for (const [index, contentHash] of [...missingPassages.keys()].entries()) {
-                  const vector = vectors[index];
-                  if (vector !== undefined) vectorsByContentHash.set(contentHash, vector);
-                }
+                for (const [contentHash, vector] of cachedVectors)
+                  vectorsByContentHash.set(contentHash, vector);
                 const vectorsByVersion = new Map<string, readonly (readonly number[])[]>();
                 for (const document of versionsToEmbed) {
                   const passageVectors = document.passages.map((passage) =>

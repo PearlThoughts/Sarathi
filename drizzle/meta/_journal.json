@@ -50,6 +50,13 @@
       "when": 1784783000000,
       "tag": "0006_independent-sync-control",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784975173561,
+      "tag": "0007_restart-safe-embedding-cache",
+      "breakpoints": true
     }
   ]
 }
