@@ -213,5 +213,12 @@
 
 - Command: `bunx vitest run tests/delivery-cli.test.ts`
 - Location: `tests/delivery-cli.test.ts`
-- Scope: Durable status/query/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Scope: Durable status/query/evaluate/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## delivery-evaluation
+
+- Command: `bunx vitest run tests/delivery-evaluation.test.ts tests/delivery-cli.test.ts`
+- Location: `tests/delivery-evaluation.test.ts`, `tests/delivery-cli.test.ts`
+- Scope: Versioned batch evaluation sets, production-path answer and denial scoring, aggregate acceptance dimensions, declared human-usefulness thresholds, answer fingerprints, and privacy-safe output without questions, answers, citations, or expected terms.
 - Prerequisites: Bun dependencies installed with `bun install`.

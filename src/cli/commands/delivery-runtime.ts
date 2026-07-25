@@ -32,7 +32,10 @@ import {
   type DeliveryResponseMode,
   deliveryResponseBudget,
   deliveryResponseModePolicies,
+  evaluateDeliveryCase,
+  parseDeliveryEvaluationSet,
   selectDeliveryResponseMode,
+  summarizeDeliveryEvaluation,
 } from "../../modules/delivery-intelligence/index.ts";
 import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
@@ -84,6 +87,19 @@ const parseJson = <Value>(name: string, value: string | undefined): Value => {
 const option = (args: readonly string[], name: string): string | undefined => {
   const index = args.indexOf(name);
   return index < 0 ? undefined : args[index + 1];
+};
+
+const withoutOption = (args: readonly string[], name: string): readonly string[] => {
+  const result: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name) {
+      index += 1;
+      continue;
+    }
+    const value = args[index];
+    if (value !== undefined) result.push(value);
+  }
+  return result;
 };
 
 const queryRequest = (
@@ -337,6 +353,59 @@ export const runDeliveryCommand = async (
             : knowledge.output,
       };
     }
+    if (args[0] === "evaluate") {
+      const evaluationSet = parseDeliveryEvaluationSet(
+        parseJson<unknown>(
+          "--set-json",
+          option(args, "--set-json") ?? environment.SARATHI_DELIVERY_EVALUATION_SET_JSON,
+        ),
+      );
+      const answer = dependencies.answer ?? ((input) => answerFromRuntime(input, environment));
+      const commonArgs = withoutOption(
+        withoutOption(withoutOption(args.slice(1), "--set-json"), "--question"),
+        "--response-mode",
+      );
+      const results = [];
+      for (const evaluationCase of evaluationSet.cases) {
+        const request = queryRequest(
+          [
+            ...commonArgs,
+            "--question",
+            evaluationCase.question,
+            ...(evaluationCase.responseMode === undefined
+              ? []
+              : ["--response-mode", evaluationCase.responseMode]),
+          ],
+          environment,
+        );
+        try {
+          results.push(
+            evaluateDeliveryCase(evaluationCase, {
+              kind: "answer",
+              answer: await answer(request),
+            }),
+          );
+        } catch (error) {
+          results.push(
+            evaluateDeliveryCase(evaluationCase, {
+              kind: "failure",
+              ...(error instanceof RepositoryError && error.operation !== undefined
+                ? { operation: error.operation }
+                : {}),
+            }),
+          );
+        }
+      }
+      const report = summarizeDeliveryEvaluation(evaluationSet, results);
+      return {
+        exitCode: report.passed ? 0 : 1,
+        output: {
+          ok: report.passed,
+          operation: "delivery-evaluate",
+          report,
+        },
+      };
+    }
     if (args[0] === "query") {
       const request = queryRequest(args, environment);
       const answer = await (
@@ -365,7 +434,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
+          "Use delivery status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone>, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
       },
     };
   } catch (error) {

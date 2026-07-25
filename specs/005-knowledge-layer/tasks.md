@@ -79,6 +79,7 @@
 - [x] KLG-528 Add permanent PostgreSQL connector tests for bootstrap, pagination, unchanged replay, changed-only embeddings, missed/duplicate/out-of-order events, expired subscriptions, deletion, scope removal, hourly convergence, and privacy-safe observability.
 - [ ] KLG-529 Add durable `delivery sync backfill|events|reconcile|status` operations and production freshness acceptance without source bodies in logs.
 - [ ] KLG-530 Evaluate an agent graph framework only after a production workflow satisfies ADR 0008's branching, durable pause/resume, human-intervention, replay, and measured-maintainability gate.
+- [x] KLG-531 Add a privacy-safe batch evaluation runner over the production answer path with declared pass and human-usefulness thresholds; keep real project questions and ratings in the private overlay.
 
 ## Dependency Order
 
