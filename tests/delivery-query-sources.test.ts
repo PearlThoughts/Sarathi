@@ -555,6 +555,64 @@ describe("delivery intelligence live query sources", () => {
     ]);
   });
 
+  it("reports a cited Jira data gap when exhaustive active work has no dependency markers", async () => {
+    const question = "Who is waiting for whom, and what is blocked?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic dependency plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async () =>
+        Response.json({
+          issues: [
+            {
+              key: "DEMO-1",
+              fields: {
+                summary: "Prepare release",
+                updated: "2026-07-19T09:00:00.000Z",
+                status: { name: "In Progress" },
+                labels: [],
+                issuelinks: [],
+              },
+            },
+            {
+              key: "DEMO-2",
+              fields: {
+                summary: "Verify release",
+                updated: "2026-07-19T09:00:00.000Z",
+                status: { name: "To Do" },
+                labels: [],
+                issuelinks: [],
+              },
+            },
+          ],
+        }),
+    });
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(result.items).toMatchObject([
+      {
+        id: "jira:coverage:dependencies",
+        intent: "dependencies",
+        summary:
+          "No explicit dependency or waiting relationship was recorded across 2 active-sprint Jira issues.",
+      },
+      {
+        id: "jira:coverage:blockers",
+        intent: "blockers",
+        summary:
+          "No blocked status, blocker label, or blocking issue link was recorded across 2 active-sprint Jira issues.",
+      },
+    ]);
+    expect(new Set(result.items.map(({ citationUrl }) => citationUrl)).size).toBe(2);
+    expect(result.items.every(({ citationUrl }) => citationUrl.includes("jql="))).toBe(true);
+  });
+
   it("filters Teams channels before requesting a token or Graph content", async () => {
     let tokenRequests = 0;
     let graphRequests = 0;
