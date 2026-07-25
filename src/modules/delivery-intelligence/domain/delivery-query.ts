@@ -526,6 +526,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
             : [{ field: "title", operator: "contains", value: statusTarget }],
       limit: top,
     });
+  if (intents.includes("goals")) add("goals", { select: "knowledge", limit: top });
   if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
 
   if (operations.length === 0) {
