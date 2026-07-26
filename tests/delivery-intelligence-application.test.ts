@@ -1175,6 +1175,48 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("Merged code");
   });
 
+  it("falls back before the total deadline when optional model composition exceeds the remaining budget", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() => Effect.never);
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.sleep("150 millis").pipe(
+          Effect.as({
+            items: [
+              item("jira", "risk", "DEMO-1 release dependency is at risk", "risks"),
+              {
+                ...item("jira", "action", "DEMO-1 confirm the release owner", "next_actions"),
+                objectKind: "work_item",
+                lifecycleState: "active",
+              },
+            ],
+            conflicts: [],
+            unavailableSources: [],
+            complete: true,
+          }),
+        ),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+        sourceTimeoutMs: 250,
+        compositionTimeoutMs: 250,
+        totalBudgetMs: 300,
+      }).answer({
+        ...request,
+        question: "What are the delivery risks and next action?",
+      }),
+    );
+
+    expect(compose).toHaveBeenCalledOnce();
+    expect(answer.status).toBe("ok");
+    expect(answer.text).toContain("DEMO-1 release dependency is at risk");
+    expect(answer.text).toContain("DEMO-1 confirm the release owner");
+  });
+
   it("fails closed when an implementation answer has no matching live GitHub result", async () => {
     const source: DeliveryQuerySource = {
       source: "knowledge",

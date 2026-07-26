@@ -3,6 +3,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
   gte,
   ilike,
@@ -10,6 +11,7 @@ import {
   isNull,
   lt,
   lte,
+  notExists,
   or,
   type SQL,
 } from "drizzle-orm";
@@ -249,59 +251,45 @@ const timeConditions = (
     : [gte(column, window.fromInclusive), lt(column, window.toExclusive)];
 };
 
-const loadAuthorizedIds = async (
+const authorizationCondition = (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
-  targetTypes: readonly DeliveryTargetType[],
-): Promise<ReadonlyMap<DeliveryTargetType, ReadonlySet<string>>> => {
+  targetType: DeliveryTargetType,
+  targetId: AnyPgColumn,
+): SQL => {
   const audienceIds = context.audienceIds ?? [];
-  const rows = await database
-    .select({
-      targetType: deliveryAclBindingTable.targetType,
-      targetId: deliveryAclBindingTable.targetId,
-      effect: deliveryAclBindingTable.effect,
-    })
-    .from(deliveryAclBindingTable)
-    .where(
-      and(
-        eq(deliveryAclBindingTable.workspaceId, context.workspaceId),
-        inArray(deliveryAclBindingTable.targetType, targetTypes),
-        or(
+  const relevantSubject = or(
+    and(
+      eq(deliveryAclBindingTable.subjectType, "workspace"),
+      eq(deliveryAclBindingTable.subjectId, context.workspaceId),
+    ),
+    and(
+      eq(deliveryAclBindingTable.subjectType, "actor"),
+      eq(deliveryAclBindingTable.subjectId, context.actorId),
+    ),
+    ...(audienceIds.length === 0
+      ? []
+      : [
           and(
-            eq(deliveryAclBindingTable.subjectType, "workspace"),
-            eq(deliveryAclBindingTable.subjectId, context.workspaceId),
+            eq(deliveryAclBindingTable.subjectType, "audience"),
+            inArray(deliveryAclBindingTable.subjectId, audienceIds),
           ),
-          and(
-            eq(deliveryAclBindingTable.subjectType, "actor"),
-            eq(deliveryAclBindingTable.subjectId, context.actorId),
-          ),
-          ...(audienceIds.length === 0
-            ? []
-            : [
-                and(
-                  eq(deliveryAclBindingTable.subjectType, "audience"),
-                  inArray(deliveryAclBindingTable.subjectId, audienceIds),
-                ),
-              ]),
+        ]),
+  );
+  const bindingsFor = (effect: "allow" | "deny") =>
+    database
+      .select({ id: deliveryAclBindingTable.id })
+      .from(deliveryAclBindingTable)
+      .where(
+        and(
+          eq(deliveryAclBindingTable.workspaceId, context.workspaceId),
+          eq(deliveryAclBindingTable.targetType, targetType),
+          eq(deliveryAclBindingTable.targetId, targetId),
+          eq(deliveryAclBindingTable.effect, effect),
+          relevantSubject,
         ),
-      ),
-    );
-  const allowed = new Map<DeliveryTargetType, Set<string>>();
-  const denied = new Set<string>();
-  for (const row of rows) {
-    if (!targetTypes.includes(row.targetType as DeliveryTargetType)) continue;
-    const targetType = row.targetType as DeliveryTargetType;
-    const key = `${targetType}\u0000${row.targetId}`;
-    if (row.effect === "deny") denied.add(key);
-    if (row.effect === "allow") {
-      const ids = allowed.get(targetType) ?? new Set<string>();
-      ids.add(row.targetId);
-      allowed.set(targetType, ids);
-    }
-  }
-  for (const [targetType, ids] of allowed)
-    for (const id of ids) if (denied.has(`${targetType}\u0000${id}`)) ids.delete(id);
-  return allowed;
+      );
+  return and(exists(bindingsFor("allow")), notExists(bindingsFor("deny"))) as SQL;
 };
 
 const result = (
@@ -318,9 +306,7 @@ const queryObjects = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
-  authorized: ReadonlySet<string>,
 ): Promise<DeliveryQueryResult> => {
-  if (authorized.size === 0) return result([]);
   const titlePredicates = (operation.predicates ?? []).filter(
     ({ field, operator }) =>
       field === "title" && (operator === "equals" || operator === "contains"),
@@ -335,7 +321,12 @@ const queryObjects = async (
             .where(
               and(
                 eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
-                inArray(deliveryEntityAliasTable.sourceObjectId, [...authorized]),
+                authorizationCondition(
+                  database,
+                  context,
+                  "object",
+                  deliveryEntityAliasTable.sourceObjectId,
+                ),
                 inArray(
                   deliveryEntityAliasTable.sensitivity,
                   allowedSensitivities(context.maximumSensitivity),
@@ -379,7 +370,7 @@ const queryObjects = async (
       and(
         eq(deliveryObjectTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
-        inArray(deliveryObjectTable.id, [...authorized]),
+        authorizationCondition(database, context, "object", deliveryObjectTable.id),
         inArray(deliveryObjectTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
         eq(deliveryObjectTable.active, true),
         isNull(deliveryObjectTable.deletedAt),
@@ -478,10 +469,7 @@ const queryRelations = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
-  authorized: ReadonlySet<string>,
-  authorizedObjects: ReadonlySet<string>,
 ): Promise<DeliveryQueryResult> => {
-  if (authorized.size === 0) return result([]);
   const rows = await database
     .select({
       id: deliveryRelationTable.id,
@@ -505,7 +493,9 @@ const queryRelations = async (
       and(
         eq(deliveryRelationTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
-        inArray(deliveryRelationTable.id, [...authorized]),
+        authorizationCondition(database, context, "relation", deliveryRelationTable.id),
+        authorizationCondition(database, context, "object", deliveryRelationTable.fromObjectId),
+        authorizationCondition(database, context, "object", deliveryRelationTable.toObjectId),
         inArray(
           deliveryRelationTable.sensitivity,
           allowedSensitivities(context.maximumSensitivity),
@@ -521,13 +511,7 @@ const queryRelations = async (
     )
     .orderBy(desc(deliveryRelationTable.observedAt), asc(deliveryRelationTable.id))
     .limit(Math.min(operation.limit * 4, 80));
-  const objectIds = [
-    ...new Set(
-      rows
-        .flatMap((row) => [row.fromObjectId, row.toObjectId])
-        .filter((id) => authorizedObjects.has(id)),
-    ),
-  ];
+  const objectIds = [...new Set(rows.flatMap((row) => [row.fromObjectId, row.toObjectId]))];
   const objectRows =
     objectIds.length === 0
       ? []
@@ -632,16 +616,14 @@ const queryObservations = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
-  authorized: ReadonlySet<string>,
 ): Promise<DeliveryQueryResult> => {
-  if (authorized.size === 0) return result([]);
   const rows = await database
     .select()
     .from(deliveryObservationTable)
     .where(
       and(
         eq(deliveryObservationTable.workspaceId, context.workspaceId),
-        inArray(deliveryObservationTable.id, [...authorized]),
+        authorizationCondition(database, context, "observation", deliveryObservationTable.id),
         inArray(
           deliveryObservationTable.sensitivity,
           allowedSensitivities(context.maximumSensitivity),
@@ -738,10 +720,8 @@ const queryClaims = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
-  authorized: ReadonlySet<string>,
   conflictsOnly: boolean,
 ): Promise<DeliveryQueryResult> => {
-  if (authorized.size === 0) return result([]);
   const [rows, supersessionRows] = await Promise.all([
     database
       .select()
@@ -749,7 +729,7 @@ const queryClaims = async (
       .where(
         and(
           eq(deliveryClaimTable.workspaceId, context.workspaceId),
-          inArray(deliveryClaimTable.id, [...authorized]),
+          authorizationCondition(database, context, "claim", deliveryClaimTable.id),
           inArray(deliveryClaimTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
           eq(deliveryClaimTable.active, true),
           isNull(deliveryClaimTable.deletedAt),
@@ -780,6 +760,7 @@ const queryClaims = async (
       .where(
         and(
           eq(deliveryClaimTable.workspaceId, context.workspaceId),
+          authorizationCondition(database, context, "claim", deliveryClaimTable.id),
           eq(deliveryClaimTable.active, true),
           isNull(deliveryClaimTable.deletedAt),
           or(
@@ -848,10 +829,8 @@ const queryMetrics = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
-  authorized: ReadonlySet<string>,
   finance: boolean,
 ): Promise<DeliveryQueryResult> => {
-  if (authorized.size === 0) return result([]);
   if (finance) {
     if (!context.financeAccess) return result([]);
     const rows = await database
@@ -879,7 +858,12 @@ const queryMetrics = async (
         and(
           eq(deliveryFinanceMetricTable.workspaceId, context.workspaceId),
           eq(knowledgeItemTable.workspaceId, context.workspaceId),
-          inArray(deliveryFinanceMetricTable.id, [...authorized]),
+          authorizationCondition(
+            database,
+            context,
+            "finance_metric",
+            deliveryFinanceMetricTable.id,
+          ),
           inArray(
             deliveryFinanceMetricTable.sensitivity,
             allowedSensitivities(context.maximumSensitivity),
@@ -935,7 +919,7 @@ const queryMetrics = async (
       and(
         eq(deliveryMetricTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
-        inArray(deliveryMetricTable.id, [...authorized]),
+        authorizationCondition(database, context, "metric", deliveryMetricTable.id),
         inArray(deliveryMetricTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
         eq(deliveryMetricTable.active, true),
         isNull(deliveryMetricTable.deletedAt),
@@ -982,68 +966,22 @@ export const createPostgresDeliveryQuerySource = (
   execute: (context, plan) =>
     Effect.tryPromise({
       try: async () => {
-        const [authorized, verifiedAt] = await Promise.all([
-          loadAuthorizedIds(database, context, [
-            "object",
-            "relation",
-            "observation",
-            "metric",
-            ...(context.financeAccess && plan.requiresFinance ? (["finance_metric"] as const) : []),
-            "claim",
-          ]),
-          sourceVerificationTimes(database, context.workspaceId),
-        ]);
+        const verifiedAt = await sourceVerificationTimes(database, context.workspaceId);
         const results: DeliveryQueryResult[] = [];
         for (const operation of plan.operations) {
           if (operation.select === "objects")
-            results.push(
-              await queryObjects(
-                database,
-                context,
-                operation,
-                authorized.get("object") ?? new Set(),
-              ),
-            );
+            results.push(await queryObjects(database, context, operation));
           if (operation.select === "relations")
-            results.push(
-              await queryRelations(
-                database,
-                context,
-                operation,
-                authorized.get("relation") ?? new Set(),
-                authorized.get("object") ?? new Set(),
-              ),
-            );
+            results.push(await queryRelations(database, context, operation));
           if (operation.select === "observations")
-            results.push(
-              await queryObservations(
-                database,
-                context,
-                operation,
-                authorized.get("observation") ?? new Set(),
-              ),
-            );
+            results.push(await queryObservations(database, context, operation));
           if (operation.select === "claims" || operation.select === "conflicts")
             results.push(
-              await queryClaims(
-                database,
-                context,
-                operation,
-                authorized.get("claim") ?? new Set(),
-                operation.select === "conflicts",
-              ),
+              await queryClaims(database, context, operation, operation.select === "conflicts"),
             );
           if (operation.select === "metrics") {
             const finance = operation.metricCategories?.includes("finance") === true;
-            results.push(
-              await queryMetrics(
-                database,
-                context,
-                operation,
-                authorized.get(finance ? "finance_metric" : "metric") ?? new Set(),
-                finance,
-              ),
-            );
+            results.push(await queryMetrics(database, context, operation, finance));
           }
         }
         const items = results.flatMap((entry) => entry.items);
