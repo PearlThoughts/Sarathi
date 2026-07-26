@@ -466,7 +466,10 @@ const queryObjects = async (
         sourceUpdatedAt: row.sourceUpdatedAt,
         indexedAt: row.indexedAt,
         subjectAliases: aliases.get(row.id) ?? [],
-        dedupeKey: `${row.canonicalKey}:${row.lifecycleState ?? ""}`,
+        dedupeKey:
+          operation.purpose === "implementation"
+            ? `${row.canonicalKey}:${row.externalKey}:${row.lifecycleState ?? ""}`
+            : `${row.canonicalKey}:${row.lifecycleState ?? ""}`,
       })),
   );
 };
