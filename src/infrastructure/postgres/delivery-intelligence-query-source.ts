@@ -40,6 +40,8 @@ import {
   deliveryObservationTable,
   deliveryRelationTable,
   knowledgeItemTable,
+  knowledgeSourceTable,
+  knowledgeSyncCheckpointTable,
 } from "./knowledge-schema.ts";
 
 type DeliveryTargetType =
@@ -63,6 +65,42 @@ const sourceKind = (value: string): DeliverySourceKind =>
 
 const sensitivity = (value: string): SensitivityTier =>
   sensitivityOrder.includes(value as SensitivityTier) ? (value as SensitivityTier) : "restricted";
+
+const sourceVerificationTimes = async (
+  database: KnowledgePostgresDatabase,
+  workspaceId: string,
+): Promise<ReadonlyMap<DeliverySourceKind, string>> => {
+  const rows = await database
+    .select({
+      sourceKind: knowledgeSourceTable.kind,
+      lastSucceededAt: knowledgeSyncCheckpointTable.lastSucceededAt,
+    })
+    .from(knowledgeSourceTable)
+    .innerJoin(
+      knowledgeSyncCheckpointTable,
+      and(
+        eq(knowledgeSyncCheckpointTable.sourceId, knowledgeSourceTable.id),
+        eq(knowledgeSyncCheckpointTable.workspaceId, knowledgeSourceTable.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(knowledgeSourceTable.workspaceId, workspaceId),
+        eq(knowledgeSourceTable.active, true),
+        eq(knowledgeSyncCheckpointTable.status, "succeeded"),
+      ),
+    );
+  const verifiedAt = new Map<DeliverySourceKind, string>();
+  for (const row of rows) {
+    if (row.lastSucceededAt === null || !sourceKinds.has(row.sourceKind as DeliverySourceKind))
+      continue;
+    const kind = row.sourceKind as DeliverySourceKind;
+    const previous = verifiedAt.get(kind);
+    if (previous === undefined || Date.parse(row.lastSucceededAt) < Date.parse(previous))
+      verifiedAt.set(kind, row.lastSucceededAt);
+  }
+  return verifiedAt;
+};
 
 const allowedSensitivities = (maximum: SensitivityTier): readonly SensitivityTier[] =>
   sensitivityOrder.slice(0, sensitivityOrder.indexOf(maximum) + 1);
@@ -941,13 +979,16 @@ export const createPostgresDeliveryQuerySource = (
   execute: (context, plan) =>
     Effect.tryPromise({
       try: async () => {
-        const authorized = await loadAuthorizedIds(database, context, [
-          "object",
-          "relation",
-          "observation",
-          "metric",
-          ...(context.financeAccess && plan.requiresFinance ? (["finance_metric"] as const) : []),
-          "claim",
+        const [authorized, verifiedAt] = await Promise.all([
+          loadAuthorizedIds(database, context, [
+            "object",
+            "relation",
+            "observation",
+            "metric",
+            ...(context.financeAccess && plan.requiresFinance ? (["finance_metric"] as const) : []),
+            "claim",
+          ]),
+          sourceVerificationTimes(database, context.workspaceId),
         ]);
         const results: DeliveryQueryResult[] = [];
         for (const operation of plan.operations) {
@@ -1002,8 +1043,12 @@ export const createPostgresDeliveryQuerySource = (
             );
           }
         }
+        const items = results.flatMap((entry) => entry.items);
         return {
-          items: results.flatMap((entry) => entry.items),
+          items: items.map((item) => ({
+            ...item,
+            indexedAt: verifiedAt.get(item.source) ?? item.indexedAt,
+          })),
           conflicts: results.flatMap((entry) => entry.conflicts),
           unavailableSources: [],
           complete: true,

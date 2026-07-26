@@ -1742,6 +1742,10 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         createDeterministicKnowledgeEmbedding(),
       ),
     );
+    await opened.database
+      .update(deliveryObjectTable)
+      .set({ indexedAt: "2025-01-01T00:00:00.000Z" })
+      .where(eq(deliveryObjectTable.workspaceId, workspaceId));
 
     const plan: DeliveryQueryPlan = {
       version: 1,
@@ -1790,6 +1794,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         source: "github",
         selector: "objects",
         title: "Product Builder",
+        indexedAt: expect.not.stringContaining("2025-01-01"),
         subjectAliases: expect.arrayContaining(["Puck", "Modern Website Builder"]),
       }),
     ]);
