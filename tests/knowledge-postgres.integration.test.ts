@@ -1703,8 +1703,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
               provenance: { repository: "example/product-builder" },
               acl: [
                 {
-                  subjectType: "workspace",
-                  subjectId: workspaceId,
+                  subjectType: "audience",
+                  subjectId: "delivery-team",
                   effect: "allow",
                 },
               ],
@@ -1768,20 +1768,21 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       requiresFinance: false,
       requiredSources: ["github"],
     };
+    const context = {
+      workspaceId,
+      actorId: "delivery-member",
+      maximumSensitivity: "internal" as const,
+      financeAccess: false,
+      requestedAt: "2026-07-26T14:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      deadlineAt: "2026-07-26T14:00:08.000Z",
+      question: "How is Modern Website Builder implemented?",
+    };
+    const source = createPostgresDeliveryQuerySource(opened.database);
+    const withoutAudience = await Effect.runPromise(source.execute(context, plan));
+    expect(withoutAudience.items).toEqual([]);
     const result = await Effect.runPromise(
-      createPostgresDeliveryQuerySource(opened.database).execute(
-        {
-          workspaceId,
-          actorId: "delivery-member",
-          maximumSensitivity: "internal",
-          financeAccess: false,
-          requestedAt: "2026-07-26T14:00:00.000Z",
-          timeZone: "Asia/Kolkata",
-          deadlineAt: "2026-07-26T14:00:08.000Z",
-          question: "How is Modern Website Builder implemented?",
-        },
-        plan,
-      ),
+      source.execute({ ...context, audienceIds: ["delivery-team"] }, plan),
     );
 
     expect(result.items).toEqual([

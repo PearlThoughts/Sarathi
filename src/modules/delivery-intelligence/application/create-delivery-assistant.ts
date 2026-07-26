@@ -1008,6 +1008,7 @@ export const createDeliveryAssistant = (
         const context = {
           workspaceId: request.workspaceId,
           actorId: request.actorId,
+          audienceIds: request.audienceIds,
           maximumSensitivity: request.maximumSensitivity,
           financeAccess: request.financeAccess,
           requestedAt: request.requestedAt,

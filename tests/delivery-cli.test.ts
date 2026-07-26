@@ -74,6 +74,7 @@ describe("delivery CLI", () => {
       ],
       {
         SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
+        SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON: '["delivery-team"]',
         SARATHI_DELIVERY_FINANCE_ACTOR_IDS_JSON: '["actor-1"]',
       },
       { answer },
@@ -82,6 +83,7 @@ describe("delivery CLI", () => {
       expect.objectContaining({
         workspaceId: "workspace-1",
         actorId: "actor-1",
+        audienceIds: ["delivery-team"],
         maximumSensitivity: "internal",
         financeAccess: true,
         requestedAt: "2026-07-20T12:00:00.000Z",
