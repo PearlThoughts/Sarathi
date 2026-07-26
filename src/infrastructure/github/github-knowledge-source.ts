@@ -220,6 +220,7 @@ class GitHubKnowledgeHttpError extends Error {
 
 const maximumRateLimitWaitMilliseconds = 65 * 60 * 1_000;
 const maximumRateLimitRetries = 4;
+const minimumSecondaryRateLimitWaitMilliseconds = 60_000;
 
 const numericHeader = (value: string | null): number | undefined => {
   if (value === null || value.trim() === "") return undefined;
@@ -227,19 +228,47 @@ const numericHeader = (value: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const rateLimitWaitMilliseconds = (response: Response, now: number): number | undefined => {
+const isSecondaryRateLimitResponse = async (response: Response): Promise<boolean> => {
+  if (response.status === 429) return true;
+  if (response.status !== 403) return false;
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => undefined)) as { readonly message?: unknown } | undefined;
+  return (
+    typeof body?.message === "string" &&
+    /\b(?:secondary rate limit|abuse detection)\b/i.test(body.message)
+  );
+};
+
+const rateLimitWaitMilliseconds = async (
+  response: Response,
+  now: number,
+  attempt: number,
+): Promise<number | undefined> => {
   if (response.status !== 403 && response.status !== 429) return undefined;
   const retryAfterSeconds = numericHeader(response.headers.get("retry-after"));
   const remaining = response.headers.get("x-ratelimit-remaining");
   const resetSeconds = numericHeader(response.headers.get("x-ratelimit-reset"));
-  if (response.status === 403 && remaining !== "0" && retryAfterSeconds === undefined)
+  const secondaryRateLimit =
+    retryAfterSeconds === undefined &&
+    remaining !== "0" &&
+    (await isSecondaryRateLimitResponse(response));
+  if (
+    response.status === 403 &&
+    remaining !== "0" &&
+    retryAfterSeconds === undefined &&
+    !secondaryRateLimit
+  )
     return undefined;
   const milliseconds =
     retryAfterSeconds !== undefined
       ? retryAfterSeconds * 1_000
-      : resetSeconds !== undefined
+      : remaining === "0" && resetSeconds !== undefined
         ? resetSeconds * 1_000 - now + 1_000
-        : undefined;
+        : secondaryRateLimit
+          ? minimumSecondaryRateLimitWaitMilliseconds * 2 ** attempt
+          : undefined;
   if (
     milliseconds === undefined ||
     milliseconds <= 0 ||
@@ -261,9 +290,10 @@ const request = async (
       headers: headers(configuration.token),
     });
     if (response.ok) return response;
-    const wait = rateLimitWaitMilliseconds(
+    const wait = await rateLimitWaitMilliseconds(
       response,
       (configuration.now?.() ?? new Date()).getTime(),
+      attempt,
     );
     if (wait === undefined || attempt === maximumRateLimitRetries)
       throw new GitHubKnowledgeHttpError(response.status);
