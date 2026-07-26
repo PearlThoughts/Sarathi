@@ -256,6 +256,27 @@ const rankedForIntent = (
       )
     : items;
 
+const sourceBalancedForIntent = (
+  items: readonly DeliveryResultItem[],
+  intent: DeliveryQuestionIntent,
+  requiredSources: readonly DeliverySourceKind[],
+  limit: number,
+): readonly DeliveryResultItem[] => {
+  const ranked = rankedForIntent(items, intent);
+  const selected: DeliveryResultItem[] = [];
+  const selectedIds = new Set<string>();
+  const add = (item: DeliveryResultItem | undefined) => {
+    if (item === undefined || selected.length >= limit) return;
+    const identity = `${item.source}\u0000${item.id}`;
+    if (selectedIds.has(identity)) return;
+    selectedIds.add(identity);
+    selected.push(item);
+  };
+  for (const source of requiredSources) add(ranked.find((item) => item.source === source));
+  for (const item of ranked) add(item);
+  return selected;
+};
+
 const isWeeklyCurrentWork = (plan: DeliveryQueryPlan): boolean =>
   plan.operations.some(
     (operation) =>
@@ -414,10 +435,12 @@ const composeAnswer = (
         }
         continue;
       }
-      const selected = rankedForIntent(
+      const selected = sourceBalancedForIntent(
         items.filter((item) => item.intent === intent),
         intent,
-      ).slice(0, itemsPerIntent);
+        plan.requiredSources ?? [],
+        itemsPerIntent,
+      );
       if (selected.length > 0) {
         historicalStatusOnly =
           intent === "status" &&

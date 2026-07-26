@@ -306,6 +306,55 @@ describe("delivery intelligence application", () => {
     expect(answer.acceptance.passed).toBe(false);
   });
 
+  it("reserves fast-answer citations for every required delivery source", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "DEMO-21", "DEMO-21 Done: Published the builder", "delivered"),
+              lifecycleState: "done" as const,
+              authority: 1,
+            },
+            {
+              ...item("jira", "DEMO-22", "DEMO-22 Done: Verified the builder", "delivered"),
+              lifecycleState: "done" as const,
+              authority: 0.99,
+            },
+            {
+              ...item("github", "pr-42", "Merged the builder release", "delivered"),
+              lifecycleState: "done" as const,
+              authority: 0.8,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "What was delivered this week?",
+      }),
+    );
+
+    expect(answer.status).toBe("ok");
+    expect(answer.missingRequiredSources).toEqual([]);
+    expect(answer.citations.map(({ label }) => label)).toEqual(["Jira 1", "GitHub 2"]);
+    expect(answer.text).toContain("DEMO-21 Done");
+    expect(answer.text).toContain("Merged the builder release");
+    expect(answer.text).not.toContain("DEMO-22 Done");
+    expect(answer.acceptance).toMatchObject({
+      completenessPassed: true,
+      citationPassed: true,
+      passed: true,
+    });
+  });
+
   it("represents distinct owners and states the retrieved weekly-work coverage", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",

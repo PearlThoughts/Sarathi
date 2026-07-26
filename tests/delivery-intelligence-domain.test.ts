@@ -204,6 +204,7 @@ describe("delivery intelligence domain", () => {
         relationKinds: ["supports", "contributes_to", "implements"],
       }),
     ]);
+    expect(plan?.requiredSources).toEqual(["jira", "vault"]);
     expect(plan?.answerMode).toBe("model_assisted");
   });
 
@@ -284,6 +285,7 @@ describe("delivery intelligence domain", () => {
 
   it("targets named status questions instead of returning unrelated recent work", () => {
     const named = planDeliveryQuestion("What is the current status of Modern Website Builder?");
+    expect(named?.requiredSources).toBeUndefined();
     expect(named?.operations[0]?.predicates).toEqual([
       { field: "title", operator: "contains", value: "Modern Website Builder" },
     ]);
@@ -294,9 +296,18 @@ describe("delivery intelligence domain", () => {
     ]);
 
     const keyed = planDeliveryQuestion("What is the status of F1851-754?");
+    expect(keyed?.requiredSources).toBeUndefined();
     expect(keyed?.operations[0]?.predicates).toEqual([
       { field: "externalKey", operator: "equals", value: "F1851-754" },
     ]);
+  });
+
+  it("requires declared project knowledge for an overall status answer", () => {
+    const plan = planDeliveryQuestion("What is the current project status?");
+
+    expect(plan?.subject).toBeUndefined();
+    expect(plan?.intents).toEqual(["status"]);
+    expect(plan?.requiredSources).toEqual(["jira", "vault"]);
   });
 
   it("isolates finance plans and rejects finance attributes in shared objects", () => {
