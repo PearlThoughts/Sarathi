@@ -629,6 +629,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ...(intents.includes("implementation") ? (["github"] as const) : []),
       ...(intents.includes("conflicts") ? (["jira", "teams", "github"] as const) : []),
       ...(intents.includes("capacity") ? (["teams"] as const) : []),
+      ...(intents.includes("status") && subject === undefined ? (["jira", "vault"] as const) : []),
+      ...(intents.includes("goals") && intents.includes("current_work")
+        ? (["jira", "vault"] as const)
+        : []),
     ]),
   ];
   return validateDeliveryQueryPlan({
