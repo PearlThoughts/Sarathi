@@ -78,6 +78,39 @@ export const queryPostgresBindBatches = async <Value, Result>(
   return results;
 };
 
+type ReusableVectorRow = {
+  readonly contentHash: string;
+  readonly embedding: readonly number[];
+};
+
+export const collectReusableVectorsCacheFirst = async (
+  contentHashes: readonly string[],
+  dimensions: number,
+  queryCache: (batch: readonly string[]) => Promise<readonly ReusableVectorRow[]>,
+  queryProjections: (batch: readonly string[]) => Promise<readonly ReusableVectorRow[]>,
+): Promise<ReadonlyMap<string, readonly number[]>> => {
+  const uniqueContentHashes = [...new Set(contentHashes)];
+  const vectors = new Map<string, readonly number[]>();
+  const collect = async (
+    hashes: readonly string[],
+    query: (batch: readonly string[]) => Promise<readonly ReusableVectorRow[]>,
+  ): Promise<void> => {
+    for (const batch of boundedPostgresBindBatches(hashes)) {
+      const rows = await query(batch);
+      for (const row of rows)
+        if (!vectors.has(row.contentHash) && row.embedding.length === dimensions)
+          vectors.set(row.contentHash, row.embedding);
+    }
+  };
+
+  await collect(uniqueContentHashes, queryCache);
+  const missingContentHashes = uniqueContentHashes.filter(
+    (contentHash) => !vectors.has(contentHash),
+  );
+  if (missingContentHashes.length > 0) await collect(missingContentHashes, queryProjections);
+  return vectors;
+};
+
 const canonicalize = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   if (typeof value === "object" && value !== null) {
@@ -172,24 +205,10 @@ const reusableProjectionVectors = async (
     ),
   ];
   if (contentHashes.length === 0) return new Map();
-  const [projections, cachedProjections] = await Promise.all([
-    queryPostgresBindBatches(contentHashes, (batch) =>
-      database
-        .select({
-          contentHash: knowledgeProjectionTable.contentHash,
-          embedding: knowledgeProjectionTable.embedding,
-        })
-        .from(knowledgeProjectionTable)
-        .where(
-          and(
-            inArray(knowledgeProjectionTable.contentHash, batch),
-            eq(knowledgeProjectionTable.workspaceId, snapshot.workspaceId),
-            eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
-            eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
-          ),
-        ),
-    ),
-    queryPostgresBindBatches(contentHashes, (batch) =>
+  return collectReusableVectorsCacheFirst(
+    contentHashes,
+    embeddings.dimensions,
+    (batch) =>
       database
         .select({
           contentHash: knowledgeEmbeddingCacheTable.contentHash,
@@ -205,17 +224,22 @@ const reusableProjectionVectors = async (
             eq(knowledgeEmbeddingCacheTable.embeddingDimensions, embeddings.dimensions),
           ),
         ),
-    ),
-  ]);
-  const vectors = new Map<string, readonly number[]>();
-  for (const projection of [...projections, ...cachedProjections]) {
-    if (
-      !vectors.has(projection.contentHash) &&
-      projection.embedding.length === embeddings.dimensions
-    )
-      vectors.set(projection.contentHash, projection.embedding);
-  }
-  return vectors;
+    (batch) =>
+      database
+        .select({
+          contentHash: knowledgeProjectionTable.contentHash,
+          embedding: knowledgeProjectionTable.embedding,
+        })
+        .from(knowledgeProjectionTable)
+        .where(
+          and(
+            inArray(knowledgeProjectionTable.contentHash, batch),
+            eq(knowledgeProjectionTable.workspaceId, snapshot.workspaceId),
+            eq(knowledgeProjectionTable.embeddingModel, embeddings.model),
+            eq(knowledgeProjectionTable.embeddingDimensions, embeddings.dimensions),
+          ),
+        ),
+  );
 };
 
 const embedAndCacheProjectionVectors = async (
