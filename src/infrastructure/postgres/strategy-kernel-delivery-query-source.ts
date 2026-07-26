@@ -47,6 +47,12 @@ const intentsByKind: Readonly<Record<IntentNodeKind, readonly DeliveryQuestionIn
 };
 
 const sourceKinds = new Set(["jira", "vault", "github", "teams", "email"] as const);
+const supportedSelectors = new Set<DeliveryQueryOperation["select"]>([
+  "objects",
+  "relations",
+  "claims",
+  "metrics",
+]);
 type CitableSource = "jira" | "vault" | "github" | "teams" | "email";
 
 const citableSource = (evidence: EvidenceItem): CitableSource | undefined =>
@@ -151,25 +157,27 @@ export const createStrategyKernelDeliveryQuerySource = (
           configuration.repository.listWorkspaceEvidence(context.workspaceId),
         ]);
         const evidenceById = new Map(evidenceItems.map((item) => [item.id, item]));
-        const items = plan.operations.flatMap((operation) =>
-          nodes.flatMap((node) => {
-            if (
-              !acceptedStates.has(node.state) ||
-              !intentsByKind[node.kind].includes(operation.purpose) ||
-              !overlapsOperationTime(node, operation, context.requestedAt, context.timeZone)
-            )
-              return [];
-            const evidence =
-              node.originEvidenceId === undefined
-                ? undefined
-                : evidenceById.get(node.originEvidenceId);
-            if (evidence === undefined || evidence.workspaceId !== context.workspaceId) return [];
-            const sensitivity = maxSensitivity(node.sensitivity, evidence.sensitivity);
-            if (!isSensitivityAtOrBelow(sensitivity, context.maximumSensitivity)) return [];
-            const item = resultFor(node, evidence, operation, sensitivity);
-            return item === undefined ? [] : [item];
-          }),
-        );
+        const items = plan.operations
+          .filter((operation) => supportedSelectors.has(operation.select))
+          .flatMap((operation) =>
+            nodes.flatMap((node) => {
+              if (
+                !acceptedStates.has(node.state) ||
+                !intentsByKind[node.kind].includes(operation.purpose) ||
+                !overlapsOperationTime(node, operation, context.requestedAt, context.timeZone)
+              )
+                return [];
+              const evidence =
+                node.originEvidenceId === undefined
+                  ? undefined
+                  : evidenceById.get(node.originEvidenceId);
+              if (evidence === undefined || evidence.workspaceId !== context.workspaceId) return [];
+              const sensitivity = maxSensitivity(node.sensitivity, evidence.sensitivity);
+              if (!isSensitivityAtOrBelow(sensitivity, context.maximumSensitivity)) return [];
+              const item = resultFor(node, evidence, operation, sensitivity);
+              return item === undefined ? [] : [item];
+            }),
+          );
         return {
           items,
           conflicts: [],

@@ -406,7 +406,12 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       orderBy: { field: "severity", direction: "desc" },
       limit: top,
     });
-  if (has(value, /\b(?:recur(?:s|red|ring)?|repeated|repeat issue|keeps happening|pattern)\b/))
+  if (
+    has(
+      value,
+      /\b(?:recur(?:s|red|ring|rence|rent)?|repeated|repeat issue|keeps happening|pattern)\b/,
+    )
+  )
     add("recurring", {
       select: "observations",
       groupBy: ["dedupeKey"],
@@ -526,6 +531,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
             : [{ field: "title", operator: "contains", value: statusTarget }],
       limit: top,
     });
+  if (intents.includes("goals")) add("goals", { select: "knowledge", limit: top });
   if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
 
   if (operations.length === 0) {

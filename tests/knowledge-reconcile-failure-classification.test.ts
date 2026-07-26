@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundedPostgresBindBatches,
   classifyKnowledgeReconcileFailure,
+  collectReusableVectorsCacheFirst,
   queryPostgresBindBatches,
 } from "../src/infrastructure/postgres/knowledge-repository.ts";
 
@@ -38,6 +39,51 @@ describe("knowledge reconcile failure classification", () => {
     expect(results).toHaveLength(values.length);
     expect(results[0]).toBe("result-0");
     expect(results.at(-1)).toBe("result-2500");
+  });
+
+  it("streams complete cached vectors without querying projection history", async () => {
+    const cacheBatchSizes: number[] = [];
+    let projectionQueries = 0;
+    const contentHashes = Array.from({ length: 1_001 }, (_, index) => `hash-${index}`);
+
+    const vectors = await collectReusableVectorsCacheFirst(
+      contentHashes,
+      2,
+      async (batch) => {
+        cacheBatchSizes.push(batch.length);
+        return batch.map((contentHash) => ({ contentHash, embedding: [1, 2] }));
+      },
+      async () => {
+        projectionQueries += 1;
+        return [];
+      },
+    );
+
+    expect(cacheBatchSizes).toEqual([1_000, 1]);
+    expect(projectionQueries).toBe(0);
+    expect(vectors.size).toBe(contentHashes.length);
+  });
+
+  it("queries projection history only for hashes missing from a partial cache", async () => {
+    const projectionBatches: string[][] = [];
+
+    const vectors = await collectReusableVectorsCacheFirst(
+      ["cached", "invalid-cache-entry", "projection-only", "cached"],
+      2,
+      async () => [
+        { contentHash: "cached", embedding: [1, 1] },
+        { contentHash: "invalid-cache-entry", embedding: [1] },
+      ],
+      async (batch) => {
+        projectionBatches.push([...batch]);
+        return batch.map((contentHash) => ({ contentHash, embedding: [2, 2] }));
+      },
+    );
+
+    expect(projectionBatches).toEqual([["invalid-cache-entry", "projection-only"]]);
+    expect(vectors.get("cached")).toEqual([1, 1]);
+    expect(vectors.get("invalid-cache-entry")).toEqual([2, 2]);
+    expect(vectors.get("projection-only")).toEqual([2, 2]);
   });
 
   it("maps a nested known constraint without exposing database details", () => {

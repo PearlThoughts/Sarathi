@@ -131,6 +131,44 @@ describe("delivery intelligence domain", () => {
     ]);
   });
 
+  it("recognizes ordinary past-tense recurring-work questions", () => {
+    const plan = planDeliveryQuestion("What issues have recurred in the last 120 days?");
+
+    expect(plan?.intents).toEqual(["recurring"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "recurring",
+        select: "observations",
+        time: { kind: "lookback", days: 120 },
+      }),
+    ]);
+  });
+
+  it("queries structured goals before using authorized project knowledge as fallback", () => {
+    const plan = planDeliveryQuestion(
+      "Are this week's planned deliverables aligned with this quarter's goals?",
+    );
+
+    expect(plan?.intents).toEqual(["goals", "current_work"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "goals",
+        select: "objects",
+        objectKinds: ["goal"],
+      }),
+      expect.objectContaining({
+        purpose: "current_work",
+        select: "objects",
+        time: { kind: "workspace_week" },
+      }),
+      expect.objectContaining({
+        purpose: "goals",
+        select: "knowledge",
+      }),
+    ]);
+    expect(plan?.answerMode).toBe("model_assisted");
+  });
+
   it("models review queues as observations instead of generic message retrieval", () => {
     const plan = planDeliveryQuestion(
       "Which items are waiting for review, and who needs to review each?",

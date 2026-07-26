@@ -70,7 +70,7 @@ describe("delivery sync scheduler", () => {
     expect(disabled.status()).toEqual({
       enabled: false,
       state: "disabled",
-      intervalSeconds: 2_700,
+      intervalSeconds: 900,
       initialDelaySeconds: 60,
     });
 
