@@ -12,6 +12,7 @@ import type { DeliveryResponseMode } from "../domain/delivery-response-mode.ts";
 export type DeliveryQueryContext = {
   readonly workspaceId: string;
   readonly actorId: string;
+  readonly audienceIds?: readonly string[] | undefined;
   readonly maximumSensitivity: SensitivityTier;
   readonly financeAccess: boolean;
   readonly requestedAt: string;

@@ -216,6 +216,7 @@ const loadAuthorizedIds = async (
   context: DeliveryQueryContext,
   targetTypes: readonly DeliveryTargetType[],
 ): Promise<ReadonlyMap<DeliveryTargetType, ReadonlySet<string>>> => {
+  const audienceIds = context.audienceIds ?? [];
   const rows = await database
     .select({
       targetType: deliveryAclBindingTable.targetType,
@@ -236,6 +237,14 @@ const loadAuthorizedIds = async (
             eq(deliveryAclBindingTable.subjectType, "actor"),
             eq(deliveryAclBindingTable.subjectId, context.actorId),
           ),
+          ...(audienceIds.length === 0
+            ? []
+            : [
+                and(
+                  eq(deliveryAclBindingTable.subjectType, "audience"),
+                  inArray(deliveryAclBindingTable.subjectId, audienceIds),
+                ),
+              ]),
         ),
       ),
     );

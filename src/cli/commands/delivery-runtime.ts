@@ -128,12 +128,20 @@ const queryRequest = (
           environment.SARATHI_DELIVERY_FINANCE_ACTOR_IDS_JSON,
         ),
   );
+  const audienceIds =
+    environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON === undefined
+      ? []
+      : parseJson<readonly string[]>(
+          "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
+          environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
+        );
   return {
     workspaceId: required(
       "SARATHI_KNOWLEDGE_WORKSPACE_ID",
       environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
     ),
     actorId,
+    audienceIds,
     maximumSensitivity: maximumSensitivity as SensitivityTier,
     financeAccess: financeActorIds.has(actorId),
     requestedAt: option(args, "--requested-at") ?? new Date().toISOString(),
@@ -275,10 +283,6 @@ const answerFromRuntime = async (
     queryBudgetMs,
   );
   try {
-    const audienceIds = parseJson<readonly string[]>(
-      "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
-      environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
-    );
     return await runRepositoryEffect(
       createDeliveryAssistant({
         sources: [
@@ -292,7 +296,7 @@ const answerFromRuntime = async (
             repository: createPostgresKnowledgeRepository(opened.database),
             workspaceId: request.workspaceId,
             allowedActorIds: new Set([request.actorId]),
-            audienceIds,
+            audienceIds: request.audienceIds ?? [],
           }),
           ...liveSources(environment, request.actorId),
         ],
