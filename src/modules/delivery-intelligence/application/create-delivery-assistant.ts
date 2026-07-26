@@ -1100,15 +1100,16 @@ export const createDeliveryAssistant = (
               missingRequiredSources,
               missingRequiredIntents,
             };
+            const remainingCompositionBudgetMs = totalBudgetMs - (Date.now() - startedAt) - 100;
             const composed =
-              configuration.answerComposer === undefined
+              configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
                 ? Effect.succeed(composeAnswer(request, plan, completed, responseMode))
                 : composeWithModel(
                     configuration.answerComposer,
                     request,
                     plan,
                     completed,
-                    compositionTimeoutMs,
+                    Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
                     responseMode,
                   );
             return composed.pipe(
