@@ -1730,6 +1730,15 @@ describeDatabase("knowledge PostgreSQL integration", () => {
                     observedAt: "2026-07-01T00:00:00.000Z",
                     sensitivity: "internal",
                   },
+                  {
+                    kind: "module",
+                    externalKey: "Puck-secondary",
+                    title: "Puck",
+                    lifecycleState: "active",
+                    attributes: {},
+                    observedAt: "2026-07-01T00:00:00.000Z",
+                    sensitivity: "internal",
+                  },
                 ],
                 relations: [],
                 observations: [],
@@ -1764,7 +1773,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
               value: "Modern Website Builder",
             },
           ],
-          limit: 1,
+          limit: 2,
         },
       ],
       answerMode: "deterministic",
@@ -1789,14 +1798,18 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       source.execute({ ...context, audienceIds: ["delivery-team"] }, plan),
     );
 
-    expect(result.items).toEqual([
-      expect.objectContaining({
-        source: "github",
-        selector: "objects",
-        title: "Product Builder",
-        indexedAt: expect.not.stringContaining("2025-01-01"),
-        subjectAliases: expect.arrayContaining(["Puck", "Modern Website Builder"]),
-      }),
-    ]);
+    expect(result.items).toHaveLength(2);
+    expect(
+      result.items.every(
+        (item) =>
+          item.source === "github" &&
+          item.selector === "objects" &&
+          item.title === "Product Builder" &&
+          item.indexedAt?.includes("2025-01-01") === false &&
+          item.subjectAliases?.includes("Puck") === true &&
+          item.subjectAliases.includes("Modern Website Builder"),
+      ),
+    ).toBe(true);
+    expect(new Set(result.items.map(({ dedupeKey }) => dedupeKey))).toHaveLength(2);
   });
 });

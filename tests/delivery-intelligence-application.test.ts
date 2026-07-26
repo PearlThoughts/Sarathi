@@ -34,6 +34,7 @@ const item = (
     | "status"
     | "risks"
     | "next_actions"
+    | "goals"
     | "delivered"
     | "current_work" = "activity",
 ): DeliveryResultItem => ({
@@ -472,6 +473,46 @@ describe("delivery intelligence application", () => {
       citationPassed: true,
       groundingPassed: true,
       freshnessPassed: true,
+      formatPassed: true,
+      passed: true,
+    });
+  });
+
+  it("states the evidence boundary for quarterly alignment without inventing progress", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "relations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            item("vault", "goal-1", "Grow qualified delivery outcomes", "goals"),
+            item("jira", "work-1", "Publish the current delivery slice", "current_work"),
+            {
+              ...item("vault", "relation-1", "Current slice supports the goal", "goals"),
+              selector: "relations" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "How does this week's current work align with quarterly goals?",
+        responseMode: "structured",
+      }),
+    );
+
+    expect(answer.text).toContain("### Alignment gaps");
+    expect(answer.text).toContain("1 source-backed alignment relation(s) were retrieved");
+    expect(answer.text).toContain("not a completion percentage");
+    expect(answer.acceptance).toMatchObject({
+      completenessPassed: true,
+      citationPassed: true,
+      groundingPassed: true,
       formatPassed: true,
       passed: true,
     });

@@ -719,6 +719,11 @@ const renderResponseMode = (
   const evidence = lines.filter((line) => line.startsWith("- "));
   const action = lines.find((line) => /^\d+\.\s/.test(line));
   if (responseMode === "structured") {
+    const alignmentReview =
+      answer.plan.intents.includes("goals") && answer.plan.intents.includes("current_work");
+    const alignmentRelations = result.items.filter(
+      (item) => item.intent === "goals" && item.selector === "relations",
+    ).length;
     const text = [
       "### Delivery brief",
       opening,
@@ -726,6 +731,12 @@ const renderResponseMode = (
       ...(evidence.length === 0
         ? ["- No source-backed evidence matched the requested scope."]
         : evidence),
+      ...(alignmentReview
+        ? [
+            "### Alignment gaps",
+            `${alignmentRelations} source-backed alignment relation(s) were retrieved. This is evidence coverage, not a completion percentage; missing source links remain unknown.`,
+          ]
+        : []),
       ...(action === undefined ? [] : ["### Action", action]),
     ].join("\n");
     return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
