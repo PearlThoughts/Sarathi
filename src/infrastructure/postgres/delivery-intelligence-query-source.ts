@@ -1,4 +1,18 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
@@ -55,11 +69,11 @@ const allowedSensitivities = (maximum: SensitivityTier): readonly SensitivityTie
 
 const matchValue = (actual: unknown, predicate: DeliveryQueryPredicate): boolean => {
   if (predicate.operator === "exists") return actual !== undefined && actual !== null;
+  if (Array.isArray(actual)) return actual.some((entry) => matchValue(entry, predicate));
   if (predicate.operator === "equals") return String(actual) === String(predicate.value);
   if (predicate.operator === "contains")
     return String(actual).toLowerCase().includes(String(predicate.value).toLowerCase());
   const expected = Array.isArray(predicate.value) ? predicate.value : [predicate.value];
-  if (Array.isArray(actual)) return actual.some((entry) => expected.includes(String(entry)));
   return expected.includes(String(actual));
 };
 
@@ -68,6 +82,76 @@ const matchesPredicates = (
   predicates: readonly DeliveryQueryPredicate[] | undefined,
 ): boolean =>
   predicates?.every((predicate) => matchValue(values[predicate.field], predicate)) ?? true;
+
+const predicateValues = (predicate: DeliveryQueryPredicate): readonly string[] =>
+  (Array.isArray(predicate.value) ? predicate.value : [predicate.value])
+    .filter((value): value is string | number | boolean => value !== undefined)
+    .map(String);
+
+const equalityCondition = (
+  column: AnyPgColumn,
+  predicate: DeliveryQueryPredicate,
+): SQL | undefined => {
+  const values = predicateValues(predicate);
+  if (values.length === 0) return undefined;
+  if (predicate.operator === "equals") return eq(column, values[0]);
+  if (predicate.operator === "in") return inArray(column, values);
+  return undefined;
+};
+
+const escapedLikeValue = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+
+const objectSqlConditions = (
+  operation: DeliveryQueryOperation,
+  aliasMatchedIds: readonly string[],
+): readonly SQL[] =>
+  (operation.predicates ?? []).flatMap((predicate): readonly SQL[] => {
+    if (predicate.field === "kind") {
+      const condition = equalityCondition(deliveryObjectTable.objectKind, predicate);
+      return condition === undefined ? [] : [condition];
+    }
+    if (predicate.field === "externalKey") {
+      const condition = equalityCondition(deliveryObjectTable.externalKey, predicate);
+      return condition === undefined ? [] : [condition];
+    }
+    if (predicate.field === "lifecycleState") {
+      const condition = equalityCondition(deliveryObjectTable.lifecycleState, predicate);
+      return condition === undefined ? [] : [condition];
+    }
+    if (predicate.field === "source") {
+      const condition = equalityCondition(deliveryObjectTable.sourceKind, predicate);
+      return condition === undefined ? [] : [condition];
+    }
+    if (predicate.field !== "title") return [];
+    const values = predicateValues(predicate);
+    const titleCondition =
+      predicate.operator === "contains" && values[0] !== undefined
+        ? ilike(deliveryObjectTable.title, `%${escapedLikeValue(values[0])}%`)
+        : equalityCondition(deliveryObjectTable.title, predicate);
+    if (titleCondition === undefined) return [];
+    return aliasMatchedIds.length === 0
+      ? [titleCondition]
+      : [or(titleCondition, inArray(deliveryObjectTable.id, aliasMatchedIds)) as SQL];
+  });
+
+const observationSqlConditions = (operation: DeliveryQueryOperation): readonly SQL[] =>
+  (operation.predicates ?? []).flatMap((predicate): readonly SQL[] => {
+    const column =
+      predicate.field === "kind"
+        ? deliveryObservationTable.observationKind
+        : predicate.field === "source"
+          ? deliveryObservationTable.sourceKind
+          : predicate.field === "dedupeKey"
+            ? deliveryObservationTable.dedupeKey
+            : undefined;
+    if (column === undefined) return [];
+    const values = predicateValues(predicate);
+    if (predicate.operator === "contains" && values[0] !== undefined)
+      return [ilike(column, `%${escapedLikeValue(values[0])}%`)];
+    const condition = equalityCondition(column, predicate);
+    return condition === undefined ? [] : [condition];
+  });
 
 const severityRank: Readonly<Record<string, number>> = {
   critical: 5,
@@ -190,6 +274,39 @@ const queryObjects = async (
   authorized: ReadonlySet<string>,
 ): Promise<DeliveryQueryResult> => {
   if (authorized.size === 0) return result([]);
+  const titlePredicates = (operation.predicates ?? []).filter(
+    ({ field, operator }) =>
+      field === "title" && (operator === "equals" || operator === "contains"),
+  );
+  const aliasMatchedIds =
+    titlePredicates.length === 0
+      ? []
+      : (
+          await database
+            .select({ sourceObjectId: deliveryEntityAliasTable.sourceObjectId })
+            .from(deliveryEntityAliasTable)
+            .where(
+              and(
+                eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
+                inArray(deliveryEntityAliasTable.sourceObjectId, [...authorized]),
+                inArray(
+                  deliveryEntityAliasTable.sensitivity,
+                  allowedSensitivities(context.maximumSensitivity),
+                ),
+                eq(deliveryEntityAliasTable.active, true),
+                isNull(deliveryEntityAliasTable.deletedAt),
+                ...titlePredicates.flatMap((predicate): readonly SQL[] => {
+                  const values = predicateValues(predicate);
+                  if (values[0] === undefined) return [];
+                  return [
+                    predicate.operator === "contains"
+                      ? ilike(deliveryEntityAliasTable.alias, `%${escapedLikeValue(values[0])}%`)
+                      : eq(deliveryEntityAliasTable.alias, values[0]),
+                  ];
+                }),
+              ),
+            )
+        ).map(({ sourceObjectId }) => sourceObjectId);
   const rows = await database
     .select({
       id: deliveryObjectTable.id,
@@ -223,6 +340,7 @@ const queryObjects = async (
         ...(operation.objectKinds === undefined
           ? []
           : [inArray(deliveryObjectTable.objectKind, operation.objectKinds)]),
+        ...objectSqlConditions(operation, aliasMatchedIds),
         ...timeConditions(deliveryObjectTable.observedAt, operation, context),
       ),
     )
@@ -262,7 +380,7 @@ const queryObjects = async (
     matchesPredicates(
       {
         kind: row.objectKind,
-        title: row.title,
+        title: [row.title, ...(aliases.get(row.id) ?? [])],
         externalKey: row.externalKey,
         canonicalKey: row.canonicalKey,
         aliases: aliases.get(row.id) ?? [],
@@ -480,6 +598,7 @@ const queryObservations = async (
         ),
         eq(deliveryObservationTable.active, true),
         isNull(deliveryObservationTable.deletedAt),
+        ...observationSqlConditions(operation),
         ...timeConditions(deliveryObservationTable.occurredAt, operation, context),
       ),
     )

@@ -6,7 +6,10 @@ import {
   createTeamsDeliveryQuerySource,
 } from "../src/infrastructure/graph/index.ts";
 import { createJiraDeliveryQuerySource } from "../src/infrastructure/jira/index.ts";
-import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index.ts";
+import {
+  type DeliveryQueryPlan,
+  planDeliveryQuestion,
+} from "../src/modules/delivery-intelligence/index.ts";
 
 const context = {
   workspaceId: "workspace-example",
@@ -183,6 +186,84 @@ describe("delivery intelligence live query sources", () => {
 
     expect(requests).toBe(0);
     expect(result.items).toEqual([]);
+  });
+
+  it("honors explicit source predicates before calling GitHub, Jira, or Teams", async () => {
+    let githubRequests = 0;
+    let jiraRequests = 0;
+    let teamsTokenRequests = 0;
+    let teamsGraphRequests = 0;
+    const github = createGitHubDeliveryQuerySource({
+      token: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      allowedRepositories: ["example/repo"],
+      fetcher: async () => {
+        githubRequests += 1;
+        return Response.json([]);
+      },
+    });
+    const jira = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async () => {
+        jiraRequests += 1;
+        return Response.json({ issues: [] });
+      },
+    });
+    const teams = createTeamsDeliveryQuerySource({
+      tokenProvider: {
+        getAccessToken: async () => {
+          teamsTokenRequests += 1;
+          return "token";
+        },
+      },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "channel-1",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+        },
+      ],
+      fetcher: async () => {
+        teamsGraphRequests += 1;
+        return Response.json({ value: [] });
+      },
+    });
+    const planFor = (source: "github" | "jira"): DeliveryQueryPlan => ({
+      version: 1,
+      intents: ["delivered"],
+      operations: [
+        {
+          id: `${source}-delivered`,
+          purpose: "delivered",
+          select: "observations",
+          predicates: [{ field: "source", operator: "equals", value: source }],
+          limit: 5,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 3,
+      requiresFinance: false,
+      requiredSources: [source],
+    });
+
+    await Effect.runPromise(github.execute(context, planFor("jira")));
+    await Effect.runPromise(jira.execute(context, planFor("github")));
+    await Effect.runPromise(teams.execute(context, planFor("github")));
+
+    expect({ githubRequests, jiraRequests, teamsTokenRequests, teamsGraphRequests }).toEqual({
+      githubRequests: 0,
+      jiraRequests: 0,
+      teamsTokenRequests: 0,
+      teamsGraphRequests: 0,
+    });
   });
 
   it("uses the planned entity target for live GitHub implementation search", async () => {

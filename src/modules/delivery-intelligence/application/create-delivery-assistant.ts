@@ -494,7 +494,9 @@ const composeAnswer = (
               ].join("\n"),
       citations: [],
       status:
-        result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
+        !result.complete ||
+        result.unavailableSources.length > 0 ||
+        (result.missingRequiredSources?.length ?? 0) > 0
           ? "partial"
           : "empty",
       plan,
@@ -555,7 +557,7 @@ const composeAnswer = (
     text,
     citations: citations.filter(({ url }) => text.includes(url)),
     status:
-      result.unavailableSources.length > 0 || (result.missingRequiredSources?.length ?? 0) > 0
+      !result.complete || (result.missingRequiredSources?.length ?? 0) > 0
         ? "partial"
         : missingIntents.size > 0 || historicalStatusOnly
           ? "partial"
@@ -798,9 +800,9 @@ const responseAcceptance = (
   const citationCoverage = ratio(citedLines.length, materialLines.length);
   const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
   const completenessPassed =
+    result.complete &&
     completenessRatio === 1 &&
-    (result.missingRequiredSources?.length ?? 0) === 0 &&
-    result.unavailableSources.length === 0;
+    (result.missingRequiredSources?.length ?? 0) === 0;
   const citationPassed = citationCoverage === 1;
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;
@@ -1039,8 +1041,9 @@ export const createDeliveryAssistant = (
                 request.maximumSensitivity,
               ),
               unavailableSources,
-              complete:
-                failures.length === 0 && successful.every((result) => result.complete === true),
+              complete: successful.every(
+                (result) => result.complete || result.unavailableSources.length > 0,
+              ),
             };
             const representedSources = new Set([
               ...merged.items.map((item) => item.source),
@@ -1058,10 +1061,7 @@ export const createDeliveryAssistant = (
             );
             const completed: DeliveryQueryResult = {
               ...merged,
-              complete:
-                merged.complete &&
-                missingRequiredSources.length === 0 &&
-                missingRequiredIntents.length === 0,
+              complete: merged.complete && missingRequiredSources.length === 0,
               missingRequiredSources,
               missingRequiredIntents,
             };

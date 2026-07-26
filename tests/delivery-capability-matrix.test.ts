@@ -141,4 +141,34 @@ describe("AI Delivery Assistant capability matrix", () => {
     else expect(answer.text).not.toContain("Recommended next step");
     expect(answer.citations.length).toBeGreaterThan(0);
   });
+
+  it("keeps an answer complete when optional live verification is unavailable but required projected evidence is present", async () => {
+    const optionalLiveSource: DeliveryQuerySource = {
+      source: "teams",
+      selectors: ["objects", "observations"],
+      execute: () =>
+        Effect.succeed({
+          items: [],
+          conflicts: [],
+          unavailableSources: ["teams"],
+          complete: false,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [genericSource, optionalLiveSource] }).answer({
+        workspaceId: "workspace-1851",
+        actorId: "actor-1851",
+        maximumSensitivity: "internal",
+        financeAccess: false,
+        requestedAt: "2026-07-20T13:09:00.000Z",
+        timeZone: "Asia/Kolkata",
+        question: "What was delivered this week?",
+      }),
+    );
+
+    expect(answer.status).toBe("ok");
+    expect(answer.acceptance.completenessPassed).toBe(true);
+    expect(answer.citations.length).toBeGreaterThanOrEqual(2);
+  });
 });

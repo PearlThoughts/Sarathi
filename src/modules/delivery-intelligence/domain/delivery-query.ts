@@ -362,7 +362,14 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       time: sprintTime,
       limit: top,
     });
-  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/))
+  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/)) {
+    const time =
+      sprintTime ??
+      (has(value, /\blast week\b/)
+        ? { kind: "workspace_previous_week" as const }
+        : has(value, /\bthis week\b/)
+          ? { kind: "workspace_week" as const }
+          : undefined);
     add("delivered", {
       select: "objects",
       objectKinds: ["work_item", "deliverable"],
@@ -373,15 +380,23 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           value: ["done", "delivered", "merged", "released", "deployed"],
         },
       ],
-      time:
-        sprintTime ??
-        (has(value, /\blast week\b/)
-          ? { kind: "workspace_previous_week" }
-          : has(value, /\bthis week\b/)
-            ? { kind: "workspace_week" }
-            : undefined),
+      time,
       limit: top,
     });
+    add("delivered", {
+      select: "observations",
+      predicates: [
+        { field: "source", operator: "equals", value: "github" },
+        {
+          field: "kind",
+          operator: "in",
+          value: ["pull_request", "commit", "deployment"],
+        },
+      ],
+      time,
+      limit: top,
+    });
+  }
   const currentWorkQuestion =
     has(value, /\b(?:doing|working on|current work|in progress)\b/) ||
     (has(value, /\bthis week\b/) && !intents.includes("delivered"));
@@ -501,14 +516,33 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       value,
       /\b(?:implementation|implemented|code|repository|pull requests?|prs?|commits?|function|class)\b/,
     )
-  )
+  ) {
+    add("implementation", {
+      select: "objects",
+      objectKinds: ["module"],
+      predicates: [
+        { field: "source", operator: "equals", value: "github" },
+        ...(implementationTarget === undefined
+          ? []
+          : [
+              {
+                field: "title" as const,
+                operator: "contains" as const,
+                value: implementationTarget,
+              },
+            ]),
+      ],
+      limit: top,
+    });
+    add("implementation", { select: "knowledge", limit: top });
     add("implementation", { select: "github_live", limit: top });
+  }
   if (has(value, /\b(?:disagree|disagreement|conflict|conflicting)\b/)) {
     add("conflicts", { select: "conflicts", limit: top });
     add("conflicts", { select: "claims", limit: top });
     add("conflicts", { select: "github_live", limit: top });
   }
-  if (has(value, /\b(?:current status|project status|status of|overall status)\b/))
+  if (has(value, /\b(?:current status|project status|status of|overall status)\b/)) {
     add("status", {
       select: "objects",
       objectKinds: [
@@ -531,8 +565,47 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
             : [{ field: "title", operator: "contains", value: statusTarget }],
       limit: top,
     });
+    add("status", {
+      select: "observations",
+      predicates: [
+        {
+          field: "source",
+          operator: "equals",
+          value: "github",
+        },
+      ],
+      time: { kind: "lookback", days: 30 },
+      limit: top,
+    });
+  }
   if (intents.includes("goals")) add("goals", { select: "knowledge", limit: top });
   if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
+  if (intents.includes("goals") && intents.includes("current_work")) {
+    add("current_work", {
+      select: "objects",
+      objectKinds: ["work_item", "deliverable"],
+      predicates: [
+        { field: "source", operator: "equals", value: "github" },
+        {
+          field: "lifecycleState",
+          operator: "in",
+          value: ["in_progress", "active"],
+        },
+      ],
+      time: { kind: "workspace_week" },
+      limit: explicitlyLimited ? top : 20,
+    });
+    add("goals", {
+      select: "relations",
+      relationKinds: ["supports", "contributes_to", "implements"],
+      traversal: {
+        kinds: ["supports", "contributes_to", "implements"],
+        direction: "both",
+        maximumDepth: 2,
+      },
+      limit: top,
+    });
+  }
 
   if (operations.length === 0) {
     add("general", { select: "objects", limit: top });

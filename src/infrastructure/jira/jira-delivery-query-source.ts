@@ -128,6 +128,15 @@ const supportedSelectors = new Set<DeliveryQueryOperation["select"]>([
   "observations",
 ]);
 
+const operationAllowsJira = (operation: DeliveryQueryOperation): boolean => {
+  const predicate = operation.predicates?.find(({ field }) => field === "source");
+  if (predicate === undefined || predicate.operator === "exists") return true;
+  const values = Array.isArray(predicate.value) ? predicate.value : [predicate.value];
+  if (predicate.operator === "contains")
+    return "jira".includes(String(values[0] ?? "").toLowerCase());
+  return values.map(String).includes("jira");
+};
+
 const asJiraQuery = (
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
@@ -707,7 +716,8 @@ export const createJiraDeliveryQuerySource = (
           return { items: [], conflicts: [], unavailableSources: [], complete: true };
         const projects = configuration.projectKeys.map((key) => `"${key}"`).join(", ");
         const queries = plan.operations.flatMap((operation) => {
-          if (!supportedSelectors.has(operation.select)) return [];
+          if (!supportedSelectors.has(operation.select) || !operationAllowsJira(operation))
+            return [];
           const query = asJiraQuery(context, operation, plan.subject);
           return query === undefined ? [] : [query];
         });

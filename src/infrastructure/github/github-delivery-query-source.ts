@@ -211,6 +211,15 @@ const dateRangeQualifier = (
   return ` ${field}:${from}..${inclusiveEnd}`;
 };
 
+const operationAllowsGitHub = (operation: DeliveryQueryOperation): boolean => {
+  const predicate = operation.predicates?.find(({ field }) => field === "source");
+  if (predicate === undefined || predicate.operator === "exists") return true;
+  const values = Array.isArray(predicate.value) ? predicate.value : [predicate.value];
+  if (predicate.operator === "contains")
+    return "github".includes(String(values[0] ?? "").toLowerCase());
+  return values.map(String).includes("github");
+};
+
 const readScopedActivity = async (
   configuration: GitHubDeliveryQueryConfiguration,
   scope: GitHubRepositoryScope,
@@ -359,8 +368,10 @@ export const createGitHubDeliveryQuerySource = (
             return emptyResult();
           const selected = plan.operations.filter(
             (operation) =>
-              operation.select === "github_live" ||
-              (operation.select === "observations" && operation.purpose === "activity"),
+              operationAllowsGitHub(operation) &&
+              (operation.select === "github_live" ||
+                (operation.select === "observations" &&
+                  ["activity", "delivered"].includes(operation.purpose))),
           );
           const responses = await Promise.all(
             selected.map(async (operation) => {
