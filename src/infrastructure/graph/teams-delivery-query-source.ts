@@ -213,6 +213,15 @@ const readChannel = async (
   return (payload.value ?? []).flatMap((message) => [message, ...(message.replies ?? [])]);
 };
 
+const operationAllowsTeams = (operation: DeliveryQueryOperation): boolean => {
+  const predicate = operation.predicates?.find(({ field }) => field === "source");
+  if (predicate === undefined || predicate.operator === "exists") return true;
+  const values = Array.isArray(predicate.value) ? predicate.value : [predicate.value];
+  if (predicate.operator === "contains")
+    return "teams".includes(String(values[0] ?? "").toLowerCase());
+  return values.map(String).includes("teams");
+};
+
 export const createTeamsDeliveryQuerySource = (
   configuration: TeamsDeliveryQueryConfiguration,
 ): DeliveryQuerySource => ({
@@ -231,6 +240,7 @@ export const createTeamsDeliveryQuerySource = (
         const operations = plan.operations.filter(
           (operation) =>
             ["objects", "relations", "observations", "claims"].includes(operation.select) &&
+            operationAllowsTeams(operation) &&
             operation.groupBy === undefined &&
             operation.measures === undefined,
         );

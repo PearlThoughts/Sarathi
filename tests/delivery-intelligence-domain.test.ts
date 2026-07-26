@@ -31,7 +31,15 @@ describe("delivery intelligence domain", () => {
       kind: "jira_sprint",
       sprint: "previous",
     });
-    expect(plan?.operations[1]?.time).toEqual({ kind: "workspace_week" });
+    expect(plan?.operations[1]).toMatchObject({
+      purpose: "delivered",
+      select: "observations",
+      time: {
+        kind: "jira_sprint",
+        sprint: "previous",
+      },
+    });
+    expect(plan?.operations[2]?.time).toEqual({ kind: "workspace_week" });
   });
 
   it("recognizes activity summaries regardless of phrase order and keeps activity primary", () => {
@@ -96,6 +104,19 @@ describe("delivery intelligence domain", () => {
         ],
         time: { kind: "workspace_previous_week" },
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "observations",
+        predicates: [
+          { field: "source", operator: "equals", value: "github" },
+          {
+            field: "kind",
+            operator: "in",
+            value: ["pull_request", "commit", "deployment"],
+          },
+        ],
+        time: { kind: "workspace_previous_week" },
+      }),
     ]);
   });
 
@@ -106,6 +127,11 @@ describe("delivery intelligence domain", () => {
     expect(plan?.operations).toEqual([
       expect.objectContaining({
         purpose: "delivered",
+        time: { kind: "workspace_week" },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "observations",
         time: { kind: "workspace_week" },
       }),
     ]);
@@ -165,6 +191,18 @@ describe("delivery intelligence domain", () => {
         purpose: "goals",
         select: "knowledge",
       }),
+      expect.objectContaining({
+        purpose: "current_work",
+        select: "objects",
+        predicates: expect.arrayContaining([
+          { field: "source", operator: "equals", value: "github" },
+        ]),
+      }),
+      expect.objectContaining({
+        purpose: "goals",
+        select: "relations",
+        relationKinds: ["supports", "contributes_to", "implements"],
+      }),
     ]);
     expect(plan?.answerMode).toBe("model_assisted");
   });
@@ -196,15 +234,30 @@ describe("delivery intelligence domain", () => {
     ]);
   });
 
-  it("requires live GitHub and carries the implementation subject", () => {
+  it("queries indexed GitHub delivery evidence before live implementation verification", () => {
     const plan = planDeliveryQuestion(
       "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",
     );
     expect(plan?.subject).toEqual({ phrase: "Lead Routing Dashboard" });
     expect(plan?.requiredSources).toEqual(["github"]);
     expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "implementation",
+        select: "objects",
+        objectKinds: ["module"],
+        predicates: [
+          { field: "source", operator: "equals", value: "github" },
+          {
+            field: "title",
+            operator: "contains",
+            value: "Lead Routing Dashboard",
+          },
+        ],
+      }),
+      expect.objectContaining({ purpose: "implementation", select: "knowledge" }),
       expect.objectContaining({ purpose: "implementation", select: "github_live" }),
     ]);
+    expect(plan?.answerMode).toBe("model_assisted");
   });
 
   it("requires all compared sources for disagreement questions", () => {
@@ -234,7 +287,11 @@ describe("delivery intelligence domain", () => {
     expect(named?.operations[0]?.predicates).toEqual([
       { field: "title", operator: "contains", value: "Modern Website Builder" },
     ]);
-    expect(named?.operations.map(({ select }) => select)).toEqual(["objects", "knowledge"]);
+    expect(named?.operations.map(({ select }) => select)).toEqual([
+      "objects",
+      "observations",
+      "knowledge",
+    ]);
 
     const keyed = planDeliveryQuestion("What is the status of F1851-754?");
     expect(keyed?.operations[0]?.predicates).toEqual([

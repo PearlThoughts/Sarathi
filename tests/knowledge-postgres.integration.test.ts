@@ -1650,4 +1650,147 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       new Set(["github", "jira"]),
     );
   });
+
+  test("applies source and alias predicates before limiting GitHub module results", async () => {
+    const workspaceId = "workspace-source-balanced-query";
+    const repository = createPostgresKnowledgeRepository(opened.database, {
+      entityCatalog: {
+        version: 1,
+        entities: [
+          {
+            kind: "module",
+            canonicalKey: "product-builder",
+            title: "Product Builder",
+            aliases: [
+              { source: "github", value: "Puck" },
+              { source: "jira", value: "Modern Website Builder" },
+            ],
+          },
+        ],
+      },
+    });
+    const noise = Array.from({ length: 12 }, (_, index) => ({
+      kind: "module" as const,
+      externalKey: `noise-${index}`,
+      title: `Recently updated module ${index}`,
+      lifecycleState: "active",
+      attributes: {},
+      observedAt: `2026-07-26T${String(index + 1).padStart(2, "0")}:00:00.000Z`,
+      sensitivity: "internal" as const,
+    }));
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId: "github-source-balanced-query",
+          source: "github",
+          workspaceId,
+          cursor: "github-source-balanced-query-v1",
+          scopeHash: "sha256-source-balanced-query",
+          documents: [
+            {
+              source: "github",
+              sourceId: "github-source-balanced-query",
+              workspaceId,
+              externalId: "repository-modules",
+              sourceType: "repository",
+              sourceVersion: "v1",
+              canonicalUrl: "https://github.com/example/product-builder",
+              title: "Repository modules",
+              sourceCreatedAt: "2026-07-01T00:00:00.000Z",
+              sourceUpdatedAt: "2026-07-26T13:00:00.000Z",
+              sensitivity: "internal",
+              authority: 0.95,
+              provenance: { repository: "example/product-builder" },
+              acl: [
+                {
+                  subjectType: "workspace",
+                  subjectId: workspaceId,
+                  effect: "allow",
+                },
+              ],
+              passages: [
+                {
+                  kind: "description",
+                  locator: "#modules",
+                  ordinal: 0,
+                  title: "Modules",
+                  body: "Repository module catalog.",
+                  contentHash: "sha256-source-balanced-query-body",
+                },
+              ],
+              deliveryProjection: {
+                objects: [
+                  ...noise,
+                  {
+                    kind: "module",
+                    externalKey: "Puck",
+                    title: "Puck",
+                    lifecycleState: "active",
+                    attributes: {},
+                    observedAt: "2026-07-01T00:00:00.000Z",
+                    sensitivity: "internal",
+                  },
+                ],
+                relations: [],
+                observations: [],
+                metrics: [],
+                claims: [],
+              },
+            },
+          ],
+        },
+        createDeterministicKnowledgeEmbedding(),
+      ),
+    );
+
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["implementation"],
+      operations: [
+        {
+          id: "implementation-module",
+          purpose: "implementation",
+          select: "objects",
+          objectKinds: ["module"],
+          predicates: [
+            { field: "source", operator: "equals", value: "github" },
+            {
+              field: "title",
+              operator: "contains",
+              value: "Modern Website Builder",
+            },
+          ],
+          limit: 1,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 3,
+      requiresFinance: false,
+      requiredSources: ["github"],
+    };
+    const result = await Effect.runPromise(
+      createPostgresDeliveryQuerySource(opened.database).execute(
+        {
+          workspaceId,
+          actorId: "delivery-member",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-26T14:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-26T14:00:08.000Z",
+          question: "How is Modern Website Builder implemented?",
+        },
+        plan,
+      ),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        source: "github",
+        selector: "objects",
+        title: "Product Builder",
+        subjectAliases: expect.arrayContaining(["Puck", "Modern Website Builder"]),
+      }),
+    ]);
+  });
 });
