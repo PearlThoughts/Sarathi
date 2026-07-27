@@ -617,6 +617,10 @@ const queryObservations = async (
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
 ): Promise<DeliveryQueryResult> => {
+  const isWeeklyDelivery =
+    operation.purpose === "delivered" &&
+    (operation.time?.kind === "workspace_week" ||
+      operation.time?.kind === "workspace_previous_week");
   const rows = await database
     .select()
     .from(deliveryObservationTable)
@@ -635,7 +639,9 @@ const queryObservations = async (
       ),
     )
     .orderBy(desc(deliveryObservationTable.occurredAt), asc(deliveryObservationTable.id))
-    .limit(Math.min(operation.limit * 8, 120));
+    .limit(
+      isWeeklyDelivery ? Math.min(operation.limit * 20, 400) : Math.min(operation.limit * 8, 120),
+    );
   const filtered = rows.filter((row) =>
     matchesPredicates(
       {
@@ -693,37 +699,51 @@ const queryObservations = async (
   )?.minimumOccurrences;
   const counts = new Map<string, number>();
   for (const row of filtered) counts.set(row.dedupeKey, (counts.get(row.dedupeKey) ?? 0) + 1);
+  const eligible = filtered
+    .filter(
+      (row) =>
+        minimumOccurrences === undefined || (counts.get(row.dedupeKey) ?? 0) >= minimumOccurrences,
+    )
+    .filter((row, index, values) =>
+      operation.groupBy?.includes("dedupeKey") === true
+        ? values.findIndex((candidate) => candidate.dedupeKey === row.dedupeKey) === index
+        : true,
+    );
+  const selected = isWeeklyDelivery
+    ? (() => {
+        const ownerRepresentatives = new Map<string, (typeof eligible)[number]>();
+        for (const row of eligible) {
+          if (row.actorExternalKey === null || !actors.has(row.actorExternalKey)) continue;
+          if (!ownerRepresentatives.has(row.actorExternalKey))
+            ownerRepresentatives.set(row.actorExternalKey, row);
+        }
+        const representatives = [...ownerRepresentatives.values()];
+        const representativeIds = new Set(representatives.map(({ id }) => id));
+        return [
+          ...representatives,
+          ...eligible.filter(({ id }) => !representativeIds.has(id)),
+        ].slice(0, operation.limit);
+      })()
+    : eligible.slice(0, operation.limit);
   return result(
-    filtered
-      .filter(
-        (row) =>
-          minimumOccurrences === undefined ||
-          (counts.get(row.dedupeKey) ?? 0) >= minimumOccurrences,
-      )
-      .filter((row, index, values) =>
-        operation.groupBy?.includes("dedupeKey") === true
-          ? values.findIndex((candidate) => candidate.dedupeKey === row.dedupeKey) === index
-          : true,
-      )
-      .slice(0, operation.limit)
-      .map((row) => ({
-        id: row.id,
-        workspaceId: row.workspaceId,
-        source: sourceKind(row.sourceKind),
-        selector: "observations" as const,
-        intent: operation.purpose,
-        title: row.observationKind,
-        summary: `${row.summary}${minimumOccurrences === undefined ? "" : ` (${counts.get(row.dedupeKey)} occurrences)`}`,
-        citationUrl: row.citationUrl,
-        sensitivity: sensitivity(row.sensitivity),
-        authority: row.authority,
-        observedAt: row.occurredAt,
-        sourceCreatedAt: row.sourceCreatedAt ?? undefined,
-        sourceUpdatedAt: row.sourceUpdatedAt,
-        indexedAt: row.indexedAt,
-        owner: row.actorExternalKey === null ? undefined : actors.get(row.actorExternalKey),
-        dedupeKey: row.dedupeKey,
-      })),
+    selected.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      source: sourceKind(row.sourceKind),
+      selector: "observations" as const,
+      intent: operation.purpose,
+      title: row.observationKind,
+      summary: `${row.summary}${minimumOccurrences === undefined ? "" : ` (${counts.get(row.dedupeKey)} occurrences)`}`,
+      citationUrl: row.citationUrl,
+      sensitivity: sensitivity(row.sensitivity),
+      authority: row.authority,
+      observedAt: row.occurredAt,
+      sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+      sourceUpdatedAt: row.sourceUpdatedAt,
+      indexedAt: row.indexedAt,
+      owner: row.actorExternalKey === null ? undefined : actors.get(row.actorExternalKey),
+      dedupeKey: row.dedupeKey,
+    })),
   );
 };
 

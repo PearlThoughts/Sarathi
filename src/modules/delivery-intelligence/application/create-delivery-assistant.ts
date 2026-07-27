@@ -298,6 +298,15 @@ const ownerGroupKey = (item: DeliveryResultItem): string =>
       ? `display\u0000${item.owner.displayName.toLocaleLowerCase("en")}`
       : `${item.owner.source}\u0000${item.owner.externalId}`;
 
+const deliveredItemSummary = (item: DeliveryResultItem): string => {
+  const summary = safeText(item.summary);
+  const owner = item.owner?.displayName.trim();
+  if (owner === undefined || owner === "") return summary;
+  return summary.toLocaleLowerCase("en").includes(owner.toLocaleLowerCase("en"))
+    ? summary
+    : `${safeText(owner)} — ${summary}`;
+};
+
 const subjectTokens = (value: string): readonly string[] =>
   value
     .toLowerCase()
@@ -473,7 +482,7 @@ const composeAnswer = (
         if (selected.length > 0) {
           detailLines.push(
             `- ✅ **Delivered:** ${selected
-              .map((item) => `${safeText(item.summary)} ${citation(item)}`)
+              .map((item) => `${deliveredItemSummary(item)} ${citation(item)}`)
               .join(" · ")}`,
           );
           const sourceCounts = [...new Set(delivered.map((item) => item.source))].map(

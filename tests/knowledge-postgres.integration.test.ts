@@ -1782,6 +1782,164 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     ]);
   });
 
+  test("reserves weekly GitHub delivery results across resolved contributors before the limit", async () => {
+    const workspaceId = "workspace-github-weekly-owner-breadth";
+    const people = [
+      {
+        externalKey: "github:high-volume-one",
+        canonicalKey: "high-volume-one",
+        title: "High Volume One",
+        login: "high-volume-one",
+      },
+      {
+        externalKey: "github:high-volume-two",
+        canonicalKey: "high-volume-two",
+        title: "High Volume Two",
+        login: "high-volume-two",
+      },
+      {
+        externalKey: "github:manic56",
+        canonicalKey: "manikandan-selvam",
+        title: "Manikandan Selvam",
+        login: "manic56",
+      },
+    ] as const;
+    const repository = createPostgresKnowledgeRepository(opened.database, {
+      entityCatalog: {
+        version: 1,
+        entities: people.map((person) => ({
+          kind: "person" as const,
+          canonicalKey: person.canonicalKey,
+          title: person.title,
+          aliases: [{ source: "github" as const, value: person.login }],
+        })),
+      },
+    });
+    const noisyObservations = people.slice(0, 2).flatMap((person, personIndex) =>
+      Array.from({ length: 12 }, (_, index) => ({
+        kind: "commit" as const,
+        externalId: `${person.login}-${index}`,
+        actorExternalKey: person.externalKey,
+        summary: `${person.title} change ${index}`,
+        dedupeKey: `github:example/repo:commit:${person.login}-${index}`,
+        occurredAt: `2026-07-25T${String(23 - personIndex).padStart(2, "0")}:${String(59 - index).padStart(2, "0")}:00.000Z`,
+        citationUrl: `https://github.com/example/repo/commit/${person.login}-${index}`,
+        sensitivity: "internal" as const,
+        authority: 0.9,
+      })),
+    );
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId: "github-weekly-owner-breadth",
+          source: "github",
+          workspaceId,
+          cursor: "weekly-owner-breadth-cursor",
+          scopeHash: "weekly-owner-breadth-scope",
+          mode: "full",
+          documents: [
+            {
+              source: "github",
+              sourceId: "github-weekly-owner-breadth",
+              workspaceId,
+              externalId: "example/repo:weekly-activity",
+              sourceType: "repository_activity",
+              sourceVersion: "v1",
+              canonicalUrl: "https://github.com/example/repo",
+              title: "Weekly repository activity",
+              sourceCreatedAt: "2026-07-20T00:00:00.000Z",
+              sourceUpdatedAt: "2026-07-25T23:59:00.000Z",
+              sensitivity: "internal",
+              authority: 0.9,
+              provenance: {},
+              acl: [
+                {
+                  subjectType: "workspace",
+                  subjectId: workspaceId,
+                  effect: "allow",
+                },
+              ],
+              passages: [],
+              deliveryProjection: {
+                objects: people.map((person) => ({
+                  kind: "person" as const,
+                  externalKey: person.externalKey,
+                  title: person.login,
+                  lifecycleState: "active" as const,
+                  attributes: { provider: "github" },
+                  sensitivity: "internal" as const,
+                })),
+                relations: [],
+                observations: [
+                  ...noisyObservations,
+                  {
+                    kind: "pull_request",
+                    externalId: "manikandan-pr",
+                    actorExternalKey: "github:manic56",
+                    summary: "PR #42 merged: Ship contributor breadth",
+                    dedupeKey: "github:example/repo:pull_request:manikandan-pr",
+                    occurredAt: "2026-07-25T08:00:00.000Z",
+                    citationUrl: "https://github.com/example/repo/pull/42",
+                    sensitivity: "internal",
+                    authority: 0.95,
+                  },
+                ],
+                metrics: [],
+                claims: [],
+              },
+            },
+          ],
+        },
+        createDeterministicKnowledgeEmbedding(),
+      ),
+    );
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["delivered"],
+      operations: [
+        {
+          id: "weekly-delivered-observations",
+          purpose: "delivered",
+          select: "observations",
+          predicates: [
+            { field: "source", operator: "equals", value: "github" },
+            {
+              field: "kind",
+              operator: "in",
+              value: ["pull_request", "commit", "deployment"],
+            },
+          ],
+          time: { kind: "workspace_week" },
+          limit: 3,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 5,
+      requiresFinance: false,
+    };
+    const response = await Effect.runPromise(
+      createPostgresDeliveryQuerySource(opened.database).execute(
+        {
+          workspaceId,
+          actorId: "delivery-member",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-25T12:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-25T12:00:08.000Z",
+          question: "What was delivered this week?",
+        },
+        plan,
+      ),
+    );
+
+    expect(response.items.map(({ owner }) => owner?.displayName)).toEqual([
+      "High Volume One",
+      "High Volume Two",
+      "Manikandan Selvam",
+    ]);
+  });
+
   test("applies source and alias predicates before limiting GitHub module results", async () => {
     const workspaceId = "workspace-source-balanced-query";
     const repository = createPostgresKnowledgeRepository(opened.database, {

@@ -338,6 +338,11 @@ describe("delivery intelligence application", () => {
               ...item("github", "pr-42", "Merged the builder release", "delivered"),
               lifecycleState: "done" as const,
               authority: 0.8,
+              owner: {
+                source: "github" as const,
+                externalId: "github-person-kamesh",
+                displayName: "Kamesh",
+              },
             },
           ],
           conflicts: [],
@@ -357,10 +362,10 @@ describe("delivery intelligence application", () => {
     expect(answer.missingRequiredSources).toEqual([]);
     expect(answer.citations.map(({ label }) => label)).toEqual(["Jira 1", "GitHub 2", "Jira 3"]);
     expect(answer.text).toContain("DEMO-21 Done");
-    expect(answer.text).toContain("Merged the builder release");
+    expect(answer.text).toContain("Kamesh — Merged the builder release");
     expect(answer.text).toContain("DEMO-22 Done");
     expect(answer.text).toContain(
-      "retrieved window contains 3 source-backed delivered items across Jira 2, GitHub 1 and 2 named owners",
+      "retrieved window contains 3 source-backed delivered items across Jira 2, GitHub 1 and 3 named owners",
     );
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
