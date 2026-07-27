@@ -30,6 +30,7 @@ import {
   type DeliveryResultItem,
   type DeliverySourceKind,
   findDeliveryConflicts,
+  normalizeDeliveryEntityAlias,
   resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
@@ -194,6 +195,35 @@ const observationSqlConditions = (operation: DeliveryQueryOperation): readonly S
     const condition = equalityCondition(column, predicate);
     return condition === undefined ? [] : [condition];
   });
+
+const implementationRepositoryCondition = (
+  operation: DeliveryQueryOperation,
+  entityCatalog: DeliveryEntityCatalog | undefined,
+): SQL | undefined => {
+  if (operation.purpose !== "implementation") return undefined;
+  const target = operation.predicates?.find(
+    ({ field, operator }) => field === "title" && operator === "contains",
+  )?.value;
+  if (typeof target !== "string") return undefined;
+  const normalizedTarget = normalizeDeliveryEntityAlias(target);
+  const definition = entityCatalog?.entities.find(
+    (entity) =>
+      entity.kind === "module" &&
+      [entity.canonicalKey, entity.title, ...entity.aliases.map(({ value }) => value)].some(
+        (candidate) => normalizeDeliveryEntityAlias(candidate) === normalizedTarget,
+      ),
+  );
+  const repositories =
+    definition?.aliases
+      .filter(({ source }) => source === "github")
+      .map(({ value }) => value.trim())
+      .filter((value) => value !== "") ?? [];
+  const conditions = repositories.map((repository) =>
+    ilike(deliveryObservationTable.dedupeKey, `github:${escapedLikeValue(repository)}:%`),
+  );
+  if (conditions.length === 0) return undefined;
+  return conditions.length === 1 ? conditions[0] : or(...conditions);
+};
 
 const severityRank: Readonly<Record<string, number>> = {
   critical: 5,
@@ -625,6 +655,7 @@ const queryObservations = async (
     (operation.time?.kind === "workspace_week" ||
       operation.time?.kind === "workspace_previous_week");
   const isImplementation = operation.purpose === "implementation";
+  const repositoryCondition = implementationRepositoryCondition(operation, entityCatalog);
   const rows = await database
     .select()
     .from(deliveryObservationTable)
@@ -639,6 +670,7 @@ const queryObservations = async (
         eq(deliveryObservationTable.active, true),
         isNull(deliveryObservationTable.deletedAt),
         ...observationSqlConditions(operation),
+        ...(repositoryCondition === undefined ? [] : [repositoryCondition]),
         ...timeConditions(deliveryObservationTable.occurredAt, operation, context),
       ),
     )
