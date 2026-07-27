@@ -32,6 +32,17 @@ describe("delivery intelligence live query sources", () => {
       workspaceId: context.workspaceId,
       allowedActorIds: new Set([context.actorId]),
       allowedRepositories: ["example/repo"],
+      entityCatalog: {
+        version: 1,
+        entities: [
+          {
+            kind: "person",
+            canonicalKey: "delivery-owner",
+            title: "Delivery Owner",
+            aliases: [{ source: "github", value: "delivery-owner-login" }],
+          },
+        ],
+      },
       fetcher: async (input) => {
         const url = String(input);
         requests.push(url);
@@ -44,6 +55,7 @@ describe("delivery intelligence live query sources", () => {
               updated_at: "2026-07-20T10:00:00.000Z",
               merged_at: "2026-07-20T10:00:00.000Z",
               merge_commit_sha: "merge-sha",
+              user: { login: "delivery-owner-login" },
             },
           ]);
         return Response.json([
@@ -60,8 +72,10 @@ describe("delivery intelligence live query sources", () => {
             html_url: "https://github.com/example/repo/commit/abc123456789",
             commit: {
               message: "Add delivery query",
+              author: { date: "2026-07-20T09:00:00Z", name: "Delivery Owner" },
               committer: { date: "2026-07-20T09:00:00Z" },
             },
+            author: { login: "delivery-owner-login" },
           },
         ]);
       },
@@ -75,6 +89,18 @@ describe("delivery intelligence live query sources", () => {
     expect(result.items.map(({ citationUrl }) => citationUrl)).not.toContain(
       "https://github.com/example/repo/commit/merge-sha",
     );
+    expect(result.items.map(({ owner }) => owner)).toEqual([
+      {
+        source: "github",
+        externalId: "github:delivery-owner-login",
+        displayName: "Delivery Owner",
+      },
+      {
+        source: "github",
+        externalId: "github:delivery-owner-login",
+        displayName: "Delivery Owner",
+      },
+    ]);
   });
 
   it("enforces GitHub actor boundaries before provider access", async () => {

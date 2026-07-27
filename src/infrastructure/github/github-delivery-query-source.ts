@@ -2,11 +2,13 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { isSensitivityAtOrBelow, type SensitivityTier } from "../../domain/policy.ts";
 import {
+  type DeliveryEntityCatalog,
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
   type DeliveryQueryResult,
   type DeliveryQuerySource,
   type DeliveryResultItem,
+  resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
 import { createGitHubKnowledgeSearch } from "./github-knowledge-search.ts";
@@ -29,13 +31,15 @@ type GitHubPull = {
   readonly merged_at?: string | null;
   readonly merge_commit_sha?: string | null;
   readonly state?: string;
+  readonly user?: { readonly login?: string };
 };
 type GitHubCommit = {
   readonly sha?: string;
   readonly html_url?: string;
+  readonly author?: { readonly login?: string } | null;
   readonly commit?: {
     readonly message?: string;
-    readonly author?: { readonly date?: string };
+    readonly author?: { readonly date?: string; readonly name?: string };
     readonly committer?: { readonly date?: string };
   };
 };
@@ -57,6 +61,7 @@ export type GitHubDeliveryQueryConfiguration = {
   readonly repositoryScopes?: readonly GitHubRepositoryScope[] | undefined;
   readonly sensitivity?: SensitivityTier | undefined;
   readonly authority?: number | undefined;
+  readonly entityCatalog?: DeliveryEntityCatalog | undefined;
   readonly timeoutMs?: number | undefined;
   readonly fetcher?: Fetcher | undefined;
 };
@@ -70,6 +75,26 @@ const emptyResult = (): DeliveryQueryResult => ({
 
 const firstLine = (value: string | undefined): string =>
   (value ?? "Commit").split(/\r?\n/, 1)[0]?.replace(/\s+/g, " ").trim().slice(0, 160) || "Commit";
+
+const githubOwner = (
+  configuration: GitHubDeliveryQueryConfiguration,
+  actor: string | undefined,
+): DeliveryResultItem["owner"] => {
+  const value = actor?.trim();
+  if (value === undefined || value === "") return undefined;
+  const resolved = resolveDeliveryEntity(configuration.entityCatalog, "github", {
+    kind: "person",
+    externalKey: `github:${value}`,
+    title: value,
+    attributes: { aliases: [value] },
+    sensitivity: configuration.sensitivity ?? "internal",
+  });
+  return {
+    source: "github",
+    externalId: `github:${value}`,
+    displayName: resolved.canonicalTitle,
+  };
+};
 
 const repositoryPath = (repository: string): string =>
   repository
@@ -163,6 +188,7 @@ const readRepositoryActivity = async (
         sensitivity,
         authority: authority + 0.05,
         observedAt,
+        owner: githubOwner(configuration, pull.user?.login),
         dedupeKey: `github:${repository}:pull:${pull.number}:${action}`,
       },
     ];
@@ -192,6 +218,7 @@ const readRepositoryActivity = async (
         sensitivity,
         authority,
         observedAt,
+        owner: githubOwner(configuration, commit.author?.login ?? commit.commit?.author?.name),
         dedupeKey: `github:${repository}:commit:${commit.sha}`,
       },
     ];
@@ -288,6 +315,7 @@ const readScopedActivity = async (
         sensitivity,
         authority: authority + 0.05,
         observedAt,
+        owner: githubOwner(configuration, pull.user?.login),
         dedupeKey: `github:${repository}:pull:${pull.number}:${action}`,
       },
     ];
@@ -321,6 +349,7 @@ const readScopedActivity = async (
           sensitivity,
           authority,
           observedAt,
+          owner: githubOwner(configuration, commit.author?.login ?? commit.commit?.author?.name),
           dedupeKey: `github:${repository}:commit:${commit.sha}`,
         },
       ];

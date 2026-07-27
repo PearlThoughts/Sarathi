@@ -33,6 +33,7 @@ import {
   deliveryResponseBudget,
   deliveryResponseModePolicies,
   evaluateDeliveryCase,
+  parseDeliveryEntityCatalog,
   parseDeliveryEvaluationSet,
   selectDeliveryResponseMode,
   summarizeDeliveryEvaluation,
@@ -183,6 +184,9 @@ const liveSources = (
           environment.SARATHI_GITHUB_REPOSITORY_SCOPES_JSON,
         );
   const token = required("GITHUB_TOKEN", environment.GITHUB_TOKEN);
+  const entityCatalog = parseDeliveryEntityCatalog(
+    environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+  );
   const jira = parseJson<JiraProjection>(
     "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON",
     environment.SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON,
@@ -195,6 +199,7 @@ const liveSources = (
       allowedActorIds,
       allowedRepositories: repositories,
       repositoryScopes,
+      entityCatalog,
       timeoutMs: 4_000,
     }),
     createJiraDeliveryQuerySource({
