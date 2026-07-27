@@ -2175,12 +2175,14 @@ describeDatabase("knowledge PostgreSQL integration", () => {
                   },
                 ],
                 observations: [
-                  ...Array.from({ length: 45 }, (_, index) => ({
+                  ...Array.from({ length: 450 }, (_, index) => ({
                     kind: "commit" as const,
                     externalId: `unrelated-${index}`,
                     summary: `Unrelated repository change ${index}`,
                     dedupeKey: `github:example/unrelated:commit:${index}`,
-                    occurredAt: `2026-07-26T10:${String(index).padStart(2, "0")}:00.000Z`,
+                    occurredAt: new Date(
+                      Date.parse("2026-07-26T10:00:00.000Z") + index * 1_000,
+                    ).toISOString(),
                     citationUrl: `https://github.com/example/unrelated/commit/${index}`,
                     sensitivity: "internal" as const,
                     authority: 0.9,
