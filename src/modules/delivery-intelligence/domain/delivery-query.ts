@@ -540,6 +540,28 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ],
       limit: top,
     });
+    add("implementation", {
+      select: "observations",
+      predicates: [
+        { field: "source", operator: "equals", value: "github" },
+        {
+          field: "kind",
+          operator: "in",
+          value: ["pull_request", "commit", "release", "deployment"],
+        },
+        ...(implementationTarget === undefined
+          ? []
+          : [
+              {
+                field: "title" as const,
+                operator: "contains" as const,
+                value: implementationTarget,
+              },
+            ]),
+      ],
+      time: { kind: "lookback", days: 30 },
+      limit: top,
+    });
     add("implementation", { select: "knowledge", limit: top });
     add("implementation", { select: "github_live", limit: top });
   }

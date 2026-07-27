@@ -629,6 +629,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                       workspaceId,
                       allowedActorIds,
                       audienceIds: knowledgeAudienceIds,
+                      allowedGitHubRepositories: allowedRepositories,
                     }),
                   ]),
               createGitHubDeliveryQuerySource({

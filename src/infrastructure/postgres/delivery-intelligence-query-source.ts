@@ -624,6 +624,7 @@ const queryObservations = async (
     operation.purpose === "delivered" &&
     (operation.time?.kind === "workspace_week" ||
       operation.time?.kind === "workspace_previous_week");
+  const isImplementation = operation.purpose === "implementation";
   const rows = await database
     .select()
     .from(deliveryObservationTable)
@@ -643,15 +644,129 @@ const queryObservations = async (
     )
     .orderBy(desc(deliveryObservationTable.occurredAt), asc(deliveryObservationTable.id))
     .limit(
-      isWeeklyDelivery ? Math.min(operation.limit * 20, 400) : Math.min(operation.limit * 8, 120),
+      isWeeklyDelivery || isImplementation
+        ? Math.min(operation.limit * 80, 400)
+        : Math.min(operation.limit * 8, 120),
     );
-  const filtered = rows.filter((row) =>
+  const prefiltered = rows.filter((row) =>
     matchesPredicates(
       {
         kind: row.observationKind,
         source: row.sourceKind,
         dedupeKey: row.dedupeKey,
         observedAt: row.observedAt,
+      },
+      operation.predicates?.filter(({ field }) => field !== "title"),
+    ),
+  );
+  const subjectObjectIds = [
+    ...new Set(
+      prefiltered.flatMap(({ subjectObjectId }) =>
+        subjectObjectId === null ? [] : [subjectObjectId],
+      ),
+    ),
+  ];
+  const subjectObjectRows =
+    subjectObjectIds.length === 0
+      ? []
+      : await database
+          .select({
+            id: deliveryObjectTable.id,
+            objectKind: deliveryObjectTable.objectKind,
+            externalKey: deliveryObjectTable.externalKey,
+            title: deliveryObjectTable.title,
+            attributes: deliveryObjectTable.attributes,
+            sourceKind: deliveryObjectTable.sourceKind,
+            sensitivity: deliveryObjectTable.sensitivity,
+          })
+          .from(deliveryObjectTable)
+          .where(
+            and(
+              eq(deliveryObjectTable.workspaceId, context.workspaceId),
+              inArray(deliveryObjectTable.id, subjectObjectIds),
+              authorizationCondition(database, context, "object", deliveryObjectTable.id),
+              inArray(
+                deliveryObjectTable.sensitivity,
+                allowedSensitivities(context.maximumSensitivity),
+              ),
+              eq(deliveryObjectTable.active, true),
+              isNull(deliveryObjectTable.deletedAt),
+            ),
+          );
+  const subjectAliasRows =
+    subjectObjectIds.length === 0
+      ? []
+      : await database
+          .select({
+            sourceObjectId: deliveryEntityAliasTable.sourceObjectId,
+            alias: deliveryEntityAliasTable.alias,
+          })
+          .from(deliveryEntityAliasTable)
+          .where(
+            and(
+              eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
+              inArray(deliveryEntityAliasTable.sourceObjectId, subjectObjectIds),
+              inArray(
+                deliveryEntityAliasTable.sensitivity,
+                allowedSensitivities(context.maximumSensitivity),
+              ),
+              eq(deliveryEntityAliasTable.active, true),
+              isNull(deliveryEntityAliasTable.deletedAt),
+            ),
+          );
+  const persistedSubjectAliases = new Map<string, string[]>();
+  for (const alias of subjectAliasRows) {
+    const current = persistedSubjectAliases.get(alias.sourceObjectId) ?? [];
+    current.push(alias.alias);
+    persistedSubjectAliases.set(alias.sourceObjectId, current);
+  }
+  const subjectAliases = new Map(
+    subjectObjectRows.map((object) => {
+      const repository =
+        typeof object.attributes.repository === "string" ? object.attributes.repository : undefined;
+      const resolved =
+        object.objectKind === "module"
+          ? resolveDeliveryEntity(entityCatalog, sourceKind(object.sourceKind), {
+              kind: "module",
+              externalKey: object.externalKey,
+              title: object.title,
+              attributes: object.attributes,
+              sensitivity: sensitivity(object.sensitivity),
+            })
+          : repository === undefined
+            ? undefined
+            : resolveDeliveryEntity(entityCatalog, "github", {
+                kind: "module",
+                externalKey: repository,
+                title: repository,
+                attributes: { aliases: [repository] },
+                sensitivity: sensitivity(object.sensitivity),
+              });
+      return [
+        object.id,
+        [
+          ...new Set([
+            object.externalKey,
+            object.title,
+            ...(persistedSubjectAliases.get(object.id) ?? []),
+            ...(resolved?.aliases ?? []),
+            ...(resolved === undefined ? [] : [resolved.canonicalTitle]),
+          ]),
+        ],
+      ] as const;
+    }),
+  );
+  const filtered = prefiltered.filter((row) =>
+    matchesPredicates(
+      {
+        kind: row.observationKind,
+        source: row.sourceKind,
+        dedupeKey: row.dedupeKey,
+        observedAt: row.observedAt,
+        title: [
+          row.summary,
+          ...(row.subjectObjectId === null ? [] : (subjectAliases.get(row.subjectObjectId) ?? [])),
+        ],
       },
       operation.predicates,
     ),
@@ -760,6 +875,8 @@ const queryObservations = async (
       sourceUpdatedAt: row.sourceUpdatedAt,
       indexedAt: row.indexedAt,
       owner: row.actorExternalKey === null ? undefined : actors.get(row.actorExternalKey),
+      subjectAliases:
+        row.subjectObjectId === null ? undefined : subjectAliases.get(row.subjectObjectId),
       dedupeKey: row.dedupeKey,
     })),
   );

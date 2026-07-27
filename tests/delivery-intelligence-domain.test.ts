@@ -266,6 +266,24 @@ describe("delivery intelligence domain", () => {
           },
         ],
       }),
+      expect.objectContaining({
+        purpose: "implementation",
+        select: "observations",
+        predicates: [
+          { field: "source", operator: "equals", value: "github" },
+          {
+            field: "kind",
+            operator: "in",
+            value: ["pull_request", "commit", "release", "deployment"],
+          },
+          {
+            field: "title",
+            operator: "contains",
+            value: "Lead Routing Dashboard",
+          },
+        ],
+        time: { kind: "lookback", days: 30 },
+      }),
       expect.objectContaining({ purpose: "implementation", select: "knowledge" }),
       expect.objectContaining({ purpose: "implementation", select: "github_live" }),
     ]);
