@@ -307,7 +307,7 @@ describe("delivery intelligence application", () => {
     expect(answer.acceptance.passed).toBe(false);
   });
 
-  it("reserves fast-answer citations for every required delivery source", async () => {
+  it("preserves source and owner breadth in a whole-team weekly delivery rollup", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects"],
@@ -318,11 +318,21 @@ describe("delivery intelligence application", () => {
               ...item("jira", "DEMO-21", "DEMO-21 Done: Published the builder", "delivered"),
               lifecycleState: "done" as const,
               authority: 1,
+              owner: {
+                source: "jira" as const,
+                externalId: "jira-person-sneha",
+                displayName: "Sneha K",
+              },
             },
             {
               ...item("jira", "DEMO-22", "DEMO-22 Done: Verified the builder", "delivered"),
               lifecycleState: "done" as const,
               authority: 0.99,
+              owner: {
+                source: "jira" as const,
+                externalId: "jira-person-manikandan",
+                displayName: "Manikandan",
+              },
             },
             {
               ...item("github", "pr-42", "Merged the builder release", "delivered"),
@@ -345,10 +355,13 @@ describe("delivery intelligence application", () => {
 
     expect(answer.status).toBe("ok");
     expect(answer.missingRequiredSources).toEqual([]);
-    expect(answer.citations.map(({ label }) => label)).toEqual(["Jira 1", "GitHub 2"]);
+    expect(answer.citations.map(({ label }) => label)).toEqual(["Jira 1", "GitHub 2", "Jira 3"]);
     expect(answer.text).toContain("DEMO-21 Done");
     expect(answer.text).toContain("Merged the builder release");
-    expect(answer.text).not.toContain("DEMO-22 Done");
+    expect(answer.text).toContain("DEMO-22 Done");
+    expect(answer.text).toContain(
+      "retrieved window contains 3 source-backed delivered items across Jira 2, GitHub 1 and 2 named owners",
+    );
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
       citationPassed: true,

@@ -370,6 +370,12 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         : has(value, /\bthis week\b/)
           ? { kind: "workspace_week" as const }
           : undefined);
+    const limit =
+      time?.kind === "workspace_week" || time?.kind === "workspace_previous_week"
+        ? explicitlyLimited
+          ? top
+          : 20
+        : top;
     add("delivered", {
       select: "objects",
       objectKinds: ["work_item", "deliverable"],
@@ -381,7 +387,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         },
       ],
       time,
-      limit: top,
+      limit,
     });
     add("delivered", {
       select: "observations",
@@ -394,7 +400,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         },
       ],
       time,
-      limit: top,
+      limit,
     });
   }
   const currentWorkQuestion =

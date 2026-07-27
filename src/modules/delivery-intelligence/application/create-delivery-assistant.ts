@@ -283,6 +283,14 @@ const isWeeklyCurrentWork = (plan: DeliveryQueryPlan): boolean =>
       operation.purpose === "current_work" && operation.time?.kind === "workspace_week",
   );
 
+const isWeeklyDelivery = (plan: DeliveryQueryPlan): boolean =>
+  plan.operations.some(
+    (operation) =>
+      operation.purpose === "delivered" &&
+      (operation.time?.kind === "workspace_week" ||
+        operation.time?.kind === "workspace_previous_week"),
+  );
+
 const ownerGroupKey = (item: DeliveryResultItem): string =>
   item.owner === undefined
     ? "unassigned"
@@ -427,6 +435,55 @@ const composeAnswer = (
           const omittedOwners = Math.max(0, ownerGroups.size - representatives.length);
           detailLines.push(
             `- 📊 **Coverage:** The retrieved window contains ${currentWork.length} source-backed item${currentWork.length === 1 ? "" : "s"} across ${namedOwners} named owner${namedOwners === 1 ? "" : "s"}${unassignedItems === 0 ? "" : `, with ${unassignedItems} unassigned`}; one representative per owner is shown${omittedOwners === 0 ? "" : ` and ${omittedOwners} owner${omittedOwners === 1 ? " is" : "s are"} omitted by the response cap`}.`,
+          );
+        } else if (missingIntents.has(intent)) {
+          detailLines.push(
+            `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
+          );
+        }
+        continue;
+      }
+      if (intent === "delivered" && isWeeklyDelivery(plan)) {
+        const delivered = rankedForIntent(
+          items.filter((item) => item.intent === intent),
+          intent,
+        );
+        const requestedLimit = Math.max(
+          1,
+          ...plan.operations
+            .filter((operation) => operation.purpose === intent)
+            .map((operation) => operation.limit),
+        );
+        const ownerRepresentatives = new Map<string, DeliveryResultItem>();
+        const withoutOwner: DeliveryResultItem[] = [];
+        for (const item of delivered) {
+          if (item.owner === undefined) {
+            withoutOwner.push(item);
+            continue;
+          }
+          const key = ownerGroupKey(item);
+          if (!ownerRepresentatives.has(key)) ownerRepresentatives.set(key, item);
+        }
+        const selected = sourceBalancedForIntent(
+          [...ownerRepresentatives.values(), ...withoutOwner],
+          intent,
+          plan.requiredSources ?? [],
+          Math.min(responsePolicy.maximumItems, requestedLimit),
+        );
+        if (selected.length > 0) {
+          detailLines.push(
+            `- ✅ **Delivered:** ${selected
+              .map((item) => `${safeText(item.summary)} ${citation(item)}`)
+              .join(" · ")}`,
+          );
+          const sourceCounts = [...new Set(delivered.map((item) => item.source))].map(
+            (source) =>
+              `${sourceLabel[source]} ${delivered.filter((item) => item.source === source).length}`,
+          );
+          const namedOwners = ownerRepresentatives.size;
+          const omitted = Math.max(0, delivered.length - selected.length);
+          detailLines.push(
+            `- 📊 **Coverage:** The retrieved window contains ${delivered.length} source-backed delivered item${delivered.length === 1 ? "" : "s"} across ${sourceCounts.join(", ")}${namedOwners === 0 ? "" : ` and ${namedOwners} named owner${namedOwners === 1 ? "" : "s"}`}; ${selected.length} representative item${selected.length === 1 ? " is" : "s are"} shown${omitted === 0 ? "" : ` and ${omitted} item${omitted === 1 ? " is" : "s are"} omitted by the response cap`}.`,
           );
         } else if (missingIntents.has(intent)) {
           detailLines.push(

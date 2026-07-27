@@ -128,12 +128,23 @@ describe("delivery intelligence domain", () => {
       expect.objectContaining({
         purpose: "delivered",
         time: { kind: "workspace_week" },
+        limit: 20,
       }),
       expect.objectContaining({
         purpose: "delivered",
         select: "observations",
         time: { kind: "workspace_week" },
+        limit: 20,
       }),
+    ]);
+  });
+
+  it("honors an explicit top limit for weekly delivery rollups", () => {
+    const plan = planDeliveryQuestion("What are the top 3 items delivered this week?");
+
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({ purpose: "delivered", limit: 3 }),
+      expect.objectContaining({ purpose: "delivered", select: "observations", limit: 3 }),
     ]);
   });
 
