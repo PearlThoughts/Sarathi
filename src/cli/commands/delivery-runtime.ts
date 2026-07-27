@@ -287,11 +287,14 @@ const answerFromRuntime = async (
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
     queryBudgetMs,
   );
+  const entityCatalog = parseDeliveryEntityCatalog(
+    environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+  );
   try {
     return await runRepositoryEffect(
       createDeliveryAssistant({
         sources: [
-          createPostgresDeliveryQuerySource(opened.database),
+          createPostgresDeliveryQuerySource(opened.database, { entityCatalog }),
           createStrategyKernelDeliveryQuerySource({
             repository: createPostgresStrategyKernelRepository(opened.pool),
             workspaceId: request.workspaceId,

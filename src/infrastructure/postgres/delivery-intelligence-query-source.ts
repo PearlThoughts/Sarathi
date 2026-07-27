@@ -21,6 +21,7 @@ import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   type DeliveryClaim,
+  type DeliveryEntityCatalog,
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
   type DeliveryQueryPredicate,
@@ -29,6 +30,7 @@ import {
   type DeliveryResultItem,
   type DeliverySourceKind,
   findDeliveryConflicts,
+  resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
 import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
@@ -616,6 +618,7 @@ const queryObservations = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
   operation: DeliveryQueryOperation,
+  entityCatalog: DeliveryEntityCatalog | undefined,
 ): Promise<DeliveryQueryResult> => {
   const isWeeklyDelivery =
     operation.purpose === "delivered" &&
@@ -668,6 +671,7 @@ const queryObservations = async (
             externalKey: deliveryObjectTable.externalKey,
             title: deliveryObjectTable.title,
             sourceKind: deliveryObjectTable.sourceKind,
+            sensitivity: deliveryObjectTable.sensitivity,
           })
           .from(deliveryObjectTable)
           .where(
@@ -685,14 +689,28 @@ const queryObservations = async (
             ),
           );
   const actors = new Map(
-    actorRows.map((actor) => [
-      actor.externalKey,
-      {
-        source: sourceKind(actor.sourceKind),
-        externalId: actor.externalKey,
-        displayName: actor.title,
-      },
-    ]),
+    actorRows.map((actor) => {
+      const source = sourceKind(actor.sourceKind);
+      const sourcePrefix = `${source}:`;
+      const sourceExternalKey = actor.externalKey.startsWith(sourcePrefix)
+        ? actor.externalKey.slice(sourcePrefix.length)
+        : actor.externalKey;
+      const resolved = resolveDeliveryEntity(entityCatalog, source, {
+        kind: "person",
+        externalKey: actor.externalKey,
+        title: actor.title,
+        attributes: { aliases: [sourceExternalKey, actor.title] },
+        sensitivity: sensitivity(actor.sensitivity),
+      });
+      return [
+        actor.externalKey,
+        {
+          source,
+          externalId: actor.externalKey,
+          displayName: resolved.canonicalTitle,
+        },
+      ] as const;
+    }),
   );
   const minimumOccurrences = operation.measures?.find(
     (measure) => measure.operator === "count",
@@ -1022,6 +1040,9 @@ const queryMetrics = async (
 
 export const createPostgresDeliveryQuerySource = (
   database: KnowledgePostgresDatabase,
+  configuration: {
+    readonly entityCatalog?: DeliveryEntityCatalog | undefined;
+  } = {},
 ): DeliveryQuerySource => ({
   source: "projection",
   selectors: ["objects", "relations", "observations", "claims", "metrics", "conflicts"],
@@ -1036,7 +1057,9 @@ export const createPostgresDeliveryQuerySource = (
           if (operation.select === "relations")
             results.push(await queryRelations(database, context, operation));
           if (operation.select === "observations")
-            results.push(await queryObservations(database, context, operation));
+            results.push(
+              await queryObservations(database, context, operation, configuration.entityCatalog),
+            );
           if (operation.select === "claims" || operation.select === "conflicts")
             results.push(
               await queryClaims(database, context, operation, operation.select === "conflicts"),

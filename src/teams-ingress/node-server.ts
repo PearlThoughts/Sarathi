@@ -522,13 +522,14 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           ),
         ) as string[])
       : [];
+    const deliveryEntityCatalog = parseDeliveryEntityCatalog(
+      environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+    );
     const knowledgeRepository =
       knowledgeDatabase === undefined
         ? undefined
         : createPostgresKnowledgeRepository(knowledgeDatabase.database, {
-            entityCatalog: parseDeliveryEntityCatalog(
-              environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
-            ),
+            entityCatalog: deliveryEntityCatalog,
           });
     const knowledgeEmbeddings =
       knowledgeDatabase === undefined
@@ -606,7 +607,11 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             sources: [
               ...(knowledgeDatabase === undefined
                 ? []
-                : [createPostgresDeliveryQuerySource(knowledgeDatabase.database)]),
+                : [
+                    createPostgresDeliveryQuerySource(knowledgeDatabase.database, {
+                      entityCatalog: deliveryEntityCatalog,
+                    }),
+                  ]),
               ...(knowledgeDatabase === undefined
                 ? []
                 : [
@@ -632,6 +637,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 allowedActorIds,
                 allowedRepositories,
                 repositoryScopes,
+                entityCatalog: deliveryEntityCatalog,
                 timeoutMs: 4_000,
               }),
               createJiraDeliveryQuerySource({

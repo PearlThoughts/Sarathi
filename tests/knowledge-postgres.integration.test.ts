@@ -1804,17 +1804,16 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         login: "manic56",
       },
     ] as const;
-    const repository = createPostgresKnowledgeRepository(opened.database, {
-      entityCatalog: {
-        version: 1,
-        entities: people.map((person) => ({
-          kind: "person" as const,
-          canonicalKey: person.canonicalKey,
-          title: person.title,
-          aliases: [{ source: "github" as const, value: person.login }],
-        })),
-      },
-    });
+    const entityCatalog: DeliveryEntityCatalog = {
+      version: 1,
+      entities: people.map((person) => ({
+        kind: "person" as const,
+        canonicalKey: person.canonicalKey,
+        title: person.title,
+        aliases: [{ source: "github" as const, value: person.login }],
+      })),
+    };
+    const repository = createPostgresKnowledgeRepository(opened.database);
     const noisyObservations = people.slice(0, 2).flatMap((person, personIndex) =>
       Array.from({ length: 12 }, (_, index) => ({
         kind: "commit" as const,
@@ -1918,7 +1917,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       requiresFinance: false,
     };
     const response = await Effect.runPromise(
-      createPostgresDeliveryQuerySource(opened.database).execute(
+      createPostgresDeliveryQuerySource(opened.database, { entityCatalog }).execute(
         {
           workspaceId,
           actorId: "delivery-member",
