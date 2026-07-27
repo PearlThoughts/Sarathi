@@ -1651,6 +1651,137 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     );
   });
 
+  test("attributes GitHub observations to the authorized canonical person", async () => {
+    const workspaceId = "workspace-github-observation-owner";
+    const actorExternalKey = "github:delivery-owner-login";
+    const repository = createPostgresKnowledgeRepository(opened.database, {
+      entityCatalog: {
+        version: 1,
+        entities: [
+          {
+            kind: "person",
+            canonicalKey: "delivery-owner",
+            title: "Delivery Owner",
+            aliases: [{ source: "github", value: "delivery-owner-login" }],
+          },
+        ],
+      },
+    });
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId: "github-observation-owner",
+          source: "github",
+          workspaceId,
+          cursor: "owner-cursor",
+          scopeHash: "owner-scope",
+          mode: "full",
+          documents: [
+            {
+              source: "github",
+              sourceId: "github-observation-owner",
+              workspaceId,
+              externalId: "example/repo:activity:pull_request:42",
+              sourceType: "pull_request",
+              sourceVersion: "v1",
+              canonicalUrl: "https://github.com/example/repo/pull/42",
+              title: "PR #42: Ship attributed delivery",
+              sourceCreatedAt: "2026-07-20T08:00:00.000Z",
+              sourceUpdatedAt: "2026-07-20T09:00:00.000Z",
+              sensitivity: "internal",
+              authority: 0.95,
+              provenance: {},
+              acl: [
+                {
+                  subjectType: "workspace",
+                  subjectId: workspaceId,
+                  effect: "allow",
+                },
+              ],
+              passages: [],
+              deliveryProjection: {
+                objects: [
+                  {
+                    kind: "person",
+                    externalKey: actorExternalKey,
+                    title: "delivery-owner-login",
+                    lifecycleState: "active",
+                    attributes: { provider: "github" },
+                    sensitivity: "internal",
+                  },
+                ],
+                relations: [],
+                observations: [
+                  {
+                    kind: "pull_request",
+                    externalId: "42",
+                    actorExternalKey,
+                    summary: "PR #42: Ship attributed delivery",
+                    dedupeKey: "github:example/repo:pull_request:42",
+                    occurredAt: "2026-07-20T09:00:00.000Z",
+                    citationUrl: "https://github.com/example/repo/pull/42",
+                    sensitivity: "internal",
+                    authority: 0.95,
+                  },
+                ],
+                metrics: [],
+                claims: [],
+              },
+            },
+          ],
+        },
+        createDeterministicKnowledgeEmbedding(),
+      ),
+    );
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["delivered"],
+      operations: [
+        {
+          id: "delivered-observations",
+          purpose: "delivered",
+          select: "observations",
+          predicates: [{ field: "source", operator: "equals", value: "github" }],
+          time: {
+            kind: "absolute",
+            fromInclusive: "2026-07-20T00:00:00.000Z",
+            toExclusive: "2026-07-21T00:00:00.000Z",
+          },
+          limit: 10,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 5,
+      requiresFinance: false,
+    };
+    const response = await Effect.runPromise(
+      createPostgresDeliveryQuerySource(opened.database).execute(
+        {
+          workspaceId,
+          actorId: "delivery-member",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-20T12:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-20T12:00:08.000Z",
+          question: "What was delivered this week?",
+        },
+        plan,
+      ),
+    );
+    expect(response.items).toEqual([
+      expect.objectContaining({
+        source: "github",
+        selector: "observations",
+        owner: {
+          source: "github",
+          externalId: actorExternalKey,
+          displayName: "Delivery Owner",
+        },
+      }),
+    ]);
+  });
+
   test("applies source and alias predicates before limiting GitHub module results", async () => {
     const workspaceId = "workspace-source-balanced-query";
     const repository = createPostgresKnowledgeRepository(opened.database, {

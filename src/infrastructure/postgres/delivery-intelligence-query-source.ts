@@ -647,6 +647,47 @@ const queryObservations = async (
       operation.predicates,
     ),
   );
+  const actorExternalKeys = [
+    ...new Set(
+      filtered.flatMap(({ actorExternalKey }) =>
+        actorExternalKey === null ? [] : [actorExternalKey],
+      ),
+    ),
+  ];
+  const actorRows =
+    actorExternalKeys.length === 0
+      ? []
+      : await database
+          .select({
+            externalKey: deliveryObjectTable.externalKey,
+            title: deliveryObjectTable.title,
+            sourceKind: deliveryObjectTable.sourceKind,
+          })
+          .from(deliveryObjectTable)
+          .where(
+            and(
+              eq(deliveryObjectTable.workspaceId, context.workspaceId),
+              eq(deliveryObjectTable.objectKind, "person"),
+              inArray(deliveryObjectTable.externalKey, actorExternalKeys),
+              authorizationCondition(database, context, "object", deliveryObjectTable.id),
+              inArray(
+                deliveryObjectTable.sensitivity,
+                allowedSensitivities(context.maximumSensitivity),
+              ),
+              eq(deliveryObjectTable.active, true),
+              isNull(deliveryObjectTable.deletedAt),
+            ),
+          );
+  const actors = new Map(
+    actorRows.map((actor) => [
+      actor.externalKey,
+      {
+        source: sourceKind(actor.sourceKind),
+        externalId: actor.externalKey,
+        displayName: actor.title,
+      },
+    ]),
+  );
   const minimumOccurrences = operation.measures?.find(
     (measure) => measure.operator === "count",
   )?.minimumOccurrences;
@@ -680,6 +721,7 @@ const queryObservations = async (
         sourceCreatedAt: row.sourceCreatedAt ?? undefined,
         sourceUpdatedAt: row.sourceUpdatedAt,
         indexedAt: row.indexedAt,
+        owner: row.actorExternalKey === null ? undefined : actors.get(row.actorExternalKey),
         dedupeKey: row.dedupeKey,
       })),
   );
