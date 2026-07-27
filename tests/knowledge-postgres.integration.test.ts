@@ -23,6 +23,7 @@ import {
   deliveryRelationTable,
 } from "../src/infrastructure/postgres/knowledge-schema.ts";
 import {
+  createDeliveryAssistant,
   type DeliveryEntityCatalog,
   type DeliveryQueryPlan,
   planDeliveryQuestion,
@@ -2099,5 +2100,173 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     ).toBe(true);
     expect(new Set(result.items.map(({ dedupeKey }) => dedupeKey))).toHaveLength(2);
+  });
+
+  test("answers implementation questions from indexed activity when live GitHub is unavailable", async () => {
+    const workspaceId = "workspace-indexed-implementation";
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    await Effect.runPromise(
+      repository.reconcile(
+        {
+          sourceId: "github-indexed-implementation",
+          source: "github",
+          workspaceId,
+          cursor: "github-indexed-implementation-v1",
+          scopeHash: "sha256-indexed-implementation",
+          mode: "full",
+          documents: [
+            {
+              source: "github",
+              sourceId: "github-indexed-implementation",
+              workspaceId,
+              externalId: "example/product-builder:pull:77",
+              sourceType: "pull_request",
+              sourceVersion: "v1",
+              canonicalUrl: "https://github.com/example/product-builder/pull/77",
+              title: "PR #77: Add reusable page sections",
+              sourceCreatedAt: "2026-07-25T08:00:00.000Z",
+              sourceUpdatedAt: "2026-07-25T09:00:00.000Z",
+              sensitivity: "internal",
+              authority: 0.95,
+              provenance: { repository: "example/product-builder" },
+              acl: [
+                {
+                  subjectType: "workspace",
+                  subjectId: workspaceId,
+                  effect: "allow",
+                },
+              ],
+              passages: [],
+              deliveryProjection: {
+                objects: [
+                  {
+                    kind: "module",
+                    externalKey: "github:example/product-builder",
+                    title: "example/product-builder",
+                    lifecycleState: "active",
+                    attributes: { repository: "example/product-builder" },
+                    sensitivity: "internal",
+                  },
+                  {
+                    kind: "deliverable",
+                    externalKey: "github:example/product-builder:pull:77",
+                    title: "PR #77: Add reusable page sections",
+                    lifecycleState: "merged",
+                    attributes: {
+                      repository: "example/product-builder",
+                      activityKind: "pull_request",
+                    },
+                    sensitivity: "internal",
+                  },
+                ],
+                relations: [
+                  {
+                    kind: "contains",
+                    from: {
+                      kind: "module",
+                      externalKey: "github:example/product-builder",
+                    },
+                    to: {
+                      kind: "deliverable",
+                      externalKey: "github:example/product-builder:pull:77",
+                    },
+                    attributes: { activityId: "77" },
+                    sensitivity: "internal",
+                  },
+                ],
+                observations: [
+                  ...Array.from({ length: 45 }, (_, index) => ({
+                    kind: "commit" as const,
+                    externalId: `unrelated-${index}`,
+                    summary: `Unrelated repository change ${index}`,
+                    dedupeKey: `github:example/unrelated:commit:${index}`,
+                    occurredAt: `2026-07-26T10:${String(index).padStart(2, "0")}:00.000Z`,
+                    citationUrl: `https://github.com/example/unrelated/commit/${index}`,
+                    sensitivity: "internal" as const,
+                    authority: 0.9,
+                  })),
+                  {
+                    kind: "pull_request",
+                    externalId: "77",
+                    subject: {
+                      kind: "deliverable",
+                      externalKey: "github:example/product-builder:pull:77",
+                    },
+                    summary: "PR #77 merged: Add reusable page sections",
+                    dedupeKey: "github:example/product-builder:pull_request:77",
+                    occurredAt: "2026-07-25T09:00:00.000Z",
+                    citationUrl: "https://github.com/example/product-builder/pull/77",
+                    sensitivity: "internal",
+                    authority: 0.95,
+                  },
+                ],
+                metrics: [],
+                claims: [],
+              },
+            },
+          ],
+        },
+        createDeterministicKnowledgeEmbedding(),
+      ),
+    );
+    const entityCatalog: DeliveryEntityCatalog = {
+      version: 1,
+      entities: [
+        {
+          kind: "module",
+          canonicalKey: "modern-website-builder",
+          title: "Modern Website Builder",
+          aliases: [
+            { value: "Modern Website Builder" },
+            { source: "github", value: "example/product-builder" },
+          ],
+        },
+      ],
+    };
+    const question =
+      "Which repositories, pull requests, commits, or code implement Modern Website Builder, and what changed in the last 30 days?";
+    const source = createPostgresDeliveryQuerySource(opened.database, { entityCatalog });
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected an implementation plan");
+    const result = await Effect.runPromise(
+      source.execute(
+        {
+          workspaceId,
+          actorId: "delivery-member",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-27T08:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-27T08:00:08.000Z",
+          question,
+        },
+        plan,
+      ),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        source: "github",
+        selector: "observations",
+        subjectAliases: expect.arrayContaining([
+          "Modern Website Builder",
+          "example/product-builder",
+        ]),
+      }),
+    ]);
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        workspaceId,
+        actorId: "delivery-member",
+        maximumSensitivity: "internal",
+        financeAccess: false,
+        requestedAt: "2026-07-27T08:00:00.000Z",
+        timeZone: "Asia/Kolkata",
+        question,
+      }),
+    );
+    expect(answer.status).toBe("ok");
+    expect(answer.text).toContain("PR #77 merged");
+    expect(answer.text).not.toContain("GitHub unavailable");
   });
 });

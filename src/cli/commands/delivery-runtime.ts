@@ -305,6 +305,13 @@ const answerFromRuntime = async (
             workspaceId: request.workspaceId,
             allowedActorIds: new Set([request.actorId]),
             audienceIds: request.audienceIds ?? [],
+            allowedGitHubRepositories:
+              environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+                ? []
+                : parseJson<readonly string[]>(
+                    "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+                    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+                  ),
           }),
           ...liveSources(environment, request.actorId),
         ],

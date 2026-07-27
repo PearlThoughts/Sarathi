@@ -164,4 +164,71 @@ describe("delivery knowledge query source", () => {
     expect(result.items).toEqual([]);
     expect(searchLexical).not.toHaveBeenCalled();
   });
+
+  it("excludes stale GitHub-backed knowledge outside the current repository allowlist", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() =>
+      Effect.succeed([
+        {
+          id: "approved",
+          source: "vault",
+          sourceId: "vault-1851",
+          title: "Current delivery intent",
+          excerpt: "Approved project intent.",
+          citationUrl:
+            "https://github.com/PearlThoughts/1851-Vault/blob/main/10-%F0%9F%8E%AF%20Product%20Capabilities/Intent.md",
+          sourceUpdatedAt: "2026-07-20T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 0.9,
+          freshness: 1,
+          componentRanks: { keyword: 1 },
+          score: 1,
+        },
+        {
+          id: "stale",
+          source: "vault",
+          sourceId: "vault-legacy",
+          title: "Legacy delivery plan",
+          excerpt: "Out-of-scope historical plan.",
+          citationUrl: "https://github.com/example-user/Legacy-Vault/blob/main/Project/Plan.md",
+          sourceUpdatedAt: "2026-07-19T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 1,
+          freshness: 1,
+          componentRanks: { keyword: 2 },
+          score: 0.9,
+        },
+      ]),
+    );
+    const plan = planDeliveryQuestion("What is the current project status?");
+    if (plan === undefined) throw new Error("Expected a status plan");
+    const source = createDeliveryKnowledgeQuerySource({
+      repository: {
+        reconcile: () => Effect.die("not used"),
+        search: () => Effect.die("not used"),
+        searchLexical,
+      },
+      workspaceId: "workspace-1851",
+      allowedActorIds: new Set(["actor-1851"]),
+      audienceIds: ["team-1851"],
+      allowedGitHubRepositories: ["PearlThoughts/1851-Vault"],
+    });
+
+    const result = await Effect.runPromise(
+      source.execute(
+        {
+          workspaceId: "workspace-1851",
+          actorId: "actor-1851",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-20T10:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-20T10:00:06.000Z",
+          question: "What is the current project status?",
+        },
+        plan,
+      ),
+    );
+
+    expect(result.items.map(({ id }) => id)).toEqual(["approved"]);
+  });
 });
