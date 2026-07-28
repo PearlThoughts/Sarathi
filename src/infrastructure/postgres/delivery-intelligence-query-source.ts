@@ -268,7 +268,12 @@ const orderForOperation = <Row>(
 };
 
 const operationWindow = (operation: DeliveryQueryOperation, context: DeliveryQueryContext) => {
-  if (operation.time === undefined || operation.time.kind === "jira_sprint") return undefined;
+  if (
+    operation.time === undefined ||
+    operation.time.kind === "jira_sprint" ||
+    operation.time.kind === "release"
+  )
+    return undefined;
   return resolveDeliveryTimeConstraint(operation.time, context.requestedAt, context.timeZone);
 };
 
