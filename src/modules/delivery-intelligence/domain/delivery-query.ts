@@ -303,22 +303,20 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
 
 const has = (value: string, pattern: RegExp): boolean => pattern.test(value);
 
-const calendarMonths: ReadonlyMap<string, number> = new Map(
-  [
-    ["january", 1],
-    ["february", 2],
-    ["march", 3],
-    ["april", 4],
-    ["may", 5],
-    ["june", 6],
-    ["july", 7],
-    ["august", 8],
-    ["september", 9],
-    ["october", 10],
-    ["november", 11],
-    ["december", 12],
-  ] as const,
-);
+const calendarMonths: ReadonlyMap<string, number> = new Map([
+  ["january", 1],
+  ["february", 2],
+  ["march", 3],
+  ["april", 4],
+  ["may", 5],
+  ["june", 6],
+  ["july", 7],
+  ["august", 8],
+  ["september", 9],
+  ["october", 10],
+  ["november", 11],
+  ["december", 12],
+] as const);
 
 const periodConstraint = (
   value: string,
@@ -326,8 +324,7 @@ const periodConstraint = (
   sprintTime: DeliveryTimeConstraint | undefined,
 ): DeliveryTimeConstraint | undefined => {
   if (sprintTime !== undefined) return sprintTime;
-  if (requestedLookbackDays !== undefined)
-    return { kind: "lookback", days: requestedLookbackDays };
+  if (requestedLookbackDays !== undefined) return { kind: "lookback", days: requestedLookbackDays };
   if (has(value, /\b(?:last|previous) week\b/)) return { kind: "workspace_previous_week" };
   if (has(value, /\bthis week\b/)) return { kind: "workspace_week" };
   const explicitMonth = new RegExp(
@@ -387,10 +384,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ? undefined
       : Math.max(1, Math.min(Number(requestedLookbackMatch), 366));
   const recurringLookbackDays = requestedLookbackDays ?? 120;
-  const sprintTime: DeliveryTimeConstraint | undefined = has(
-    value,
-    /\b(?:last|previous) sprint\b/,
-  )
+  const sprintTime: DeliveryTimeConstraint | undefined = has(value, /\b(?:last|previous) sprint\b/)
     ? { kind: "jira_sprint", sprint: "previous" }
     : has(value, /\b(?:current|active|this) sprint\b/)
       ? { kind: "jira_sprint", sprint: "current" }
@@ -401,8 +395,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       value,
       /\b(?:delivery|leadership|executive|weekly|monthly|quarterly|sprint|release|period)\s+(?:report|brief|summary)\b/,
     ) ||
-    (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) &&
-      reportPeriod !== undefined);
+    (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) && reportPeriod !== undefined);
   const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]

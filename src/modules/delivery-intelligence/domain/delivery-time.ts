@@ -122,8 +122,7 @@ export const resolveDeliveryTimeConstraint = (
             quarter: constraint.quarter.quarter,
           }
         : (() => {
-            const absoluteQuarter =
-              currentQuarter + (constraint.quarter === "previous" ? -1 : 0);
+            const absoluteQuarter = currentQuarter + (constraint.quarter === "previous" ? -1 : 0);
             return absoluteQuarter < 1
               ? { year: current.year - 1, quarter: 4 as const }
               : { year: current.year, quarter: absoluteQuarter as 1 | 2 | 3 | 4 };
