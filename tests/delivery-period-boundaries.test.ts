@@ -47,6 +47,16 @@ describe("delivery reporting period boundaries", () => {
       fromInclusive: "2026-03-07T05:00:00.000Z",
       toExclusive: "2026-03-09T04:00:00.000Z",
     });
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "lookback", days: 3 },
+        "2026-03-09T16:00:00.000Z",
+        "America/New_York",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-03-07T05:00:00.000Z",
+      toExclusive: "2026-03-10T04:00:00.000Z",
+    });
   });
 
   it("resolves month and quarter boundaries in the workspace timezone", () => {

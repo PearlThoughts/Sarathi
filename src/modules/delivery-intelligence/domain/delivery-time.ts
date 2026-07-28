@@ -75,9 +75,15 @@ export const resolveDeliveryTimeConstraint = (
   };
   if (constraint.kind === "workspace_day") return day;
   if (constraint.kind === "lookback") {
+    const firstDate = new Date(currentDate.getTime() - (constraint.days - 1) * 86_400_000);
     return {
-      fromInclusive: new Date(
-        Date.parse(day.fromInclusive) - (constraint.days - 1) * 86_400_000,
+      fromInclusive: zonedMidnight(
+        {
+          year: firstDate.getUTCFullYear(),
+          month: firstDate.getUTCMonth() + 1,
+          day: firstDate.getUTCDate(),
+        },
+        timeZone,
       ).toISOString(),
       toExclusive: day.toExclusive,
     };
