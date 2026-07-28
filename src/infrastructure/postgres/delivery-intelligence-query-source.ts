@@ -20,6 +20,7 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
+  compilePeriodCensus,
   type DeliveryClaim,
   type DeliveryEntityCatalog,
   type DeliveryQueryContext,
@@ -31,6 +32,8 @@ import {
   type DeliverySourceKind,
   findDeliveryConflicts,
   normalizeDeliveryEntityAlias,
+  type PeriodCensusBoundary,
+  type PeriodCensusCandidate,
   resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
@@ -105,6 +108,25 @@ const sourceVerificationTimes = async (
       verifiedAt.set(kind, row.lastSucceededAt);
   }
   return verifiedAt;
+};
+
+const configuredSourceKinds = async (
+  database: KnowledgePostgresDatabase,
+  workspaceId: string,
+): Promise<readonly DeliverySourceKind[]> => {
+  const rows = await database
+    .select({ sourceKind: knowledgeSourceTable.kind })
+    .from(knowledgeSourceTable)
+    .where(
+      and(eq(knowledgeSourceTable.workspaceId, workspaceId), eq(knowledgeSourceTable.active, true)),
+    );
+  return [
+    ...new Set(
+      rows.flatMap(({ sourceKind: value }) =>
+        sourceKinds.has(value as DeliverySourceKind) ? [value as DeliverySourceKind] : [],
+      ),
+    ),
+  ].sort();
 };
 
 const allowedSensitivities = (maximum: SensitivityTier): readonly SensitivityTier[] =>
@@ -338,6 +360,177 @@ const result = (
   unavailableSources: [],
   complete: true,
 });
+
+const queryPeriodCensus = async (
+  database: KnowledgePostgresDatabase,
+  context: DeliveryQueryContext,
+  operation: DeliveryQueryOperation,
+  verifiedAt: ReadonlyMap<DeliverySourceKind, string>,
+  configuredSources: readonly DeliverySourceKind[],
+): Promise<DeliveryQueryResult> => {
+  const censusConfiguration = operation.census;
+  if (censusConfiguration === undefined) throw new Error("Period census pagination is required.");
+  const sourceDefinedBoundary: PeriodCensusBoundary | undefined =
+    operation.time?.kind === "jira_sprint"
+      ? {
+          kind: "source_defined",
+          source: "jira",
+          reference: `${operation.time.sprint}_sprint`,
+        }
+      : operation.time?.kind === "release"
+        ? {
+            kind: "source_defined",
+            source: "github",
+            reference: operation.time.release ?? "current_release",
+          }
+        : undefined;
+  const window = operationWindow(operation, context);
+  const boundary: PeriodCensusBoundary =
+    sourceDefinedBoundary ??
+    (window === undefined
+      ? {
+          kind: "absolute",
+          fromInclusive: context.requestedAt,
+          toExclusive: context.requestedAt,
+        }
+      : { kind: "absolute", ...window });
+  const candidates: PeriodCensusCandidate[] = [];
+  let pagesRead = 0;
+  let paginationExhausted = sourceDefinedBoundary === undefined && window !== undefined;
+  const remaining = (): number =>
+    Math.max(0, censusConfiguration.maximumCandidates - candidates.length);
+  const pageLimit = (): number => Math.min(censusConfiguration.pageSize, remaining());
+
+  if (window !== undefined) {
+    let offset = 0;
+    while (remaining() > 0) {
+      const limit = pageLimit();
+      const rows = await database
+        .select({
+          id: deliveryObjectTable.id,
+          sourceKind: deliveryObjectTable.sourceKind,
+          canonicalKey: deliveryObjectTable.canonicalKey,
+          objectKind: deliveryObjectTable.objectKind,
+          lifecycleState: deliveryObjectTable.lifecycleState,
+          observedAt: deliveryObjectTable.observedAt,
+        })
+        .from(deliveryObjectTable)
+        .where(
+          and(
+            eq(deliveryObjectTable.workspaceId, context.workspaceId),
+            authorizationCondition(database, context, "object", deliveryObjectTable.id),
+            inArray(
+              deliveryObjectTable.sensitivity,
+              allowedSensitivities(context.maximumSensitivity),
+            ),
+            inArray(deliveryObjectTable.objectKind, ["work_item", "deliverable"]),
+            eq(deliveryObjectTable.active, true),
+            isNull(deliveryObjectTable.deletedAt),
+            gte(deliveryObjectTable.observedAt, window.fromInclusive),
+            lt(deliveryObjectTable.observedAt, window.toExclusive),
+          ),
+        )
+        .orderBy(asc(deliveryObjectTable.observedAt), asc(deliveryObjectTable.id))
+        .limit(limit)
+        .offset(offset);
+      pagesRead += 1;
+      for (const row of rows) {
+        const completionStage =
+          row.objectKind === "deliverable" &&
+          (row.lifecycleState === "merged" ||
+            row.lifecycleState === "released" ||
+            row.lifecycleState === "deployed")
+            ? row.lifecycleState
+            : undefined;
+        candidates.push({
+          id: row.id,
+          source: sourceKind(row.sourceKind),
+          occurredAt: row.observedAt,
+          dedupeKey: `object:${row.canonicalKey}:${completionStage ?? "update"}`,
+          mapped: row.canonicalKey.trim() !== "",
+          classification: completionStage === undefined ? "generic_source_update" : "candidate",
+          completionStage,
+        });
+      }
+      offset += rows.length;
+      if (rows.length < limit) break;
+      if (remaining() === 0) {
+        paginationExhausted = false;
+        break;
+      }
+    }
+
+    offset = 0;
+    while (remaining() > 0) {
+      const limit = pageLimit();
+      const rows = await database
+        .select({
+          id: deliveryObservationTable.id,
+          sourceKind: deliveryObservationTable.sourceKind,
+          subjectObjectId: deliveryObservationTable.subjectObjectId,
+          observationKind: deliveryObservationTable.observationKind,
+          dedupeKey: deliveryObservationTable.dedupeKey,
+          occurredAt: deliveryObservationTable.occurredAt,
+        })
+        .from(deliveryObservationTable)
+        .where(
+          and(
+            eq(deliveryObservationTable.workspaceId, context.workspaceId),
+            authorizationCondition(database, context, "observation", deliveryObservationTable.id),
+            inArray(
+              deliveryObservationTable.sensitivity,
+              allowedSensitivities(context.maximumSensitivity),
+            ),
+            eq(deliveryObservationTable.active, true),
+            isNull(deliveryObservationTable.deletedAt),
+            gte(deliveryObservationTable.occurredAt, window.fromInclusive),
+            lt(deliveryObservationTable.occurredAt, window.toExclusive),
+          ),
+        )
+        .orderBy(asc(deliveryObservationTable.occurredAt), asc(deliveryObservationTable.id))
+        .limit(limit)
+        .offset(offset);
+      pagesRead += 1;
+      for (const row of rows)
+        candidates.push({
+          id: row.id,
+          source: sourceKind(row.sourceKind),
+          occurredAt: row.occurredAt,
+          dedupeKey: row.dedupeKey,
+          mapped: row.subjectObjectId !== null,
+          classification:
+            row.observationKind === "deployment" ? "candidate" : "generic_source_update",
+          ...(row.observationKind === "deployment" ? { completionStage: "deployed" as const } : {}),
+        });
+      offset += rows.length;
+      if (rows.length < limit) break;
+      if (remaining() === 0) {
+        paginationExhausted = false;
+        break;
+      }
+    }
+  }
+
+  const periodCensus = compilePeriodCensus({
+    boundary,
+    timeZone: context.timeZone,
+    candidates,
+    configuredSources,
+    sourceCheckpoints: verifiedAt,
+    pageSize: censusConfiguration.pageSize,
+    pagesRead,
+    paginationExhausted,
+    maximumCandidates: censusConfiguration.maximumCandidates,
+    unresolvedBoundary: sourceDefinedBoundary !== undefined || window === undefined,
+  });
+  return {
+    items: [],
+    conflicts: [],
+    unavailableSources: periodCensus.unavailableSources,
+    complete: periodCensus.complete,
+    periodCensus,
+  };
+};
 
 const queryObjects = async (
   database: KnowledgePostgresDatabase,
@@ -1199,11 +1392,20 @@ export const createPostgresDeliveryQuerySource = (
   } = {},
 ): DeliveryQuerySource => ({
   source: "projection",
-  selectors: ["objects", "relations", "observations", "claims", "metrics", "conflicts"],
+  selectors: [
+    "objects",
+    "relations",
+    "observations",
+    "claims",
+    "metrics",
+    "conflicts",
+    "period_census",
+  ],
   execute: (context, plan) =>
     Effect.tryPromise({
       try: async () => {
         const verifiedAt = await sourceVerificationTimes(database, context.workspaceId);
+        const configuredSources = await configuredSourceKinds(database, context.workspaceId);
         const results: DeliveryQueryResult[] = [];
         for (const operation of plan.operations) {
           if (operation.select === "objects")
@@ -1222,6 +1424,10 @@ export const createPostgresDeliveryQuerySource = (
             const finance = operation.metricCategories?.includes("finance") === true;
             results.push(await queryMetrics(database, context, operation, finance));
           }
+          if (operation.select === "period_census")
+            results.push(
+              await queryPeriodCensus(database, context, operation, verifiedAt, configuredSources),
+            );
         }
         const items = results.flatMap((entry) => entry.items);
         return {
@@ -1230,8 +1436,9 @@ export const createPostgresDeliveryQuerySource = (
             indexedAt: verifiedAt.get(item.source) ?? item.indexedAt,
           })),
           conflicts: results.flatMap((entry) => entry.conflicts),
-          unavailableSources: [],
-          complete: true,
+          unavailableSources: [...new Set(results.flatMap((entry) => entry.unavailableSources))],
+          complete: results.every((entry) => entry.complete),
+          periodCensus: results.find((entry) => entry.periodCensus !== undefined)?.periodCensus,
         };
       },
       catch: () =>

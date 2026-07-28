@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { RepositoryError } from "../src/domain/errors.ts";
 import {
+  compilePeriodCensus,
   createDeliveryAssistant,
   type DeliveryAnswerComposer,
   type DeliveryClaim,
@@ -1213,6 +1214,53 @@ describe("delivery intelligence application", () => {
     expect(answer.status).toBe("partial");
     expect(answer.acceptance).toMatchObject({
       completenessRatio: 1,
+      completenessPassed: false,
+      passed: false,
+    });
+  });
+
+  it("does not promote a partial census to complete when it reports unavailable sources", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            item("jira", "period-jira", "Jira delivery evidence", "delivered"),
+            item("github", "period-github", "Merged delivery evidence", "delivered"),
+          ],
+          conflicts: [],
+          unavailableSources: ["teams"],
+          complete: false,
+          periodCensus: compilePeriodCensus({
+            boundary: {
+              kind: "absolute",
+              fromInclusive: "2026-06-20T18:30:00.000Z",
+              toExclusive: "2026-07-20T18:30:00.000Z",
+            },
+            timeZone: "Asia/Kolkata",
+            candidates: [],
+            configuredSources: ["teams"],
+            sourceCheckpoints: new Map(),
+            pageSize: 10,
+            pagesRead: 1,
+            paginationExhausted: true,
+            maximumCandidates: 100,
+          }),
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Give me a delivery report for the last 30 days",
+      }),
+    );
+
+    expect(answer.status).toBe("partial");
+    expect(answer.unavailableSources).toEqual(["teams"]);
+    expect(answer.acceptance).toMatchObject({
+      product: "period_delivery_brief",
       completenessPassed: false,
       passed: false,
     });

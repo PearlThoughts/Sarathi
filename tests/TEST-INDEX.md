@@ -171,21 +171,21 @@
 
 - Command: `SARATHI_KNOWLEDGE_TEST_DATABASE_URL=<pgvector-postgres-url> bun run test:knowledge-postgres`
 - Location: `tests/knowledge-postgres.integration.test.ts`
-- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, full-vs-delta deletion safety, unchanged-vector reuse across Vault renames, authorization-safe attributed-claim supersession and correction deletion, source-qualified Jira/GitHub canonical joins and cross-source conflicts, explicit source/index timestamps, ACL-first delivery projection queries, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint event/reconciliation freshness, and deletion tombstones. The four continuous connectors also prove durable duplicate/out-of-order event handling, changed-only embeddings, expired-subscription renewal, atomic repair leases, missed-deletion hourly convergence, and metadata-only status output.
+- Scope: Real additive Drizzle migration, existing audit-table preservation, replay deduplication, edit versioning, full-vs-delta deletion safety, unchanged-vector reuse across Vault renames, authorization-safe attributed-claim supersession and correction deletion, source-qualified Jira/GitHub canonical joins and cross-source conflicts, explicit source/index timestamps, ACL-first delivery projection queries, exhaustive authorized period-census pagination and generic-update exclusions, actor-deny/cross-workspace/sensitivity filtering, finance separation, exact/full-text/vector retrieval, checkpoint event/reconciliation freshness, and deletion tombstones. The four continuous connectors also prove durable duplicate/out-of-order event handling, changed-only embeddings, expired-subscription renewal, atomic repair leases, missed-deletion hourly convergence, and metadata-only status output.
 - Prerequisites: Bun dependencies installed and an explicitly isolated PostgreSQL test database with pgvector available.
 
 ## delivery-intelligence-domain
 
 - Command: `bunx vitest run tests/delivery-intelligence-domain.test.ts`
 - Location: `tests/delivery-intelligence-domain.test.ts`
-- Scope: Delivery objects, relations, observations, claims, metrics, goals, commitments, finance isolation, conflict derivation, safe generic query planning, independent time constraints, and workspace-local time resolution.
+- Scope: Delivery objects, relations, observations, claims, metrics, goals, commitments, finance isolation, conflict derivation, safe generic query planning, arbitrary lookbacks, calendar month/quarter and source-defined period boundaries, workspace-local timezone resolution, response-product budgets, and deterministic census coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
 - Location: `tests/delivery-intelligence-application.test.ts`
-- Scope: Bounded planning, explicit fast/structured/deep-dive mode selection, independent completeness/citation/grounding/freshness/format/latency acceptance, finance authorization before source calls, workspace and sensitivity filtering before model composition, deduplication, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback, and partial-source behavior.
+- Scope: Bounded planning, explicit response-product and fast/structured/deep-dive mode selection, product-specific transport and source-budget propagation, independent completeness/citation/grounding/freshness/format/latency acceptance, finance authorization before source calls, workspace and sensitivity filtering before model composition, deterministic period-census coverage rendering, deduplication, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback, and partial-source behavior.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-live-sources

@@ -2271,4 +2271,156 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(answer.text).toContain("PR #77 merged");
     expect(answer.text).not.toContain("GitHub unavailable");
   });
+
+  test("exhaustively pages the authorized period census and excludes generic updates", async () => {
+    const workspaceId = "workspace-period-census";
+    const sourceId = "github-period-census";
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const control = createPostgresSynchronizationControlRepository(opened.database);
+    const deliverables = Array.from({ length: 12 }, (_, index) => ({
+      kind: "deliverable" as const,
+      externalKey: `CENSUS-${index + 1}`,
+      title: `Census deliverable ${index + 1}`,
+      lifecycleState: "merged",
+      attributes: {},
+      sensitivity: "internal" as const,
+    }));
+    const genericUpdates = Array.from({ length: 3 }, (_, index) => ({
+      kind: "work_item" as const,
+      externalKey: `UPDATE-${index + 1}`,
+      title: `Generic update ${index + 1}`,
+      lifecycleState: "in_progress",
+      attributes: {},
+      sensitivity: "internal" as const,
+    }));
+    const snapshot: KnowledgeSourceSnapshot = {
+      sourceId,
+      source: "github",
+      workspaceId,
+      cursor: "github-period-census-v1",
+      scopeHash: "sha256-github-period-census",
+      mode: "full",
+      retiredExternalIds: [],
+      documents: [
+        {
+          source: "github",
+          sourceId,
+          workspaceId,
+          externalId: "example/period-census",
+          sourceType: "repository",
+          sourceVersion: "v1",
+          canonicalUrl: "https://github.com/example/period-census",
+          title: "Period census fixture",
+          sourceCreatedAt: "2026-07-01T00:00:00.000Z",
+          sourceUpdatedAt: "2026-07-25T12:00:00.000Z",
+          sensitivity: "internal",
+          authority: 1,
+          provenance: { repository: "example/period-census" },
+          acl: [
+            { subjectType: "workspace", subjectId: workspaceId, effect: "allow" },
+            { subjectType: "actor", subjectId: "blocked-actor", effect: "deny" },
+          ],
+          passages: [
+            {
+              kind: "summary",
+              locator: "#summary",
+              ordinal: 0,
+              title: "Period census",
+              body: "Privacy-safe delivery census fixture.",
+              contentHash: "sha256-period-census-body",
+            },
+          ],
+          deliveryProjection: {
+            objects: [...deliverables, ...genericUpdates],
+            relations: [],
+            observations: Array.from({ length: 11 }, (_, index) => ({
+              kind: "deployment" as const,
+              externalId: `deployment-${index + 1}`,
+              subject: {
+                kind: "deliverable" as const,
+                externalKey: `CENSUS-${index + 1}`,
+              },
+              summary: `Census deployment ${index + 1}`,
+              dedupeKey: `github:period-census:deployment:${index + 1}`,
+              occurredAt: `2026-07-${String(index + 10).padStart(2, "0")}T12:00:00.000Z`,
+              citationUrl: `https://github.com/example/period-census/deployments/${index + 1}`,
+              sensitivity: "internal" as const,
+              authority: 1,
+            })),
+            metrics: [],
+            claims: [],
+          },
+        },
+      ],
+    };
+    const times = ["2026-07-26T00:00:00.000Z", "2026-07-26T00:00:01.000Z"];
+    await Effect.runPromise(
+      synchronizeKnowledgeSource(
+        {
+          workspaceId,
+          source: {
+            source: "github",
+            sourceId,
+            reader: { readSnapshot: () => Effect.succeed(snapshot) },
+          },
+          trigger: "historical-backfill",
+          ownerId: "period-census-integration",
+          leaseSeconds: 300,
+          now: () => times.shift() ?? "2026-07-26T00:00:01.000Z",
+        },
+        repository,
+        createDeterministicKnowledgeEmbedding(),
+        control,
+      ),
+    );
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["delivered"],
+      operations: [
+        {
+          id: "period-census",
+          purpose: "delivered",
+          select: "period_census",
+          time: { kind: "lookback", days: 31 },
+          census: { pageSize: 10, maximumCandidates: 100 },
+          limit: 1,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 3,
+      requiresFinance: false,
+    };
+    const context = {
+      workspaceId,
+      actorId: "delivery-member",
+      maximumSensitivity: "internal" as const,
+      financeAccess: false,
+      requestedAt: "2026-07-28T12:00:00.000Z",
+      timeZone: "Asia/Kolkata",
+      deadlineAt: "2026-07-28T12:00:32.000Z",
+      question: "Give me the last 31 days delivery report.",
+    };
+    const source = createPostgresDeliveryQuerySource(opened.database);
+    const result = await Effect.runPromise(source.execute(context, plan));
+    expect(result.periodCensus).toMatchObject({
+      examinedCandidateCount: 26,
+      candidateCount: 23,
+      deliveredCandidateCount: 23,
+      excludedCandidateCount: 3,
+      exclusions: { generic_source_update_not_completion: 3 },
+      pagination: { pageSize: 10, pagesRead: 4, exhausted: true },
+      unavailableSources: [],
+      complete: true,
+    });
+    expect(result.periodCensus?.replayChecksum).toMatch(/^[a-f0-9]{64}$/);
+
+    const denied = await Effect.runPromise(
+      source.execute({ ...context, actorId: "blocked-actor" }, plan),
+    );
+    expect(denied.periodCensus).toMatchObject({
+      examinedCandidateCount: 0,
+      candidateCount: 0,
+      complete: true,
+    });
+  });
 });
