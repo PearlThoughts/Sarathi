@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   assertNonFinancialAttributes,
+  compilePeriodCensus,
   type DeliveryClaim,
   deliveryClaimValueHash,
+  deliveryTransportTimeoutMs,
   findDeliveryConflicts,
   normalizeDeliveryEntityAlias,
   parseAttributedDeliveryAssertion,
@@ -10,11 +12,189 @@ import {
   planDeliveryQuestion,
   resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
+  selectDeliveryResponseProduct,
   validateDeliveryEntityCatalog,
   validateDeliveryQueryPlan,
 } from "../src/modules/delivery-intelligence/index.ts";
 
 describe("delivery intelligence domain", () => {
+  it("parses arbitrary delivery-report periods into exhaustive census operations", () => {
+    const plan = planDeliveryQuestion("Give me a delivery report for the last 37 days");
+
+    expect(plan?.intents).toEqual(["delivered"]);
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "objects",
+        time: { kind: "lookback", days: 37 },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "observations",
+        time: { kind: "lookback", days: 37 },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "period_census",
+        time: { kind: "lookback", days: 37 },
+        census: { pageSize: 200, maximumCandidates: 50_000 },
+      }),
+    ]);
+  });
+
+  it("resolves calendar boundaries in workspace time with inclusive/exclusive DST semantics", () => {
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "workspace_day" },
+        "2026-03-08T16:00:00.000Z",
+        "America/New_York",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-03-08T05:00:00.000Z",
+      toExclusive: "2026-03-09T04:00:00.000Z",
+    });
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "lookback", days: 2 },
+        "2026-03-08T16:00:00.000Z",
+        "America/New_York",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-03-07T05:00:00.000Z",
+      toExclusive: "2026-03-09T04:00:00.000Z",
+    });
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "workspace_month", month: { year: 2026, month: 2 } },
+        "2026-07-20T13:09:00.000Z",
+        "Asia/Kolkata",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-01-31T18:30:00.000Z",
+      toExclusive: "2026-02-28T18:30:00.000Z",
+    });
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "workspace_quarter", quarter: { year: 2026, quarter: 2 } },
+        "2026-07-20T13:09:00.000Z",
+        "Asia/Kolkata",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-03-31T18:30:00.000Z",
+      toExclusive: "2026-06-30T18:30:00.000Z",
+    });
+  });
+
+  it("preserves sprint and release periods as explicit source-defined boundaries", () => {
+    expect(
+      planDeliveryQuestion("Give me the previous sprint delivery report")?.operations.at(-1),
+    ).toMatchObject({
+      select: "period_census",
+      time: { kind: "jira_sprint", sprint: "previous" },
+    });
+    expect(
+      planDeliveryQuestion("Give me the release v2.4 delivery report")?.operations.at(-1),
+    ).toMatchObject({
+      select: "period_census",
+      time: { kind: "release", release: "v2.4" },
+    });
+  });
+
+  it("selects explicit response products and gives non-fast products their full transport budget", () => {
+    expect(selectDeliveryResponseProduct("Who owns DEMO-1 today?")).toBe(
+      "operational_answer",
+    );
+    expect(selectDeliveryResponseProduct("Give me a delivery report for the last 30 days")).toBe(
+      "period_delivery_brief",
+    );
+    expect(selectDeliveryResponseProduct("Prepare the quarterly leadership report")).toBe(
+      "leadership_report",
+    );
+    expect(
+      selectDeliveryResponseProduct("Investigate the repository implementation in a deep dive"),
+    ).toBe("implementation_investigation");
+    expect(
+      selectDeliveryResponseProduct("Quick status", "leadership_report"),
+    ).toBe("leadership_report");
+    expect(deliveryTransportTimeoutMs("operational_answer", 7_000)).toBe(7_000);
+    expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(14_000);
+    expect(deliveryTransportTimeoutMs("leadership_report", 7_000)).toBe(32_000);
+  });
+
+  it("reports deterministic authorized census coverage without promoting generic updates", () => {
+    const candidates = [
+      {
+        id: "merged",
+        source: "github",
+        occurredAt: "2026-07-01T00:00:00.000Z",
+        dedupeKey: "github:pr:1",
+        mapped: true,
+        classification: "candidate",
+        completionStage: "merged",
+      },
+      {
+        id: "duplicate",
+        source: "github",
+        occurredAt: "2026-07-01T00:00:00.000Z",
+        dedupeKey: "github:pr:1",
+        mapped: true,
+        classification: "candidate",
+        completionStage: "merged",
+      },
+      {
+        id: "unmapped",
+        source: "teams",
+        occurredAt: "2026-07-02T00:00:00.000Z",
+        dedupeKey: "teams:message:2",
+        mapped: false,
+        classification: "candidate",
+      },
+      {
+        id: "generic-update",
+        source: "jira",
+        occurredAt: "2026-07-03T00:00:00.000Z",
+        dedupeKey: "jira:item:3:update",
+        mapped: true,
+        classification: "generic_source_update",
+      },
+    ] as const;
+    const input = {
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-07-01T00:00:00.000Z",
+        toExclusive: "2026-08-01T00:00:00.000Z",
+      } as const,
+      timeZone: "Asia/Kolkata",
+      candidates,
+      configuredSources: ["github", "jira", "teams"] as const,
+      sourceCheckpoints: new Map([
+        ["github", "2026-07-28T00:00:00.000Z"],
+        ["jira", "2026-07-28T00:00:00.000Z"],
+      ] as const),
+      pageSize: 2,
+      pagesRead: 3,
+      paginationExhausted: true,
+      maximumCandidates: 100,
+    };
+    const census = compilePeriodCensus(input);
+
+    expect(census).toMatchObject({
+      examinedCandidateCount: 4,
+      candidateCount: 2,
+      deliveredCandidateCount: 1,
+      excludedCandidateCount: 1,
+      duplicateCandidateCount: 1,
+      unmappedCandidateCount: 1,
+      exclusions: { generic_source_update_not_completion: 1 },
+      unavailableSources: ["teams"],
+      pagination: { pageSize: 2, pagesRead: 3, exhausted: true },
+      complete: false,
+    });
+    expect(
+      compilePeriodCensus({ ...input, candidates: [...candidates].reverse() }).replayChecksum,
+    ).toBe(census.replayChecksum);
+  });
+
   it("keeps scope and requirements independent of time", () => {
     const plan = planDeliveryQuestion("What is the project scope and its requirements?");
     expect(plan?.intents).toEqual(["scope", "requirements"]);

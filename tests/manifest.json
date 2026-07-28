@@ -162,21 +162,21 @@
         "bun install",
         "PostgreSQL with pgvector available at the explicit test URL"
       ],
-      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, full-vs-delta deletion safety, Vault rename vector reuse, authorization-safe assertion supersession and correction deletion, ACL-first delivery query and finance separation, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint freshness, and tombstone coverage."
+      "description": "Real PostgreSQL migration preservation, replay dedupe, edit versioning, full-vs-delta deletion safety, Vault rename vector reuse, authorization-safe assertion supersession and correction deletion, ACL-first delivery query and finance separation, exhaustive authorized period-census pagination and exclusions, cross-workspace/sensitivity filtering, exact/FTS/vector retrieval, checkpoint freshness, and tombstone coverage."
     },
     {
       "id": "delivery-intelligence-domain",
       "path": "tests/delivery-intelligence-domain.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-domain.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, and optional time-constraint coverage."
+      "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, arbitrary calendar-period and timezone-boundary parsing, response-product budgets, and deterministic period-census coverage."
     },
     {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Bounded planning, pre-source finance authorization, workspace and sensitivity filtering, deduplication, compound briefs, active-over-terminal status ranking, conflicts, citations, and concise answer coverage."
+      "description": "Bounded planning, response-product and timeout propagation, pre-source finance authorization, workspace and sensitivity filtering, period-census coverage rendering, deduplication, compound briefs, active-over-terminal status ranking, conflicts, citations, and concise answer coverage."
     },
     {
       "id": "delivery-capability-matrix",
