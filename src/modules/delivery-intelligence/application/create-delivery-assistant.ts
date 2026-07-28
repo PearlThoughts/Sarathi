@@ -6,8 +6,10 @@ import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delive
 import { planDeliveryQuestion, validateDeliveryQueryPlan } from "../domain/delivery-query.ts";
 import {
   type DeliveryResponseMode,
+  type DeliveryResponseProduct,
   deliveryResponseModePolicies,
   selectDeliveryResponseMode,
+  selectDeliveryResponseProduct,
 } from "../domain/delivery-response-mode.ts";
 import type {
   DeliveryAnswerComposer,
@@ -37,7 +39,10 @@ export const deliveryResponseBudget = {
   totalBudgetMs: deliveryResponseModePolicies.fast.totalBudgetMs,
 } as const;
 
-type DeliveryAnswerDraft = Omit<DeliveryAssistantAnswer, "responseMode" | "acceptance">;
+type DeliveryAnswerDraft = Omit<
+  DeliveryAssistantAnswer,
+  "responseMode" | "responseProduct" | "responseBudget" | "acceptance"
+>;
 
 const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
   jira: "Jira",
@@ -593,6 +598,7 @@ const composeAnswer = (
       conflicts,
       missingRequiredSources: result.missingRequiredSources,
       missingRequiredIntents: result.missingRequiredIntents,
+      periodCensus: result.periodCensus,
       mentions: [],
     };
   }
@@ -658,6 +664,7 @@ const composeAnswer = (
     conflicts,
     missingRequiredSources: result.missingRequiredSources,
     missingRequiredIntents: result.missingRequiredIntents,
+    periodCensus: result.periodCensus,
     mentions:
       mentionActionItem?.actionTarget === undefined ||
       mentionName === undefined ||
@@ -674,6 +681,12 @@ const composeWithModel = (
   result: DeliveryQueryResult,
   timeoutMs: number,
   responseMode: DeliveryResponseMode,
+  responseProduct: DeliveryResponseProduct,
+  responseBudget: {
+    readonly sourceTimeoutMs: number;
+    readonly compositionTimeoutMs: number;
+    readonly totalBudgetMs: number;
+  },
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const deterministic = composeAnswer(request, plan, result, responseMode);
   if (responseMode !== "fast") return Effect.succeed(deterministic);
@@ -703,6 +716,9 @@ const composeWithModel = (
       plan,
       items,
       conflicts: result.conflicts,
+      responseProduct,
+      responseMode,
+      responseBudget,
     })
     .pipe(
       Effect.timeoutFail({
@@ -803,6 +819,12 @@ const renderResponseMode = (
             `${alignmentRelations} source-backed alignment relation(s) were retrieved. This is evidence coverage, not a completion percentage; missing source links remain unknown.`,
           ]
         : []),
+      ...(result.periodCensus === undefined
+        ? []
+        : [
+            "### Coverage",
+            `Examined ${result.periodCensus.examinedCandidateCount} authorized period records across ${result.periodCensus.pagination.pagesRead} page(s); accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}; replay checksum ${result.periodCensus.replayChecksum}.`,
+          ]),
       ...(action === undefined ? [] : ["### Action", action]),
     ].join("\n");
     return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
@@ -818,6 +840,10 @@ const renderResponseMode = (
     ...(result.missingRequiredSources ?? []).map((source) => sourceLabel[source]),
     ...result.unavailableSources.map((source) => `${sourceLabel[source]} unavailable`),
   ];
+  const censusCoverage =
+    result.periodCensus === undefined
+      ? undefined
+      : `Period census examined ${result.periodCensus.examinedCandidateCount} authorized records across ${result.periodCensus.pagination.pagesRead} page(s), accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}; replay checksum ${result.periodCensus.replayChecksum}.`;
   const text = [
     "### Scope and time window",
     `${opening} Requested at ${request.requestedAt}.`,
@@ -825,6 +851,7 @@ const renderResponseMode = (
     sources.length === 0
       ? "No matching connected source produced authorized evidence."
       : `${sources.map((source) => sourceLabel[source]).join(", ")} contributed evidence. Latest source update: ${latestSourceUpdate ?? "not reported"}.`,
+    ...(censusCoverage === undefined ? [] : ["### Coverage", censusCoverage]),
     "### Evidence",
     ...(evidence.length === 0
       ? ["- No source-backed evidence matched the requested scope."]
@@ -850,6 +877,7 @@ const responseAcceptance = (
   request: DeliveryAssistantRequest,
   result: DeliveryQueryResult,
   responseMode: DeliveryResponseMode,
+  responseProduct: DeliveryResponseProduct,
   elapsedMs: number,
 ): DeliveryResponseAcceptance => {
   const policy = deliveryResponseModePolicies[responseMode];
@@ -923,6 +951,7 @@ const responseAcceptance = (
   const latencyPassed = elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
+    product: responseProduct,
     elapsedMs,
     latencyTargetMs: policy.latencyTargetMs,
     latencyPassed,
@@ -1031,7 +1060,15 @@ export const createDeliveryAssistant = (
 ): DeliveryAssistant => ({
   answer: (request) => {
     const startedAt = Date.now();
-    const responseMode = selectDeliveryResponseMode(request.question, request.responseMode);
+    const responseProduct = selectDeliveryResponseProduct(
+      request.question,
+      request.responseProduct,
+    );
+    const responseMode = selectDeliveryResponseMode(
+      request.question,
+      request.responseMode,
+      responseProduct,
+    );
     const responsePolicy = deliveryResponseModePolicies[responseMode];
     if (requestsRestrictedSecretMaterial(request.question))
       return Effect.fail(
@@ -1078,6 +1115,11 @@ export const createDeliveryAssistant = (
             totalBudgetMs,
           ),
         );
+        const responseBudget = {
+          sourceTimeoutMs,
+          compositionTimeoutMs,
+          totalBudgetMs,
+        } as const;
         const selectors = new Set(plan.operations.map((operation) => operation.select));
         const sources = configuration.sources.filter((source) =>
           source.selectors.some((selector) => selectors.has(selector)),
@@ -1092,6 +1134,10 @@ export const createDeliveryAssistant = (
           timeZone: request.timeZone,
           deadlineAt: new Date(now.getTime() + totalBudgetMs).toISOString(),
           question: request.question,
+          responseProduct,
+          responseMode,
+          totalBudgetMs,
+          sourceTimeoutMs,
         } as const;
         return Effect.all(
           sources.map((source) =>
@@ -1145,6 +1191,8 @@ export const createDeliveryAssistant = (
               complete: successful.every(
                 (result) => result.complete || result.unavailableSources.length > 0,
               ),
+              periodCensus: successful.find((result) => result.periodCensus !== undefined)
+                ?.periodCensus,
             };
             const representedSources = new Set([
               ...merged.items.map((item) => item.source),
@@ -1177,6 +1225,8 @@ export const createDeliveryAssistant = (
                     completed,
                     Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
                     responseMode,
+                    responseProduct,
+                    responseBudget,
                   );
             return composed.pipe(
               Effect.map((draft) => {
@@ -1191,11 +1241,14 @@ export const createDeliveryAssistant = (
                 return {
                   ...rendered,
                   responseMode,
+                  responseProduct,
+                  responseBudget,
                   acceptance: responseAcceptance(
                     rendered,
                     request,
                     completed,
                     responseMode,
+                    responseProduct,
                     elapsedMs,
                   ),
                 };

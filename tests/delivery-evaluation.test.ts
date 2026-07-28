@@ -15,8 +15,15 @@ const acceptedAnswer = (): DeliveryAssistantAnswer => ({
   citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
   status: "ok",
   responseMode: "fast",
+  responseProduct: "operational_answer",
+  responseBudget: {
+    sourceTimeoutMs: 4_500,
+    compositionTimeoutMs: 2_500,
+    totalBudgetMs: 6_500,
+  },
   acceptance: {
     mode: "fast",
+    product: "operational_answer",
     elapsedMs: 350,
     latencyTargetMs: 10_000,
     latencyPassed: true,

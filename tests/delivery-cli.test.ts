@@ -34,8 +34,15 @@ describe("delivery CLI", () => {
         requiresFinance: false,
       },
       responseMode: "structured" as const,
+      responseProduct: "period_delivery_brief" as const,
+      responseBudget: {
+        sourceTimeoutMs: 8_000,
+        compositionTimeoutMs: 4_000,
+        totalBudgetMs: 12_000,
+      },
       acceptance: {
         mode: "structured" as const,
+        product: "period_delivery_brief" as const,
         elapsedMs: 10,
         latencyTargetMs: 15_000,
         latencyPassed: true,
@@ -71,6 +78,8 @@ describe("delivery CLI", () => {
         "2026-07-20T12:00:00.000Z",
         "--response-mode",
         "structured",
+        "--response-product",
+        "period_delivery_brief",
       ],
       {
         SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
@@ -88,6 +97,7 @@ describe("delivery CLI", () => {
         financeAccess: true,
         requestedAt: "2026-07-20T12:00:00.000Z",
         responseMode: "structured",
+        responseProduct: "period_delivery_brief",
       }),
     );
     expect(result).toMatchObject({
@@ -120,8 +130,15 @@ describe("delivery CLI", () => {
         requiresFinance: false,
       },
       responseMode: "fast" as const,
+      responseProduct: "operational_answer" as const,
+      responseBudget: {
+        sourceTimeoutMs: 4_500,
+        compositionTimeoutMs: 2_500,
+        totalBudgetMs: 6_500,
+      },
       acceptance: {
         mode: "fast" as const,
+        product: "operational_answer" as const,
         elapsedMs: 250,
         latencyTargetMs: 10_000,
         latencyPassed: true,

@@ -78,6 +78,106 @@ describe("delivery intelligence application", () => {
     expect(selectDeliveryResponseMode("Quick status", "deep_dive")).toBe("deep_dive");
   });
 
+  it("propagates a period-report product and budget and renders exhaustive census coverage", async () => {
+    const execute = vi.fn<DeliveryQuerySource["execute"]>(() =>
+      Effect.succeed({
+        items: [
+          item("jira", "period-jira", "Jira delivery evidence", "delivered"),
+          item("github", "period-github", "Merged delivery evidence", "delivered"),
+        ],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+        periodCensus: {
+          version: 1,
+          boundary: {
+            kind: "absolute",
+            fromInclusive: "2026-06-21T18:30:00.000Z",
+            toExclusive: "2026-07-21T18:30:00.000Z",
+          },
+          timeZone: "Asia/Kolkata",
+          examinedCandidateCount: 43,
+          candidateCount: 40,
+          deliveredCandidateCount: 12,
+          excludedCandidateCount: 2,
+          duplicateCandidateCount: 1,
+          unmappedCandidateCount: 3,
+          exclusions: { generic_source_update_not_completion: 2 },
+          unavailableSources: [],
+          sourceCoverage: [
+            {
+              source: "github",
+              available: true,
+              checkpointAt: "2026-07-20T12:00:00.000Z",
+              candidateCount: 20,
+            },
+            {
+              source: "jira",
+              available: true,
+              checkpointAt: "2026-07-20T12:00:00.000Z",
+              candidateCount: 20,
+            },
+          ],
+          pagination: {
+            pageSize: 20,
+            pagesRead: 3,
+            exhausted: true,
+            maximumCandidates: 100,
+          },
+          complete: true,
+          replayChecksum: "sha256-period-census",
+        },
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["period_census"],
+      execute,
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        now: () => new Date(request.requestedAt),
+      }).answer({
+        ...request,
+        question: "Give me a delivery report for the last 30 days",
+      }),
+    );
+
+    expect(answer).toMatchObject({
+      responseProduct: "period_delivery_brief",
+      responseMode: "structured",
+      responseBudget: {
+        sourceTimeoutMs: 8_000,
+        compositionTimeoutMs: 4_000,
+        totalBudgetMs: 12_000,
+      },
+      periodCensus: {
+        candidateCount: 40,
+        deliveredCandidateCount: 12,
+        complete: true,
+      },
+      acceptance: {
+        product: "period_delivery_brief",
+        mode: "structured",
+      },
+    });
+    expect(answer.text).toContain("### Coverage");
+    expect(answer.text).toContain("Examined 43 authorized period records across 3 page(s)");
+    expect(execute.mock.calls[0]?.[0]).toMatchObject({
+      responseProduct: "period_delivery_brief",
+      responseMode: "structured",
+      totalBudgetMs: 12_000,
+      sourceTimeoutMs: 8_000,
+      deadlineAt: "2026-07-20T13:09:12.000Z",
+    });
+    expect(execute.mock.calls[0]?.[1].operations.at(-1)).toMatchObject({
+      select: "period_census",
+      census: { pageSize: 200, maximumCandidates: 50_000 },
+    });
+  });
+
   it("rejects finance before any source call", async () => {
     const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
       Effect.succeed({

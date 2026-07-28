@@ -800,6 +800,11 @@ export type TeamsIngressDiagnosticEvent = {
   readonly statusCode?: number;
   readonly missingFields?: readonly string[];
   readonly responseMode?: "fast" | "structured" | "deep_dive";
+  readonly responseProduct?:
+    | "operational_answer"
+    | "period_delivery_brief"
+    | "leadership_report"
+    | "implementation_investigation";
   readonly elapsedMs?: number;
   readonly acceptancePassed?: boolean;
 };
@@ -970,6 +975,7 @@ export const createTeamsIngressApplication = (
         outcome.kind === "answered" && "acceptance" in outcome.answer
           ? (outcome.answer.acceptance as {
               readonly mode?: unknown;
+              readonly product?: unknown;
               readonly elapsedMs?: unknown;
               readonly passed?: unknown;
             })
@@ -980,12 +986,20 @@ export const createTeamsIngressApplication = (
         acceptance?.mode === "deep_dive"
           ? acceptance.mode
           : undefined;
+      const responseProduct =
+        acceptance?.product === "operational_answer" ||
+        acceptance?.product === "period_delivery_brief" ||
+        acceptance?.product === "leadership_report" ||
+        acceptance?.product === "implementation_investigation"
+          ? acceptance.product
+          : undefined;
       diagnostics({
         event: "teams_ingress",
         stage: "handler",
         outcome: outcome.kind,
         ...(hash === undefined ? {} : { activityHash: hash }),
         ...(responseMode === undefined ? {} : { responseMode }),
+        ...(responseProduct === undefined ? {} : { responseProduct }),
         ...(typeof acceptance?.elapsedMs === "number" ? { elapsedMs: acceptance.elapsedMs } : {}),
         ...(typeof acceptance?.passed === "boolean" ? { acceptancePassed: acceptance.passed } : {}),
       });
