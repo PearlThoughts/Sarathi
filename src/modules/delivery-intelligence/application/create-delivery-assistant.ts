@@ -1189,7 +1189,9 @@ export const createDeliveryAssistant = (
               ),
               unavailableSources,
               complete: successful.every(
-                (result) => result.complete || result.unavailableSources.length > 0,
+                (result) =>
+                  result.complete ||
+                  (result.periodCensus === undefined && result.unavailableSources.length > 0),
               ),
               periodCensus: successful.find((result) => result.periodCensus !== undefined)
                 ?.periodCensus,
