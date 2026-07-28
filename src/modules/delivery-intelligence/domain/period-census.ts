@@ -67,9 +67,7 @@ export const compilePeriodCensus = (input: {
   readonly maximumCandidates: number;
   readonly unresolvedBoundary?: boolean | undefined;
 }): PeriodCensus => {
-  const accepted = input.candidates.filter(
-    ({ classification }) => classification === "candidate",
-  );
+  const accepted = input.candidates.filter(({ classification }) => classification === "candidate");
   const unique = new Map<string, PeriodCensusCandidate>();
   let duplicateCandidateCount = 0;
   for (const candidate of accepted) {
@@ -94,14 +92,12 @@ export const compilePeriodCensus = (input: {
     ...(genericUpdates === 0 ? {} : { generic_source_update_not_completion: genericUpdates }),
     ...(input.unresolvedBoundary === true ? { unresolved_source_boundary: 1 } : {}),
   };
-  const sourceCoverage = [...new Set(input.configuredSources)]
-    .sort()
-    .map((source) => ({
-      source,
-      available: input.sourceCheckpoints.has(source),
-      checkpointAt: input.sourceCheckpoints.get(source),
-      candidateCount: candidates.filter((candidate) => candidate.source === source).length,
-    }));
+  const sourceCoverage = [...new Set(input.configuredSources)].sort().map((source) => ({
+    source,
+    available: input.sourceCheckpoints.has(source),
+    checkpointAt: input.sourceCheckpoints.get(source),
+    candidateCount: candidates.filter((candidate) => candidate.source === source).length,
+  }));
   const complete =
     input.paginationExhausted &&
     input.unresolvedBoundary !== true &&

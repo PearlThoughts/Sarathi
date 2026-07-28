@@ -102,12 +102,14 @@ export type {
   DeliveryResponseProductPolicy,
 } from "./domain/delivery-response-mode.ts";
 export {
-  deliveryResponseProductPolicies,
   deliveryResponseModePolicies,
+  deliveryResponseProductPolicies,
   deliveryTransportTimeoutMs,
-  selectDeliveryResponseProduct,
   selectDeliveryResponseMode,
+  selectDeliveryResponseProduct,
 } from "./domain/delivery-response-mode.ts";
+export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
+export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {
   DeliveryCompletionStage,
   PeriodCensus,
@@ -116,8 +118,6 @@ export type {
   PeriodCensusSourceCoverage,
 } from "./domain/period-census.ts";
 export { compilePeriodCensus } from "./domain/period-census.ts";
-export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
-export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {
   DeliveryActionTarget,
   DeliveryAnswerComposer,

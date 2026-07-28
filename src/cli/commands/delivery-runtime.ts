@@ -302,10 +302,7 @@ const answerFromRuntime = async (
   request: DeliveryAssistantRequest,
   environment: DeliveryRuntimeEnvironment,
 ): Promise<DeliveryAssistantAnswer> => {
-  const responseProduct = selectDeliveryResponseProduct(
-    request.question,
-    request.responseProduct,
-  );
+  const responseProduct = selectDeliveryResponseProduct(request.question, request.responseProduct);
   const responseMode = selectDeliveryResponseMode(
     request.question,
     request.responseMode,

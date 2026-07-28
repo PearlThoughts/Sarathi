@@ -8,8 +8,8 @@ import {
   type DeliveryResponseMode,
   type DeliveryResponseProduct,
   deliveryResponseModePolicies,
-  selectDeliveryResponseProduct,
   selectDeliveryResponseMode,
+  selectDeliveryResponseProduct,
 } from "../domain/delivery-response-mode.ts";
 import type {
   DeliveryAnswerComposer,
@@ -1191,9 +1191,8 @@ export const createDeliveryAssistant = (
               complete: successful.every(
                 (result) => result.complete || result.unavailableSources.length > 0,
               ),
-              periodCensus: successful.find(
-                (result) => result.periodCensus !== undefined,
-              )?.periodCensus,
+              periodCensus: successful.find((result) => result.periodCensus !== undefined)
+                ?.periodCensus,
             };
             const representedSources = new Set([
               ...merged.items.map((item) => item.source),

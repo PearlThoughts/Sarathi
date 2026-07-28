@@ -202,10 +202,7 @@ export const handleTeamsMention = (
             Effect.timeoutFail({
               duration: Math.max(
                 100,
-                deliveryTransportTimeoutMs(
-                  responseProduct,
-                  dependencies.deliveryAnswerTimeoutMs,
-                ),
+                deliveryTransportTimeoutMs(responseProduct, dependencies.deliveryAnswerTimeoutMs),
               ),
               onTimeout: () =>
                 new RepositoryError({
