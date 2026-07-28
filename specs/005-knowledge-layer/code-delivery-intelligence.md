@@ -132,11 +132,14 @@ Sarathi should reuse those patterns or compatible libraries where practical, but
 
 The default operational view emphasizes the last 30 days:
 
-1. normalize merged change capsules;
-2. group them by ratified or inferred capability;
-3. join planned work, ownership, reviews, checks, releases, deployments, incidents, and attributed decisions;
-4. identify rework only across distinct changes with structural or issue evidence, not lexical similarity alone;
-5. create a cited capability digest with outcomes, incomplete chains, risks, and unknowns.
+1. enumerate the complete authorized candidate population and record its coverage;
+2. normalize merged change capsules;
+3. group them by ratified or inferred capability;
+4. join planned work, ownership, reviews, checks, releases, deployments, incidents, and attributed decisions;
+5. identify rework only across distinct changes with structural or issue evidence, not lexical similarity alone;
+6. create a cited capability digest with outcomes, incomplete chains, risks, and unknowns.
+
+The population census precedes relevance ranking. A top-k GitHub, Jira, or vector result set is not a delivery report and must never be described as complete.
 
 Older activity is compacted into versioned monthly or release-aligned time capsules. A historical summary must link back to the contributing change capsules and exact source revisions. Corrections create superseding versions instead of silently rewriting prior evidence.
 
@@ -203,6 +206,8 @@ It does not yet implement the full design in this sub-spec. Known gaps include:
 - goal-alignment inference and evaluation.
 
 These gaps require explicit tasks and acceptance evidence. They are not implied complete by repository ingestion counts or embeddings.
+
+[Evidence-First Period Delivery Reporting](./period-delivery-reporting.md) defines how these code-derived artifacts join non-code delivery evidence into an exhaustive period census and leadership-quality report.
 
 ## Evaluation
 

@@ -81,6 +81,23 @@
 - [ ] KLG-530 Evaluate an agent graph framework only after a production workflow satisfies ADR 0008's branching, durable pause/resume, human-intervention, replay, and measured-maintainability gate.
 - [x] KLG-531 Add a privacy-safe batch evaluation runner over the production answer path with declared pass and human-usefulness thresholds; keep real project questions and ratings in the private overlay.
 
+## Evidence-First Period Reporting
+
+- [ ] KLG-532 Add permanent question-planning tests and implementation for arbitrary `last N days`, week, sprint, release, month, and quarter boundaries using workspace timezone and explicit inclusive/exclusive semantics.
+- [ ] KLG-533 Propagate the selected response product and budget end to end; remove the fast-answer line and timeout constraints from structured briefs and leadership reports while preserving fast operational latency.
+- [ ] KLG-534 Implement an exhaustive authorized `PeriodCensus` candidate operation with deterministic pagination, freshness, exclusions, duplicates, unmapped records, unavailable-source counts, coverage, and replay checksum; do not classify generic source updates as delivered.
+- [ ] KLG-535 Implement PR-centered `ChangeCapsule` projection joining Jira intent, commits and changed paths/symbols, reviews/checks, releases/deployments/rollbacks/acceptance, contributors, citations, and missing stages.
+- [ ] KLG-536 Collapse cross-source representations of one delivery change without losing provenance; add edit, deletion, rename, force-push, replay, and missed-event convergence tests for capsules.
+- [ ] KLG-537 Add `CapabilityLedger` ports and projections for declared capabilities, initiatives, aliases, goals, ownership assertions, source mappings, inference candidates, confidence, and attributed corrections.
+- [ ] KLG-538 Map Jira components/work hierarchy, GitHub repositories/modules/paths, Vault requirements/decisions, and Teams topics/claims into the capability ledger with reviewable unmapped and ambiguous queues.
+- [ ] KLG-539 Reconstruct the independently cited planned-through-impact `DeliveryChain`; use its declared completion stage for period membership instead of generic source update time.
+- [ ] KLG-540 Add `observedOutcome`, `claimedImpact`, `inferredImpact`, and `unknown` contracts and rendering rules; permanently test that inferred benefits cannot appear as observed outcomes.
+- [ ] KLG-541 Implement `PeriodDeliveryReport` projection with executive summary, capability sections, delivery chains, outcomes, operational/compliance/maintenance work, risks/gaps/actions, source coverage, freshness, conflicts, inference labels, and material-claim citation map.
+- [ ] KLG-542 Add a schema-constrained leadership-report composer and prompt distinct from fast operational composition; retain deterministic validation after model composition.
+- [ ] KLG-543 Preserve authorized actor, surrounding Teams thread, referenced entities, workspace cadence, and declared goal context during deterministic and model-assisted planning.
+- [ ] KLG-544 Extend the evaluation runner with theme recall, materially evidenced initiative recall, material-claim citation coverage, unsupported-outcome count, unlabelled-inference count, source-ablation comparison, and fingerprint-bound human usefulness.
+- [ ] KLG-545 Pass the private human-authored report reconstruction target, real Teams period-report acceptance, exact-branch CI/runtime smoke, source-change convergence, authorization/privacy gates, and production rollback; attach evidence to the existing Bead and convoy without creating a replacement graph.
+
 ## Dependency Order
 
-KLG-002 through KLG-004 block ingestion. KLG-101 and KLG-102 block source adapters. Jira/Vault ingestion and embedding projections block PostgreSQL hybrid retrieval. Retrieval and GitHub live search block fusion and answer composition. All implementation and permanent tests block exact-branch CI and governed merge. Merge, key rotation, and verified backup block production migration/deployment. Historical bootstrap and continuous event/hourly convergence block cadence, deep-dive, and freshness acceptance.
+KLG-002 through KLG-004 block ingestion. KLG-101 and KLG-102 block source adapters. Jira/Vault ingestion and embedding projections block PostgreSQL hybrid retrieval. Retrieval and GitHub live search block fusion and answer composition. KLG-532 and KLG-533 block period execution. KLG-534 blocks capsules and report composition. KLG-535 through KLG-540 block KLG-541 and KLG-542. KLG-544 blocks gold-report acceptance in KLG-545. All implementation and permanent tests block exact-branch CI and governed merge. Merge, key rotation, and verified backup block production migration/deployment. Historical bootstrap and continuous event/hourly convergence block final cadence, deep-dive, freshness, and leadership-report acceptance.

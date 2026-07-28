@@ -16,7 +16,7 @@ This remains one child capability of the existing production pilot. It does not 
 
 ## 2. Problem and Objective
 
-The current production path can retrieve narrow cited context, but it cannot reliably answer questions about scope, ownership, dependency waits, blockers, sprint work, delivered outcomes, capacity, risks, recurring issues, requirements, decisions, or next actions. Semantic passages alone do not provide stable joins, lifecycle state, aggregation, conflict detection, or predictable latency.
+The current production path can retrieve narrow cited context, but it cannot reliably answer questions about scope, ownership, dependency waits, blockers, sprint work, delivered outcomes, capacity, risks, recurring issues, requirements, decisions, or next actions. Semantic passages alone do not provide stable joins, lifecycle state, aggregation, conflict detection, predictable latency, or period completeness. A short list of highly ranked Jira and GitHub records can be correctly cited while still omitting most of a team's material delivery.
 
 The objective is to maintain a policy-bounded delivery representation once and reuse it across delivery questions. A new wording must compile to existing safe query operations rather than require a new adapter, table, or question-specific code path.
 
@@ -31,6 +31,8 @@ The objective is to maintain a policy-bounded delivery representation once and r
 7. **Knowledge retrieval supports delivery reasoning.** Versioned documents, passages, full-text search, vectors, citations, and deletion reconciliation enrich structured delivery queries.
 8. **Frameworks remain at the edge.** Domain and application code do not depend on Drizzle, PostgreSQL, Graph, Jira, GitHub, Vault, Railway, or model-provider SDK types.
 9. **Response depth follows intent.** Operational answers prefer concise, decision-ready formatting, while requested briefs and deep dives may use the length, structure, and latency needed for completeness. Resolvable citations remain inline; a person is tagged only through a source-resolved Teams identity.
+10. **Evidence census precedes narrative.** Period reports enumerate and reconcile the authorized candidate population before ranking, summarization, or model composition. Top-k retrieval is enrichment, not proof of completeness.
+11. **Business impact has an evidence class.** Observed outcomes, attributed impact claims, model-assisted inferences, and unknowns remain distinguishable in storage, evaluation, and user-visible reports.
 
 ## 4. Capability Architecture
 
@@ -43,8 +45,10 @@ flowchart LR
   M[Project email] --> C
   C --> K[Versioned source records and knowledge passages]
   C --> D[Delivery objects, relations, observations, claims, metrics]
+  D --> R[Change capsules, capability ledger, delivery chains, period census]
   K --> Q[Authorized query execution]
   D --> Q
+  R --> Q
   L[Live source verification] --> Q
   U[Delivery question] --> P[Validated delivery query plan]
   P --> Q
@@ -100,6 +104,14 @@ An operator can bootstrap a configured historical window and then rely on source
 
 **Independent test**: create, edit, rename, delete, duplicate-event, missed-event, expired-subscription, and unchanged-replay scenarios converge to the authoritative source state with correct versions, vectors, tombstones, checkpoints, and privacy-safe freshness metrics.
 
+### Story 7 — Leadership-Quality Period Reconstruction
+
+A delivery leader asks for a weekly, monthly, sprint, or quarterly report. Sarathi builds an exhaustive bounded census, collapses cross-source duplicates into change capsules, groups delivery by recognizable capability or initiative, reconstructs delivery stages and outcomes, and then composes the requested report.
+
+**Independent test**: without exposing the human-authored reference report to the production answer path, Sarathi reconstructs at least 85% of its capability themes and at least 80% of materially evidenced initiatives, cites every material claim, labels every inference, reports coverage and missing sources, and receives a human usefulness score of at least 4 out of 5.
+
+[Evidence-First Period Delivery Reporting](./period-delivery-reporting.md) defines the census, change capsule, capability ledger, delivery chain, outcome assertion, report products, and evaluation contract.
+
 ## 6. Functional Requirements
 
 - **FR-001**: Model workspace-scoped delivery objects, relationships, observations, claims, metrics, conflicts, and source links independently of any reporting period.
@@ -126,6 +138,16 @@ An operator can bootstrap a configured historical window and then rely on source
 - **FR-022**: Store idempotent event deliveries, subscription lifecycle, leases, cursors, scope hashes, freshness, lag, retries, and safe failure classes without logging source bodies or private scope values.
 - **FR-023**: Re-embed only changed passages and prove that unchanged vectors are reused across event, hourly, and manual reconciliation.
 - **FR-024**: Keep orchestration framework-neutral. Use the existing typed application workflows and PostgreSQL checkpoints unless measured autonomous workflows satisfy the adoption gate in ADR 0008.
+- **FR-025**: Parse explicit and relative calendar, sprint, release, and quarter windows into tested workspace-local boundaries for every delivery-report question, including “last N days.”
+- **FR-026**: Determine delivered-period membership from an explicitly selected delivery-chain completion stage rather than ingestion time or generic source update time.
+- **FR-027**: Build an exhaustive, paginated, authorized `PeriodCensus` before ranking or composition and expose candidate, exclusion, duplicate, unmapped, unavailable-source, and coverage counts.
+- **FR-028**: Reconcile Jira, GitHub, Vault, Teams, and correction evidence into versioned `ChangeCapsule` records without counting one delivery change once per source.
+- **FR-029**: Maintain a workspace-configurable `CapabilityLedger` that maps capabilities and initiatives to repositories, modules, work items, requirements, goals, aliases, ownership claims, and corrections.
+- **FR-030**: Reconstruct planned, implemented, reviewed, merged, checked, released, deployed, accepted, and impact-observed stages independently, preserving missing stages as gaps.
+- **FR-031**: Classify report statements as observed outcomes, attributed impact claims, model-assisted impact inferences, or unknowns; label inferences and prohibit unsupported observed outcomes.
+- **FR-032**: Provide distinct `operational_answer`, `period_delivery_brief`, `leadership_report`, and `implementation_investigation` products with end-to-end response-mode and timeout propagation.
+- **FR-033**: Preserve authorized actor, surrounding thread, referenced entities, workspace cadence, and declared goal context during question planning without treating contextual claims as source observations.
+- **FR-034**: Validate material-claim citation coverage, census completeness, source freshness, inference labelling, authorization, latency, theme recall, initiative recall, and fingerprint-bound human usefulness before accepting a leadership report.
 
 ## 7. Core Data Contracts
 
@@ -139,6 +161,12 @@ An operator can bootstrap a configured historical window and then rely on source
 - **DeliveryResult**: cited facts, grouped measures, conflicts, completeness, and unavailable-source metadata suitable for deterministic or model-assisted composition.
 - **KnowledgeRecord**: versioned source item, passage, ACL/provenance metadata, search projection, and deletion state supporting unstructured retrieval.
 - **SyncCheckpoint**: connector cursor, scope checksum, completion state, counts, and safe failure metadata.
+- **ChangeCapsule**: one normalized implementation or operational change joined across intent, code, review, checks, release/deployment, acceptance, contributors, capabilities, citations, and missing stages.
+- **CapabilityLedger**: declared and evidence-backed capability, initiative, alias, ownership, goal, and source mappings with confidence and correction history.
+- **DeliveryChain**: independently cited planned-through-impact stages for a deliverable.
+- **OutcomeAssertion**: an observed outcome, attributed impact claim, labelled inference, or explicit unknown.
+- **PeriodCensus**: the complete authorized candidate population, deduplication/exclusion accounting, source freshness, coverage, and deterministic replay checksum for one interval.
+- **PeriodDeliveryReport**: a capability-grouped report over an accepted census with citations, inference boundaries, conflicts, gaps, and coverage disclosure.
 
 ## 8. Operational and Security Standards
 
@@ -151,9 +179,9 @@ An operator can bootstrap a configured historical window and then rely on source
 
 ## 9. Verification
 
-Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, and source-resolved Teams mention transport.
+Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, arbitrary period parsing, delivery-stage membership, exhaustive pagination, cross-source change deduplication, capability mapping, outcome evidence classes, report-mode propagation, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, and source-resolved Teams mention transport.
 
-Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, historical bootstrap plus continuous event/hourly reconciliation, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint and quarter delivery, current work, recurring issues, and daily/weekly summaries. Fast operational questions must meet the ten-second target; requested deep dives are evaluated for completeness and disclosed elapsed time.
+Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, historical bootstrap plus continuous event/hourly reconciliation, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint and quarter delivery, current work, recurring issues, and daily/weekly summaries. Fast operational questions must meet the ten-second target; requested deep dives are evaluated for completeness and disclosed elapsed time. A private human-authored report reconstruction must meet at least 85% capability-theme recall, 80% materially evidenced initiative recall, 100% material-claim citation coverage, zero unsupported observed outcomes, zero unlabelled inferences, 100% authorization, and at least 4/5 human usefulness for the exact answer fingerprint.
 
 ## 10. Non-Goals
 
@@ -174,8 +202,11 @@ Stop on backup failure, migration drift, connector-scope ambiguity, unauthorized
 - [Implementation Plan](./plan.md)
 - [Delivery Intelligence Redesign](./delivery-intelligence.md)
 - [Continuous Source Synchronization](./continuous-source-synchronization.md)
+- [Code-Derived Delivery Intelligence](./code-delivery-intelligence.md)
+- [Evidence-First Period Delivery Reporting](./period-delivery-reporting.md)
 - [ADR 0006](../../docs/adr/0006-postgres-knowledge-retrieval-stack.md)
 - [ADR 0007](../../docs/adr/0007-delivery-intelligence-projection.md)
 - [ADR 0008](../../docs/adr/0008-continuous-project-intelligence-synchronization.md)
+- [ADR 0009](../../docs/adr/0009-evidence-first-period-reporting.md)
 - [Module Boundaries](../../docs/architecture/module-boundaries.md)
 - [Workspace and Capability Model](../../docs/architecture/workspace-capability-model.md)
