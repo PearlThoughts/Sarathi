@@ -39,7 +39,12 @@ describe("delivery intelligence domain", () => {
         sprint: "previous",
       },
     });
-    expect(plan?.operations[2]?.time).toEqual({ kind: "workspace_week" });
+    expect(plan?.operations[2]).toMatchObject({
+      purpose: "delivered",
+      select: "period_census",
+      time: { kind: "jira_sprint", sprint: "previous" },
+    });
+    expect(plan?.operations[3]?.time).toEqual({ kind: "workspace_week" });
   });
 
   it("recognizes activity summaries regardless of phrase order and keeps activity primary", () => {
@@ -117,6 +122,11 @@ describe("delivery intelligence domain", () => {
         ],
         time: { kind: "workspace_previous_week" },
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "period_census",
+        time: { kind: "workspace_previous_week" },
+      }),
     ]);
   });
 
@@ -136,6 +146,11 @@ describe("delivery intelligence domain", () => {
         time: { kind: "workspace_week" },
         limit: 20,
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "period_census",
+        time: { kind: "workspace_week" },
+      }),
     ]);
   });
 
@@ -145,6 +160,7 @@ describe("delivery intelligence domain", () => {
     expect(plan?.operations).toEqual([
       expect.objectContaining({ purpose: "delivered", limit: 3 }),
       expect.objectContaining({ purpose: "delivered", select: "observations", limit: 3 }),
+      expect.objectContaining({ purpose: "delivered", select: "period_census" }),
     ]);
   });
 
