@@ -20,6 +20,7 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import {
+  compilePeriodCensus,
   type DeliveryClaim,
   type DeliveryEntityCatalog,
   type DeliveryQueryContext,
@@ -29,11 +30,10 @@ import {
   type DeliveryQuerySource,
   type DeliveryResultItem,
   type DeliverySourceKind,
-  type PeriodCensusBoundary,
-  type PeriodCensusCandidate,
-  compilePeriodCensus,
   findDeliveryConflicts,
   normalizeDeliveryEntityAlias,
+  type PeriodCensusBoundary,
+  type PeriodCensusCandidate,
   resolveDeliveryEntity,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
@@ -118,10 +118,7 @@ const configuredSourceKinds = async (
     .select({ sourceKind: knowledgeSourceTable.kind })
     .from(knowledgeSourceTable)
     .where(
-      and(
-        eq(knowledgeSourceTable.workspaceId, workspaceId),
-        eq(knowledgeSourceTable.active, true),
-      ),
+      and(eq(knowledgeSourceTable.workspaceId, workspaceId), eq(knowledgeSourceTable.active, true)),
     );
   return [
     ...new Set(
@@ -372,8 +369,7 @@ const queryPeriodCensus = async (
   configuredSources: readonly DeliverySourceKind[],
 ): Promise<DeliveryQueryResult> => {
   const censusConfiguration = operation.census;
-  if (censusConfiguration === undefined)
-    throw new Error("Period census pagination is required.");
+  if (censusConfiguration === undefined) throw new Error("Period census pagination is required.");
   const sourceDefinedBoundary: PeriodCensusBoundary | undefined =
     operation.time?.kind === "jira_sprint"
       ? {
@@ -452,8 +448,7 @@ const queryPeriodCensus = async (
           occurredAt: row.observedAt,
           dedupeKey: `object:${row.canonicalKey}:${completionStage ?? "update"}`,
           mapped: row.canonicalKey.trim() !== "",
-          classification:
-            completionStage === undefined ? "generic_source_update" : "candidate",
+          classification: completionStage === undefined ? "generic_source_update" : "candidate",
           completionStage,
         });
       }
@@ -481,12 +476,7 @@ const queryPeriodCensus = async (
         .where(
           and(
             eq(deliveryObservationTable.workspaceId, context.workspaceId),
-            authorizationCondition(
-              database,
-              context,
-              "observation",
-              deliveryObservationTable.id,
-            ),
+            authorizationCondition(database, context, "observation", deliveryObservationTable.id),
             inArray(
               deliveryObservationTable.sensitivity,
               allowedSensitivities(context.maximumSensitivity),
@@ -510,9 +500,7 @@ const queryPeriodCensus = async (
           mapped: row.subjectObjectId !== null,
           classification:
             row.observationKind === "deployment" ? "candidate" : "generic_source_update",
-          ...(row.observationKind === "deployment"
-            ? { completionStage: "deployed" as const }
-            : {}),
+          ...(row.observationKind === "deployment" ? { completionStage: "deployed" as const } : {}),
         });
       offset += rows.length;
       if (rows.length < limit) break;
@@ -1438,13 +1426,7 @@ export const createPostgresDeliveryQuerySource = (
           }
           if (operation.select === "period_census")
             results.push(
-              await queryPeriodCensus(
-                database,
-                context,
-                operation,
-                verifiedAt,
-                configuredSources,
-              ),
+              await queryPeriodCensus(database, context, operation, verifiedAt, configuredSources),
             );
         }
         const items = results.flatMap((entry) => entry.items);
@@ -1454,9 +1436,7 @@ export const createPostgresDeliveryQuerySource = (
             indexedAt: verifiedAt.get(item.source) ?? item.indexedAt,
           })),
           conflicts: results.flatMap((entry) => entry.conflicts),
-          unavailableSources: [
-            ...new Set(results.flatMap((entry) => entry.unavailableSources)),
-          ],
+          unavailableSources: [...new Set(results.flatMap((entry) => entry.unavailableSources))],
           complete: results.every((entry) => entry.complete),
           periodCensus: results.find((entry) => entry.periodCensus !== undefined)?.periodCensus,
         };

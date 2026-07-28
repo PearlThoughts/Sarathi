@@ -101,9 +101,7 @@ describe("delivery intelligence domain", () => {
   });
 
   it("selects explicit response products and gives non-fast products their full transport budget", () => {
-    expect(selectDeliveryResponseProduct("Who owns DEMO-1 today?")).toBe(
-      "operational_answer",
-    );
+    expect(selectDeliveryResponseProduct("Who owns DEMO-1 today?")).toBe("operational_answer");
     expect(selectDeliveryResponseProduct("Give me a delivery report for the last 30 days")).toBe(
       "period_delivery_brief",
     );
@@ -113,9 +111,9 @@ describe("delivery intelligence domain", () => {
     expect(
       selectDeliveryResponseProduct("Investigate the repository implementation in a deep dive"),
     ).toBe("implementation_investigation");
-    expect(
-      selectDeliveryResponseProduct("Quick status", "leadership_report"),
-    ).toBe("leadership_report");
+    expect(selectDeliveryResponseProduct("Quick status", "leadership_report")).toBe(
+      "leadership_report",
+    );
     expect(deliveryTransportTimeoutMs("operational_answer", 7_000)).toBe(7_000);
     expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(14_000);
     expect(deliveryTransportTimeoutMs("leadership_report", 7_000)).toBe(32_000);
