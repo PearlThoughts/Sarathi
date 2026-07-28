@@ -146,7 +146,9 @@ const asJiraQuery = (
   const dayEnd = new Date(context.requestedAt);
   const defaultEnd = new Date(dayEnd.getTime() + 86_400_000).toISOString();
   const window =
-    operation.time === undefined || operation.time.kind === "jira_sprint"
+    operation.time === undefined ||
+    operation.time.kind === "jira_sprint" ||
+    operation.time.kind === "release"
       ? {
           fromInclusive: new Date(dayEnd.getTime() - 366 * 86_400_000).toISOString(),
           toExclusive: defaultEnd,

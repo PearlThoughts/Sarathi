@@ -49,7 +49,10 @@ export type AbsoluteDeliveryTimeWindow = {
 };
 
 export const resolveDeliveryTimeConstraint = (
-  constraint: Exclude<DeliveryTimeConstraint, { readonly kind: "jira_sprint" }>,
+  constraint: Exclude<
+    DeliveryTimeConstraint,
+    { readonly kind: "jira_sprint" } | { readonly kind: "release" }
+  >,
   requestedAt: string,
   timeZone: string,
 ): AbsoluteDeliveryTimeWindow => {
@@ -72,11 +75,83 @@ export const resolveDeliveryTimeConstraint = (
   };
   if (constraint.kind === "workspace_day") return day;
   if (constraint.kind === "lookback") {
+    const firstDate = new Date(currentDate.getTime() - (constraint.days - 1) * 86_400_000);
     return {
-      fromInclusive: new Date(
-        Date.parse(day.fromInclusive) - constraint.days * 86_400_000,
+      fromInclusive: zonedMidnight(
+        {
+          year: firstDate.getUTCFullYear(),
+          month: firstDate.getUTCMonth() + 1,
+          day: firstDate.getUTCDate(),
+        },
+        timeZone,
       ).toISOString(),
       toExclusive: day.toExclusive,
+    };
+  }
+  if (constraint.kind === "workspace_month") {
+    const selected =
+      typeof constraint.month === "object"
+        ? new Date(Date.UTC(constraint.month.year, constraint.month.month - 1, 1))
+        : new Date(
+            Date.UTC(
+              current.year,
+              current.month - 1 + (constraint.month === "previous" ? -1 : 0),
+              1,
+            ),
+          );
+    const next = new Date(Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth() + 1, 1));
+    return {
+      fromInclusive: zonedMidnight(
+        {
+          year: selected.getUTCFullYear(),
+          month: selected.getUTCMonth() + 1,
+          day: 1,
+        },
+        timeZone,
+      ).toISOString(),
+      toExclusive: zonedMidnight(
+        {
+          year: next.getUTCFullYear(),
+          month: next.getUTCMonth() + 1,
+          day: 1,
+        },
+        timeZone,
+      ).toISOString(),
+    };
+  }
+  if (constraint.kind === "workspace_quarter") {
+    const currentQuarter = Math.floor((current.month - 1) / 3) + 1;
+    const selected =
+      typeof constraint.quarter === "object"
+        ? {
+            year: constraint.quarter.year ?? current.year,
+            quarter: constraint.quarter.quarter,
+          }
+        : (() => {
+            const absoluteQuarter = currentQuarter + (constraint.quarter === "previous" ? -1 : 0);
+            return absoluteQuarter < 1
+              ? { year: current.year - 1, quarter: 4 as const }
+              : { year: current.year, quarter: absoluteQuarter as 1 | 2 | 3 | 4 };
+          })();
+    const start = new Date(Date.UTC(selected.year, (selected.quarter - 1) * 3, 1));
+    const next = new Date(Date.UTC(selected.year, selected.quarter * 3, 1));
+    return {
+      fromInclusive: zonedMidnight(
+        {
+          year: start.getUTCFullYear(),
+          month: start.getUTCMonth() + 1,
+          day: 1,
+        },
+        timeZone,
+      ).toISOString(),
+      toExclusive: zonedMidnight(
+        {
+          year: next.getUTCFullYear(),
+          month: next.getUTCMonth() + 1,
+          day: 1,
+        },
+        timeZone,
+      ).toISOString(),
     };
   }
   const daysSinceMonday = (currentDate.getUTCDay() + 6) % 7;

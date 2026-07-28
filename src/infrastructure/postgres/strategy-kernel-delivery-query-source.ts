@@ -100,7 +100,7 @@ const overlapsOperationTime = (
   timeZone: string,
 ): boolean => {
   if (operation.time === undefined) return true;
-  if (operation.time.kind === "jira_sprint") return true;
+  if (operation.time.kind === "jira_sprint" || operation.time.kind === "release") return true;
   const window = resolveDeliveryTimeConstraint(operation.time, requestedAt, timeZone);
   const start = Date.parse(node.horizonStart ?? node.createdAt);
   const end = Date.parse(node.horizonEnd ?? node.dueAt ?? node.updatedAt);

@@ -42,7 +42,8 @@ export type DeliveryQuerySelector =
   | "metrics"
   | "conflicts"
   | "knowledge"
-  | "github_live";
+  | "github_live"
+  | "period_census";
 
 export type DeliveryQueryField =
   | "kind"
@@ -85,7 +86,19 @@ export type DeliveryTimeConstraint =
   | { readonly kind: "workspace_day" }
   | { readonly kind: "workspace_week" }
   | { readonly kind: "workspace_previous_week" }
+  | {
+      readonly kind: "workspace_month";
+      readonly month: "current" | "previous" | { readonly year: number; readonly month: number };
+    }
+  | {
+      readonly kind: "workspace_quarter";
+      readonly quarter:
+        | "current"
+        | "previous"
+        | { readonly year?: number | undefined; readonly quarter: 1 | 2 | 3 | 4 };
+    }
   | { readonly kind: "jira_sprint"; readonly sprint: "current" | "previous" }
+  | { readonly kind: "release"; readonly release?: string | undefined }
   | { readonly kind: "lookback"; readonly days: number };
 
 export type DeliveryQueryMeasure = {
@@ -109,6 +122,12 @@ export type DeliveryQueryOperation = {
     | { readonly field: DeliveryQueryField; readonly direction: "asc" | "desc" }
     | undefined;
   readonly time?: DeliveryTimeConstraint | undefined;
+  readonly census?:
+    | {
+        readonly pageSize: number;
+        readonly maximumCandidates: number;
+      }
+    | undefined;
   readonly limit: number;
 };
 
@@ -132,6 +151,7 @@ const selectors = new Set<DeliveryQuerySelector>([
   "conflicts",
   "knowledge",
   "github_live",
+  "period_census",
 ]);
 const purposes = new Set<DeliveryQuestionIntent>([
   "general",
@@ -175,6 +195,27 @@ const assertTimeConstraint = (time: DeliveryTimeConstraint | undefined): void =>
     (!Number.isInteger(time.days) || time.days < 1 || time.days > 366)
   )
     throw new DeliveryQueryPlanValidationError("Delivery lookback must be between 1 and 366 days.");
+  if (
+    time.kind === "workspace_month" &&
+    typeof time.month === "object" &&
+    (!Number.isInteger(time.month.year) ||
+      time.month.year < 2000 ||
+      time.month.year > 2200 ||
+      !Number.isInteger(time.month.month) ||
+      time.month.month < 1 ||
+      time.month.month > 12)
+  )
+    throw new DeliveryQueryPlanValidationError("Delivery calendar month is invalid.");
+  if (
+    time.kind === "workspace_quarter" &&
+    typeof time.quarter === "object" &&
+    ((time.quarter.year !== undefined &&
+      (!Number.isInteger(time.quarter.year) ||
+        time.quarter.year < 2000 ||
+        time.quarter.year > 2200)) ||
+      ![1, 2, 3, 4].includes(time.quarter.quarter))
+  )
+    throw new DeliveryQueryPlanValidationError("Delivery calendar quarter is invalid.");
 };
 
 export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => {
@@ -199,6 +240,24 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
       );
     if (!Number.isInteger(operation.limit) || operation.limit < 1 || operation.limit > 20)
       throw new DeliveryQueryPlanValidationError("Delivery query operation limit must be 1 to 20.");
+    if (operation.select === "period_census") {
+      if (
+        operation.time === undefined ||
+        operation.census === undefined ||
+        !Number.isInteger(operation.census.pageSize) ||
+        operation.census.pageSize < 10 ||
+        operation.census.pageSize > 500 ||
+        !Number.isInteger(operation.census.maximumCandidates) ||
+        operation.census.maximumCandidates < operation.census.pageSize ||
+        operation.census.maximumCandidates > 100_000
+      )
+        throw new DeliveryQueryPlanValidationError(
+          "Period census requires a time boundary, a page size from 10 to 500, and a bounded candidate maximum.",
+        );
+    } else if (operation.census !== undefined)
+      throw new DeliveryQueryPlanValidationError(
+        "Only period census operations may declare census pagination.",
+      );
     if (operation.traversal !== undefined && ![1, 2].includes(operation.traversal.maximumDepth))
       throw new DeliveryQueryPlanValidationError(
         "Delivery relation traversal depth must be 1 or 2.",
@@ -244,6 +303,64 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
 
 const has = (value: string, pattern: RegExp): boolean => pattern.test(value);
 
+const calendarMonths: ReadonlyMap<string, number> = new Map([
+  ["january", 1],
+  ["february", 2],
+  ["march", 3],
+  ["april", 4],
+  ["may", 5],
+  ["june", 6],
+  ["july", 7],
+  ["august", 8],
+  ["september", 9],
+  ["october", 10],
+  ["november", 11],
+  ["december", 12],
+] as const);
+
+const periodConstraint = (
+  value: string,
+  requestedLookbackDays: number | undefined,
+  sprintTime: DeliveryTimeConstraint | undefined,
+): DeliveryTimeConstraint | undefined => {
+  if (sprintTime !== undefined) return sprintTime;
+  if (requestedLookbackDays !== undefined) return { kind: "lookback", days: requestedLookbackDays };
+  if (has(value, /\b(?:last|previous) week\b/)) return { kind: "workspace_previous_week" };
+  if (has(value, /\bthis week\b/)) return { kind: "workspace_week" };
+  const explicitMonth = new RegExp(
+    `\\b(${[...calendarMonths.keys()].join("|")})\\s+(20\\d{2}|21\\d{2})\\b`,
+  ).exec(value);
+  if (explicitMonth?.[1] !== undefined && explicitMonth[2] !== undefined)
+    return {
+      kind: "workspace_month",
+      month: {
+        year: Number(explicitMonth[2]),
+        month: calendarMonths.get(explicitMonth[1]) ?? 1,
+      },
+    };
+  if (has(value, /\b(?:last|previous) month\b/))
+    return { kind: "workspace_month", month: "previous" };
+  if (has(value, /\b(?:this|current) month\b|\bmonthly\b/))
+    return { kind: "workspace_month", month: "current" };
+  const explicitQuarter = /\bq([1-4])(?:\s+(20\d{2}|21\d{2}))?\b/.exec(value);
+  if (explicitQuarter?.[1] !== undefined)
+    return {
+      kind: "workspace_quarter",
+      quarter: {
+        ...(explicitQuarter[2] === undefined ? {} : { year: Number(explicitQuarter[2]) }),
+        quarter: Number(explicitQuarter[1]) as 1 | 2 | 3 | 4,
+      },
+    };
+  if (has(value, /\b(?:last|previous) quarter\b/))
+    return { kind: "workspace_quarter", quarter: "previous" };
+  if (has(value, /\b(?:this|current) quarter\b|\bquarterly\b/))
+    return { kind: "workspace_quarter", quarter: "current" };
+  const release = /\brelease\s+(?!report\b)([a-z0-9][a-z0-9._-]{0,79})\b/.exec(value)?.[1];
+  if (release !== undefined) return { kind: "release", release };
+  if (has(value, /\brelease report\b/)) return { kind: "release" };
+  return undefined;
+};
+
 export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | undefined => {
   const value = question.replace(/\s+/g, " ").trim().toLowerCase();
   const intents: DeliveryQuestionIntent[] = [];
@@ -261,15 +378,24 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   };
   const top = Math.max(1, Math.min(Number(/\btop\s+(\d{1,2})\b/.exec(value)?.[1] ?? 5), 10));
   const explicitlyLimited = /\btop\s+\d{1,2}\b/.test(value);
-  const requestedLookbackDays = Math.max(
-    1,
-    Math.min(Number(/\blast\s+(\d{1,3})\s+days?\b/.exec(value)?.[1] ?? 120), 366),
-  );
-  const sprintTime: DeliveryTimeConstraint | undefined = has(value, /\blast sprint\b/)
+  const requestedLookbackMatch = /\blast\s+(\d{1,3})\s+days?\b/.exec(value)?.[1];
+  const requestedLookbackDays =
+    requestedLookbackMatch === undefined
+      ? undefined
+      : Math.max(1, Math.min(Number(requestedLookbackMatch), 366));
+  const recurringLookbackDays = requestedLookbackDays ?? 120;
+  const sprintTime: DeliveryTimeConstraint | undefined = has(value, /\b(?:last|previous) sprint\b/)
     ? { kind: "jira_sprint", sprint: "previous" }
     : has(value, /\b(?:current|active|this) sprint\b/)
       ? { kind: "jira_sprint", sprint: "current" }
       : undefined;
+  const reportPeriod = periodConstraint(value, requestedLookbackDays, sprintTime);
+  const periodReportQuestion =
+    has(
+      value,
+      /\b(?:delivery|leadership|executive|weekly|monthly|quarterly|sprint|release|period)\s+(?:report|brief|summary)\b/,
+    ) ||
+    (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) && reportPeriod !== undefined);
   const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
@@ -293,10 +419,11 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
             ? { phrase: ownershipTarget }
             : undefined;
   const activityQuestion =
-    has(value, /\bactivity\b/) ||
-    (has(value, /\b(?:team|delivery|work)\b/) &&
-      has(value, /\b(?:today|daily|summary|summarize|report|update|accomplished)\b/) &&
-      !has(value, /\b(?:capacity|allocation|availability|bandwidth)\b/));
+    !periodReportQuestion &&
+    (has(value, /\bactivity\b/) ||
+      (has(value, /\b(?:team|delivery|work)\b/) &&
+        has(value, /\b(?:today|daily|summary|summarize|report|update|accomplished)\b/) &&
+        !has(value, /\b(?:capacity|allocation|availability|bandwidth)\b/)));
 
   if (has(value, /\b(?:scope|project boundary|in scope|out of scope)\b/))
     add("scope", {
@@ -362,14 +489,8 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       time: sprintTime,
       limit: top,
     });
-  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/)) {
-    const time =
-      sprintTime ??
-      (has(value, /\blast week\b/)
-        ? { kind: "workspace_previous_week" as const }
-        : has(value, /\bthis week\b/)
-          ? { kind: "workspace_week" as const }
-          : undefined);
+  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) || periodReportQuestion) {
+    const time = reportPeriod;
     const limit =
       time?.kind === "workspace_week" || time?.kind === "workspace_previous_week"
         ? explicitlyLimited
@@ -402,6 +523,13 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       time,
       limit,
     });
+    if (time !== undefined)
+      add("delivered", {
+        select: "period_census",
+        time,
+        census: { pageSize: 200, maximumCandidates: 50_000 },
+        limit: 1,
+      });
   }
   const currentWorkQuestion =
     has(value, /\b(?:doing|working on|current work|in progress)\b/) ||
@@ -437,7 +565,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       select: "observations",
       groupBy: ["dedupeKey"],
       measures: [{ operator: "count", minimumOccurrences: 2 }],
-      time: { kind: "lookback", days: requestedLookbackDays },
+      time: { kind: "lookback", days: recurringLookbackDays },
       orderBy: { field: "observedAt", direction: "desc" },
       limit: top,
     });

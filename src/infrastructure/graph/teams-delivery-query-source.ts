@@ -172,7 +172,12 @@ const inOperationWindow = (
   context: DeliveryQueryContext,
 ): value is string => {
   if (value === undefined) return false;
-  if (operation.time === undefined || operation.time.kind === "jira_sprint") return true;
+  if (
+    operation.time === undefined ||
+    operation.time.kind === "jira_sprint" ||
+    operation.time.kind === "release"
+  )
+    return true;
   const window = resolveDeliveryTimeConstraint(
     operation.time,
     context.requestedAt,
