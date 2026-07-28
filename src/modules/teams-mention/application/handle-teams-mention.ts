@@ -1,6 +1,11 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
-import { type DeliveryAssistant, planDeliveryQuestion } from "../../delivery-intelligence/index.ts";
+import {
+  type DeliveryAssistant,
+  deliveryTransportTimeoutMs,
+  planDeliveryQuestion,
+  selectDeliveryResponseProduct,
+} from "../../delivery-intelligence/index.ts";
 import type { TeamsMentionCommand, TeamsMentionOutcome } from "../domain/teams-mention.ts";
 import type {
   GroundedAnswerGenerator,
@@ -68,6 +73,7 @@ export const handleTeamsMention = (
       deliveryAssistant === undefined || deliveryTimeZone === undefined
         ? undefined
         : planDeliveryQuestion(command.question);
+    const responseProduct = selectDeliveryResponseProduct(command.question);
     const authorizationResult = yield* Effect.either(
       dependencies.authorizer.authorizeContext(command, resolved),
     );
@@ -173,6 +179,7 @@ export const handleTeamsMention = (
             timeZone: deliveryConfiguration.timeZone,
             question: command.question,
             plan: deliveryQuestionPlan,
+            responseProduct,
             questionContext: {
               channelId: command.channelId,
               conversationId: command.conversationId,
@@ -195,7 +202,10 @@ export const handleTeamsMention = (
             Effect.timeoutFail({
               duration: Math.max(
                 100,
-                Math.min(dependencies.deliveryAnswerTimeoutMs ?? 7_000, 8_000),
+                deliveryTransportTimeoutMs(
+                  responseProduct,
+                  dependencies.deliveryAnswerTimeoutMs,
+                ),
               ),
               onTimeout: () =>
                 new RepositoryError({
@@ -211,7 +221,10 @@ export const handleTeamsMention = (
           .pipe(Effect.orElseSucceed(() => undefined));
         return {
           kind: "denied",
-          reason: "Sarathi could not answer this delivery question within 10 seconds.",
+          reason:
+            responseProduct === "operational_answer"
+              ? "Sarathi could not answer this delivery question within 10 seconds."
+              : "Sarathi could not complete this report within its declared response budget.",
         } as const;
       }
       const answer = reportResult.right;

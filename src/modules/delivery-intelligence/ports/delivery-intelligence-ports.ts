@@ -7,7 +7,11 @@ import type {
   DeliveryQuerySelector,
   DeliveryQuestionIntent,
 } from "../domain/delivery-query.ts";
-import type { DeliveryResponseMode } from "../domain/delivery-response-mode.ts";
+import type {
+  DeliveryResponseMode,
+  DeliveryResponseProduct,
+} from "../domain/delivery-response-mode.ts";
+import type { PeriodCensus } from "../domain/period-census.ts";
 
 export type DeliveryQueryContext = {
   readonly workspaceId: string;
@@ -19,6 +23,10 @@ export type DeliveryQueryContext = {
   readonly timeZone: string;
   readonly deadlineAt: string;
   readonly question: string;
+  readonly responseProduct?: DeliveryResponseProduct | undefined;
+  readonly responseMode?: DeliveryResponseMode | undefined;
+  readonly totalBudgetMs?: number | undefined;
+  readonly sourceTimeoutMs?: number | undefined;
 };
 
 type DeliveryQuestionContextEvidence = {
@@ -89,6 +97,7 @@ export type DeliveryQueryResult = {
   readonly complete: boolean;
   readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
+  readonly periodCensus?: PeriodCensus | undefined;
 };
 
 export type DeliveryQuerySource = {
@@ -103,11 +112,13 @@ export type DeliveryQuerySource = {
 export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt"> & {
   readonly plan?: DeliveryQueryPlan | undefined;
   readonly responseMode?: DeliveryResponseMode | undefined;
+  readonly responseProduct?: DeliveryResponseProduct | undefined;
   readonly questionContext?: DeliveryQuestionContext | undefined;
 };
 
 export type DeliveryResponseAcceptance = {
   readonly mode: DeliveryResponseMode;
+  readonly product: DeliveryResponseProduct;
   readonly elapsedMs: number;
   readonly latencyTargetMs: number;
   readonly latencyPassed: boolean;
@@ -136,12 +147,19 @@ export type DeliveryAssistantAnswer = {
   }[];
   readonly status: "ok" | "partial" | "empty";
   readonly responseMode: DeliveryResponseMode;
+  readonly responseProduct: DeliveryResponseProduct;
+  readonly responseBudget: {
+    readonly sourceTimeoutMs: number;
+    readonly compositionTimeoutMs: number;
+    readonly totalBudgetMs: number;
+  };
   readonly acceptance: DeliveryResponseAcceptance;
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];
   readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
+  readonly periodCensus?: PeriodCensus | undefined;
   readonly mentions?: readonly DeliveryActionTarget[];
 };
 
@@ -152,6 +170,13 @@ export type DeliveryAnswerCompositionInput = {
   readonly plan: DeliveryQueryPlan;
   readonly items: readonly DeliveryResultItem[];
   readonly conflicts: readonly DeliveryConflict[];
+  readonly responseProduct: DeliveryResponseProduct;
+  readonly responseMode: DeliveryResponseMode;
+  readonly responseBudget: {
+    readonly sourceTimeoutMs: number;
+    readonly compositionTimeoutMs: number;
+    readonly totalBudgetMs: number;
+  };
 };
 
 export type DeliveryAnswerComposition = {

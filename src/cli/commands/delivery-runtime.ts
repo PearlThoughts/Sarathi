@@ -30,12 +30,15 @@ import {
   type DeliveryAssistantRequest,
   type DeliveryQuerySource,
   type DeliveryResponseMode,
+  type DeliveryResponseProduct,
   deliveryResponseBudget,
   deliveryResponseModePolicies,
+  deliveryResponseProductPolicies,
   evaluateDeliveryCase,
   parseDeliveryEntityCatalog,
   parseDeliveryEvaluationSet,
   selectDeliveryResponseMode,
+  selectDeliveryResponseProduct,
   summarizeDeliveryEvaluation,
 } from "../../modules/delivery-intelligence/index.ts";
 import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
@@ -71,6 +74,12 @@ const sensitivities = new Set<SensitivityTier>([
   "restricted",
 ]);
 const responseModes = new Set<DeliveryResponseMode>(["fast", "structured", "deep_dive"]);
+const responseProducts = new Set<DeliveryResponseProduct>([
+  "operational_answer",
+  "period_delivery_brief",
+  "leadership_report",
+  "implementation_investigation",
+]);
 
 const required = (name: string, value: string | undefined): string => {
   if (value === undefined || value.trim() === "") throw new Error(`${name} is required.`);
@@ -117,6 +126,15 @@ const queryRequest = (
     option(args, "--response-mode") ?? environment.SARATHI_DELIVERY_RESPONSE_MODE;
   if (responseMode !== undefined && !responseModes.has(responseMode as DeliveryResponseMode))
     throw new Error("--response-mode must be fast, structured, or deep_dive.");
+  const responseProduct =
+    option(args, "--response-product") ?? environment.SARATHI_DELIVERY_RESPONSE_PRODUCT;
+  if (
+    responseProduct !== undefined &&
+    !responseProducts.has(responseProduct as DeliveryResponseProduct)
+  )
+    throw new Error(
+      "--response-product must be operational_answer, period_delivery_brief, leadership_report, or implementation_investigation.",
+    );
   const actorId = required(
     "--actor-id",
     option(args, "--actor-id") ?? environment.SARATHI_DELIVERY_ACTOR_ID,
@@ -152,6 +170,9 @@ const queryRequest = (
     ),
     question: required("--question", option(args, "--question")),
     ...(responseMode === undefined ? {} : { responseMode: responseMode as DeliveryResponseMode }),
+    ...(responseProduct === undefined
+      ? {}
+      : { responseProduct: responseProduct as DeliveryResponseProduct }),
   };
 };
 
@@ -281,7 +302,18 @@ const answerFromRuntime = async (
   request: DeliveryAssistantRequest,
   environment: DeliveryRuntimeEnvironment,
 ): Promise<DeliveryAssistantAnswer> => {
-  const responseMode = selectDeliveryResponseMode(request.question, request.responseMode);
+  const responseProduct = selectDeliveryResponseProduct(
+    request.question,
+    request.responseProduct,
+  );
+  const responseMode = selectDeliveryResponseMode(
+    request.question,
+    request.responseMode,
+    responseProduct,
+  );
+  const productMode = deliveryResponseProductPolicies[responseProduct].responseMode;
+  if (request.responseMode === undefined && responseMode !== productMode)
+    throw new Error("Delivery response product and mode selection diverged.");
   const queryBudgetMs = deliveryResponseModePolicies[responseMode].sourceTimeoutMs;
   const opened = openKnowledgePostgresDatabase(
     required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),

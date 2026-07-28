@@ -242,6 +242,7 @@ describe("teams mention", () => {
             actorId: "actor-1",
             requestedAt: command.receivedAt,
             question: "Sarathi post team work summary",
+            responseProduct: "operational_answer",
             plan: { intents: ["activity"], maximumLines: 3, requiresFinance: false },
             questionContext: {
               channelId: "channel-1",
@@ -258,8 +259,15 @@ describe("teams mention", () => {
             plan: request.plan,
             conflicts: [],
             responseMode: "fast",
+            responseProduct: "operational_answer",
+            responseBudget: {
+              sourceTimeoutMs: 4_500,
+              compositionTimeoutMs: 2_500,
+              totalBudgetMs: 6_500,
+            },
             acceptance: {
               mode: "fast",
+              product: "operational_answer",
               elapsedMs: 10,
               latencyTargetMs: 10_000,
               latencyPassed: true,
@@ -366,8 +374,15 @@ describe("teams mention", () => {
             plan: request.plan,
             conflicts: [],
             responseMode: "fast",
+            responseProduct: "period_delivery_brief",
+            responseBudget: {
+              sourceTimeoutMs: 8_000,
+              compositionTimeoutMs: 4_000,
+              totalBudgetMs: 12_000,
+            },
             acceptance: {
               mode: "fast",
+              product: "period_delivery_brief",
               elapsedMs: 10,
               latencyTargetMs: 10_000,
               latencyPassed: true,

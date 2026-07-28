@@ -98,11 +98,24 @@ export {
 export type {
   DeliveryResponseMode,
   DeliveryResponseModePolicy,
+  DeliveryResponseProduct,
+  DeliveryResponseProductPolicy,
 } from "./domain/delivery-response-mode.ts";
 export {
+  deliveryResponseProductPolicies,
   deliveryResponseModePolicies,
+  deliveryTransportTimeoutMs,
+  selectDeliveryResponseProduct,
   selectDeliveryResponseMode,
 } from "./domain/delivery-response-mode.ts";
+export type {
+  DeliveryCompletionStage,
+  PeriodCensus,
+  PeriodCensusBoundary,
+  PeriodCensusCandidate,
+  PeriodCensusSourceCoverage,
+} from "./domain/period-census.ts";
+export { compilePeriodCensus } from "./domain/period-census.ts";
 export type { AbsoluteDeliveryTimeWindow } from "./domain/delivery-time.ts";
 export { resolveDeliveryTimeConstraint } from "./domain/delivery-time.ts";
 export type {
