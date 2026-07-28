@@ -4,7 +4,7 @@
 
 ## 1. Execution Goal
 
-Refactor the existing production-pilot child capability from a knowledge-led answer path into a reusable delivery-intelligence system. Complete the work through governed merge, non-destructive production migration, bounded connector synchronization, real Teams answers under ten seconds, confidentiality proof, and rollback evidence.
+Refactor the existing production-pilot child capability from a knowledge-led answer path into a reusable delivery-intelligence system that can reconstruct leadership-quality period reports from evidence. Complete the work through governed merge, non-destructive production migration, bounded connector synchronization, real Teams answers, confidentiality proof, gold-report reconstruction, and rollback evidence.
 
 ## 2. Technical Context
 
@@ -117,6 +117,17 @@ Teams mention handling consumes one `DeliveryAssistant` port. It does not classi
 6. Add adaptive response modes for fast operational answers, structured briefs, and completeness-first deep dives.
 7. Keep orchestration in existing typed Effect workflows and PostgreSQL checkpoints; evaluate a general agent graph framework only against ADR 0008's measurable adoption gate.
 
+### Slice H — Evidence-First Period Reporting
+
+1. Parse arbitrary calendar/sprint/quarter windows and propagate `operational_answer`, `period_delivery_brief`, `leadership_report`, or `implementation_investigation` mode and budget through Teams, planning, execution, and composition.
+2. Add an exhaustive structured period candidate census with deterministic pagination, source freshness, exclusions, duplicate accounting, coverage, and replay checksum.
+3. Build PR-centered change capsules that join Jira intent, commits/diffs, reviews/checks, release/deployment/acceptance, contributors, citations, and missing stages.
+4. Add a private-configurable capability and initiative ledger with aliases, source mappings, ownership evidence, confidence, and attributed corrections.
+5. Reconstruct independently cited planned-through-impact delivery chains and use the declared completion stage to classify period candidates as delivered or incomplete.
+6. Add observed-outcome, claimed-impact, inferred-impact, and unknown evidence classes; prohibit unsupported outcome promotion.
+7. Compose structured and leadership reports from an accepted report envelope using schemas and prompts distinct from fast operational answers.
+8. Evaluate against a private human-authored report withheld from the production answer path, run source ablations, and require theme/initiative recall, citation, inference, authorization, and human-usefulness thresholds.
+
 ## 6. Data and Migration Strategy
 
 Drizzle schema definitions are authoritative for new tables. Because delivery migrations `0002` and `0003` have not been deployed and exist only on this feature branch, regenerate them into one coherent migration rather than carrying an abandoned intermediate design into production. The deployed knowledge migration and existing audit tables remain immutable sentinels.
@@ -127,9 +138,11 @@ Finance uses separate confidential storage and repository operations. General de
 
 ## 7. Query and Answer Strategy
 
-A question becomes a validated plan. Deterministic classifiers cover high-frequency questions; a schema-constrained model planner may propose the same plan vocabulary for broader language. The executor authorizes the plan, runs independent reads concurrently, caps traversal depth and result volume, materializes content only after policy checks, then fuses results by stable identity and citation.
+A question becomes a validated plan. Deterministic classifiers cover high-frequency questions; a schema-constrained model planner may propose the same plan vocabulary for broader language. The executor authorizes the plan, runs independent reads concurrently, caps traversal depth and result volume, materializes content only after policy checks, then fuses results by stable identity and citation. For period reports, the cap applies after a complete bounded census and deterministic grouping; it must not truncate the source population before completeness is measured.
 
 Time boundaries are optional predicates resolved from workspace configuration or source metadata. They are used for yesterday/today, weekly, sprint, quarterly, historical, wait-duration, and trend questions but do not affect ownership, scope, requirement, or dependency modeling when no time boundary is requested.
+
+Period reporting separates evidence collection from narrative generation. Structured reads form a `PeriodCensus`; cross-source records become `ChangeCapsule` instances; capability mappings and independently cited delivery stages produce a `PeriodDeliveryReport` envelope. Exact/full-text/vector retrieval enriches rationale and vocabulary only after the census. A report model may organize the envelope, but it cannot add candidates, promote inferred impact to observed outcome, hide incomplete delivery stages, or erase coverage warnings.
 
 The synchronization control plane is event-first and reconciliation-correct. Verified source events create idempotent changed-item work; an hourly leased job independently enumerates authoritative source state with overlap and repairs missed, delayed, duplicated, out-of-order, or expired event paths. Checkpoints advance only with versions, passages, embeddings, delivery projections, ACLs, tombstones, and freshness metadata committed together.
 
@@ -142,6 +155,7 @@ The synchronization control plane is event-first and reconciliation-correct. Ver
 - Capability: equivalent wording produces equivalent plans; all Delivery Manager question families use the shared model; unsupported operators fail closed.
 - Production: exact SHA, migration journal, safe counts/checksums, real citations, response latency, log scan, app rollback, and database recovery evidence.
 - Continuous sync: historical bootstrap, pagination, event authenticity, duplicate/out-of-order delivery, subscription renewal, hourly repair, changed-only embedding reuse, deletion convergence, lag/freshness reporting, and manual replay.
+- Period reporting: relative/explicit window parsing, timezone boundaries, completion-stage membership, exhaustive pagination, duplicate collapse, capsule joins, capability mappings, outcome evidence classes, coverage disclosure, source ablations, citation validation, report-mode budget propagation, and gold-report reconstruction.
 
 ## 9. Stop Conditions
 
@@ -149,6 +163,6 @@ Stop on migration drift, backup failure, unresolved architecture violation, inco
 
 ## 10. Dependency and Completion Gates
 
-`spec/ADR -> domain and architecture fitness -> coherent migration -> projection reconciliation -> safe query execution -> product composition/CLI -> focused tests -> exact-branch CI -> governed merge -> backup -> migration/deploy -> bounded sync -> real Teams answers -> rollback proof`.
+`spec/ADR -> domain and architecture fitness -> coherent migration -> projection reconciliation -> safe query execution -> complete period census -> change/capability/outcome reconstruction -> report composition -> focused tests -> exact-branch CI -> governed merge -> backup -> migration/deploy -> bounded sync -> gold reconstruction and real Teams answers -> rollback proof`.
 
-Schema creation, mocked queries, readiness HTTP 200, deployment, ingestion counts, or one daily report do not independently complete the capability.
+Schema creation, mocked queries, readiness HTTP 200, deployment, ingestion counts, embedding counts, or one sparse cited answer do not independently complete the capability.
