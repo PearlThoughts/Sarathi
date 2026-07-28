@@ -79,7 +79,11 @@ const matchesScope = (message: GraphMailMessage, scope: ProjectMailScope): boole
 };
 
 const operationWindow = (operation: DeliveryQueryOperation, context: DeliveryQueryContext) => {
-  if (operation.time !== undefined && operation.time.kind !== "jira_sprint")
+  if (
+    operation.time !== undefined &&
+    operation.time.kind !== "jira_sprint" &&
+    operation.time.kind !== "release"
+  )
     return resolveDeliveryTimeConstraint(operation.time, context.requestedAt, context.timeZone);
   const requestedAt = new Date(context.requestedAt);
   return {
