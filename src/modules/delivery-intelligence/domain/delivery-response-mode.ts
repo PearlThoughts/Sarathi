@@ -11,9 +11,9 @@ export type DeliveryResponseModePolicy = {
   readonly sourceTimeoutMs: number;
   readonly compositionTimeoutMs: number;
   readonly totalBudgetMs: number;
-  readonly latencyTargetMs: number;
-  readonly maximumLines: number;
-  readonly maximumItems: number;
+  readonly latencyTargetMs?: number | undefined;
+  readonly maximumLines?: number | undefined;
+  readonly maximumItems?: number | undefined;
   readonly freshnessWindowMs: number;
 };
 
@@ -47,12 +47,9 @@ export const deliveryResponseModePolicies: Readonly<
   },
   deep_dive: {
     mode: "deep_dive",
-    sourceTimeoutMs: 20_000,
-    compositionTimeoutMs: 10_000,
-    totalBudgetMs: 30_000,
-    latencyTargetMs: 45_000,
-    maximumLines: 30,
-    maximumItems: 50,
+    sourceTimeoutMs: 90_000,
+    compositionTimeoutMs: 60_000,
+    totalBudgetMs: 150_000,
     freshnessWindowMs: 2 * 60 * 60 * 1_000,
   },
 };
@@ -120,6 +117,6 @@ export const deliveryTransportTimeoutMs = (
 ): number => {
   const responseMode = deliveryResponseProductPolicies[product].responseMode;
   const totalBudgetMs = deliveryResponseModePolicies[responseMode].totalBudgetMs;
-  if (product !== "operational_answer") return totalBudgetMs + 2_000;
+  if (product !== "operational_answer") return totalBudgetMs + 5_000;
   return Math.max(100, Math.min(configuredFastTimeoutMs ?? totalBudgetMs + 500, 8_000));
 };

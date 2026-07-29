@@ -67,7 +67,10 @@ describe("delivery intelligence application", () => {
     expect(deliveryResponseModePolicies.structured.totalBudgetMs).toBeGreaterThan(
       deliveryResponseBudget.totalBudgetMs,
     );
-    expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBe(50);
+    expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBeUndefined();
+    expect(deliveryResponseModePolicies.deep_dive.maximumLines).toBeUndefined();
+    expect(deliveryResponseModePolicies.deep_dive.latencyTargetMs).toBeUndefined();
+    expect(deliveryResponseModePolicies.deep_dive.totalBudgetMs).toBe(150_000);
   });
 
   it("selects response depth before retrieval and honors an explicit mode", () => {
@@ -297,15 +300,18 @@ describe("delivery intelligence application", () => {
     });
     expect(answer.text).toContain("## Q2 2026 delivery report");
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
-    expect(answer.text).toContain("**SEO improvements** — 1 evidenced change.");
+    expect(answer.text).toContain("### 1. SEO improvements");
+    expect(answer.text).toContain(
+      "1 source-supported change was completed in this capability during the quarter.",
+    );
     expect(answer.text).toContain("### Outcomes and delivery confidence");
     expect(answer.text).toContain("Business impact:** Not established");
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");
-    expect(answer.text.match(/SEO metadata publishing/g)).toHaveLength(1);
+    expect(answer.text.match(/- \*\*SEO metadata publishing\*\*/g)).toHaveLength(1);
   });
 
-  it("assigns an initiative to one primary capability and bounds leadership highlights", async () => {
+  it("assigns an initiative to one primary capability without a fixed three-item cap", async () => {
     const capabilityLedger = {
       version: 1 as const,
       capabilities: [
@@ -370,9 +376,40 @@ describe("delivery intelligence application", () => {
     expect(answer.periodDeliveryReport?.capabilitySections).toHaveLength(1);
     expect(answer.periodDeliveryReport?.capabilitySections[0]?.key).toBe("compliance-technology");
     expect(answer.text).not.toContain("**Website Builder enhancements**");
-    expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(3);
-    expect(answer.text).toContain("- 2 additional changes retained in the census.");
-    expect(answer.citations).toHaveLength(3);
+    expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(5);
+    expect(answer.text).not.toContain("additional changes");
+    expect(answer.citations).toHaveLength(5);
+  });
+
+  it("fails closed instead of rendering generic delivery evidence without a capability ledger", async () => {
+    const execute = vi.fn<DeliveryQuerySource["execute"]>(() =>
+      Effect.succeed({
+        items: [item("github", "unrelated", "Unrelated merged maintenance", "delivered")],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "period_census"],
+      execute,
+    };
+
+    const outcome = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] })
+        .answer({
+          ...request,
+          question: "What have we delivered in the previous quarter?",
+        })
+        .pipe(Effect.either),
+    );
+
+    expect(outcome).toMatchObject({
+      _tag: "Left",
+      left: { operation: "delivery-leadership-report-configuration" },
+    });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("rejects finance before any source call", async () => {
@@ -833,7 +870,7 @@ describe("delivery intelligence application", () => {
     });
   });
 
-  it("preserves deep-dive scope, freshness, gaps, inference boundary, and timing", async () => {
+  it("preserves deep-dive scope, freshness, gaps, and inference without a latency target", async () => {
     const plan = planDeliveryQuestion("What is the current status of DEMO-1?");
     if (plan === undefined) throw new Error("Expected a deep-dive status plan");
     const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
@@ -876,13 +913,13 @@ describe("delivery intelligence application", () => {
       "### Evidence",
       "### Conflicts and gaps",
       "### Inference boundary",
-      "### Timing",
     ])
       expect(answer.text).toContain(heading);
     expect(answer.text).toContain("Latest source update: 2026-07-20T12:30:00.000Z");
-    expect(answer.text).toMatch(/Completed in \d+ ms\./);
-    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:09:30.000Z");
+    expect(answer.text).not.toContain("Completed in");
+    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:11:30.000Z");
     expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 50)).toBe(true);
+    expect(answer.acceptance.latencyTargetMs).toBeUndefined();
     expect(answer.acceptance.formatPassed).toBe(true);
     expect(answer.acceptance.passed).toBe(true);
   });

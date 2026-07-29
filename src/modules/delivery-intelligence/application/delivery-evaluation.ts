@@ -17,6 +17,12 @@ export type DeliveryEvaluationCase = {
     readonly citationSources?: readonly DeliverySourceKind[] | undefined;
     readonly requiredTerms?: readonly string[] | undefined;
     readonly forbiddenTerms?: readonly string[] | undefined;
+    readonly reconstruction?: {
+      readonly themeTerms: readonly string[];
+      readonly initiativeTerms: readonly string[];
+      readonly minimumThemeRecall: number;
+      readonly minimumInitiativeRecall: number;
+    };
     readonly acceptancePassed?: boolean | undefined;
     readonly ratedAnswerFingerprint?: string | undefined;
     readonly humanUsefulnessRating?: number | undefined;
@@ -50,6 +56,15 @@ export type DeliveryEvaluationResult = {
   readonly acceptance?: DeliveryAssistantAnswer["acceptance"] | undefined;
   readonly humanUsefulnessRating?: number | undefined;
   readonly failureOperation?: string | undefined;
+  readonly reconstruction?: {
+    readonly matchedThemes: number;
+    readonly totalThemes: number;
+    readonly themeRecall: number;
+    readonly matchedInitiatives: number;
+    readonly totalInitiatives: number;
+    readonly initiativeRecall: number;
+    readonly passed: boolean;
+  };
 };
 
 export type DeliveryEvaluationReport = {
@@ -217,6 +232,20 @@ export const parseDeliveryEvaluationSet = (value: unknown): DeliveryEvaluationSe
       !optionalStrings(expected.forbiddenTerms, 20, 120)
     )
       throw new Error("Delivery evaluation answer terms are invalid.");
+    if (expected.reconstruction !== undefined) {
+      if (
+        !isRecord(expected.reconstruction) ||
+        !validStrings(expected.reconstruction.themeTerms, 20, 160) ||
+        expected.reconstruction.themeTerms.length === 0 ||
+        !validStrings(expected.reconstruction.initiativeTerms, 100, 160) ||
+        expected.reconstruction.initiativeTerms.length === 0 ||
+        !validRate(expected.reconstruction.minimumThemeRecall) ||
+        !validRate(expected.reconstruction.minimumInitiativeRecall)
+      )
+        throw new Error("Delivery evaluation reconstruction benchmark is invalid.");
+      if (expected.outcome !== "answer")
+        throw new Error("Delivery reconstruction benchmarks require an answer outcome.");
+    }
     if (expected.acceptancePassed !== undefined && typeof expected.acceptancePassed !== "boolean")
       throw new Error("Delivery evaluation acceptance expectation must be boolean.");
     if (
@@ -261,6 +290,20 @@ export const parseDeliveryEvaluationSet = (value: unknown): DeliveryEvaluationSe
 };
 
 const normalized = (value: string): string => value.toLocaleLowerCase("en");
+const termRecall = (
+  text: string,
+  terms: readonly string[],
+): { readonly matched: number; readonly total: number; readonly recall: number } => {
+  const normalizedText = normalized(text).normalize("NFKC").replace(/\s+/g, " ");
+  const matched = terms.filter((term) =>
+    normalizedText.includes(normalized(term).normalize("NFKC").replace(/\s+/g, " ")),
+  ).length;
+  return {
+    matched,
+    total: terms.length,
+    recall: Number((matched / terms.length).toFixed(4)),
+  };
+};
 const sameSet = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length &&
   [...left].sort().every((value, index) => value === [...right].sort()[index]);
@@ -328,6 +371,32 @@ export const evaluateDeliveryCase = (
   if (answer.acceptance.passed !== (evaluationCase.expected.acceptancePassed ?? true))
     failures.push("acceptance_mismatch");
   if (!ratingMatches) failures.push("human_rating_fingerprint_mismatch");
+  const reconstruction =
+    evaluationCase.expected.reconstruction === undefined
+      ? undefined
+      : (() => {
+          const themes = termRecall(answer.text, evaluationCase.expected.reconstruction.themeTerms);
+          const initiatives = termRecall(
+            answer.text,
+            evaluationCase.expected.reconstruction.initiativeTerms,
+          );
+          const passed =
+            themes.recall >= evaluationCase.expected.reconstruction.minimumThemeRecall &&
+            initiatives.recall >= evaluationCase.expected.reconstruction.minimumInitiativeRecall;
+          if (themes.recall < evaluationCase.expected.reconstruction.minimumThemeRecall)
+            failures.push("theme_recall_below_minimum");
+          if (initiatives.recall < evaluationCase.expected.reconstruction.minimumInitiativeRecall)
+            failures.push("initiative_recall_below_minimum");
+          return {
+            matchedThemes: themes.matched,
+            totalThemes: themes.total,
+            themeRecall: themes.recall,
+            matchedInitiatives: initiatives.matched,
+            totalInitiatives: initiatives.total,
+            initiativeRecall: initiatives.recall,
+            passed,
+          };
+        })();
   return {
     id: evaluationCase.id,
     category,
@@ -343,6 +412,7 @@ export const evaluateDeliveryCase = (
     humanUsefulnessRating: ratingMatches
       ? evaluationCase.expected.humanUsefulnessRating
       : undefined,
+    ...(reconstruction === undefined ? {} : { reconstruction }),
   };
 };
 

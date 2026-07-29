@@ -60,6 +60,7 @@ export type OutcomeAssertion =
 export type ChangeCapsule = {
   readonly id: string;
   readonly title: string;
+  readonly summary: string;
   readonly completedAt: string;
   readonly completionStage: DeliveryCompletionStage;
   readonly capabilityKeys: readonly string[];
@@ -219,6 +220,13 @@ export const buildPeriodDeliveryReport = (input: {
       return {
         id,
         title: items[0]?.title ?? id,
+        summary:
+          items
+            .map(({ summary }) => summary.trim())
+            .filter(Boolean)
+            .toSorted((left, right) => right.length - left.length)[0] ??
+          items[0]?.title ??
+          id,
         completedAt,
         completionStage: stage,
         capabilityKeys: capabilityKeysFor(items, input.capabilityLedger),

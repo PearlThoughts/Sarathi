@@ -123,7 +123,7 @@ export type DeliveryResponseAcceptance = {
   readonly mode: DeliveryResponseMode;
   readonly product: DeliveryResponseProduct;
   readonly elapsedMs: number;
-  readonly latencyTargetMs: number;
+  readonly latencyTargetMs?: number | undefined;
   readonly latencyPassed: boolean;
   readonly requestedIntents: number;
   readonly coveredIntents: number;
