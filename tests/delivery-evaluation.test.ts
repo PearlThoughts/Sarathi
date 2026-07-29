@@ -235,4 +235,66 @@ describe("delivery evaluation", () => {
     });
     expect(result.failures).toContain("human_rating_fingerprint_mismatch");
   });
+
+  it("scores evaluator-only theme and initiative recall without exposing benchmark terms", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: { minimumPassRate: 1 },
+      cases: [
+        {
+          id: "quarterly-reconstruction",
+          question: "What was delivered in the previous quarter?",
+          expected: {
+            outcome: "answer",
+            reconstruction: {
+              themeTerms: [
+                "theme one",
+                "theme two",
+                "theme three",
+                "theme four",
+                "theme five",
+                "theme six",
+                "theme seven",
+              ],
+              initiativeTerms: [
+                "initiative one",
+                "initiative two",
+                "initiative three",
+                "initiative four",
+                "initiative five",
+              ],
+              minimumThemeRecall: 0.85,
+              minimumInitiativeRecall: 0.8,
+            },
+          },
+        },
+      ],
+    });
+    const evaluationCase = evaluationSet.cases[0];
+    if (evaluationCase === undefined) throw new Error("Expected reconstruction case.");
+    const answer = {
+      ...acceptedAnswer(),
+      text: [
+        "theme one theme two theme three theme four theme five theme six",
+        "initiative one initiative two initiative three initiative four",
+      ].join("\n"),
+    };
+
+    const result = evaluateDeliveryCase(evaluationCase, { kind: "answer", answer });
+
+    expect(result).toMatchObject({
+      passed: true,
+      reconstruction: {
+        matchedThemes: 6,
+        totalThemes: 7,
+        themeRecall: 0.8571,
+        matchedInitiatives: 4,
+        totalInitiatives: 5,
+        initiativeRecall: 0.8,
+        passed: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("theme one");
+    expect(JSON.stringify(result)).not.toContain("initiative one");
+  });
 });

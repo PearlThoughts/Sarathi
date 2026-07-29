@@ -378,7 +378,9 @@ const composeAnswer = (
 ): DeliveryAnswerDraft => {
   const responsePolicy = deliveryResponseModePolicies[responseMode];
   const maximumDetailLines =
-    responseMode === "fast" ? plan.maximumLines : responsePolicy.maximumLines;
+    responseMode === "fast"
+      ? plan.maximumLines
+      : (responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY);
   const itemsPerIntent = responseMode === "fast" ? 2 : responseMode === "structured" ? 3 : 5;
   const citations: { label: string; url: string }[] = [];
   const citationLabels = new Map<string, string>();
@@ -438,7 +440,7 @@ const composeAnswer = (
             if (left.owner !== undefined && right.owner === undefined) return -1;
             return sortableTimestamp(right.observedAt) - sortableTimestamp(left.observedAt);
           })
-          .slice(0, responsePolicy.maximumItems);
+          .slice(0, responsePolicy.maximumItems ?? ownerGroups.size);
         if (representatives.length > 0) {
           detailLines.push(
             `- 🚧 **Planned/active this week:** ${representatives
@@ -488,7 +490,7 @@ const composeAnswer = (
           [...ownerRepresentatives.values(), ...withoutOwner],
           intent,
           plan.requiredSources ?? [],
-          Math.min(responsePolicy.maximumItems, requestedLimit),
+          Math.min(responsePolicy.maximumItems ?? requestedLimit, requestedLimit),
         );
         if (selected.length > 0) {
           detailLines.push(
@@ -744,7 +746,10 @@ const composeWithModel = (
               .filter(Boolean);
             if (
               lines.length < 3 ||
-              lines.length > deliveryResponseModePolicies[responseMode].maximumLines + 2
+              lines.length >
+                (deliveryResponseModePolicies[responseMode].maximumLines ??
+                  Number.POSITIVE_INFINITY) +
+                  2
             )
               throw new Error("Composed delivery answer has an invalid line count.");
             if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
@@ -839,7 +844,7 @@ const renderLeadershipReport = (
   answer: DeliveryAnswerDraft,
   report: PeriodDeliveryReport,
   result: DeliveryQueryResult,
-  elapsedMs: number,
+  _elapsedMs: number,
 ): DeliveryAnswerDraft => {
   const citationLabels = new Map<string, string>();
   const citations: { label: string; url: string }[] = [];
@@ -863,28 +868,102 @@ const renderLeadershipReport = (
       .slice(0, 2)
       .map(({ source, url }) => citation(source, url))
       .join(" ");
-    return `- **${cleanHeadline(capsule.title)}** — ${capsule.completionStage} evidence. ${links}`;
+    const title = cleanHeadline(capsule.title);
+    const summary = cleanHeadline(capsule.summary);
+    const detail =
+      summary === "" || summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
+        ? `${capsule.completionStage} evidence`
+        : `${summary}; ${capsule.completionStage} evidence`;
+    return `- **${title}** — ${detail}. ${links}`;
   };
-  const maximumChangesPerCapability = 3;
   const presentationScore = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
     (/\b[A-Z][A-Z0-9]+-\d+\b/.test(capsule.id) ? 10_000 : 0) +
     capsule.citations.length * 100 +
     (capsule.completionStage === "deployed" ? 20 : capsule.completionStage === "released" ? 10 : 0);
-  const sectionLines = report.capabilitySections.flatMap((section) => {
-    const shown = section.capsules
-      .toSorted(
-        (left, right) =>
-          presentationScore(right) - presentationScore(left) ||
-          Date.parse(right.completedAt) - Date.parse(left.completedAt),
-      )
-      .slice(0, maximumChangesPerCapability);
+  const reportFailure = (reasons: readonly string[], status: "partial" | "empty") => ({
+    ...answer,
+    text: [
+      `## ${reportPeriodTitle(report)}`,
+      `**Period:** ${reportPeriodLabel(report)}`,
+      "### Report unavailable",
+      "Sarathi could not produce a reliable leadership report from the authorized indexed corpus.",
+      ...reasons.map((reason) => `- ${reason}`),
+      "No delivery conclusion was generated from incomplete or insufficient evidence.",
+    ].join("\n"),
+    citations: [],
+    status,
+    periodDeliveryReport: report,
+  });
+  if (!report.census.complete || result.unavailableSources.length > 0)
+    return reportFailure(
+      [
+        ...(!report.census.complete
+          ? [
+              `The authorized period census is partial after ${report.census.pagination.pagesRead} page(s); omissions cannot be interpreted as no delivery.`,
+            ]
+          : []),
+        ...(result.unavailableSources.length === 0
+          ? []
+          : [
+              `Required source coverage is unavailable: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}.`,
+            ]),
+      ],
+      "partial",
+    );
+  if (report.capsules.length === 0)
+    return reportFailure(
+      [
+        `The complete census examined ${report.census.examinedCandidateCount} authorized records but found no change with qualifying merged, released, or deployed evidence in the requested period.`,
+      ],
+      "empty",
+    );
+  const mappedCapsuleCount = report.capsules.length - report.unmappedCapsules.length;
+  const mappedCoverage = mappedCapsuleCount / report.capsules.length;
+  if (mappedCoverage < 0.7)
+    return reportFailure(
+      [
+        `Only ${mappedCapsuleCount} of ${report.capsules.length} qualifying changes map to reviewed business capabilities (${Math.round(mappedCoverage * 100)}%); at least 70% mapping coverage is required before narrative composition.`,
+        `${report.unmappedCapsules.length} changes require capability mapping or attributed correction.`,
+      ],
+      "partial",
+    );
+
+  const rankedSections = report.capabilitySections.map((section) => ({
+    ...section,
+    capsules: section.capsules.toSorted(
+      (left, right) =>
+        presentationScore(right) - presentationScore(left) ||
+        Date.parse(right.completedAt) - Date.parse(left.completedAt),
+    ),
+  }));
+  const selectedByCapability = new Map<string, PeriodDeliveryReport["capsules"][number][]>(
+    rankedSections.map((section) => [section.key, []]),
+  );
+  const teamsReportCharacterBudget = 18_000;
+  let selectedCharacters = 0;
+  const maximumSectionDepth = Math.max(...rankedSections.map(({ capsules }) => capsules.length));
+  for (let depth = 0; depth < maximumSectionDepth; depth += 1) {
+    for (const section of rankedSections) {
+      const capsule = section.capsules[depth];
+      if (capsule === undefined) continue;
+      const line = capsuleLine(capsule);
+      if (selectedCharacters + line.length > teamsReportCharacterBudget) continue;
+      selectedByCapability.get(section.key)?.push(capsule);
+      selectedCharacters += line.length;
+    }
+  }
+  const sectionLines = rankedSections.flatMap((section, index) => {
+    const shown = selectedByCapability.get(section.key) ?? [];
     const omitted = section.capsules.length - shown.length;
     return [
-      `**${safeText(section.title)}** — ${section.capsules.length} evidenced change${section.capsules.length === 1 ? "" : "s"}.`,
+      `### ${index + 1}. ${safeText(section.title)}`,
+      `${section.capsules.length} source-supported change${section.capsules.length === 1 ? " was" : "s were"} completed in this capability during the quarter.`,
       ...shown.map(capsuleLine),
       ...(omitted === 0
         ? []
-        : [`- ${omitted} additional change${omitted === 1 ? "" : "s"} retained in the census.`]),
+        : [
+            `- ${omitted} additional change${omitted === 1 ? " is" : "s are"} retained in the accepted census but omitted only because the Teams message reached its platform-safe presentation budget.`,
+          ]),
       "",
     ];
   });
@@ -899,10 +978,7 @@ const renderLeadershipReport = (
     `## ${reportPeriodTitle(report)}`,
     `**Period:** ${reportPeriodLabel(report)}`,
     "### Executive summary",
-    report.capsules.length === 0
-      ? "No delivery change met the declared completion-stage rule inside this period. Sarathi will not promote other recent activity into quarterly delivery."
-      : `The quarter’s indexed evidence resolves into ${report.capsules.length} delivery change${report.capsules.length === 1 ? "" : "s"}. ${report.capsules.length - report.unmappedCapsules.length} map to ${report.capabilitySections.length} reviewed capability theme${report.capabilitySections.length === 1 ? "" : "s"}; the highlights below prioritize linked, cross-repository initiatives instead of listing every pull request.`,
-    "### Delivered by capability",
+    `The quarter’s authorized evidence resolves into ${report.capsules.length} completed delivery change${report.capsules.length === 1 ? "" : "s"} across ${report.capabilitySections.length} reviewed themes: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
     ...(sectionLines.length === 0
       ? ["- No accepted change could be mapped to a declared capability."]
       : sectionLines),
@@ -923,8 +999,6 @@ const renderLeadershipReport = (
     `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
     "### Method and inference boundary",
     "- The report is reconstructed from authorized indexed evidence, deduplicated into change groups, assigned to one primary reviewed capability, and then ranked for presentation. Unsupported outcomes and missing stages remain unknown.",
-    "### Timing",
-    `Completed in ${elapsedMs} ms.`,
   ].join("\n");
   return {
     ...answer,
@@ -942,15 +1016,38 @@ const renderLeadershipReport = (
 
 const renderResponseMode = (
   answer: DeliveryAnswerDraft,
-  request: DeliveryAssistantRequest,
+  _request: DeliveryAssistantRequest,
   result: DeliveryQueryResult,
   responseMode: DeliveryResponseMode,
   responseProduct: DeliveryResponseProduct,
-  elapsedMs: number,
+  _elapsedMs: number,
 ): DeliveryAnswerDraft => {
   if (responseMode === "fast") return answer;
   if (responseProduct === "leadership_report" && result.periodDeliveryReport !== undefined)
-    return renderLeadershipReport(answer, result.periodDeliveryReport, result, elapsedMs);
+    return renderLeadershipReport(answer, result.periodDeliveryReport, result, _elapsedMs);
+  if (responseProduct === "leadership_report")
+    return {
+      ...answer,
+      text: [
+        "## Leadership report unavailable",
+        "Sarathi could not produce a reliable report from the authorized indexed corpus.",
+        "- The exhaustive period census or reviewed capability projection did not complete.",
+        ...(result.unavailableSources.length === 0
+          ? []
+          : [
+              `- Unavailable source coverage: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}.`,
+            ]),
+        ...(result.missingRequiredSources?.length === 0 ||
+        result.missingRequiredSources === undefined
+          ? []
+          : [
+              `- Required evidence was not found from: ${result.missingRequiredSources.map((source) => sourceLabel[source]).join(", ")}.`,
+            ]),
+        "- No delivery conclusion was generated from the incomplete evidence population.",
+      ].join("\n"),
+      citations: [],
+      status: "partial",
+    };
   const lines = answer.text.split(/\r?\n/).filter(Boolean);
   const opening =
     lines.find((line) => !/^(?:-|\d+\.)\s/.test(line)) ?? responseOpening(answer.plan);
@@ -979,7 +1076,7 @@ const renderResponseMode = (
         ? []
         : [
             "### Coverage",
-            `Examined ${result.periodCensus.examinedCandidateCount} authorized period records across ${result.periodCensus.pagination.pagesRead} page(s); accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}; replay checksum ${result.periodCensus.replayChecksum}.`,
+            `Examined ${result.periodCensus.examinedCandidateCount} authorized period records across ${result.periodCensus.pagination.pagesRead} page(s); accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}.`,
           ]),
       ...(action === undefined ? [] : ["### Action", action]),
     ].join("\n");
@@ -999,10 +1096,10 @@ const renderResponseMode = (
   const censusCoverage =
     result.periodCensus === undefined
       ? undefined
-      : `Period census examined ${result.periodCensus.examinedCandidateCount} authorized records across ${result.periodCensus.pagination.pagesRead} page(s), accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}; replay checksum ${result.periodCensus.replayChecksum}.`;
+      : `Period census examined ${result.periodCensus.examinedCandidateCount} authorized records across ${result.periodCensus.pagination.pagesRead} page(s), accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}.`;
   const text = [
     "### Scope and time window",
-    `${opening} Requested at ${request.requestedAt}.`,
+    opening,
     "### Sources and freshness",
     sources.length === 0
       ? "No matching connected source produced authorized evidence."
@@ -1019,8 +1116,6 @@ const renderResponseMode = (
     "### Inference boundary",
     "The evidence above is source-observed. Missing fields remain unknown; no uncited recommendation or ownership inference was added.",
     ...(action === undefined ? [] : ["### Action", action]),
-    "### Timing",
-    `Completed in ${elapsedMs} ms.`,
   ].join("\n");
   return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
 };
@@ -1096,18 +1191,16 @@ const responseAcceptance = (
   const headings = new Set(lines.filter((line) => line.startsWith("### ")));
   const formatPassed =
     responseMode === "fast"
-      ? headings.size === 0 && lines.length <= policy.maximumLines + 2
+      ? headings.size === 0 && lines.length <= (policy.maximumLines ?? 5) + 2
       : responseMode === "structured"
         ? headings.has("### Delivery brief") && headings.has("### Evidence")
         : responseProduct === "leadership_report"
           ? [
               "### Executive summary",
-              "### Delivered by capability",
               "### Outcomes and delivery confidence",
               "### Gaps and incomplete delivery chains",
               "### Coverage and freshness",
               "### Method and inference boundary",
-              "### Timing",
             ].every((heading) => headings.has(heading))
           : [
               "### Scope and time window",
@@ -1115,14 +1208,13 @@ const responseAcceptance = (
               "### Evidence",
               "### Conflicts and gaps",
               "### Inference boundary",
-              "### Timing",
             ].every((heading) => headings.has(heading));
-  const latencyPassed = elapsedMs <= policy.latencyTargetMs;
+  const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
     product: responseProduct,
     elapsedMs,
-    latencyTargetMs: policy.latencyTargetMs,
+    ...(policy.latencyTargetMs === undefined ? {} : { latencyTargetMs: policy.latencyTargetMs }),
     latencyPassed,
     requestedIntents,
     coveredIntents,
@@ -1219,7 +1311,10 @@ const planForResponseMode = (
     ...plan,
     operations: plan.operations.map((operation) => ({
       ...operation,
-      limit: Math.min(50, Math.max(operation.limit, minimumLimit)),
+      limit:
+        operation.select === "period_census"
+          ? operation.limit
+          : Math.min(50, Math.max(operation.limit, minimumLimit)),
     })),
   };
 };
@@ -1239,6 +1334,14 @@ export const createDeliveryAssistant = (
       responseProduct,
     );
     const responsePolicy = deliveryResponseModePolicies[responseMode];
+    if (responseProduct === "leadership_report" && configuration.capabilityLedger === undefined)
+      return Effect.fail(
+        new RepositoryError({
+          message:
+            "Leadership reporting requires a reviewed capability ledger; no report was generated.",
+          operation: "delivery-leadership-report-configuration",
+        }),
+      );
     if (requestsRestrictedSecretMaterial(request.question))
       return Effect.fail(
         new RepositoryError({

@@ -69,9 +69,11 @@ import {
   startComplianceReminderScheduler,
 } from "../modules/compliance-reminders/index.ts";
 import {
+  type CapabilityLedger,
   createDeliveryAssistant,
   deliveryResponseBudget,
   parseDeliveryEntityCatalog,
+  validateCapabilityLedger,
 } from "../modules/delivery-intelligence/index.ts";
 import {
   createAuthorizedContextAssembler,
@@ -568,6 +570,14 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             "SARATHI_KNOWLEDGE_WORKSPACE_ID",
             knowledgeWorkspaceId ?? environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
           );
+          const capabilityLedger =
+            environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON === undefined
+              ? undefined
+              : validateCapabilityLedger(
+                  JSON.parse(
+                    environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON,
+                  ) as CapabilityLedger,
+                );
           const jiraProjection = JSON.parse(
             required(
               "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON",
@@ -684,6 +694,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 console.info(JSON.stringify(event)),
               ),
             ),
+            capabilityLedger,
             ...deliveryResponseBudget,
           });
         })()
@@ -714,7 +725,6 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           : {
               deliveryAssistant,
               deliveryTimeZone,
-              deliveryAnswerTimeoutMs: 7_000,
             }),
       },
       ready: true,
