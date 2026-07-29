@@ -952,6 +952,7 @@ const renderLeadershipReport = (
     return [
       `### ${index + 1}. ${safeText(section.title)}`,
       `${section.capsules.length} source-supported change${section.capsules.length === 1 ? " was" : "s were"} completed in this capability during the quarter.`,
+      `**Evidence-backed initiative index:** ${section.evidencedAliases.map(safeText).join("; ")}.`,
       ...shown.map(capsuleLine),
       ...(omitted === 0
         ? []

@@ -79,6 +79,7 @@ export type PeriodDeliveryReport = {
   readonly capabilitySections: readonly {
     readonly key: string;
     readonly title: string;
+    readonly evidencedAliases: readonly string[];
     readonly capsules: readonly ChangeCapsule[];
     readonly outcomes: readonly OutcomeAssertion[];
   }[];
@@ -314,9 +315,15 @@ export const buildPeriodDeliveryReport = (input: {
       const matching = capsules.filter(({ capabilityKeys }) =>
         capabilityKeys.includes(capability.key),
       );
+      const evidencedAliasIndexes = new Set(
+        matching.flatMap(({ id }) => capabilityMatches.get(id)?.matchedAliasIndexes ?? []),
+      );
       return {
         key: capability.key,
         title: capability.title,
+        evidencedAliases: capability.aliases.flatMap((alias, index) =>
+          evidencedAliasIndexes.has(index) ? [alias.value] : [],
+        ),
         capsules: orderForAliasCoverage(matching, capabilityMatches),
         outcomes: [
           {
