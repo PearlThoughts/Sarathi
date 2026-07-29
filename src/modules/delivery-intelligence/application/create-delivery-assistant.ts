@@ -851,26 +851,41 @@ const renderLeadershipReport = (
     citations.push({ label, url });
     return `[${label}](${url})`;
   };
+  const cleanHeadline = (value: string): string =>
+    safeText(value)
+      .replace(/^PR #\d+:\s*/i, "")
+      .replace(/^\/?[A-Z][A-Z0-9]+-\d+\s*[:—-]?\s*/i, "")
+      .replace(/^(?:feat|fix|chore|docs|refactor|build|ci|test)(?:\([^)]+\))?\s*:\s*/i, "")
+      .replace(/^(?:feature|fix)[/-]/i, "")
+      .trim();
   const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
     const links = capsule.citations
-      .slice(0, 3)
+      .slice(0, 2)
       .map(({ source, url }) => citation(source, url))
       .join(" ");
-    return `- **${safeText(capsule.title)}** — ${capsule.completionStage} evidence is present; later delivery-chain stages remain unclaimed unless separately observed. ${links}`;
+    return `- **${cleanHeadline(capsule.title)}** — ${capsule.completionStage} evidence. ${links}`;
   };
-  const maximumChangesPerCapability = 6;
+  const maximumChangesPerCapability = 3;
+  const presentationScore = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
+    (/\b[A-Z][A-Z0-9]+-\d+\b/.test(capsule.id) ? 10_000 : 0) +
+    capsule.citations.length * 100 +
+    (capsule.completionStage === "deployed" ? 20 : capsule.completionStage === "released" ? 10 : 0);
   const sectionLines = report.capabilitySections.flatMap((section) => {
-    const shown = section.capsules.slice(0, maximumChangesPerCapability);
+    const shown = section.capsules
+      .toSorted(
+        (left, right) =>
+          presentationScore(right) - presentationScore(left) ||
+          Date.parse(right.completedAt) - Date.parse(left.completedAt),
+      )
+      .slice(0, maximumChangesPerCapability);
     const omitted = section.capsules.length - shown.length;
     return [
-      `### ${safeText(section.title)}`,
-      `${section.capsules.length} reconstructed delivery change${section.capsules.length === 1 ? "" : "s"} in this theme.`,
+      `**${safeText(section.title)}** — ${section.capsules.length} evidenced change${section.capsules.length === 1 ? "" : "s"}.`,
       ...shown.map(capsuleLine),
       ...(omitted === 0
         ? []
-        : [
-            `- **Additional evidenced delivery:** ${omitted} change${omitted === 1 ? "" : "s"} retained in the census but omitted from this Teams view to keep the report readable.`,
-          ]),
+        : [`- ${omitted} additional change${omitted === 1 ? "" : "s"} retained in the census.`]),
+      "",
     ];
   });
   const sources = [...new Set(report.capsules.flatMap(({ sources: values }) => values))];
@@ -886,23 +901,17 @@ const renderLeadershipReport = (
     "### Executive summary",
     report.capsules.length === 0
       ? "No delivery change met the declared completion-stage rule inside this period. Sarathi will not promote other recent activity into quarterly delivery."
-      : `The authorized census reconstructed ${report.capsules.length} delivery change${report.capsules.length === 1 ? "" : "s"} across ${report.capabilitySections.length} mapped capability theme${report.capabilitySections.length === 1 ? "" : "s"}. This reports observed delivery stages; it does not claim business impact without outcome evidence.`,
+      : `The quarter’s indexed evidence resolves into ${report.capsules.length} delivery change${report.capsules.length === 1 ? "" : "s"}. ${report.capsules.length - report.unmappedCapsules.length} map to ${report.capabilitySections.length} reviewed capability theme${report.capabilitySections.length === 1 ? "" : "s"}; the highlights below prioritize linked, cross-repository initiatives instead of listing every pull request.`,
     "### Delivered by capability",
     ...(sectionLines.length === 0
       ? ["- No accepted change could be mapped to a declared capability."]
       : sectionLines),
-    ...(report.unmappedCapsules.length === 0
-      ? []
-      : [
-          "### Delivered work awaiting capability mapping",
-          ...report.unmappedCapsules.slice(0, 20).map(capsuleLine),
-        ]),
     "### Outcomes and delivery confidence",
-    `- **Observed delivery:** ${report.capsules.length} change${report.capsules.length === 1 ? "" : "s"} reached a declared merged, released, or deployed stage.`,
-    "- **Business impact:** Unknown unless an authorized outcome measurement or attributed impact claim is linked. Technical completion is not presented as customer or business impact.",
+    `- **Observed delivery:** ${report.capsules.length} change${report.capsules.length === 1 ? "" : "s"} reached a merged, released, or deployed stage in the requested period.`,
+    "- **Business impact:** Not established by the indexed completion evidence. The report does not convert technical delivery into customer or commercial impact.",
     "### Gaps and incomplete delivery chains",
-    `- ${report.incompleteChainCount} change${report.incompleteChainCount === 1 ? "" : "s"} lack${report.incompleteChainCount === 1 ? "s" : ""} one or more later stages such as release, deployment, acceptance, or observed impact.`,
-    `- ${report.unmappedCapsules.length} accepted change${report.unmappedCapsules.length === 1 ? "" : "s"} remain${report.unmappedCapsules.length === 1 ? "s" : ""} outside the reviewed capability ledger.`,
+    `- ${report.incompleteChainCount} change${report.incompleteChainCount === 1 ? "" : "s"} have no separately observed later-stage evidence such as release, deployment, acceptance, or impact.`,
+    `- ${report.unmappedCapsules.length} accepted change${report.unmappedCapsules.length === 1 ? "" : "s"} remain${report.unmappedCapsules.length === 1 ? "s" : ""} outside the reviewed capability ledger; they are counted in coverage but intentionally omitted from the executive highlights.`,
     ...(result.unavailableSources.length === 0
       ? []
       : [
@@ -913,7 +922,7 @@ const renderLeadershipReport = (
     `- Source coverage: ${sourceCoverage || "No configured source coverage was reported"}.`,
     `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
     "### Method and inference boundary",
-    "- The report is reconstructed from authorized indexed evidence, grouped through the reviewed capability ledger, and deduplicated into delivery changes before presentation. Unsupported outcomes and missing stages remain explicitly unknown.",
+    "- The report is reconstructed from authorized indexed evidence, deduplicated into change groups, assigned to one primary reviewed capability, and then ranked for presentation. Unsupported outcomes and missing stages remain unknown.",
     "### Timing",
     `Completed in ${elapsedMs} ms.`,
   ].join("\n");

@@ -297,12 +297,82 @@ describe("delivery intelligence application", () => {
     });
     expect(answer.text).toContain("## Q2 2026 delivery report");
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
-    expect(answer.text).toContain("### SEO improvements");
+    expect(answer.text).toContain("**SEO improvements** — 1 evidenced change.");
     expect(answer.text).toContain("### Outcomes and delivery confidence");
-    expect(answer.text).toContain("Business impact:** Unknown");
+    expect(answer.text).toContain("Business impact:** Not established");
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");
     expect(answer.text.match(/SEO metadata publishing/g)).toHaveLength(1);
+  });
+
+  it("assigns an initiative to one primary capability and bounds leadership highlights", async () => {
+    const capabilityLedger = {
+      version: 1 as const,
+      capabilities: [
+        {
+          key: "website-builder",
+          title: "Website Builder enhancements",
+          aliases: [{ value: "builder" }],
+        },
+        {
+          key: "compliance-technology",
+          title: "Compliance and technology updates",
+          aliases: [{ value: "CVE remediation" }, { value: "security" }],
+        },
+      ],
+    };
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-03-31T18:30:00.000Z",
+        toExclusive: "2026-06-30T18:30:00.000Z",
+      },
+      timeZone: "Asia/Kolkata",
+      candidates: [],
+      configuredSources: ["github"],
+      sourceCheckpoints: new Map([["github", "2026-06-30T18:00:00.000Z"]]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: Array.from({ length: 5 }, (_, index) => ({
+            ...item(
+              "github",
+              `security-${index}`,
+              `F1851-${700 + index} builder CVE remediation ${index}`,
+              "delivered",
+            ),
+            selector: "period_census" as const,
+            title: `PR #${index + 1}: F1851-${700 + index} builder CVE remediation ${index}`,
+            completionStage: "merged" as const,
+            observedAt: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
+          })),
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source], capabilityLedger }).answer({
+        ...request,
+        question: "What have we delivered in the previous quarter?",
+      }),
+    );
+
+    expect(answer.periodDeliveryReport?.capabilitySections).toHaveLength(1);
+    expect(answer.periodDeliveryReport?.capabilitySections[0]?.key).toBe("compliance-technology");
+    expect(answer.text).not.toContain("**Website Builder enhancements**");
+    expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(3);
+    expect(answer.text).toContain("- 2 additional changes retained in the census.");
+    expect(answer.citations).toHaveLength(3);
   });
 
   it("rejects finance before any source call", async () => {

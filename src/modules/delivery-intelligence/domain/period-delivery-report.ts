@@ -153,15 +153,25 @@ const capabilityKeysFor = (
       .join("\n"),
   );
   const searchable = ` ${text} `;
-  return ledger.capabilities
-    .filter((capability) =>
-      capability.aliases.some(
-        (alias) =>
-          (alias.source === undefined || items.some((item) => item.source === alias.source)) &&
-          searchable.includes(` ${normalized(alias.value)} `),
-      ),
-    )
-    .map(({ key }) => key);
+  const matches = ledger.capabilities.flatMap((capability, capabilityIndex) => {
+    const scores = capability.aliases.flatMap((alias) => {
+      const value = normalized(alias.value);
+      if (
+        value === "" ||
+        (alias.source !== undefined && !items.some((item) => item.source === alias.source)) ||
+        !searchable.includes(` ${value} `)
+      )
+        return [];
+      const specificity = value.split(" ").length * 1_000 + value.length;
+      return [specificity + (alias.source === undefined ? 0 : 100_000)];
+    });
+    const score = Math.max(...scores, Number.NEGATIVE_INFINITY);
+    return Number.isFinite(score) ? [{ key: capability.key, score, capabilityIndex }] : [];
+  });
+  const primary = matches.toSorted(
+    (left, right) => right.score - left.score || left.capabilityIndex - right.capabilityIndex,
+  )[0];
+  return primary === undefined ? [] : [primary.key];
 };
 
 export const validateCapabilityLedger = (value: CapabilityLedger): CapabilityLedger => {
