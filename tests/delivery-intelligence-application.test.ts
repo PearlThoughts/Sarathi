@@ -347,18 +347,32 @@ describe("delivery intelligence application", () => {
       selectors: ["objects", "observations", "period_census"],
       execute: () =>
         Effect.succeed({
-          items: Array.from({ length: 5 }, (_, index) => ({
-            ...item(
-              "github",
-              `security-${index}`,
-              `F1851-${700 + index} builder CVE remediation ${index}`,
-              "delivered",
-            ),
-            selector: "period_census" as const,
-            title: `PR #${index + 1}: F1851-${700 + index} builder CVE remediation ${index}`,
-            completionStage: "merged" as const,
-            observedAt: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
-          })),
+          items: [
+            ...Array.from({ length: 5 }, (_, index) => ({
+              ...item(
+                "github",
+                `security-${index}`,
+                `F1851-${700 + index} builder CVE remediation ${index}`,
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              title: `PR #${index + 1}: F1851-${700 + index} builder CVE remediation ${index}`,
+              completionStage: "merged" as const,
+              observedAt: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
+            })),
+            ...Array.from({ length: 20 }, (_, index) => ({
+              ...item(
+                "github",
+                `unmapped-${index}`,
+                `Unclassified repository maintenance ${index}`,
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              title: `PR #${index + 10}: Unclassified repository maintenance ${index}`,
+              completionStage: "merged" as const,
+              observedAt: `2026-05-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
+            })),
+          ],
           conflicts: [],
           unavailableSources: [],
           complete: true,
@@ -378,6 +392,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("**Website Builder enhancements**");
     expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(5);
     expect(answer.text).not.toContain("additional changes");
+    expect(answer.text).toContain("Capability mapping: 5/25");
     expect(answer.citations).toHaveLength(5);
   });
 

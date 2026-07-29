@@ -41,7 +41,7 @@ Questions such as “what did we deliver in the previous quarter?” are deep-di
 
 - The report is organized into numbered capability themes with descriptive initiative bullets, delivery stage, and source citations.
 - Relevant initiatives are not reduced to a fixed top-three list. Rendering uses only the Microsoft Teams platform-size ceiling.
-- The report fails closed when the census is incomplete, a required source is unavailable, no qualifying delivery exists, or fewer than 70 percent of delivered capsules map to governed capability themes.
+- The report fails closed when the census is incomplete, a required source is unavailable, or no qualifying delivery exists. Unmapped corpus records are disclosed as a coverage gap but do not suppress source-supported capability sections; governed reconstruction recall decides whether the resulting report is fit for acceptance.
 - A failed report states privacy-safe reasons and does not substitute unrelated generic evidence.
 - Replay checksums, internal execution timing, and diagnostic census prose are excluded from the user-facing leadership narrative.
 
