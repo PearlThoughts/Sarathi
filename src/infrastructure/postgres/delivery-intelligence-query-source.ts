@@ -22,6 +22,7 @@ import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   compilePeriodCensus,
   type DeliveryClaim,
+  type DeliveryCompletionStage,
   type DeliveryEntityCatalog,
   type DeliveryQueryContext,
   type DeliveryQueryOperation,
@@ -361,6 +362,25 @@ const result = (
   complete: true,
 });
 
+export const periodObservationCompletionStage = (observation: {
+  readonly source: DeliverySourceKind;
+  readonly observationKind: string;
+  readonly subjectObjectKind?: string | null | undefined;
+  readonly subjectLifecycleState?: string | null | undefined;
+  readonly summary: string;
+}): DeliveryCompletionStage | undefined => {
+  if (observation.observationKind === "deployment") return "deployed";
+  if (
+    observation.source === "jira" &&
+    observation.observationKind === "state" &&
+    observation.subjectObjectKind === "work_item" &&
+    observation.subjectLifecycleState === "done" &&
+    /\bchanged\s+from\b.+\bto\s+(?:done|closed|complete(?:d)?)\b/i.test(observation.summary)
+  )
+    return "accepted";
+  return undefined;
+};
+
 const queryPeriodCensus = async (
   database: KnowledgePostgresDatabase,
   context: DeliveryQueryContext,
@@ -511,11 +531,19 @@ const queryPeriodCensus = async (
           sensitivity: deliveryObservationTable.sensitivity,
           canonicalUrl: knowledgeItemTable.canonicalUrl,
           authority: knowledgeItemTable.authority,
+          subjectExternalKey: deliveryObjectTable.externalKey,
+          subjectTitle: deliveryObjectTable.title,
+          subjectObjectKind: deliveryObjectTable.objectKind,
+          subjectLifecycleState: deliveryObjectTable.lifecycleState,
         })
         .from(deliveryObservationTable)
         .innerJoin(
           knowledgeItemTable,
           eq(knowledgeItemTable.id, deliveryObservationTable.sourceItemId),
+        )
+        .leftJoin(
+          deliveryObjectTable,
+          eq(deliveryObjectTable.id, deliveryObservationTable.subjectObjectId),
         )
         .where(
           and(
@@ -538,24 +566,34 @@ const queryPeriodCensus = async (
         .offset(offset);
       pagesRead += 1;
       for (const row of rows) {
+        const completionStage = periodObservationCompletionStage({
+          source: sourceKind(row.sourceKind),
+          observationKind: row.observationKind,
+          subjectObjectKind: row.subjectObjectKind,
+          subjectLifecycleState: row.subjectLifecycleState,
+          summary: row.summary,
+        });
         candidates.push({
           id: row.id,
           source: sourceKind(row.sourceKind),
           occurredAt: row.occurredAt,
           dedupeKey: row.dedupeKey,
           mapped: row.subjectObjectId !== null,
-          classification:
-            row.observationKind === "deployment" ? "candidate" : "generic_source_update",
-          ...(row.observationKind === "deployment" ? { completionStage: "deployed" as const } : {}),
+          classification: completionStage === undefined ? "generic_source_update" : "candidate",
+          ...(completionStage === undefined ? {} : { completionStage }),
         });
-        if (row.observationKind === "deployment")
+        if (completionStage !== undefined)
           censusItems.push({
             id: row.id,
             workspaceId: row.workspaceId,
             source: sourceKind(row.sourceKind),
             selector: "period_census",
             intent: operation.purpose,
-            title: "Deployment",
+            title:
+              row.subjectTitle ??
+              (completionStage === "deployed"
+                ? "Deployment"
+                : `${row.subjectExternalKey ?? "Jira work item"} accepted`),
             summary: row.summary,
             citationUrl: row.canonicalUrl,
             sensitivity: sensitivity(row.sensitivity),
@@ -565,7 +603,7 @@ const queryPeriodCensus = async (
             sourceUpdatedAt: row.sourceUpdatedAt,
             indexedAt: row.indexedAt,
             dedupeKey: row.dedupeKey,
-            completionStage: "deployed",
+            completionStage,
           });
       }
       offset += rows.length;

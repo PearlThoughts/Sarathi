@@ -110,11 +110,13 @@ const capsuleKey = (item: PeriodDeliveryEvidence): string => {
 };
 
 const completionStage = (items: readonly PeriodDeliveryEvidence[]): DeliveryCompletionStage =>
-  items.some((item) => item.completionStage === "deployed")
-    ? "deployed"
-    : items.some((item) => item.completionStage === "released")
-      ? "released"
-      : "merged";
+  items.some((item) => item.completionStage === "accepted")
+    ? "accepted"
+    : items.some((item) => item.completionStage === "deployed")
+      ? "deployed"
+      : items.some((item) => item.completionStage === "released")
+        ? "released"
+        : "merged";
 
 const stageOrder = [
   "planned",

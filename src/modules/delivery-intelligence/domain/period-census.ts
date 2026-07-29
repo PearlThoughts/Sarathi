@@ -1,7 +1,7 @@
 import { stableSha256 } from "../../../domain/hash.ts";
 import type { DeliverySourceKind } from "./delivery-model.ts";
 
-export type DeliveryCompletionStage = "merged" | "released" | "deployed";
+export type DeliveryCompletionStage = "merged" | "released" | "deployed" | "accepted";
 
 export type PeriodCensusBoundary =
   | {

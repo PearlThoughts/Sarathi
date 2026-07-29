@@ -117,6 +117,8 @@ The requested interval must be parsed even when the wording is open-ended, such 
 
 For delivered-period reports, the strongest available completion stage determines period membership according to a declared rule. Generic record update time or ingestion time must not substitute for delivery completion. Work without a qualifying completion stage may appear as active or incomplete, but not as delivered.
 
+An indexed Jira status-transition observation from a non-terminal state to `Done`, `Closed`, or `Completed` is `accepted` evidence at the transition timestamp. It is not release or deployment evidence. A later current-state refresh such as “is Done” does not establish period membership.
+
 ## Source Roles
 
 - **Jira** supplies declared scope, work hierarchy, plan, estimates, status transitions, ownership, components, and acceptance records.
