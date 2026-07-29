@@ -917,17 +917,6 @@ const renderLeadershipReport = (
       ],
       "empty",
     );
-  const mappedCapsuleCount = report.capsules.length - report.unmappedCapsules.length;
-  const mappedCoverage = mappedCapsuleCount / report.capsules.length;
-  if (mappedCoverage < 0.7)
-    return reportFailure(
-      [
-        `Only ${mappedCapsuleCount} of ${report.capsules.length} qualifying changes map to reviewed business capabilities (${Math.round(mappedCoverage * 100)}%); at least 70% mapping coverage is required before narrative composition.`,
-        `${report.unmappedCapsules.length} changes require capability mapping or attributed correction.`,
-      ],
-      "partial",
-    );
-
   const rankedSections = report.capabilitySections.map((section) => ({
     ...section,
     capsules: section.capsules.toSorted(
@@ -995,6 +984,7 @@ const renderLeadershipReport = (
         ]),
     "### Coverage and freshness",
     `- Census examined ${report.census.examinedCandidateCount} authorized records across ${report.census.pagination.pagesRead} page(s), accepted ${report.census.candidateCount}, collapsed ${report.census.duplicateCandidateCount} duplicate(s), and excluded ${report.census.excludedCandidateCount}.`,
+    `- Capability mapping: ${report.capsules.length - report.unmappedCapsules.length}/${report.capsules.length} accepted change capsules map to a reviewed primary theme; unmapped capsules remain visible as a coverage gap.`,
     `- Source coverage: ${sourceCoverage || "No configured source coverage was reported"}.`,
     `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
     "### Method and inference boundary",
