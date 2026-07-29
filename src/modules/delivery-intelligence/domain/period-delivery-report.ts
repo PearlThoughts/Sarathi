@@ -64,7 +64,6 @@ export type ChangeCapsule = {
   readonly completedAt: string;
   readonly completionStage: DeliveryCompletionStage;
   readonly capabilityKeys: readonly string[];
-  readonly capabilityEvidenceScore: number;
   readonly sources: readonly DeliverySourceKind[];
   readonly citations: readonly {
     readonly source: DeliverySourceKind;
@@ -143,7 +142,11 @@ const chainFor = (
 const capabilityMatchFor = (
   items: readonly PeriodDeliveryEvidence[],
   ledger: CapabilityLedger,
-): { readonly keys: readonly string[]; readonly evidenceScore: number } => {
+): {
+  readonly keys: readonly string[];
+  readonly evidenceScore: number;
+  readonly matchedAliasIndexes: readonly number[];
+} => {
   const text = normalized(
     items
       .flatMap((item) => [
@@ -156,7 +159,7 @@ const capabilityMatchFor = (
   );
   const searchable = ` ${text} `;
   const matches = ledger.capabilities.flatMap((capability, capabilityIndex) => {
-    const scores = capability.aliases.flatMap((alias) => {
+    const scores = capability.aliases.flatMap((alias, aliasIndex) => {
       const value = normalized(alias.value);
       if (
         value === "" ||
@@ -165,17 +168,72 @@ const capabilityMatchFor = (
       )
         return [];
       const specificity = value.split(" ").length * 1_000 + value.length;
-      return [specificity + (alias.source === undefined ? 0 : 100_000)];
+      return [
+        {
+          aliasIndex,
+          score: specificity + (alias.source === undefined ? 0 : 100_000),
+        },
+      ];
     });
-    const score = Math.max(...scores, Number.NEGATIVE_INFINITY);
-    return Number.isFinite(score) ? [{ key: capability.key, score, capabilityIndex }] : [];
+    const score = Math.max(
+      ...scores.map(({ score: aliasScore }) => aliasScore),
+      Number.NEGATIVE_INFINITY,
+    );
+    return Number.isFinite(score)
+      ? [
+          {
+            key: capability.key,
+            score,
+            capabilityIndex,
+            matchedAliasIndexes: scores.map(({ aliasIndex }) => aliasIndex),
+          },
+        ]
+      : [];
   });
   const primary = matches.toSorted(
     (left, right) => right.score - left.score || left.capabilityIndex - right.capabilityIndex,
   )[0];
   return primary === undefined
-    ? { keys: [], evidenceScore: 0 }
-    : { keys: [primary.key], evidenceScore: primary.score };
+    ? { keys: [], evidenceScore: 0, matchedAliasIndexes: [] }
+    : {
+        keys: [primary.key],
+        evidenceScore: primary.score,
+        matchedAliasIndexes: primary.matchedAliasIndexes,
+      };
+};
+
+type CapabilityMatch = ReturnType<typeof capabilityMatchFor>;
+
+const orderForAliasCoverage = (
+  capsules: readonly ChangeCapsule[],
+  matches: ReadonlyMap<string, CapabilityMatch>,
+): readonly ChangeCapsule[] => {
+  const coveredAliases = new Set<number>();
+  const remaining = [...capsules];
+  const ordered: ChangeCapsule[] = [];
+  while (remaining.length > 0) {
+    remaining.sort((left, right) => {
+      const leftMatch = matches.get(left.id);
+      const rightMatch = matches.get(right.id);
+      const leftNewAliases =
+        leftMatch?.matchedAliasIndexes.filter((index) => !coveredAliases.has(index)).length ?? 0;
+      const rightNewAliases =
+        rightMatch?.matchedAliasIndexes.filter((index) => !coveredAliases.has(index)).length ?? 0;
+      return (
+        rightNewAliases - leftNewAliases ||
+        (rightMatch?.evidenceScore ?? 0) - (leftMatch?.evidenceScore ?? 0) ||
+        right.citations.length - left.citations.length ||
+        Date.parse(right.completedAt) - Date.parse(left.completedAt) ||
+        left.title.localeCompare(right.title)
+      );
+    });
+    const selected = remaining.shift();
+    if (selected === undefined) break;
+    ordered.push(selected);
+    for (const aliasIndex of matches.get(selected.id)?.matchedAliasIndexes ?? [])
+      coveredAliases.add(aliasIndex);
+  }
+  return ordered;
 };
 
 export const validateCapabilityLedger = (value: CapabilityLedger): CapabilityLedger => {
@@ -206,10 +264,12 @@ export const buildPeriodDeliveryReport = (input: {
     const key = capsuleKey(item);
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
+  const capabilityMatches = new Map<string, CapabilityMatch>();
   const capsules = [...groups.entries()]
     .map(([id, items]): ChangeCapsule => {
       const stage = completionStage(items);
       const capabilityMatch = capabilityMatchFor(items, input.capabilityLedger);
+      capabilityMatches.set(id, capabilityMatch);
       const citations = [
         ...new Map(
           items.map((item) => [item.citationUrl, { source: item.source, url: item.citationUrl }]),
@@ -234,7 +294,6 @@ export const buildPeriodDeliveryReport = (input: {
         completedAt,
         completionStage: stage,
         capabilityKeys: capabilityMatch.keys,
-        capabilityEvidenceScore: capabilityMatch.evidenceScore,
         sources: [...new Set(items.map(({ source }) => source))].sort(),
         citations,
         chain: chainFor(
@@ -256,7 +315,7 @@ export const buildPeriodDeliveryReport = (input: {
       return {
         key: capability.key,
         title: capability.title,
-        capsules: matching,
+        capsules: orderForAliasCoverage(matching, capabilityMatches),
         outcomes: [
           {
             evidenceClass: "unknown" as const,

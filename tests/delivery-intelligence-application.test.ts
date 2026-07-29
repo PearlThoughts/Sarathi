@@ -403,7 +403,12 @@ describe("delivery intelligence application", () => {
         {
           key: "website-builder",
           title: "Website Builder enhancements",
-          aliases: [{ value: "builder" }, { value: "landing page builder" }],
+          aliases: [
+            { value: "builder" },
+            { value: "landing page" },
+            { value: "subpage" },
+            { value: "widget integration" },
+          ],
         },
       ],
     };
@@ -427,19 +432,24 @@ describe("delivery intelligence application", () => {
       selectors: ["period_census"],
       execute: () =>
         Effect.succeed({
-          items: Array.from({ length: 120 }, (_, index) => ({
-            ...item(
-              "github",
-              `builder-${index}`,
-              `Landing page builder initiative ${index}`,
-              "delivered",
-            ),
-            selector: "period_census" as const,
-            title: `Landing page builder initiative ${index}`,
-            summary: `github:example/repository:activity:pull_request:${index}: raw projection summary that must not appear`,
-            completionStage: "merged" as const,
-            observedAt: "2026-06-20T10:00:00.000Z",
-          })),
+          items: Array.from({ length: 120 }, (_, index) => {
+            const title =
+              index === 0
+                ? "Landing page builder initiative"
+                : index === 1
+                  ? "Subpage builder initiative"
+                  : index === 2
+                    ? "Widget integration builder initiative"
+                    : `Generic builder maintenance ${index}`;
+            return {
+              ...item("github", `builder-${index}`, title, "delivered"),
+              selector: "period_census" as const,
+              title,
+              summary: `github:example/repository:activity:pull_request:${index}: raw projection summary that must not appear ${"x".repeat(160)}`,
+              completionStage: "merged" as const,
+              observedAt: "2026-06-20T10:00:00.000Z",
+            };
+          }),
           conflicts: [],
           unavailableSources: [],
           complete: true,
@@ -457,6 +467,9 @@ describe("delivery intelligence application", () => {
     expect(answer.citations.length).toBeLessThan(120);
     expect(answer.citations.every(({ url }) => answer.text.includes(url))).toBe(true);
     expect(answer.text).not.toContain("github:example/repository:activity");
+    expect(answer.text).toContain("Landing page builder initiative");
+    expect(answer.text).toContain("Subpage builder initiative");
+    expect(answer.text).toContain("Widget integration builder initiative");
     expect(answer.acceptance.groundingPassed).toBe(true);
   });
 
