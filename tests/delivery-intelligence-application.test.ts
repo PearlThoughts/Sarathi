@@ -432,7 +432,7 @@ describe("delivery intelligence application", () => {
       selectors: ["period_census"],
       execute: () =>
         Effect.succeed({
-          items: Array.from({ length: 120 }, (_, index) => {
+          items: Array.from({ length: 200 }, (_, index) => {
             const title =
               index === 0
                 ? "Landing page builder initiative"
@@ -464,7 +464,7 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.citations.length).toBeLessThan(120);
+    expect(answer.citations.length).toBeLessThan(200);
     expect(answer.citations.every(({ url }) => answer.text.includes(url))).toBe(true);
     expect(answer.text).not.toContain("github:example/repository:activity");
     expect(answer.text).toContain("Landing page builder initiative");
