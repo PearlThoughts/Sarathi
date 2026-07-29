@@ -870,16 +870,25 @@ const renderLeadershipReport = (
       .join(" ");
     const title = cleanHeadline(capsule.title);
     const summary = cleanHeadline(capsule.summary);
+    const safeSummary = /(?:github|jira|vault|teams):[^\s]+(?::|\/)/i.test(capsule.summary)
+      ? ""
+      : summary;
     const detail =
-      summary === "" || summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
+      safeSummary === "" || safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
         ? `${capsule.completionStage} evidence`
-        : `${summary}; ${capsule.completionStage} evidence`;
+        : `${safeSummary}; ${capsule.completionStage} evidence`;
     return `- **${title}** — ${detail}. ${links}`;
   };
   const presentationScore = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
+    capsule.capabilityEvidenceScore * 1_000_000 +
     (/\b[A-Z][A-Z0-9]+-\d+\b/.test(capsule.id) ? 10_000 : 0) +
     capsule.citations.length * 100 +
     (capsule.completionStage === "deployed" ? 20 : capsule.completionStage === "released" ? 10 : 0);
+  const estimatedCapsuleLineLength = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
+    cleanHeadline(capsule.title).length +
+    cleanHeadline(capsule.summary).length +
+    capsule.citations.slice(0, 2).reduce((length, { url }) => length + url.length + 24, 0) +
+    48;
   const reportFailure = (reasons: readonly string[], status: "partial" | "empty") => ({
     ...answer,
     text: [
@@ -935,10 +944,10 @@ const renderLeadershipReport = (
     for (const section of rankedSections) {
       const capsule = section.capsules[depth];
       if (capsule === undefined) continue;
-      const line = capsuleLine(capsule);
-      if (selectedCharacters + line.length > teamsReportCharacterBudget) continue;
+      const estimatedLength = estimatedCapsuleLineLength(capsule);
+      if (selectedCharacters + estimatedLength > teamsReportCharacterBudget) continue;
       selectedByCapability.get(section.key)?.push(capsule);
-      selectedCharacters += line.length;
+      selectedCharacters += estimatedLength;
     }
   }
   const sectionLines = rankedSections.flatMap((section, index) => {
