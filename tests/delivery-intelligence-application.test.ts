@@ -392,6 +392,12 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("**Website Builder enhancements**");
     expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(5);
     expect(answer.text).not.toContain("additional changes");
+    expect(answer.text).toContain(
+      "Of these, 5 map to 1 reviewed theme: Compliance and technology updates.",
+    );
+    expect(answer.text).toContain(
+      "The remaining 20 stay outside the reviewed capability mapping and are disclosed as a coverage gap",
+    );
     expect(answer.text).toContain("Capability mapping: 5/25");
     expect(answer.citations).toHaveLength(5);
   });

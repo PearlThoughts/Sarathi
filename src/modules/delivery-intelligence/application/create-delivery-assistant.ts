@@ -963,6 +963,7 @@ const renderLeadershipReport = (
     ];
   });
   const sources = [...new Set(report.capsules.flatMap(({ sources: values }) => values))];
+  const mappedCapsuleCount = report.capsules.length - report.unmappedCapsules.length;
   const sourceCoverage = report.census.sourceCoverage
     .map(
       ({ source, available, candidateCount }) =>
@@ -973,7 +974,7 @@ const renderLeadershipReport = (
     `## ${reportPeriodTitle(report)}`,
     `**Period:** ${reportPeriodLabel(report)}`,
     "### Executive summary",
-    `The quarter’s authorized evidence resolves into ${report.capsules.length} completed delivery change${report.capsules.length === 1 ? "" : "s"} across ${report.capabilitySections.length} reviewed themes: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
+    `The quarter’s authorized evidence contains ${report.capsules.length} accepted delivery change${report.capsules.length === 1 ? "" : "s"}. Of these, ${mappedCapsuleCount} map to ${report.capabilitySections.length} reviewed theme${report.capabilitySections.length === 1 ? "" : "s"}: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The remaining ${report.unmappedCapsules.length} stay outside the reviewed capability mapping and are disclosed as a coverage gap, not presented as themed delivery. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
     ...(sectionLines.length === 0
       ? ["- No accepted change could be mapped to a declared capability."]
       : sectionLines),
@@ -990,7 +991,7 @@ const renderLeadershipReport = (
         ]),
     "### Coverage and freshness",
     `- Census examined ${report.census.examinedCandidateCount} authorized records across ${report.census.pagination.pagesRead} page(s), accepted ${report.census.candidateCount}, collapsed ${report.census.duplicateCandidateCount} duplicate(s), and excluded ${report.census.excludedCandidateCount}.`,
-    `- Capability mapping: ${report.capsules.length - report.unmappedCapsules.length}/${report.capsules.length} accepted change capsules map to a reviewed primary theme; unmapped capsules remain visible as a coverage gap.`,
+    `- Capability mapping: ${mappedCapsuleCount}/${report.capsules.length} accepted change capsules map to a reviewed primary theme; unmapped capsules remain visible as a coverage gap.`,
     `- Source coverage: ${sourceCoverage || "No configured source coverage was reported"}.`,
     `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
     "### Method and inference boundary",
