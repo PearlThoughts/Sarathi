@@ -879,11 +879,6 @@ const renderLeadershipReport = (
         : `${safeSummary}; ${capsule.completionStage} evidence`;
     return `- **${title}** — ${detail}. ${links}`;
   };
-  const presentationScore = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
-    capsule.capabilityEvidenceScore * 1_000_000 +
-    (/\b[A-Z][A-Z0-9]+-\d+\b/.test(capsule.id) ? 10_000 : 0) +
-    capsule.citations.length * 100 +
-    (capsule.completionStage === "deployed" ? 20 : capsule.completionStage === "released" ? 10 : 0);
   const estimatedCapsuleLineLength = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
     cleanHeadline(capsule.title).length +
     cleanHeadline(capsule.summary).length +
@@ -926,14 +921,7 @@ const renderLeadershipReport = (
       ],
       "empty",
     );
-  const rankedSections = report.capabilitySections.map((section) => ({
-    ...section,
-    capsules: section.capsules.toSorted(
-      (left, right) =>
-        presentationScore(right) - presentationScore(left) ||
-        Date.parse(right.completedAt) - Date.parse(left.completedAt),
-    ),
-  }));
+  const rankedSections = report.capabilitySections;
   const selectedByCapability = new Map<string, PeriodDeliveryReport["capsules"][number][]>(
     rankedSections.map((section) => [section.key, []]),
   );
