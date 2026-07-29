@@ -64,6 +64,7 @@ export type ChangeCapsule = {
   readonly completedAt: string;
   readonly completionStage: DeliveryCompletionStage;
   readonly capabilityKeys: readonly string[];
+  readonly capabilityEvidenceScore: number;
   readonly sources: readonly DeliverySourceKind[];
   readonly citations: readonly {
     readonly source: DeliverySourceKind;
@@ -139,10 +140,10 @@ const chainFor = (
   }));
 };
 
-const capabilityKeysFor = (
+const capabilityMatchFor = (
   items: readonly PeriodDeliveryEvidence[],
   ledger: CapabilityLedger,
-): readonly string[] => {
+): { readonly keys: readonly string[]; readonly evidenceScore: number } => {
   const text = normalized(
     items
       .flatMap((item) => [
@@ -172,7 +173,9 @@ const capabilityKeysFor = (
   const primary = matches.toSorted(
     (left, right) => right.score - left.score || left.capabilityIndex - right.capabilityIndex,
   )[0];
-  return primary === undefined ? [] : [primary.key];
+  return primary === undefined
+    ? { keys: [], evidenceScore: 0 }
+    : { keys: [primary.key], evidenceScore: primary.score };
 };
 
 export const validateCapabilityLedger = (value: CapabilityLedger): CapabilityLedger => {
@@ -206,6 +209,7 @@ export const buildPeriodDeliveryReport = (input: {
   const capsules = [...groups.entries()]
     .map(([id, items]): ChangeCapsule => {
       const stage = completionStage(items);
+      const capabilityMatch = capabilityMatchFor(items, input.capabilityLedger);
       const citations = [
         ...new Map(
           items.map((item) => [item.citationUrl, { source: item.source, url: item.citationUrl }]),
@@ -229,7 +233,8 @@ export const buildPeriodDeliveryReport = (input: {
           id,
         completedAt,
         completionStage: stage,
-        capabilityKeys: capabilityKeysFor(items, input.capabilityLedger),
+        capabilityKeys: capabilityMatch.keys,
+        capabilityEvidenceScore: capabilityMatch.evidenceScore,
         sources: [...new Set(items.map(({ source }) => source))].sort(),
         citations,
         chain: chainFor(

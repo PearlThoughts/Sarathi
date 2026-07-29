@@ -396,6 +396,70 @@ describe("delivery intelligence application", () => {
     expect(answer.citations).toHaveLength(5);
   });
 
+  it("registers citations only for rendered leadership initiatives and removes raw projection summaries", async () => {
+    const capabilityLedger = {
+      version: 1 as const,
+      capabilities: [
+        {
+          key: "website-builder",
+          title: "Website Builder enhancements",
+          aliases: [{ value: "builder" }, { value: "landing page builder" }],
+        },
+      ],
+    };
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-03-31T18:30:00.000Z",
+        toExclusive: "2026-06-30T18:30:00.000Z",
+      },
+      timeZone: "Asia/Kolkata",
+      candidates: [],
+      configuredSources: ["github"],
+      sourceCheckpoints: new Map([["github", "2026-06-30T18:00:00.000Z"]]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: Array.from({ length: 120 }, (_, index) => ({
+            ...item(
+              "github",
+              `builder-${index}`,
+              `Landing page builder initiative ${index}`,
+              "delivered",
+            ),
+            selector: "period_census" as const,
+            title: `Landing page builder initiative ${index}`,
+            summary: `github:example/repository:activity:pull_request:${index}: raw projection summary that must not appear`,
+            completionStage: "merged" as const,
+            observedAt: "2026-06-20T10:00:00.000Z",
+          })),
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source], capabilityLedger }).answer({
+        ...request,
+        question: "What have we delivered in the previous quarter?",
+      }),
+    );
+
+    expect(answer.citations.length).toBeLessThan(120);
+    expect(answer.citations.every(({ url }) => answer.text.includes(url))).toBe(true);
+    expect(answer.text).not.toContain("github:example/repository:activity");
+    expect(answer.acceptance.groundingPassed).toBe(true);
+  });
+
   it("fails closed instead of rendering generic delivery evidence without a capability ledger", async () => {
     const execute = vi.fn<DeliveryQuerySource["execute"]>(() =>
       Effect.succeed({
