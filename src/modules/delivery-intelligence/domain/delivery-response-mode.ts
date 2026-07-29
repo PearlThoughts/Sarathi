@@ -84,7 +84,7 @@ const structuredBrief =
   /\b(?:structured brief|status report|weekly report|sprint report|release report|risk report|comparison|compare|quarterly|executive brief)\b/i;
 
 const leadershipReport =
-  /\b(?:leadership report|executive report|quarterly report|comprehensive (?:delivery )?report)\b/i;
+  /\b(?:leadership report|executive report|quarterly report|comprehensive (?:delivery )?report)\b|\b(?:delivered|delivery|completed|shipped|finished)\b.*\b(?:this|current|last|previous)\s+quarter\b|\b(?:this|current|last|previous)\s+quarter\b.*\b(?:delivered|delivery|completed|shipped|finished)\b/i;
 const implementationInvestigation =
   /\b(?:implementation investigation|investigat(?:e|ion).*(?:implementation|code|repository)|(?:implementation|code|repository).*(?:deep[ -]?dive|investigat(?:e|ion)))\b/i;
 const periodDeliveryBrief =

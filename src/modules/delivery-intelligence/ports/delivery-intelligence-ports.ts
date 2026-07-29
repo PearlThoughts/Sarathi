@@ -12,6 +12,7 @@ import type {
   DeliveryResponseProduct,
 } from "../domain/delivery-response-mode.ts";
 import type { PeriodCensus } from "../domain/period-census.ts";
+import type { CapabilityLedger, PeriodDeliveryReport } from "../domain/period-delivery-report.ts";
 
 export type DeliveryQueryContext = {
   readonly workspaceId: string;
@@ -68,6 +69,7 @@ export type DeliveryResultItem = {
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
   readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
+  readonly completionStage?: "merged" | "released" | "deployed" | undefined;
 };
 
 export type DeliveryOwnerReference = {
@@ -98,6 +100,7 @@ export type DeliveryQueryResult = {
   readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
   readonly periodCensus?: PeriodCensus | undefined;
+  readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
 };
 
 export type DeliveryQuerySource = {
@@ -160,6 +163,7 @@ export type DeliveryAssistantAnswer = {
   readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
   readonly periodCensus?: PeriodCensus | undefined;
+  readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
   readonly mentions?: readonly DeliveryActionTarget[];
 };
 
@@ -170,6 +174,7 @@ export type DeliveryAnswerCompositionInput = {
   readonly plan: DeliveryQueryPlan;
   readonly items: readonly DeliveryResultItem[];
   readonly conflicts: readonly DeliveryConflict[];
+  readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
   readonly responseProduct: DeliveryResponseProduct;
   readonly responseMode: DeliveryResponseMode;
   readonly responseBudget: {
@@ -197,6 +202,10 @@ export type DeliveryAssistant = {
   readonly answer: (
     request: DeliveryAssistantRequest,
   ) => Effect.Effect<DeliveryAssistantAnswer, RepositoryError>;
+};
+
+export type DeliveryReportingConfiguration = {
+  readonly capabilityLedger?: CapabilityLedger | undefined;
 };
 
 export type DeliveryModelPlanner = {

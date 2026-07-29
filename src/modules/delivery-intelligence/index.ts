@@ -119,6 +119,20 @@ export type {
 } from "./domain/period-census.ts";
 export { compilePeriodCensus } from "./domain/period-census.ts";
 export type {
+  CapabilityAlias,
+  CapabilityDefinition,
+  CapabilityLedger,
+  ChangeCapsule,
+  DeliveryChainStage,
+  OutcomeAssertion,
+  PeriodDeliveryEvidence,
+  PeriodDeliveryReport,
+} from "./domain/period-delivery-report.ts";
+export {
+  buildPeriodDeliveryReport,
+  validateCapabilityLedger,
+} from "./domain/period-delivery-report.ts";
+export type {
   DeliveryActionTarget,
   DeliveryAnswerComposer,
   DeliveryAnswerComposition,
@@ -131,5 +145,6 @@ export type {
   DeliveryQueryContext,
   DeliveryQueryResult,
   DeliveryQuerySource,
+  DeliveryReportingConfiguration,
   DeliveryResultItem,
 } from "./ports/delivery-intelligence-ports.ts";

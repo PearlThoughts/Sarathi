@@ -11,6 +11,11 @@ import {
   selectDeliveryResponseMode,
   selectDeliveryResponseProduct,
 } from "../domain/delivery-response-mode.ts";
+import {
+  buildPeriodDeliveryReport,
+  type CapabilityLedger,
+  type PeriodDeliveryReport,
+} from "../domain/period-delivery-report.ts";
 import type {
   DeliveryAnswerComposer,
   DeliveryAssistant,
@@ -30,6 +35,7 @@ export type DeliveryAssistantConfiguration = {
   readonly sourceTimeoutMs?: number | undefined;
   readonly compositionTimeoutMs?: number | undefined;
   readonly totalBudgetMs?: number | undefined;
+  readonly capabilityLedger?: CapabilityLedger | undefined;
   readonly now?: (() => Date) | undefined;
 };
 
@@ -787,14 +793,155 @@ const latestTimestamp = (values: readonly (string | undefined)[]): string | unde
     .filter((value): value is string => value !== undefined && Number.isFinite(Date.parse(value)))
     .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
 
+const localDateParts = (
+  value: string,
+  timeZone: string,
+): { readonly year: number; readonly month: number; readonly day: number } => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date(value));
+  const part = (type: "year" | "month" | "day"): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value ?? 0);
+  return { year: part("year"), month: part("month"), day: part("day") };
+};
+
+const reportPeriodTitle = (report: PeriodDeliveryReport): string => {
+  if (report.census.boundary.kind !== "absolute") return "Delivery report";
+  const start = localDateParts(report.census.boundary.fromInclusive, report.census.timeZone);
+  const end = localDateParts(report.census.boundary.toExclusive, report.census.timeZone);
+  const quarter =
+    start.day === 1 &&
+    [1, 4, 7, 10].includes(start.month) &&
+    end.day === 1 &&
+    end.month === ((start.month + 2) % 12) + 1
+      ? Math.floor((start.month - 1) / 3) + 1
+      : undefined;
+  return quarter === undefined ? "Delivery report" : `Q${quarter} ${start.year} delivery report`;
+};
+
+const reportPeriodLabel = (report: PeriodDeliveryReport): string => {
+  if (report.census.boundary.kind !== "absolute")
+    return `${report.census.boundary.reference} (${report.census.timeZone})`;
+  const format = new Intl.DateTimeFormat("en-GB", {
+    timeZone: report.census.timeZone,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const endExclusive = new Date(Date.parse(report.census.boundary.toExclusive) - 1);
+  return `${format.format(new Date(report.census.boundary.fromInclusive))} – ${format.format(endExclusive)} (${report.census.timeZone})`;
+};
+
+const renderLeadershipReport = (
+  answer: DeliveryAnswerDraft,
+  report: PeriodDeliveryReport,
+  result: DeliveryQueryResult,
+  elapsedMs: number,
+): DeliveryAnswerDraft => {
+  const citationLabels = new Map<string, string>();
+  const citations: { label: string; url: string }[] = [];
+  const citation = (source: DeliverySourceKind, url: string): string => {
+    const existing = citationLabels.get(url);
+    if (existing !== undefined) return `[${existing}](${url})`;
+    const label = `${sourceLabel[source]} ${citations.length + 1}`;
+    citationLabels.set(url, label);
+    citations.push({ label, url });
+    return `[${label}](${url})`;
+  };
+  const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
+    const links = capsule.citations
+      .slice(0, 3)
+      .map(({ source, url }) => citation(source, url))
+      .join(" ");
+    return `- **${safeText(capsule.title)}** — ${capsule.completionStage} evidence is present; later delivery-chain stages remain unclaimed unless separately observed. ${links}`;
+  };
+  const maximumChangesPerCapability = 6;
+  const sectionLines = report.capabilitySections.flatMap((section) => {
+    const shown = section.capsules.slice(0, maximumChangesPerCapability);
+    const omitted = section.capsules.length - shown.length;
+    return [
+      `### ${safeText(section.title)}`,
+      `${section.capsules.length} reconstructed delivery change${section.capsules.length === 1 ? "" : "s"} in this theme.`,
+      ...shown.map(capsuleLine),
+      ...(omitted === 0
+        ? []
+        : [
+            `- **Additional evidenced delivery:** ${omitted} change${omitted === 1 ? "" : "s"} retained in the census but omitted from this Teams view to keep the report readable.`,
+          ]),
+    ];
+  });
+  const sources = [...new Set(report.capsules.flatMap(({ sources: values }) => values))];
+  const sourceCoverage = report.census.sourceCoverage
+    .map(
+      ({ source, available, candidateCount }) =>
+        `${sourceLabel[source]} ${available ? `${candidateCount} accepted` : "unavailable"}`,
+    )
+    .join("; ");
+  const text = [
+    `## ${reportPeriodTitle(report)}`,
+    `**Period:** ${reportPeriodLabel(report)}`,
+    "### Executive summary",
+    report.capsules.length === 0
+      ? "No delivery change met the declared completion-stage rule inside this period. Sarathi will not promote other recent activity into quarterly delivery."
+      : `The authorized census reconstructed ${report.capsules.length} delivery change${report.capsules.length === 1 ? "" : "s"} across ${report.capabilitySections.length} mapped capability theme${report.capabilitySections.length === 1 ? "" : "s"}. This reports observed delivery stages; it does not claim business impact without outcome evidence.`,
+    "### Delivered by capability",
+    ...(sectionLines.length === 0
+      ? ["- No accepted change could be mapped to a declared capability."]
+      : sectionLines),
+    ...(report.unmappedCapsules.length === 0
+      ? []
+      : [
+          "### Delivered work awaiting capability mapping",
+          ...report.unmappedCapsules.slice(0, 20).map(capsuleLine),
+        ]),
+    "### Outcomes and delivery confidence",
+    `- **Observed delivery:** ${report.capsules.length} change${report.capsules.length === 1 ? "" : "s"} reached a declared merged, released, or deployed stage.`,
+    "- **Business impact:** Unknown unless an authorized outcome measurement or attributed impact claim is linked. Technical completion is not presented as customer or business impact.",
+    "### Gaps and incomplete delivery chains",
+    `- ${report.incompleteChainCount} change${report.incompleteChainCount === 1 ? "" : "s"} lack${report.incompleteChainCount === 1 ? "s" : ""} one or more later stages such as release, deployment, acceptance, or observed impact.`,
+    `- ${report.unmappedCapsules.length} accepted change${report.unmappedCapsules.length === 1 ? "" : "s"} remain${report.unmappedCapsules.length === 1 ? "s" : ""} outside the reviewed capability ledger.`,
+    ...(result.unavailableSources.length === 0
+      ? []
+      : [
+          `- Unavailable sources: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}. The report is partial.`,
+        ]),
+    "### Coverage and freshness",
+    `- Census examined ${report.census.examinedCandidateCount} authorized records across ${report.census.pagination.pagesRead} page(s), accepted ${report.census.candidateCount}, collapsed ${report.census.duplicateCandidateCount} duplicate(s), and excluded ${report.census.excludedCandidateCount}.`,
+    `- Source coverage: ${sourceCoverage || "No configured source coverage was reported"}.`,
+    `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
+    "### Method and inference boundary",
+    "- The report is reconstructed from authorized indexed evidence, grouped through the reviewed capability ledger, and deduplicated into delivery changes before presentation. Unsupported outcomes and missing stages remain explicitly unknown.",
+    "### Timing",
+    `Completed in ${elapsedMs} ms.`,
+  ].join("\n");
+  return {
+    ...answer,
+    text,
+    citations,
+    status:
+      !report.census.complete || result.unavailableSources.length > 0
+        ? "partial"
+        : report.capsules.length === 0
+          ? "empty"
+          : "ok",
+    periodDeliveryReport: report,
+  };
+};
+
 const renderResponseMode = (
   answer: DeliveryAnswerDraft,
   request: DeliveryAssistantRequest,
   result: DeliveryQueryResult,
   responseMode: DeliveryResponseMode,
+  responseProduct: DeliveryResponseProduct,
   elapsedMs: number,
 ): DeliveryAnswerDraft => {
   if (responseMode === "fast") return answer;
+  if (responseProduct === "leadership_report" && result.periodDeliveryReport !== undefined)
+    return renderLeadershipReport(answer, result.periodDeliveryReport, result, elapsedMs);
   const lines = answer.text.split(/\r?\n/).filter(Boolean);
   const opening =
     lines.find((line) => !/^(?:-|\d+\.)\s/.test(line)) ?? responseOpening(answer.plan);
@@ -899,13 +1046,16 @@ const responseAcceptance = (
   ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
   const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
-  const materialLines = lines.filter(
-    (line) =>
-      /^(?:-|\d+\.)\s/.test(line) &&
-      !line.includes("**Coverage:**") &&
-      !line.includes("No explicit source-backed") &&
-      !line.includes("No source-backed evidence"),
-  );
+  const materialLines =
+    responseProduct === "leadership_report"
+      ? lines.filter((line) => /^- \*\*.+\*\* —/.test(line))
+      : lines.filter(
+          (line) =>
+            /^(?:-|\d+\.)\s/.test(line) &&
+            !line.includes("**Coverage:**") &&
+            !line.includes("No explicit source-backed") &&
+            !line.includes("No source-backed evidence"),
+        );
   const citedLines = materialLines.filter((line) => /\]\(https:\/\//.test(line));
   const allowedUrls = new Set([
     ...result.items.map((item) => item.citationUrl),
@@ -940,14 +1090,24 @@ const responseAcceptance = (
       ? headings.size === 0 && lines.length <= policy.maximumLines + 2
       : responseMode === "structured"
         ? headings.has("### Delivery brief") && headings.has("### Evidence")
-        : [
-            "### Scope and time window",
-            "### Sources and freshness",
-            "### Evidence",
-            "### Conflicts and gaps",
-            "### Inference boundary",
-            "### Timing",
-          ].every((heading) => headings.has(heading));
+        : responseProduct === "leadership_report"
+          ? [
+              "### Executive summary",
+              "### Delivered by capability",
+              "### Outcomes and delivery confidence",
+              "### Gaps and incomplete delivery chains",
+              "### Coverage and freshness",
+              "### Method and inference boundary",
+              "### Timing",
+            ].every((heading) => headings.has(heading))
+          : [
+              "### Scope and time window",
+              "### Sources and freshness",
+              "### Evidence",
+              "### Conflicts and gaps",
+              "### Inference boundary",
+              "### Timing",
+            ].every((heading) => headings.has(heading));
   const latencyPassed = elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
@@ -1210,11 +1370,32 @@ export const createDeliveryAssistant = (
             const missingRequiredIntents = plan.intents.filter(
               (intent) => !representedIntents.has(intent),
             );
+            const periodDeliveryReport =
+              responseProduct === "leadership_report" &&
+              merged.periodCensus !== undefined &&
+              configuration.capabilityLedger !== undefined
+                ? buildPeriodDeliveryReport({
+                    census: merged.periodCensus,
+                    items: merged.items,
+                    capabilityLedger: configuration.capabilityLedger,
+                  })
+                : undefined;
+            const reportMissingDelivery =
+              responseProduct === "leadership_report" &&
+              plan.intents.includes("delivered") &&
+              (periodDeliveryReport === undefined || periodDeliveryReport.capsules.length === 0);
             const completed: DeliveryQueryResult = {
               ...merged,
-              complete: merged.complete && missingRequiredSources.length === 0,
+              complete:
+                merged.complete && missingRequiredSources.length === 0 && !reportMissingDelivery,
               missingRequiredSources,
-              missingRequiredIntents,
+              missingRequiredIntents: [
+                ...new Set([
+                  ...missingRequiredIntents,
+                  ...(reportMissingDelivery ? (["delivered"] as const) : []),
+                ]),
+              ],
+              ...(periodDeliveryReport === undefined ? {} : { periodDeliveryReport }),
             };
             const remainingCompositionBudgetMs = totalBudgetMs - (Date.now() - startedAt) - 100;
             const composed =
@@ -1238,6 +1419,7 @@ export const createDeliveryAssistant = (
                   request,
                   completed,
                   responseMode,
+                  responseProduct,
                   elapsedMs,
                 );
                 return {

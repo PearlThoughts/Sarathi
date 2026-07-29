@@ -25,6 +25,7 @@ import {
   workspaceProjectionFromEnvironment,
 } from "../../infrastructure/teams/index.ts";
 import {
+  type CapabilityLedger,
   createDeliveryAssistant,
   type DeliveryAssistantAnswer,
   type DeliveryAssistantRequest,
@@ -40,6 +41,7 @@ import {
   selectDeliveryResponseMode,
   selectDeliveryResponseProduct,
   summarizeDeliveryEvaluation,
+  validateCapabilityLedger,
 } from "../../modules/delivery-intelligence/index.ts";
 import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
@@ -319,6 +321,15 @@ const answerFromRuntime = async (
   const entityCatalog = parseDeliveryEntityCatalog(
     environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
   );
+  const capabilityLedger =
+    environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON === undefined
+      ? undefined
+      : validateCapabilityLedger(
+          parseJson<CapabilityLedger>(
+            "SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON",
+            environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON,
+          ),
+        );
   try {
     return await runRepositoryEffect(
       createDeliveryAssistant({
@@ -347,6 +358,7 @@ const answerFromRuntime = async (
         answerComposer: createAiSdkDeliveryAnswerComposer(
           createGroundedAnswerGeneratorFromEnvironment(environment),
         ),
+        capabilityLedger,
         ...deliveryResponseBudget,
       }).answer(request),
     );
@@ -471,6 +483,7 @@ export const runDeliveryCommand = async (
             unavailableSources: answer.unavailableSources,
             conflicts: answer.conflicts.length,
             responseMode: answer.responseMode,
+            responseProduct: answer.responseProduct,
             acceptance: answer.acceptance,
           },
           intents: answer.plan.intents,
