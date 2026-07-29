@@ -395,6 +395,7 @@ const queryPeriodCensus = async (
         }
       : { kind: "absolute", ...window });
   const candidates: PeriodCensusCandidate[] = [];
+  const censusItems: DeliveryResultItem[] = [];
   let pagesRead = 0;
   let paginationExhausted = sourceDefinedBoundary === undefined && window !== undefined;
   const remaining = (): number =>
@@ -408,16 +409,27 @@ const queryPeriodCensus = async (
       const rows = await database
         .select({
           id: deliveryObjectTable.id,
+          workspaceId: deliveryObjectTable.workspaceId,
           sourceKind: deliveryObjectTable.sourceKind,
           canonicalKey: deliveryObjectTable.canonicalKey,
+          externalKey: deliveryObjectTable.externalKey,
+          title: deliveryObjectTable.title,
           objectKind: deliveryObjectTable.objectKind,
           lifecycleState: deliveryObjectTable.lifecycleState,
           observedAt: deliveryObjectTable.observedAt,
+          sourceCreatedAt: deliveryObjectTable.sourceCreatedAt,
+          sourceUpdatedAt: deliveryObjectTable.sourceUpdatedAt,
+          indexedAt: deliveryObjectTable.indexedAt,
+          sensitivity: deliveryObjectTable.sensitivity,
+          canonicalUrl: knowledgeItemTable.canonicalUrl,
+          authority: knowledgeItemTable.authority,
         })
         .from(deliveryObjectTable)
+        .innerJoin(knowledgeItemTable, eq(knowledgeItemTable.id, deliveryObjectTable.sourceItemId))
         .where(
           and(
             eq(deliveryObjectTable.workspaceId, context.workspaceId),
+            eq(knowledgeItemTable.workspaceId, context.workspaceId),
             authorizationCondition(database, context, "object", deliveryObjectTable.id),
             inArray(
               deliveryObjectTable.sensitivity,
@@ -426,6 +438,7 @@ const queryPeriodCensus = async (
             inArray(deliveryObjectTable.objectKind, ["work_item", "deliverable"]),
             eq(deliveryObjectTable.active, true),
             isNull(deliveryObjectTable.deletedAt),
+            isNull(knowledgeItemTable.deletedAt),
             gte(deliveryObjectTable.observedAt, window.fromInclusive),
             lt(deliveryObjectTable.observedAt, window.toExclusive),
           ),
@@ -451,6 +464,25 @@ const queryPeriodCensus = async (
           classification: completionStage === undefined ? "generic_source_update" : "candidate",
           completionStage,
         });
+        if (completionStage !== undefined)
+          censusItems.push({
+            id: row.id,
+            workspaceId: row.workspaceId,
+            source: sourceKind(row.sourceKind),
+            selector: "period_census",
+            intent: operation.purpose,
+            title: row.title,
+            summary: `${row.externalKey}: ${row.title} — ${completionStage}`,
+            citationUrl: row.canonicalUrl,
+            sensitivity: sensitivity(row.sensitivity),
+            authority: row.authority,
+            observedAt: row.observedAt,
+            sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+            sourceUpdatedAt: row.sourceUpdatedAt,
+            indexedAt: row.indexedAt,
+            dedupeKey: `object:${row.canonicalKey}:${completionStage}`,
+            completionStage,
+          });
       }
       offset += rows.length;
       if (rows.length < limit) break;
@@ -466,16 +498,29 @@ const queryPeriodCensus = async (
       const rows = await database
         .select({
           id: deliveryObservationTable.id,
+          workspaceId: deliveryObservationTable.workspaceId,
           sourceKind: deliveryObservationTable.sourceKind,
           subjectObjectId: deliveryObservationTable.subjectObjectId,
           observationKind: deliveryObservationTable.observationKind,
+          summary: deliveryObservationTable.summary,
           dedupeKey: deliveryObservationTable.dedupeKey,
           occurredAt: deliveryObservationTable.occurredAt,
+          sourceCreatedAt: deliveryObservationTable.sourceCreatedAt,
+          sourceUpdatedAt: deliveryObservationTable.sourceUpdatedAt,
+          indexedAt: deliveryObservationTable.indexedAt,
+          sensitivity: deliveryObservationTable.sensitivity,
+          canonicalUrl: knowledgeItemTable.canonicalUrl,
+          authority: knowledgeItemTable.authority,
         })
         .from(deliveryObservationTable)
+        .innerJoin(
+          knowledgeItemTable,
+          eq(knowledgeItemTable.id, deliveryObservationTable.sourceItemId),
+        )
         .where(
           and(
             eq(deliveryObservationTable.workspaceId, context.workspaceId),
+            eq(knowledgeItemTable.workspaceId, context.workspaceId),
             authorizationCondition(database, context, "observation", deliveryObservationTable.id),
             inArray(
               deliveryObservationTable.sensitivity,
@@ -483,6 +528,7 @@ const queryPeriodCensus = async (
             ),
             eq(deliveryObservationTable.active, true),
             isNull(deliveryObservationTable.deletedAt),
+            isNull(knowledgeItemTable.deletedAt),
             gte(deliveryObservationTable.occurredAt, window.fromInclusive),
             lt(deliveryObservationTable.occurredAt, window.toExclusive),
           ),
@@ -491,7 +537,7 @@ const queryPeriodCensus = async (
         .limit(limit)
         .offset(offset);
       pagesRead += 1;
-      for (const row of rows)
+      for (const row of rows) {
         candidates.push({
           id: row.id,
           source: sourceKind(row.sourceKind),
@@ -502,6 +548,26 @@ const queryPeriodCensus = async (
             row.observationKind === "deployment" ? "candidate" : "generic_source_update",
           ...(row.observationKind === "deployment" ? { completionStage: "deployed" as const } : {}),
         });
+        if (row.observationKind === "deployment")
+          censusItems.push({
+            id: row.id,
+            workspaceId: row.workspaceId,
+            source: sourceKind(row.sourceKind),
+            selector: "period_census",
+            intent: operation.purpose,
+            title: "Deployment",
+            summary: row.summary,
+            citationUrl: row.canonicalUrl,
+            sensitivity: sensitivity(row.sensitivity),
+            authority: row.authority,
+            observedAt: row.occurredAt,
+            sourceCreatedAt: row.sourceCreatedAt ?? undefined,
+            sourceUpdatedAt: row.sourceUpdatedAt,
+            indexedAt: row.indexedAt,
+            dedupeKey: row.dedupeKey,
+            completionStage: "deployed",
+          });
+      }
       offset += rows.length;
       if (rows.length < limit) break;
       if (remaining() === 0) {
@@ -524,7 +590,7 @@ const queryPeriodCensus = async (
     unresolvedBoundary: sourceDefinedBoundary !== undefined || window === undefined,
   });
   return {
-    items: [],
+    items: censusItems,
     conflicts: [],
     unavailableSources: periodCensus.unavailableSources,
     complete: periodCensus.complete,

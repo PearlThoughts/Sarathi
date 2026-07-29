@@ -179,6 +179,132 @@ describe("delivery intelligence application", () => {
     });
   });
 
+  it("renders a previous-quarter delivery question as a capability-grouped leadership report", async () => {
+    const periodCensus = {
+      version: 1,
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-03-31T18:30:00.000Z",
+        toExclusive: "2026-06-30T18:30:00.000Z",
+      },
+      timeZone: "Asia/Kolkata",
+      examinedCandidateCount: 3,
+      candidateCount: 2,
+      deliveredCandidateCount: 2,
+      excludedCandidateCount: 1,
+      duplicateCandidateCount: 0,
+      unmappedCandidateCount: 0,
+      exclusions: { generic_source_update_not_completion: 1 },
+      unavailableSources: [],
+      sourceCoverage: [
+        {
+          source: "github",
+          available: true,
+          checkpointAt: "2026-07-20T12:00:00.000Z",
+          candidateCount: 1,
+        },
+        {
+          source: "jira",
+          available: true,
+          checkpointAt: "2026-07-20T12:00:00.000Z",
+          candidateCount: 1,
+        },
+      ],
+      pagination: {
+        pageSize: 200,
+        pagesRead: 2,
+        exhausted: true,
+        maximumCandidates: 50_000,
+      },
+      complete: true,
+      replayChecksum: "sha256-private-report-census",
+    } as const;
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item(
+                "github",
+                "github-pr",
+                "F1851-101 added SEO metadata publishing support",
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              title: "SEO metadata publishing",
+              citationUrl: "https://github.com/example/product/pull/101",
+              completionStage: "merged" as const,
+              observedAt: "2026-05-12T10:00:00.000Z",
+            },
+            {
+              ...item(
+                "jira",
+                "jira-work",
+                "F1851-101 completed SEO metadata publishing",
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              title: "SEO metadata publishing",
+              completionStage: "merged" as const,
+              observedAt: "2026-05-12T10:00:00.000Z",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            {
+              key: "seo-improvements",
+              title: "SEO improvements",
+              aliases: [{ value: "SEO" }, { value: "metadata" }],
+            },
+          ],
+        },
+        now: () => new Date(request.requestedAt),
+      }).answer({
+        ...request,
+        question: "What have we delivered in the previous quarter?",
+      }),
+    );
+
+    expect(answer).toMatchObject({
+      responseProduct: "leadership_report",
+      responseMode: "deep_dive",
+      status: "ok",
+      periodDeliveryReport: {
+        capsules: [{ completionStage: "merged", capabilityKeys: ["seo-improvements"] }],
+        capabilitySections: [{ key: "seo-improvements" }],
+      },
+      acceptance: {
+        product: "leadership_report",
+        formatPassed: true,
+        citationPassed: true,
+        groundingPassed: true,
+        completenessPassed: true,
+        passed: true,
+      },
+    });
+    expect(answer.text).toContain("## Q2 2026 delivery report");
+    expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
+    expect(answer.text).toContain("### SEO improvements");
+    expect(answer.text).toContain("### Outcomes and delivery confidence");
+    expect(answer.text).toContain("Business impact:** Unknown");
+    expect(answer.text).not.toContain("replay checksum");
+    expect(answer.text).not.toContain("### Delivery brief");
+    expect(answer.text.match(/SEO metadata publishing/g)).toHaveLength(1);
+  });
+
   it("rejects finance before any source call", async () => {
     const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
       Effect.succeed({

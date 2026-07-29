@@ -108,6 +108,9 @@ describe("delivery intelligence domain", () => {
     expect(selectDeliveryResponseProduct("Prepare the quarterly leadership report")).toBe(
       "leadership_report",
     );
+    expect(selectDeliveryResponseProduct("What have we delivered in the previous quarter?")).toBe(
+      "leadership_report",
+    );
     expect(
       selectDeliveryResponseProduct("Investigate the repository implementation in a deep dive"),
     ).toBe("implementation_investigation");
