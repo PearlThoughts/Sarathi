@@ -863,16 +863,19 @@ const renderLeadershipReport = (
       .replace(/^(?:feat|fix|chore|docs|refactor|build|ci|test)(?:\([^)]+\))?\s*:\s*/i, "")
       .replace(/^(?:feature|fix)[/-]/i, "")
       .trim();
+  const narrativeSummary = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
+    if (/(?:github|jira|vault|teams):[^\s]+(?::|\/)/i.test(capsule.summary)) return "";
+    const title = cleanHeadline(capsule.title);
+    const summary = cleanHeadline(capsule.summary);
+    return summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en") ? "" : summary;
+  };
   const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
     const links = capsule.citations
       .slice(0, 2)
       .map(({ source, url }) => citation(source, url))
       .join(" ");
     const title = cleanHeadline(capsule.title);
-    const summary = cleanHeadline(capsule.summary);
-    const safeSummary = /(?:github|jira|vault|teams):[^\s]+(?::|\/)/i.test(capsule.summary)
-      ? ""
-      : summary;
+    const safeSummary = narrativeSummary(capsule);
     const detail =
       safeSummary === "" || safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
         ? `${capsule.completionStage} evidence`
@@ -881,9 +884,14 @@ const renderLeadershipReport = (
   };
   const estimatedCapsuleLineLength = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
     cleanHeadline(capsule.title).length +
-    cleanHeadline(capsule.summary).length +
-    capsule.citations.slice(0, 2).reduce((length, { url }) => length + url.length + 24, 0) +
-    48;
+    narrativeSummary(capsule).length +
+    capsule.citations
+      .slice(0, 2)
+      .reduce(
+        (length, { source, url }) => length + sourceLabel[source].length + url.length + 10,
+        0,
+      ) +
+    40;
   const reportFailure = (reasons: readonly string[], status: "partial" | "empty") => ({
     ...answer,
     text: [
