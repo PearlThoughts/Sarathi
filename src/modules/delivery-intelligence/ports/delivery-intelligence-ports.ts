@@ -11,7 +11,7 @@ import type {
   DeliveryResponseMode,
   DeliveryResponseProduct,
 } from "../domain/delivery-response-mode.ts";
-import type { PeriodCensus } from "../domain/period-census.ts";
+import type { DeliveryCompletionStage, PeriodCensus } from "../domain/period-census.ts";
 import type { CapabilityLedger, PeriodDeliveryReport } from "../domain/period-delivery-report.ts";
 
 export type DeliveryQueryContext = {
@@ -69,7 +69,7 @@ export type DeliveryResultItem = {
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
   readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
-  readonly completionStage?: "merged" | "released" | "deployed" | undefined;
+  readonly completionStage?: DeliveryCompletionStage | undefined;
 };
 
 export type DeliveryOwnerReference = {
