@@ -4,6 +4,12 @@ import type { GroundedAnswerGenerator } from "../../modules/teams-mention/index.
 const boundedContext = (value: string, maximumCharacters: number): string =>
   value.trim().slice(0, maximumCharacters);
 
+const reportCapsuleTitleCharacters = 320;
+const reportCapsuleExcerptCharacters = 700;
+const supplementalTitleCharacters = 320;
+const supplementalExcerptCharacters = 900;
+const maximumSupplementalEvidence = 36;
+
 const balancedSupplementalEvidence = <Evidence extends { readonly source: string }>(
   evidence: readonly Evidence[],
 ): readonly Evidence[] => {
@@ -15,14 +21,14 @@ const balancedSupplementalEvidence = <Evidence extends { readonly source: string
     ]),
   );
   const selected: Evidence[] = [];
-  const maximumEvidence = 100;
   while (
-    selected.length < maximumEvidence &&
+    selected.length < maximumSupplementalEvidence &&
     [...buckets.values()].some((remaining) => remaining.length > 0)
   )
     for (const source of sourceOrder) {
       const candidate = buckets.get(source)?.shift();
-      if (candidate !== undefined && selected.length < maximumEvidence) selected.push(candidate);
+      if (candidate !== undefined && selected.length < maximumSupplementalEvidence)
+        selected.push(candidate);
     }
   return selected;
 };
@@ -73,10 +79,13 @@ const reportEvidence = (
         source: citation.source,
         sourceId: capsule.id,
         sourceUrl: citation.url,
-        title: boundedContext(`Completed change — ${section.title}: ${capsule.title}`, 500),
+        title: boundedContext(
+          `Completed change — ${section.title}: ${capsule.title}`,
+          reportCapsuleTitleCharacters,
+        ),
         excerpt: boundedContext(
           `${capsule.summary} Completion evidence: ${capsule.completionStage}. Contributing sources: ${capsule.sources.join(", ")}.`,
-          2_400,
+          reportCapsuleExcerptCharacters,
         ),
         occurredAt: capsule.completedAt,
         updatedAt: capsule.completedAt,
@@ -103,9 +112,9 @@ export const createAiSdkDeliveryAnswerComposer = (
       sourceUrl: item.citationUrl,
       title: boundedContext(
         `${item.evidenceRole === "declared_intent" ? "Declared intent" : "Observed evidence"} — ${item.intent.replaceAll("_", " ")}: ${item.title}`,
-        500,
+        supplementalTitleCharacters,
       ),
-      excerpt: boundedContext(item.summary, 2_400),
+      excerpt: boundedContext(item.summary, supplementalExcerptCharacters),
       occurredAt: item.observedAt ?? input.requestedAt,
       updatedAt: item.sourceUpdatedAt ?? item.observedAt ?? input.requestedAt,
       sensitivity: item.sensitivity,
