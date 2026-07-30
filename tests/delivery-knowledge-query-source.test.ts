@@ -132,6 +132,64 @@ describe("delivery knowledge query source", () => {
     expect(result.items.map(({ title }) => title)).toEqual(["Builder delivery status"]);
   });
 
+  it("retains older master knowledge as context for a bounded delivery period", async () => {
+    const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() =>
+      Effect.succeed([
+        {
+          id: "master-context",
+          source: "vault",
+          sourceId: "master-context",
+          title: "Modern Website Builder product context",
+          excerpt: "The product context explains the launch and customer outcome model.",
+          citationUrl: "https://example.com/vault/master-context",
+          sourceUpdatedAt: "2026-01-10T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 0.95,
+          freshness: 0.5,
+          componentRanks: { keyword: 1 },
+          score: 0.9,
+        },
+      ]),
+    );
+    const plan = planDeliveryQuestion("What did the team deliver in the last 30 days?");
+    if (plan === undefined) throw new Error("Expected a period delivery plan");
+    const source = createDeliveryKnowledgeQuerySource({
+      repository: {
+        reconcile: () => Effect.die("not used"),
+        search: () => Effect.die("not used"),
+        searchLexical,
+      },
+      workspaceId: "workspace-1851",
+      allowedActorIds: new Set(["actor-1851"]),
+      audienceIds: ["team-1851"],
+    });
+
+    const result = await Effect.runPromise(
+      source.execute(
+        {
+          workspaceId: "workspace-1851",
+          actorId: "actor-1851",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-20T10:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-20T10:02:30.000Z",
+          question: "What did the team deliver in the last 30 days?",
+        },
+        plan,
+      ),
+    );
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: "master-context",
+        source: "vault",
+        selector: "knowledge",
+        intent: "delivered",
+      }),
+    ]);
+  });
+
   it("excludes unmapped actors before repository access", async () => {
     const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() => Effect.succeed([]));
     const plan = planDeliveryQuestion("What should I know before standup?");

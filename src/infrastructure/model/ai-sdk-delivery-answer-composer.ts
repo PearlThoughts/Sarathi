@@ -1,6 +1,92 @@
 import type { DeliveryAnswerComposer } from "../../modules/delivery-intelligence/index.ts";
 import type { GroundedAnswerGenerator } from "../../modules/teams-mention/index.ts";
 
+const boundedContext = (value: string, maximumCharacters: number): string =>
+  value.trim().slice(0, maximumCharacters);
+
+const balancedSupplementalEvidence = <Evidence extends { readonly source: string }>(
+  evidence: readonly Evidence[],
+): readonly Evidence[] => {
+  const sourceOrder = ["vault", "teams", "github", "jira", "email", "intent"];
+  const buckets = new Map(
+    sourceOrder.map((source) => [
+      source,
+      evidence.filter((candidate) => candidate.source === source),
+    ]),
+  );
+  const selected: Evidence[] = [];
+  const maximumEvidence = 100;
+  while (
+    selected.length < maximumEvidence &&
+    [...buckets.values()].some((remaining) => remaining.length > 0)
+  )
+    for (const source of sourceOrder) {
+      const candidate = buckets.get(source)?.shift();
+      if (candidate !== undefined && selected.length < maximumEvidence) selected.push(candidate);
+    }
+  return selected;
+};
+
+const reportEvidence = (
+  input: Parameters<DeliveryAnswerComposer["compose"]>[0],
+  freshness: (indexedAt: string | undefined) => "current" | "stale",
+) => {
+  const report = input.periodDeliveryReport;
+  if (report === undefined) return [];
+  const maximumCapsules = 160;
+  const sections = report.capabilitySections.map((section) => ({
+    section,
+    remaining: [...section.capsules],
+  }));
+  const selected: {
+    readonly section: (typeof report.capabilitySections)[number];
+    readonly capsule: (typeof report.capsules)[number];
+  }[] = [];
+  while (
+    selected.length < maximumCapsules &&
+    sections.some(({ remaining }) => remaining.length > 0)
+  )
+    for (const entry of sections) {
+      const capsule = entry.remaining.shift();
+      if (capsule === undefined || selected.length >= maximumCapsules) continue;
+      selected.push({ section: entry.section, capsule });
+    }
+  for (const capsule of report.unmappedCapsules) {
+    if (selected.length >= maximumCapsules) break;
+    if (!selected.some((candidate) => candidate.capsule.id === capsule.id))
+      selected.push({
+        section: {
+          key: "unmapped",
+          title: "Unmapped delivery",
+          evidencedAliases: [],
+          capsules: report.unmappedCapsules,
+          outcomes: [],
+        },
+        capsule,
+      });
+  }
+  return selected.flatMap(({ section, capsule }) => {
+    const citation = capsule.citations[0];
+    if (citation === undefined) return [];
+    return [
+      {
+        source: citation.source,
+        sourceId: capsule.id,
+        sourceUrl: citation.url,
+        title: boundedContext(`Completed change — ${section.title}: ${capsule.title}`, 500),
+        excerpt: boundedContext(
+          `${capsule.summary} Completion evidence: ${capsule.completionStage}. Contributing sources: ${capsule.sources.join(", ")}.`,
+          2_400,
+        ),
+        occurredAt: capsule.completedAt,
+        updatedAt: capsule.completedAt,
+        sensitivity: "internal" as const,
+        freshness: freshness(capsule.completedAt),
+      },
+    ];
+  });
+};
+
 export const createAiSdkDeliveryAnswerComposer = (
   generator: GroundedAnswerGenerator,
 ): DeliveryAnswerComposer => ({
@@ -15,8 +101,11 @@ export const createAiSdkDeliveryAnswerComposer = (
       source: item.source,
       sourceId: item.id,
       sourceUrl: item.citationUrl,
-      title: `${item.evidenceRole === "declared_intent" ? "Declared intent" : "Observed evidence"} — ${item.intent.replaceAll("_", " ")}: ${item.title}`,
-      excerpt: item.summary,
+      title: boundedContext(
+        `${item.evidenceRole === "declared_intent" ? "Declared intent" : "Observed evidence"} — ${item.intent.replaceAll("_", " ")}: ${item.title}`,
+        500,
+      ),
+      excerpt: boundedContext(item.summary, 2_400),
       occurredAt: item.observedAt ?? input.requestedAt,
       updatedAt: item.sourceUpdatedAt ?? item.observedAt ?? input.requestedAt,
       sensitivity: item.sensitivity,
@@ -35,10 +124,50 @@ export const createAiSdkDeliveryAnswerComposer = (
         freshness: freshness(claim.indexedAt),
       })),
     );
+    const reportInformation = reportEvidence(input, freshness);
+    const reportUrls = new Set(reportInformation.map(({ sourceUrl }) => sourceUrl));
+    const supplementalInformation = balancedSupplementalEvidence(
+      itemInformation.filter((item) => !reportUrls.has(item.sourceUrl)),
+    );
+    const report = input.periodDeliveryReport;
     return generator.generate({
       workspaceId: input.workspaceId,
       question: input.question,
-      evidence: [...itemInformation, ...conflictInformation],
+      evidence: [...reportInformation, ...supplementalInformation, ...conflictInformation],
+      ...(report === undefined
+        ? {}
+        : {
+            presentation: {
+              kind: "delivery_report" as const,
+              period:
+                report.census.boundary.kind === "absolute"
+                  ? {
+                      kind: "absolute" as const,
+                      fromInclusive: report.census.boundary.fromInclusive,
+                      toExclusive: report.census.boundary.toExclusive,
+                      timeZone: report.census.timeZone,
+                    }
+                  : {
+                      kind: "source_defined" as const,
+                      reference: report.census.boundary.reference,
+                      timeZone: report.census.timeZone,
+                    },
+              coverage: {
+                complete: report.census.complete,
+                examinedRecords: report.census.examinedCandidateCount,
+                acceptedChanges: report.capsules.length,
+                duplicateRecords: report.census.duplicateCandidateCount,
+                excludedRecords: report.census.excludedCandidateCount,
+                unmappedChanges: report.unmappedCapsules.length,
+                unavailableSources: report.census.unavailableSources,
+              },
+              capabilitySections: report.capabilitySections.map((section) => ({
+                title: section.title,
+                changeCount: section.capsules.length,
+                evidencedInitiatives: section.evidencedAliases,
+              })),
+            },
+          }),
     });
   },
 });

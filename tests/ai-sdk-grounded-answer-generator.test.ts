@@ -107,6 +107,64 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 
+  it("produces an unconstrained delivery-manager synthesis for period reports", async () => {
+    const text = [
+      "## Executive summary",
+      "The team completed the publishing foundation and made the operational handoff explicit.",
+      "",
+      "## Delivered by capability",
+      "### Modern Website Builder",
+      "The publishing path now carries SEO metadata through release, consolidating the Jira outcome and repository implementation into one initiative. [Delivery](https://jira.example.test/DEMO-754)",
+      "",
+      "## Outcomes and business context",
+      "The supplied information establishes delivery completion, but does not contain a measured customer or commercial outcome.",
+      "",
+      "## Gaps and unknowns",
+      "No accepted customer outcome was supplied for this period.",
+    ].join("\n");
+    const model = successfulModel(text);
+    const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
+    const reportEnvelope = {
+      ...envelope,
+      presentation: {
+        kind: "delivery_report" as const,
+        period: {
+          kind: "absolute" as const,
+          fromInclusive: "2026-07-01T00:00:00.000Z",
+          toExclusive: "2026-07-31T00:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+        },
+        coverage: {
+          complete: true,
+          examinedRecords: 42,
+          acceptedChanges: 7,
+          duplicateRecords: 2,
+          excludedRecords: 1,
+          unmappedChanges: 0,
+          unavailableSources: [],
+        },
+        capabilitySections: [
+          {
+            title: "Modern Website Builder",
+            changeCount: 7,
+            evidencedInitiatives: ["SEO publishing"],
+          },
+        ],
+      },
+    };
+
+    await expect(Effect.runPromise(generator.generate(reportEnvelope))).resolves.toMatchObject({
+      text,
+      citations: [{ url: "https://jira.example.test/DEMO-754" }],
+    });
+    const request = JSON.stringify(model.doGenerateCalls);
+    expect(request).toContain("experienced delivery manager");
+    expect(request).toContain("acceptedChanges");
+    expect(request).toContain("Modern Website Builder");
+    expect(request).toContain("Do not impose a three-to-five-line");
+    expect(request).not.toContain("Finish with exactly one numbered");
+  });
+
   it("rejects verbose, uncited, and invented-citation answers before delivery", async () => {
     for (const text of [
       "Uncited answer.\nStill uncited.",

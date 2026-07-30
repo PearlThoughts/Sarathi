@@ -151,11 +151,11 @@ describe("delivery intelligence application", () => {
 
     expect(answer).toMatchObject({
       responseProduct: "period_delivery_brief",
-      responseMode: "structured",
+      responseMode: "deep_dive",
       responseBudget: {
-        sourceTimeoutMs: 8_000,
-        compositionTimeoutMs: 4_000,
-        totalBudgetMs: 12_000,
+        sourceTimeoutMs: 90_000,
+        compositionTimeoutMs: 60_000,
+        totalBudgetMs: 150_000,
       },
       periodCensus: {
         candidateCount: 40,
@@ -164,21 +164,168 @@ describe("delivery intelligence application", () => {
       },
       acceptance: {
         product: "period_delivery_brief",
-        mode: "structured",
+        mode: "deep_dive",
       },
     });
     expect(answer.text).toContain("### Coverage");
-    expect(answer.text).toContain("Examined 43 authorized period records across 3 page(s)");
+    expect(answer.text).toContain("Period census examined 43 authorized records across 3 page(s)");
     expect(execute.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
-      responseMode: "structured",
-      totalBudgetMs: 12_000,
-      sourceTimeoutMs: 8_000,
-      deadlineAt: "2026-07-20T13:09:12.000Z",
+      responseMode: "deep_dive",
+      totalBudgetMs: 150_000,
+      sourceTimeoutMs: 90_000,
+      deadlineAt: "2026-07-20T13:11:30.000Z",
     });
-    expect(execute.mock.calls[0]?.[1].operations.at(-1)).toMatchObject({
+    expect(
+      execute.mock.calls[0]?.[1].operations.find(({ select }) => select === "period_census"),
+    ).toMatchObject({
       select: "period_census",
       census: { pageSize: 200, maximumCandidates: 50_000 },
+    });
+  });
+
+  it("composes a sub-30-day report from completed changes and cross-source context", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
+      Effect.succeed({
+        text: [
+          "## Executive summary",
+          "The team completed the publishing foundation and aligned the operational handoff.",
+          "## Delivered by capability",
+          "### Modern Website Builder",
+          "SEO publishing moved through a merged implementation, while the Vault record preserves the product rationale. [PR](https://example.com/github/publishing-pr)",
+          "## Outcomes and business context",
+          "The indexed context establishes the release rationale but contains no measured customer outcome.",
+          "## Gaps and unknowns",
+          "Customer adoption remains unknown from the supplied period context.",
+        ].join("\n"),
+        citations: [{ label: "PR", url: "https://example.com/github/publishing-pr" }],
+      }),
+    );
+    const execute = vi.fn<DeliveryQuerySource["execute"]>((context) =>
+      context.question.startsWith("Project rationale")
+        ? Effect.succeed({
+            items: [
+              {
+                ...item(
+                  "vault",
+                  "publishing-rationale",
+                  "Publishing metadata is required for launch discoverability",
+                  "delivered",
+                ),
+                selector: "knowledge",
+              },
+            ],
+            conflicts: [],
+            unavailableSources: [],
+            complete: true,
+          })
+        : Effect.succeed({
+            items: [
+              {
+                ...item("github", "publishing-pr", "Merged SEO metadata publishing", "delivered"),
+                selector: "period_census",
+                completionStage: "merged",
+                subjectAliases: ["SEO publishing"],
+              },
+              {
+                ...item(
+                  "teams",
+                  "publishing-handoff",
+                  "The team confirmed the publishing handoff",
+                  "delivered",
+                ),
+                selector: "observations",
+              },
+            ],
+            conflicts: [],
+            unavailableSources: [],
+            complete: true,
+            periodCensus: {
+              version: 1,
+              boundary: {
+                kind: "absolute",
+                fromInclusive: "2026-06-20T18:30:00.000Z",
+                toExclusive: "2026-07-20T18:30:00.000Z",
+              },
+              timeZone: "Asia/Kolkata",
+              examinedCandidateCount: 3,
+              candidateCount: 1,
+              deliveredCandidateCount: 1,
+              excludedCandidateCount: 0,
+              duplicateCandidateCount: 0,
+              unmappedCandidateCount: 0,
+              exclusions: {},
+              unavailableSources: [],
+              sourceCoverage: [
+                {
+                  source: "github",
+                  available: true,
+                  checkpointAt: "2026-07-20T12:00:00.000Z",
+                  candidateCount: 1,
+                },
+              ],
+              pagination: {
+                pageSize: 200,
+                pagesRead: 1,
+                exhausted: true,
+                maximumCandidates: 50_000,
+              },
+              complete: true,
+              replayChecksum: "sha256-sub-30-day",
+            },
+          }),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "period_census", "knowledge"],
+      execute,
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            {
+              key: "modern-website-builder",
+              title: "Modern Website Builder",
+              aliases: [{ value: "SEO publishing" }],
+            },
+          ],
+        },
+      }).answer({
+        ...request,
+        question: "What did the team deliver in the last 30 days?",
+      }),
+    );
+
+    expect(compose).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[1]?.[0].question).toContain(
+      "Project rationale, customer or business outcome",
+    );
+    expect(execute.mock.calls[1]?.[0].question).toContain("Modern Website Builder");
+    expect(compose.mock.calls[0]?.[0]).toMatchObject({
+      responseProduct: "period_delivery_brief",
+      responseMode: "deep_dive",
+      periodDeliveryReport: {
+        capsules: [expect.objectContaining({ title: "Merged SEO metadata publishing" })],
+      },
+    });
+    expect(compose.mock.calls[0]?.[0].items.map(({ source }) => source).toSorted()).toEqual([
+      "teams",
+      "vault",
+    ]);
+    expect(answer.text).toContain("## Executive summary");
+    expect(answer.text).toContain("Vault record preserves the product rationale");
+    expect(answer.text.split(/\r?\n/).length).toBeGreaterThan(5);
+    expect(answer.acceptance).toMatchObject({
+      mode: "deep_dive",
+      product: "period_delivery_brief",
+      formatPassed: true,
+      groundingPassed: true,
     });
   });
 
@@ -302,7 +449,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
     expect(answer.text).toContain("### 1. SEO improvements");
     expect(answer.text).toContain(
-      "1 source-supported change was completed in this capability during the quarter.",
+      "1 source-supported change was completed in this capability during the period.",
     );
     expect(answer.text).toContain("### Outcomes and delivery confidence");
     expect(answer.text).toContain("Business impact:** Not established");
