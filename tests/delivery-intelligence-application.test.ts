@@ -70,7 +70,7 @@ describe("delivery intelligence application", () => {
     expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBeUndefined();
     expect(deliveryResponseModePolicies.deep_dive.maximumLines).toBeUndefined();
     expect(deliveryResponseModePolicies.deep_dive.latencyTargetMs).toBeUndefined();
-    expect(deliveryResponseModePolicies.deep_dive.totalBudgetMs).toBe(150_000);
+    expect(deliveryResponseModePolicies.deep_dive.totalBudgetMs).toBe(240_000);
   });
 
   it("selects response depth before retrieval and honors an explicit mode", () => {
@@ -154,8 +154,8 @@ describe("delivery intelligence application", () => {
       responseMode: "deep_dive",
       responseBudget: {
         sourceTimeoutMs: 90_000,
-        compositionTimeoutMs: 60_000,
-        totalBudgetMs: 150_000,
+        compositionTimeoutMs: 120_000,
+        totalBudgetMs: 240_000,
       },
       periodCensus: {
         candidateCount: 40,
@@ -172,9 +172,9 @@ describe("delivery intelligence application", () => {
     expect(execute.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
       responseMode: "deep_dive",
-      totalBudgetMs: 150_000,
+      totalBudgetMs: 240_000,
       sourceTimeoutMs: 90_000,
-      deadlineAt: "2026-07-20T13:11:30.000Z",
+      deadlineAt: "2026-07-20T13:13:00.000Z",
     });
     expect(
       execute.mock.calls[0]?.[1].operations.find(({ select }) => select === "period_census"),
@@ -1165,7 +1165,7 @@ describe("delivery intelligence application", () => {
       expect(answer.text).toContain(heading);
     expect(answer.text).toContain("Latest source update: 2026-07-20T12:30:00.000Z");
     expect(answer.text).not.toContain("Completed in");
-    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:11:30.000Z");
+    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:13:00.000Z");
     expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 50)).toBe(true);
     expect(answer.acceptance.latencyTargetMs).toBeUndefined();
     expect(answer.acceptance.formatPassed).toBe(true);

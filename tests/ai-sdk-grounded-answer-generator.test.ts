@@ -163,6 +163,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain("Modern Website Builder");
     expect(request).toContain("Do not impose a three-to-five-line");
     expect(request).not.toContain("Finish with exactly one numbered");
+    expect(request).toContain('"maxOutputTokens":12000');
   });
 
   it("rejects verbose, uncited, and invented-citation answers before delivery", async () => {

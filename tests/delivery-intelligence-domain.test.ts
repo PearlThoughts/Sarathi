@@ -128,8 +128,8 @@ describe("delivery intelligence domain", () => {
       "leadership_report",
     );
     expect(deliveryTransportTimeoutMs("operational_answer", 7_000)).toBe(7_000);
-    expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(155_000);
-    expect(deliveryTransportTimeoutMs("leadership_report", 7_000)).toBe(155_000);
+    expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(245_000);
+    expect(deliveryTransportTimeoutMs("leadership_report", 7_000)).toBe(245_000);
   });
 
   it("reports deterministic authorized census coverage without promoting generic updates", () => {
