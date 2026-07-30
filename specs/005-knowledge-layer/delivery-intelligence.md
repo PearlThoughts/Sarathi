@@ -56,13 +56,13 @@ Unrecognized wording compiles to a bounded generic plan over structured delivery
 
 ## Reporting
 
-The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. The request selects an `operational_answer`, `period_delivery_brief`, `leadership_report`, or `implementation_investigation`. Fast answers prefer a short acknowledgement and compact cited facts; structured briefs may use sections, bullets, numbered actions, and supported tables; leadership reports preserve the requested scope, time window, sources, freshness, conflicts, gaps, outcome evidence classes, and inference boundaries even when the answer is longer.
+The executor runs independent required reads concurrently, applies authorization before materialization, deduplicates cross-source results, evaluates conflicts and completeness, and returns a bounded `DeliveryResult`. The request selects an `operational_answer`, `period_delivery_brief`, `leadership_report`, or `implementation_investigation`. User-visible answers lead with the requested delivery topics, place one feature or work item on each bullet, and move source links to a compact references footer. Successful reports do not append internal coverage, evidence, proof, confidence, or methodology prose.
 
 For period reports, bounded means a declared source/time scope—not an arbitrary top-k truncation. The executor first builds an exhaustive `PeriodCensus`, then groups and ranks the accepted population for presentation. [Evidence-First Period Delivery Reporting](./period-delivery-reporting.md) defines the required change capsules, capability ledger, delivery chains, outcome assertions, coverage accounting, and gold-report evaluation.
 
-Whole-team weekly work groups the result window by source-stable owner identity, shows one cited representative per owner, and reports named-owner, unassigned, and response-cap coverage explicitly. A next action appears only when a connected source supports it with a resolvable citation. Native Teams mentions identify a person only when that cited action safely resolves the person. Optional model synthesis receives only the authorized result envelope.
+Whole-team weekly work groups the result window by source-stable owner identity and shows one representative bullet per owner. A next action appears only when the question asks for one and a connected source supplies it. Native Teams mentions identify a person only when that action safely resolves the person. Optional model synthesis receives only the authorized result envelope.
 
-Supported fast operational queries must complete through Teams in less than ten seconds. Explicit deep dives may exceed that budget and must report elapsed time and coverage; they may not be silently truncated into a fast answer. Latency is a response-mode acceptance property, not the domain boundary.
+Operational and structured answers remain bounded for runtime safety but have no artificial user-facing line-count or ten-second acceptance requirement. They may use the space needed to answer every requested field cleanly.
 
 ### Live evaluation contract
 

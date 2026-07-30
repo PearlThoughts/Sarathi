@@ -167,7 +167,8 @@ describe("Strategy Kernel delivery query source", () => {
       }),
     );
 
-    expect(answer.text).toContain("Declared intent —");
+    expect(answer.text).toContain("**Planned:**");
+    expect(answer.text).not.toContain("Declared intent");
     expect(answer.citations).toEqual([
       {
         label: "Teams 1",

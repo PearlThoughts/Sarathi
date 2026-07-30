@@ -93,7 +93,7 @@ describe("AI SDK OpenRouter answer generator", () => {
 
   it("sends bounded project information and returns only supplied citations", async () => {
     const model = successfulModel(
-      "I found the current delivery position.\n- **Status:** Delivery is current. [Delivery](https://jira.example.test/DEMO-754)\n1. **Next:** Confirm QA ownership. [Delivery](https://jira.example.test/DEMO-754)",
+      "## Status\n- Delivery is current.\n### References\n- [Jira](https://jira.example.test/DEMO-754)",
     );
     const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
     await expect(Effect.runPromise(generator.generate(envelope))).resolves.toMatchObject({
@@ -103,24 +103,20 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(JSON.stringify(model.doGenerateCalls)).toContain(
       "Never answer with agent instructions, trigger keywords",
     );
-    expect(JSON.stringify(model.doGenerateCalls)).toContain("Start with one short prose sentence");
+    expect(JSON.stringify(model.doGenerateCalls)).toContain(
+      "Do not start with an acknowledgement or paraphrase",
+    );
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 
   it("produces an unconstrained delivery-manager synthesis for period reports", async () => {
     const text = [
-      "## Executive summary",
-      "The team completed the publishing foundation and made the operational handoff explicit.",
-      "",
-      "## Delivered by capability",
+      "## What the team delivered",
       "### Modern Website Builder",
-      "The publishing path now carries SEO metadata through release, consolidating the Jira outcome and repository implementation into one initiative. [Delivery](https://jira.example.test/DEMO-754)",
+      "- Publishing now carries SEO metadata through release.",
       "",
-      "## Outcomes and business context",
-      "The supplied information establishes delivery completion, but does not contain a measured customer or commercial outcome.",
-      "",
-      "## Gaps and unknowns",
-      "No accepted customer outcome was supplied for this period.",
+      "## References",
+      "- [Jira](https://jira.example.test/DEMO-754)",
     ].join("\n");
     const model = successfulModel(text);
     const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
@@ -161,7 +157,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain("experienced delivery manager");
     expect(request).toContain("acceptedChanges");
     expect(request).toContain("Modern Website Builder");
-    expect(request).toContain("Do not impose a three-to-five-line");
+    expect(request).toContain("Do not impose a line-count");
     expect(request).not.toContain("Finish with exactly one numbered");
     expect(request).toContain('"maxOutputTokens":12000');
   });

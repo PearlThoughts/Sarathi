@@ -57,9 +57,9 @@ const item = (
 describe("delivery intelligence application", () => {
   it("allows bounded live sources to finish before the Teams response deadline", () => {
     expect(deliveryResponseBudget).toEqual({
-      sourceTimeoutMs: 4_500,
-      compositionTimeoutMs: 2_500,
-      totalBudgetMs: 6_500,
+      sourceTimeoutMs: 15_000,
+      compositionTimeoutMs: 15_000,
+      totalBudgetMs: 30_000,
     });
     expect(deliveryResponseBudget.sourceTimeoutMs).toBeLessThan(
       deliveryResponseBudget.totalBudgetMs,
@@ -167,8 +167,9 @@ describe("delivery intelligence application", () => {
         mode: "deep_dive",
       },
     });
-    expect(answer.text).toContain("### Coverage");
-    expect(answer.text).toContain("Period census examined 43 authorized records across 3 page(s)");
+    expect(answer.text).toContain("## Delivered");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Coverage");
     expect(execute.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
       responseMode: "deep_dive",
@@ -192,15 +193,11 @@ describe("delivery intelligence application", () => {
           compositionAttempt++ === 0
             ? "## Delivery report\nFirst composition omitted the required synthesis structure."
             : [
-                "## Executive summary",
-                "The team completed the publishing foundation and aligned the operational handoff.",
-                "## Delivered by capability",
+                "## What the team delivered",
                 "### Modern Website Builder",
-                "SEO publishing moved through a merged implementation, while the Vault record preserves the product rationale. [PR](https://example.com/github/publishing-pr)",
-                "## Outcomes and business context",
-                "The indexed context establishes the release rationale but contains no measured customer outcome.",
-                "## Gaps and unknowns",
-                "Customer adoption remains unknown from the supplied period context.",
+                "- SEO publishing moved through implementation, while the Vault record preserves the product rationale.",
+                "## References",
+                "- [PR](https://example.com/github/publishing-pr)",
               ].join("\n"),
         citations:
           compositionAttempt === 1
@@ -325,9 +322,9 @@ describe("delivery intelligence application", () => {
       "teams",
       "vault",
     ]);
-    expect(answer.text).toContain("## Executive summary");
+    expect(answer.text).toContain("## What the team delivered");
     expect(answer.text).toContain("Vault record preserves the product rationale");
-    expect(answer.text.split(/\r?\n/).length).toBeGreaterThan(5);
+    expect(answer.text.split(/\r?\n/).length).toBeGreaterThan(3);
     expect(answer.acceptance).toMatchObject({
       mode: "deep_dive",
       product: "period_delivery_brief",
@@ -452,17 +449,13 @@ describe("delivery intelligence application", () => {
         passed: true,
       },
     });
-    expect(answer.text).toContain("## Executive summary");
-    expect(answer.text).toContain("**Report:** Q2 2026 delivery report");
+    expect(answer.text).toContain("## What the team delivered");
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
-    expect(answer.text).toContain("## Delivered by capability");
     expect(answer.text).toContain("### 1. SEO improvements");
-    expect(answer.text).toContain(
-      "1 source-supported change was completed in this capability during the period.",
-    );
-    expect(answer.text).toContain("## Outcomes and business context");
-    expect(answer.text).toContain("## Gaps and unknowns");
-    expect(answer.text).toContain("Business impact:** Not established");
+    expect(answer.text).toContain("## References");
+    expect(answer.text).not.toContain("evidence");
+    expect(answer.text).not.toContain("Business impact");
+    expect(answer.text).not.toContain("Gaps and unknowns");
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");
     expect(answer.text.match(/- \*\*SEO metadata publishing\*\*/g)).toHaveLength(1);
@@ -549,13 +542,8 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("**Website Builder enhancements**");
     expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(5);
     expect(answer.text).not.toContain("additional changes");
-    expect(answer.text).toContain(
-      "Of these, 5 map to 1 reviewed theme: Compliance and technology updates.",
-    );
-    expect(answer.text).toContain(
-      "The remaining 20 stay outside the reviewed capability mapping and are disclosed as a coverage gap",
-    );
-    expect(answer.text).toContain("Capability mapping: 5/25");
+    expect(answer.text).toContain("### 1. Compliance and technology updates");
+    expect(answer.text).not.toContain("coverage");
     expect(answer.citations).toHaveLength(5);
   });
 
@@ -631,8 +619,7 @@ describe("delivery intelligence application", () => {
     expect(answer.citations.length).toBeLessThan(200);
     expect(answer.citations.every(({ url }) => answer.text.includes(url))).toBe(true);
     expect(answer.text).not.toContain("github:example/repository:activity");
-    expect(answer.text).toContain("Evidence-backed initiative index:");
-    expect(answer.text).toContain("modern web composer");
+    expect(answer.text).not.toContain("Evidence-backed initiative index:");
     expect(answer.text).toContain("Landing page builder initiative");
     expect(answer.text).toContain("Subpage builder initiative");
     expect(answer.text).toContain("Widget integration builder initiative");
@@ -840,11 +827,10 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [source] }).answer(request),
     );
-    expect(answer.text.split("\n").length).toBeLessThanOrEqual(5);
-    expect(answer.text.split("\n")[0]).toBe(
-      "Here’s the current project activity across connected sources.",
-    );
+    expect(answer.text.split("\n")[0]).toBe("## Activity");
     expect(answer.text).toContain("- 🧩 **Code:**");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Here’s");
     expect(answer.text).not.toContain("Recommended next step");
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
@@ -894,7 +880,9 @@ describe("delivery intelligence application", () => {
     expect(answer.status).toBe("partial");
     expect(answer.missingRequiredSources).toEqual(["github"]);
     expect(answer.text).toContain("DEMO-20 Done");
-    expect(answer.text).toContain("**Coverage:** No matching GitHub result was available.");
+    expect(answer.text).toContain("## Missing");
+    expect(answer.text).toContain("No matching GitHub result was available.");
+    expect(answer.text).not.toContain("Coverage");
     expect(answer.acceptance.completenessPassed).toBe(false);
     expect(answer.acceptance.passed).toBe(false);
   });
@@ -956,9 +944,9 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("DEMO-21 Done");
     expect(answer.text).toContain("Kamesh — Merged the builder release");
     expect(answer.text).toContain("DEMO-22 Done");
-    expect(answer.text).toContain(
-      "retrieved window contains 3 source-backed delivered items across Jira 2, GitHub 1 and 3 named owners",
-    );
+    expect(answer.text).toContain("## Delivered");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("source-backed");
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
       citationPassed: true,
@@ -966,7 +954,7 @@ describe("delivery intelligence application", () => {
     });
   });
 
-  it("represents distinct owners and states the retrieved weekly-work coverage", async () => {
+  it("represents distinct owners as one scannable weekly-work bullet each", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects"],
@@ -1019,14 +1007,15 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toContain("**Planned/active this week:**");
-    expect(answer.text).toContain("Sneha K — Improve editor canvas");
-    expect(answer.text).toContain("Manikandan — Complete publishing workflow");
-    expect(answer.text).toContain("Unassigned — Verify unassigned migration");
+    expect(answer.text).toContain("## Planned this week");
+    expect(answer.text).toContain("- **Sneha K** — Improve editor canvas");
+    expect(answer.text).toContain("- **Manikandan** — Complete publishing workflow");
+    expect(answer.text).toContain("- **Unassigned** — Verify unassigned migration");
     expect(answer.text).not.toContain("Fix editor toolbar");
-    expect(answer.text).toContain(
-      "retrieved window contains 4 source-backed items across 2 named owners, with 1 unassigned",
-    );
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Coverage");
+    expect(answer.text).not.toContain("source-backed");
+    expect(answer.text.split("### References")[0]).not.toContain(" · ");
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
       citationCoverage: 1,
@@ -1074,9 +1063,10 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.responseMode).toBe("structured");
-    expect(answer.text).toContain("### Delivery brief");
-    expect(answer.text).toContain("### Evidence");
-    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:09:12.000Z");
+    expect(answer.text).toContain("## Activity");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Evidence");
+    expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:10:00.000Z");
     expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 15)).toBe(true);
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
@@ -1088,7 +1078,7 @@ describe("delivery intelligence application", () => {
     });
   });
 
-  it("states the evidence boundary for quarterly alignment without inventing progress", async () => {
+  it("formats quarterly alignment as separate goals and current-work sections", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects", "relations", "knowledge"],
@@ -1116,9 +1106,11 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toContain("### Alignment gaps");
-    expect(answer.text).toContain("1 source-backed alignment relation(s) were retrieved");
-    expect(answer.text).toContain("not a completion percentage");
+    expect(answer.text).toContain("## Goals and alignment");
+    expect(answer.text).toContain("## Planned this week");
+    expect(answer.text).toContain("Current slice supports the goal");
+    expect(answer.text).not.toContain("source-backed");
+    expect(answer.text).not.toContain("completion percentage");
     expect(answer.acceptance).toMatchObject({
       completenessPassed: true,
       citationPassed: true,
@@ -1128,7 +1120,7 @@ describe("delivery intelligence application", () => {
     });
   });
 
-  it("preserves deep-dive scope, freshness, gaps, and inference without a latency target", async () => {
+  it("preserves feature-first deep-dive content without diagnostic sections", async () => {
     const plan = planDeliveryQuestion("What is the current status of DEMO-1?");
     if (plan === undefined) throw new Error("Expected a deep-dive status plan");
     const execute = vi.fn<DeliveryQuerySource["execute"]>((_context, _plan) =>
@@ -1165,15 +1157,10 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.responseMode).toBe("deep_dive");
-    for (const heading of [
-      "### Scope and time window",
-      "### Sources and freshness",
-      "### Evidence",
-      "### Conflicts and gaps",
-      "### Inference boundary",
-    ])
-      expect(answer.text).toContain(heading);
-    expect(answer.text).toContain("Latest source update: 2026-07-20T12:30:00.000Z");
+    expect(answer.text).toContain("## Status");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Sources and freshness");
+    expect(answer.text).not.toContain("Inference boundary");
     expect(answer.text).not.toContain("Completed in");
     expect(execute.mock.calls[0]?.[0].deadlineAt).toBe("2026-07-20T13:13:00.000Z");
     expect(execute.mock.calls[0]?.[1].operations.every(({ limit }) => limit === 50)).toBe(true);
@@ -1246,9 +1233,8 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toContain(
-      "1. ➡️ **Next:** <at>Pavithra</at>, please confirm the next step and due date",
-    );
+    expect(answer.text).toContain("## Next");
+    expect(answer.text).toContain("- <at>Pavithra</at>, please confirm the next step and due date");
     expect(answer.mentions).toEqual([
       {
         source: "teams",
@@ -1308,7 +1294,8 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.status).toBe("partial");
-    expect(answer.text).toContain("No explicit source-backed next action was found");
+    expect(answer.text).toContain("No next action found");
+    expect(answer.text).not.toContain("source-backed");
     expect(answer.text).not.toContain("Recommended next step");
     expect(answer.missingRequiredIntents).toContain("next_actions");
   });
@@ -1345,11 +1332,14 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.text.split("\n")).toEqual([
-      "Here’s the delivery situation that needs attention.",
-      `- ⚠️ **Risks:** DEMO-9 is a high delivery risk [Jira 1](${sharedCitation})`,
-      `1. ➡️ **Next:** Owner — DEMO-9 In Progress [Jira 2](${sharedCitation})`,
+      "## Risks",
+      "- ⚠️ DEMO-9 is a high delivery risk",
+      "## Next",
+      "- Owner — DEMO-9 In Progress",
+      "### References",
+      `- **Jira:** [1](${sharedCitation})`,
     ]);
-    expect(answer.citations).toHaveLength(2);
+    expect(answer.citations).toHaveLength(1);
   });
 
   it("prefers structured Jira lifecycle state for status answers", async () => {
@@ -1416,7 +1406,7 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.status).toBe("partial");
-    expect(answer.text).toContain("**Status — historical only:**");
+    expect(answer.text).toContain("## Status — historical only");
   });
 
   it("accounts for every requested field in a compound decision brief", async () => {
@@ -1428,6 +1418,7 @@ describe("delivery intelligence application", () => {
       ...item("teams", id, summary, "status"),
       selector: intent === "reviews" ? "observations" : "objects",
       intent,
+      subjectAliases: ["Admin Portal Migration"],
     });
     const source: DeliveryQuerySource = {
       source: "projection",
@@ -1453,16 +1444,15 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text.split("\n")[0]).toBe(
-      "I checked **Admin Portal Migration** for status, scope, review queue, risks and next action.",
-    );
-    expect(answer.text).toContain("**Scope:**");
-    expect(answer.text).toContain("**Review queue:**");
-    expect(answer.text).toContain("**Risks:** No explicit source-backed information was found.");
-    expect(answer.text).toContain("**Status:**");
-    expect(answer.text).toContain(
-      "1. ➡️ **Next:** No explicit source-backed next action was found.",
-    );
+    expect(answer.text.split("\n")[0]).toBe("## Status");
+    expect(answer.text).toContain("## Scope");
+    expect(answer.text).toContain("## Review queue");
+    expect(answer.text).toContain("## Risks");
+    expect(answer.text).toContain("No matching items found.");
+    expect(answer.text).toContain("## Next");
+    expect(answer.text).toContain("No next action found.");
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("source-backed");
     expect(answer.status).toBe("partial");
   });
 
@@ -1523,17 +1513,18 @@ describe("delivery intelligence application", () => {
         },
       }),
     );
-    expect(answer.text.split("\n")).toHaveLength(3);
-    expect(answer.text).not.toContain("Dependencies:");
-    expect(answer.text).toContain("**Conflict — DEMO-1 status:** blocked");
+    expect(answer.text).toContain("## Status");
+    expect(answer.text).toContain("## Dependencies");
+    expect(answer.text).toContain("## Conflicts");
+    expect(answer.text).toContain("**DEMO-1 status:** blocked");
     expect(answer.text).toContain("vs ready");
     expect(answer.conflicts).toHaveLength(1);
     expect(answer.acceptance).toMatchObject({
       requestedIntents: 2,
-      coveredIntents: 1,
-      completenessRatio: 0.5,
-      completenessPassed: false,
-      passed: false,
+      coveredIntents: 2,
+      completenessRatio: 1,
+      completenessPassed: true,
+      passed: true,
     });
   });
 
@@ -1638,7 +1629,9 @@ describe("delivery intelligence application", () => {
     );
     expect(answer.status).toBe("partial");
     expect(answer.unavailableSources).toEqual(["jira", "vault"]);
-    expect(answer.text).toContain("- ⚠️ **Coverage:** Jira, Vault unavailable.");
+    expect(answer.text).toContain("## Unavailable");
+    expect(answer.text).toContain("- Jira, Vault");
+    expect(answer.text).not.toContain("Coverage");
   });
 
   it("discloses an optional unavailable source without downgrading complete evidence", async () => {
@@ -1674,7 +1667,9 @@ describe("delivery intelligence application", () => {
 
     expect(answer.status).toBe("ok");
     expect(answer.unavailableSources).toEqual(["teams"]);
-    expect(answer.text).toContain("- ⚠️ **Coverage:** Teams unavailable.");
+    expect(answer.text).toContain("## Unavailable");
+    expect(answer.text).toContain("- Teams");
+    expect(answer.text).not.toContain("Coverage");
     expect(answer.acceptance).toMatchObject({
       completenessRatio: 1,
       completenessPassed: true,
@@ -1760,7 +1755,7 @@ describe("delivery intelligence application", () => {
   it("synthesizes only authorized deduplicated records and validates model citations", async () => {
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
       Effect.succeed({
-        text: `I found the current delivery activity.\n- **Delivery:** Merged code and project activity. [Code](https://example.com/github/code)\n1. **Next:** Confirm the team-owned follow-up. [Team](https://example.com/teams/team)`,
+        text: `## Activity\n- Merged code and project activity.\n## Next\n- Confirm the team-owned follow-up.\n### References\n- **GitHub:** [1](https://example.com/github/code)\n- **Teams:** [2](https://example.com/teams/team)`,
         citations: [
           { label: "Code", url: "https://example.com/github/code" },
           { label: "Team", url: "https://example.com/teams/team" },
@@ -1924,7 +1919,8 @@ describe("delivery intelligence application", () => {
       }),
     );
     expect(answer.status).toBe("partial");
-    expect(answer.text).toContain("No explicit source-backed information was found");
+    expect(answer.text).toContain("No matching items found");
+    expect(answer.text).not.toContain("source-backed");
     expect(answer.text).not.toContain("Modern lead form");
   });
 });
