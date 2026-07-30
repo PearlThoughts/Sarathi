@@ -124,17 +124,16 @@ contract is not met. The model may not conceal stale coverage.
 Response length and latency follow requested intent, not one global concise limit.
 
 - **Fast operational answer**: status, ownership, today, yesterday, blocker, or
-  next-action questions target a same-thread response within ten seconds and use
-  the smallest format that preserves requested fields and citations.
+  next-action questions use topic headings and one work item per bullet without
+  a user-facing line-count or ten-second acceptance target.
 - **Structured brief**: weekly, sprint, release, risk, or comparison questions may
   use sections, bullets, numbered actions, and compact tables where supported.
 - **Deep-dive report**: an explicit investigation, history, trend, root-cause, or
-  comprehensive report may exceed ten seconds and the normal concise shape. It
-  must disclose scope, time window, sources, freshness, conflicts, gaps, and the
-  distinction between observed facts and inference.
+  comprehensive report may use the length needed for complete feature and
+  capability coverage.
 
 The application selects a declared response mode before retrieval. It must not
-silently truncate a deep-dive request to satisfy the fast-answer budget.
+silently truncate a request to satisfy a presentation-length target.
 
 ## Orchestration Decision
 
@@ -181,4 +180,3 @@ policy.
 - No persistence of secrets, binary attachments, build output, dependency trees,
   or unconfigured source scopes.
 - No assumption that an event webhook is complete or exactly once.
-

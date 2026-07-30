@@ -27,21 +27,17 @@ export const deliveryResponseModePolicies: Readonly<
 > = {
   fast: {
     mode: "fast",
-    sourceTimeoutMs: 4_500,
-    compositionTimeoutMs: 2_500,
-    totalBudgetMs: 6_500,
-    latencyTargetMs: 10_000,
-    maximumLines: 5,
+    sourceTimeoutMs: 15_000,
+    compositionTimeoutMs: 15_000,
+    totalBudgetMs: 30_000,
     maximumItems: 12,
     freshnessWindowMs: 2 * 60 * 60 * 1_000,
   },
   structured: {
     mode: "structured",
-    sourceTimeoutMs: 8_000,
-    compositionTimeoutMs: 4_000,
-    totalBudgetMs: 12_000,
-    latencyTargetMs: 15_000,
-    maximumLines: 12,
+    sourceTimeoutMs: 30_000,
+    compositionTimeoutMs: 30_000,
+    totalBudgetMs: 60_000,
     maximumItems: 24,
     freshnessWindowMs: 2 * 60 * 60 * 1_000,
   },
@@ -118,5 +114,5 @@ export const deliveryTransportTimeoutMs = (
   const responseMode = deliveryResponseProductPolicies[product].responseMode;
   const totalBudgetMs = deliveryResponseModePolicies[responseMode].totalBudgetMs;
   if (product !== "operational_answer") return totalBudgetMs + 5_000;
-  return Math.max(100, Math.min(configuredFastTimeoutMs ?? totalBudgetMs + 500, 8_000));
+  return Math.max(100, Math.min(configuredFastTimeoutMs ?? totalBudgetMs + 500, 35_000));
 };

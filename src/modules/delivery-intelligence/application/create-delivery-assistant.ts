@@ -83,6 +83,14 @@ const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
   implementation: "Implementation",
 };
 
+const intentHeading: Readonly<Record<DeliveryQuestionIntent, string>> = {
+  ...intentLabel,
+  goals: "Goals and alignment",
+  current_work: "Planned this week",
+  recurring: "Recurring issues",
+  next_actions: "Next",
+};
+
 const intentIcon: Readonly<Record<DeliveryQuestionIntent, string>> = {
   general: "📌",
   status: "📊",
@@ -170,29 +178,6 @@ const requestsRestrictedSecretMaterial = (question: string): boolean => {
       normalized,
     );
   return !discussesDeliveryWork && /\b(?:what|which|stored?|exist|available)\b/.test(normalized);
-};
-
-const responseOpening = (plan: DeliveryQueryPlan): string => {
-  const subject = safeText(plan.subject?.externalKey ?? plan.subject?.phrase ?? "");
-  if (subject !== "") {
-    const requested = presentedIntents(plan).map((intent) => intentLabel[intent].toLowerCase());
-    const views =
-      requested.length < 2
-        ? requested[0]
-        : `${requested.slice(0, -1).join(", ")} and ${requested.at(-1)}`;
-    return `I checked **${subject}** for ${views}.`;
-  }
-  const intents = new Set(plan.intents);
-  if (intents.has("activity"))
-    return "Here’s the current project activity across connected sources.";
-  if (intents.has("risks") || intents.has("blockers"))
-    return "Here’s the delivery situation that needs attention.";
-  if (intents.has("dependencies")) return "Here’s who appears to be waiting on what.";
-  if (intents.has("reviews")) return "Here’s the current review queue and requested reviewers.";
-  if (intents.has("conflicts")) return "Here’s where connected delivery sources disagree.";
-  if (intents.has("status")) return "Here’s the current delivery status I found.";
-  if (intents.has("implementation")) return "Here’s the relevant implementation context I found.";
-  return "Here’s the delivery context I found for your question.";
 };
 
 const resolvableUrl = (value: string): boolean => {
@@ -377,21 +362,31 @@ const composeAnswer = (
   responseMode: DeliveryResponseMode,
 ): DeliveryAnswerDraft => {
   const responsePolicy = deliveryResponseModePolicies[responseMode];
-  const maximumDetailLines =
-    responseMode === "fast"
-      ? plan.maximumLines
-      : (responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY);
-  const itemsPerIntent = responseMode === "fast" ? 2 : responseMode === "structured" ? 3 : 5;
+  const maximumDetailLines = responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY;
+  const itemsPerIntent = 5;
   const citations: { label: string; url: string }[] = [];
   const citationLabels = new Map<string, string>();
-  const citation = (item: DeliveryResultItem): string => {
-    const key = `${item.intent}\u0000${item.citationUrl}`;
-    const existing = citationLabels.get(key);
-    if (existing !== undefined) return `[${existing}](${item.citationUrl})`;
+  const registerCitation = (item: DeliveryResultItem): void => {
+    const key = item.citationUrl;
+    if (citationLabels.has(key)) return;
     const label = `${sourceLabel[item.source]} ${citations.length + 1}`;
     citations.push({ label, url: item.citationUrl });
     citationLabels.set(key, label);
-    return `[${label}](${item.citationUrl})`;
+  };
+  const references = (): readonly string[] => {
+    if (citations.length === 0) return [];
+    const grouped = new Map<string, { label: string; url: string }[]>();
+    for (const value of citations) {
+      const source = value.label.split(" ")[0] ?? "Source";
+      grouped.set(source, [...(grouped.get(source) ?? []), value]);
+    }
+    return [
+      "### References",
+      ...[...grouped.entries()].map(
+        ([source, values]) =>
+          `- **${source}:** ${values.map(({ url }, index) => `[${index + 1}](${url})`).join(" · ")}`,
+      ),
+    ];
   };
   const detailLines: string[] = [];
   const items = uniqueRanked(result.items.filter((item) => itemMatchesPlan(item, plan)));
@@ -399,6 +394,7 @@ const composeAnswer = (
   let historicalStatusOnly = false;
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
+    const activityLines: string[] = [];
     const groups = [
       { icon: "🧩", label: "Code", sources: new Set<DeliverySourceKind>(["github"]) },
       {
@@ -414,11 +410,12 @@ const composeAnswer = (
     ];
     for (const group of groups) {
       const selected = items.filter((item) => group.sources.has(item.source)).slice(0, 2);
-      if (selected.length > 0)
-        detailLines.push(
-          `- ${group.icon} **${group.label}:** ${selected.map((item) => `${safeText(item.summary)} ${citation(item)}`).join("; ")}`,
-        );
+      for (const item of selected) {
+        registerCitation(item);
+        activityLines.push(`- ${group.icon} **${group.label}:** ${safeText(item.summary)}`);
+      }
     }
+    if (activityLines.length > 0) detailLines.push("## Activity", ...activityLines);
   } else {
     for (const intent of presentedIntents(plan)) {
       if (intent === "next_actions") continue;
@@ -442,26 +439,15 @@ const composeAnswer = (
           })
           .slice(0, responsePolicy.maximumItems ?? ownerGroups.size);
         if (representatives.length > 0) {
-          detailLines.push(
-            `- 🚧 **Planned/active this week:** ${representatives
-              .map(
-                (item) =>
-                  `${safeText(item.owner?.displayName ?? "Unassigned")} — ${safeText(item.title)} ${citation(item)}`,
-              )
-              .join(" · ")}`,
-          );
-          const namedOwners = [...ownerGroups.values()].filter(
-            (group) => group[0]?.owner !== undefined,
-          ).length;
-          const unassignedItems = currentWork.filter((item) => item.owner === undefined).length;
-          const omittedOwners = Math.max(0, ownerGroups.size - representatives.length);
-          detailLines.push(
-            `- 📊 **Coverage:** The retrieved window contains ${currentWork.length} source-backed item${currentWork.length === 1 ? "" : "s"} across ${namedOwners} named owner${namedOwners === 1 ? "" : "s"}${unassignedItems === 0 ? "" : `, with ${unassignedItems} unassigned`}; one representative per owner is shown${omittedOwners === 0 ? "" : ` and ${omittedOwners} owner${omittedOwners === 1 ? " is" : "s are"} omitted by the response cap`}.`,
-          );
+          detailLines.push(`## ${intentHeading[intent]}`);
+          for (const item of representatives) {
+            registerCitation(item);
+            detailLines.push(
+              `- **${safeText(item.owner?.displayName ?? "Unassigned")}** — ${safeText(item.title)}`,
+            );
+          }
         } else if (missingIntents.has(intent)) {
-          detailLines.push(
-            `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
-          );
+          detailLines.push(`## ${intentHeading[intent]}`, "- No matching items found.");
         }
         continue;
       }
@@ -493,24 +479,13 @@ const composeAnswer = (
           Math.min(responsePolicy.maximumItems ?? requestedLimit, requestedLimit),
         );
         if (selected.length > 0) {
-          detailLines.push(
-            `- ✅ **Delivered:** ${selected
-              .map((item) => `${deliveredItemSummary(item)} ${citation(item)}`)
-              .join(" · ")}`,
-          );
-          const sourceCounts = [...new Set(delivered.map((item) => item.source))].map(
-            (source) =>
-              `${sourceLabel[source]} ${delivered.filter((item) => item.source === source).length}`,
-          );
-          const namedOwners = ownerRepresentatives.size;
-          const omitted = Math.max(0, delivered.length - selected.length);
-          detailLines.push(
-            `- 📊 **Coverage:** The retrieved window contains ${delivered.length} source-backed delivered item${delivered.length === 1 ? "" : "s"} across ${sourceCounts.join(", ")}${namedOwners === 0 ? "" : ` and ${namedOwners} named owner${namedOwners === 1 ? "" : "s"}`}; ${selected.length} representative item${selected.length === 1 ? " is" : "s are"} shown${omitted === 0 ? "" : ` and ${omitted} item${omitted === 1 ? " is" : "s are"} omitted by the response cap`}.`,
-          );
+          detailLines.push(`## ${intentHeading[intent]}`);
+          for (const item of selected) {
+            registerCitation(item);
+            detailLines.push(`- ${deliveredItemSummary(item)}`);
+          }
         } else if (missingIntents.has(intent)) {
-          detailLines.push(
-            `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
-          );
+          detailLines.push(`## ${intentHeading[intent]}`, "- No matching items found.");
         }
         continue;
       }
@@ -518,7 +493,7 @@ const composeAnswer = (
         items.filter((item) => item.intent === intent),
         intent,
         plan.requiredSources ?? [],
-        itemsPerIntent,
+        intent === "status" ? 2 : itemsPerIntent,
       );
       if (selected.length > 0) {
         historicalStatusOnly =
@@ -528,14 +503,16 @@ const composeAnswer = (
           );
         const label = historicalStatusOnly
           ? `${intentLabel[intent]} — historical only`
-          : intentLabel[intent];
-        detailLines.push(
-          `- ${intentIcon[intent]} **${label}:** ${selected.map((item) => `${item.evidenceRole === "declared_intent" ? "Declared intent — " : ""}${safeText(item.summary)} ${citation(item)}`).join(" · ")}`,
-        );
+          : intentHeading[intent];
+        detailLines.push(`## ${label}`);
+        for (const item of selected) {
+          registerCitation(item);
+          detailLines.push(
+            `- ${intentIcon[intent]} ${item.evidenceRole === "declared_intent" ? "**Planned:** " : ""}${safeText(item.summary)}`,
+          );
+        }
       } else if (missingIntents.has(intent)) {
-        detailLines.push(
-          `- ⚠️ **${intentLabel[intent]}:** No explicit source-backed information was found.`,
-        );
+        detailLines.push(`## ${intentHeading[intent]}`, "- No matching items found.");
       }
     }
   }
@@ -563,12 +540,13 @@ const composeAnswer = (
             observedAt: claim.observedAt,
             dedupeKey: claim.valueHash,
           };
-          return `${safeText(String(claim.value))} ${citation(item)}`;
+          registerCitation(item);
+          return safeText(String(claim.value));
         });
-        const conflictLine = `- ⚖️ **Conflict — ${conflict.subjectKey} ${conflict.predicate}:** ${summaries.join(" vs ")}`;
+        const conflictLine = `- ⚖️ **${conflict.subjectKey} ${conflict.predicate}:** ${summaries.join(" vs ")}`;
         if (detailLines.length >= maximumDetailLines)
           detailLines.splice(Math.max(0, maximumDetailLines - 1));
-        detailLines.push(conflictLine);
+        detailLines.push("## Conflicts", conflictLine);
       }
     }
   }
@@ -582,18 +560,13 @@ const composeAnswer = (
     return {
       text:
         missing !== ""
-          ? [
-              "I couldn’t verify this answer from every required project source.",
-              `- ⚠️ **Coverage:** No matching ${missing} result was available.`,
-              "1. ➡️ **Next:** Verify the required source connection or refine the project item.",
-            ].join("\n")
+          ? ["## Missing", `- No matching ${missing} result was available.`].join("\n")
           : result.unavailableSources.length === 0
-            ? "I couldn’t find connected project information that answers this yet."
-            : [
-                "I couldn’t answer this yet because connected project sources are unavailable.",
-                `- ⚠️ **Coverage:** ${unavailable} unavailable.`,
-                "1. ➡️ **Next:** Retry after connected source access is restored.",
-              ].join("\n"),
+            ? [
+                "## No matching items",
+                "- No connected project information matched the question.",
+              ].join("\n")
+            : ["## Unavailable", `- ${unavailable}`].join("\n"),
       citations: [],
       status:
         !result.complete ||
@@ -612,11 +585,13 @@ const composeAnswer = (
   }
   if (result.unavailableSources.length > 0 && detailLines.length < maximumDetailLines)
     detailLines.push(
-      `- ⚠️ **Coverage:** ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")} unavailable.`,
+      "## Unavailable",
+      `- ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}`,
     );
   if ((result.missingRequiredSources?.length ?? 0) > 0 && detailLines.length < maximumDetailLines)
     detailLines.push(
-      `- ⚠️ **Coverage:** No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
+      "## Missing",
+      `- No matching ${result.missingRequiredSources?.map((source) => sourceLabel[source]).join(", ")} result was available.`,
     );
   const materialItems = items.filter((item) => item.intent !== "next_actions");
   const relatedToMaterial = (candidate: DeliveryResultItem): boolean => {
@@ -643,17 +618,15 @@ const composeAnswer = (
     actionItem === undefined
       ? undefined
       : mentionName !== undefined && mentionName !== ""
-        ? `1. ➡️ **Next:** <at>${mentionName}</at>, please confirm the next step and due date for this item. ${citation(actionItem)}`
-        : `1. ➡️ **Next:** ${safeText(actionItem.summary)} ${citation(actionItem)}`;
+        ? `- <at>${mentionName}</at>, please confirm the next step and due date for this item.`
+        : `- ${safeText(actionItem.summary)}`;
+  if (actionItem !== undefined) registerCitation(actionItem);
   const completeActionLine =
-    actionLine ??
-    (plan.intents.includes("next_actions")
-      ? "1. ➡️ **Next:** No explicit source-backed next action was found."
-      : undefined);
+    actionLine ?? (plan.intents.includes("next_actions") ? "- No next action found." : undefined);
   const lines = [
-    responseOpening(plan),
     ...detailLines.slice(0, maximumDetailLines),
-    ...(completeActionLine === undefined ? [] : [completeActionLine]),
+    ...(completeActionLine === undefined ? [] : ["## Next", completeActionLine]),
+    ...references(),
   ];
   const text = lines.join("\n");
   return {
@@ -744,12 +717,9 @@ const composeWithModel = (
           if (reportComposition) {
             const text = composed.text.trim();
             if (
-              ![
-                "## Executive summary",
-                "## Delivered by capability",
-                "## Outcomes and business context",
-                "## Gaps and unknowns",
-              ].every((heading) => text.includes(heading))
+              !["## What the team delivered", "## References"].every((heading) =>
+                text.includes(heading),
+              )
             )
               throw new Error("Composed delivery report lacks the required synthesis structure.");
             if (
@@ -769,20 +739,12 @@ const composeWithModel = (
             .split(/\r?\n/)
             .map((line) => line.trim())
             .filter(Boolean);
-          if (
-            lines.length < 3 ||
-            lines.length >
-              (deliveryResponseModePolicies[responseMode].maximumLines ??
-                Number.POSITIVE_INFINITY) +
-                2
-          )
-            throw new Error("Composed delivery answer has an invalid line count.");
-          if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
-            throw new Error("Composed delivery answer lacks a short opening paragraph.");
-          if (!lines.slice(1, -1).some((line) => line.startsWith("- ")))
-            throw new Error("Composed delivery answer lacks scannable evidence bullets.");
-          if (!/^1\.\s/.test(lines.at(-1) ?? ""))
-            throw new Error("Composed delivery answer lacks an explicit next action.");
+          if (!lines.some((line) => line.startsWith("## ")))
+            throw new Error("Composed delivery answer lacks topic headings.");
+          if (!lines.some((line) => line.startsWith("- ")))
+            throw new Error("Composed delivery answer lacks scannable bullets.");
+          if (!lines.includes("### References"))
+            throw new Error("Composed delivery answer lacks a references footer.");
           if (
             composed.citations.some(
               ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
@@ -819,22 +781,6 @@ const composeWithModel = (
     Effect.catchAll(() => Effect.succeed(deterministic)),
   );
 };
-
-const responseSources = (
-  answer: DeliveryAnswerDraft,
-  result: DeliveryQueryResult,
-): readonly DeliverySourceKind[] => [
-  ...new Set(
-    result.items
-      .filter((item) => answer.text.includes(item.citationUrl))
-      .map((item) => item.source),
-  ),
-];
-
-const latestTimestamp = (values: readonly (string | undefined)[]): string | undefined =>
-  values
-    .filter((value): value is string => value !== undefined && Number.isFinite(Date.parse(value)))
-    .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
 
 const localDateParts = (
   value: string,
@@ -886,13 +832,25 @@ const renderLeadershipReport = (
 ): DeliveryAnswerDraft => {
   const citationLabels = new Map<string, string>();
   const citations: { label: string; url: string }[] = [];
-  const citation = (source: DeliverySourceKind, url: string): string => {
-    const existing = citationLabels.get(url);
-    if (existing !== undefined) return `[${existing}](${url})`;
+  const registerCitation = (source: DeliverySourceKind, url: string): void => {
+    if (citationLabels.has(url) || citations.length >= 12) return;
     const label = `${sourceLabel[source]} ${citations.length + 1}`;
     citationLabels.set(url, label);
     citations.push({ label, url });
-    return `[${label}](${url})`;
+  };
+  const referenceLines = (): readonly string[] => {
+    const grouped = new Map<string, { label: string; url: string }[]>();
+    for (const value of citations) {
+      const source = value.label.split(" ")[0] ?? "Source";
+      grouped.set(source, [...(grouped.get(source) ?? []), value]);
+    }
+    return [
+      "## References",
+      ...[...grouped.entries()].map(
+        ([source, values]) =>
+          `- **${source}:** ${values.map(({ url }, index) => `[${index + 1}](${url})`).join(" · ")}`,
+      ),
+    ];
   };
   const cleanHeadline = (value: string): string =>
     safeText(value)
@@ -908,28 +866,16 @@ const renderLeadershipReport = (
     return summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en") ? "" : summary;
   };
   const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
-    const links = capsule.citations
-      .slice(0, 2)
-      .map(({ source, url }) => citation(source, url))
-      .join(" ");
+    for (const { source, url } of capsule.citations.slice(0, 2)) registerCitation(source, url);
     const title = cleanHeadline(capsule.title);
     const safeSummary = narrativeSummary(capsule);
-    const detail =
-      safeSummary === "" || safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
-        ? `${capsule.completionStage} evidence`
-        : `${safeSummary}; ${capsule.completionStage} evidence`;
-    return `- **${title}** — ${detail}. ${links}`;
+    return safeSummary === "" ||
+      safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
+      ? `- **${title}**`
+      : `- **${title}** — ${safeSummary}`;
   };
   const estimatedCapsuleLineLength = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
-    cleanHeadline(capsule.title).length +
-    narrativeSummary(capsule).length +
-    capsule.citations
-      .slice(0, 2)
-      .reduce(
-        (length, { source, url }) => length + sourceLabel[source].length + url.length + 10,
-        0,
-      ) +
-    40;
+    cleanHeadline(capsule.title).length + narrativeSummary(capsule).length + 10;
   const reportFailure = (reasons: readonly string[], status: "partial" | "empty") => ({
     ...answer,
     text: [
@@ -989,53 +935,22 @@ const renderLeadershipReport = (
     const omitted = section.capsules.length - shown.length;
     return [
       `### ${index + 1}. ${safeText(section.title)}`,
-      `${section.capsules.length} source-supported change${section.capsules.length === 1 ? " was" : "s were"} completed in this capability during the period.`,
-      `**Evidence-backed initiative index:** ${section.evidencedAliases.map(safeText).join("; ")}.`,
       ...shown.map(capsuleLine),
       ...(omitted === 0
         ? []
         : [
-            `- ${omitted} additional change${omitted === 1 ? " is" : "s are"} retained in the accepted census but omitted only because the Teams message reached its platform-safe presentation budget.`,
+            `- _${omitted} additional change${omitted === 1 ? "" : "s"} not shown in this Teams message._`,
           ]),
       "",
     ];
   });
-  const sources = [...new Set(report.capsules.flatMap(({ sources: values }) => values))];
-  const mappedCapsuleCount = report.capsules.length - report.unmappedCapsules.length;
-  const sourceCoverage = report.census.sourceCoverage
-    .map(
-      ({ source, available, candidateCount }) =>
-        `${sourceLabel[source]} ${available ? `${candidateCount} accepted` : "unavailable"}`,
-    )
-    .join("; ");
   const text = [
-    "## Executive summary",
-    `**Report:** ${reportPeriodTitle(report)}`,
+    "## What the team delivered",
     `**Period:** ${reportPeriodLabel(report)}`,
-    `The period’s authorized evidence contains ${report.capsules.length} accepted delivery change${report.capsules.length === 1 ? "" : "s"}. Of these, ${mappedCapsuleCount} map to ${report.capabilitySections.length} reviewed theme${report.capabilitySections.length === 1 ? "" : "s"}: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The remaining ${report.unmappedCapsules.length} stay outside the reviewed capability mapping and are disclosed as a coverage gap, not presented as themed delivery. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
-    "## Delivered by capability",
     ...(sectionLines.length === 0
-      ? ["- No accepted change could be mapped to a declared capability."]
+      ? ["- No delivered feature could be mapped to a capability."]
       : sectionLines),
-    "## Outcomes and business context",
-    `- **Observed delivery:** ${report.capsules.length} change${report.capsules.length === 1 ? "" : "s"} reached a merged, released, or deployed stage in the requested period.`,
-    "- **Business impact:** Not established by the indexed completion evidence. The report does not convert technical delivery into customer or commercial impact.",
-    "## Gaps and unknowns",
-    "### Delivery-chain and mapping gaps",
-    `- ${report.incompleteChainCount} change${report.incompleteChainCount === 1 ? "" : "s"} have no separately observed later-stage evidence such as release, deployment, acceptance, or impact.`,
-    `- ${report.unmappedCapsules.length} accepted change${report.unmappedCapsules.length === 1 ? "" : "s"} remain${report.unmappedCapsules.length === 1 ? "s" : ""} outside the reviewed capability ledger; they are counted in coverage but intentionally omitted from the executive highlights.`,
-    ...(result.unavailableSources.length === 0
-      ? []
-      : [
-          `- Unavailable sources: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}. The report is partial.`,
-        ]),
-    "### Coverage and freshness",
-    `- Census examined ${report.census.examinedCandidateCount} authorized records across ${report.census.pagination.pagesRead} page(s), accepted ${report.census.candidateCount}, collapsed ${report.census.duplicateCandidateCount} duplicate(s), and excluded ${report.census.excludedCandidateCount}.`,
-    `- Capability mapping: ${mappedCapsuleCount}/${report.capsules.length} accepted change capsules map to a reviewed primary theme; unmapped capsules remain visible as a coverage gap.`,
-    `- Source coverage: ${sourceCoverage || "No configured source coverage was reported"}.`,
-    `- Census status: ${report.census.complete ? "complete within the declared source and time bounds" : "partial; do not treat omissions as no activity"}. Contributing evidence sources: ${sources.length === 0 ? "none" : sources.map((source) => sourceLabel[source]).join(", ")}.`,
-    "### Method and inference boundary",
-    "- The report is reconstructed from authorized indexed evidence, deduplicated into change groups, assigned to one primary reviewed capability, and then ranked for presentation. Unsupported outcomes and missing stages remain unknown.",
+    ...referenceLines(),
   ].join("\n");
   return {
     ...answer,
@@ -1065,8 +980,8 @@ const renderResponseMode = (
   if (
     reportProduct &&
     result.periodDeliveryReport !== undefined &&
-    answer.text.includes("## Executive summary") &&
-    answer.text.includes("## Delivered by capability")
+    answer.text.includes("## What the team delivered") &&
+    answer.text.includes("## References")
   )
     return {
       ...answer,
@@ -1103,76 +1018,7 @@ const renderResponseMode = (
       citations: [],
       status: "partial",
     };
-  const lines = answer.text.split(/\r?\n/).filter(Boolean);
-  const opening =
-    lines.find((line) => !/^(?:-|\d+\.)\s/.test(line)) ?? responseOpening(answer.plan);
-  const evidence = lines.filter((line) => line.startsWith("- "));
-  const action = lines.find((line) => /^\d+\.\s/.test(line));
-  if (responseMode === "structured") {
-    const alignmentReview =
-      answer.plan.intents.includes("goals") && answer.plan.intents.includes("current_work");
-    const alignmentRelations = result.items.filter(
-      (item) => item.intent === "goals" && item.selector === "relations",
-    ).length;
-    const text = [
-      "### Delivery brief",
-      opening,
-      "### Evidence",
-      ...(evidence.length === 0
-        ? ["- No source-backed evidence matched the requested scope."]
-        : evidence),
-      ...(alignmentReview
-        ? [
-            "### Alignment gaps",
-            `${alignmentRelations} source-backed alignment relation(s) were retrieved. This is evidence coverage, not a completion percentage; missing source links remain unknown.`,
-          ]
-        : []),
-      ...(result.periodCensus === undefined
-        ? []
-        : [
-            "### Coverage",
-            `Examined ${result.periodCensus.examinedCandidateCount} authorized period records across ${result.periodCensus.pagination.pagesRead} page(s); accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}.`,
-          ]),
-      ...(action === undefined ? [] : ["### Action", action]),
-    ].join("\n");
-    return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
-  }
-  const sources = responseSources(answer, result);
-  const latestSourceUpdate = latestTimestamp(
-    result.items
-      .filter((item) => answer.text.includes(item.citationUrl))
-      .map((item) => item.sourceUpdatedAt ?? item.observedAt),
-  );
-  const gaps = [
-    ...(result.missingRequiredIntents ?? []).map((intent) => intentLabel[intent]),
-    ...(result.missingRequiredSources ?? []).map((source) => sourceLabel[source]),
-    ...result.unavailableSources.map((source) => `${sourceLabel[source]} unavailable`),
-  ];
-  const censusCoverage =
-    result.periodCensus === undefined
-      ? undefined
-      : `Period census examined ${result.periodCensus.examinedCandidateCount} authorized records across ${result.periodCensus.pagination.pagesRead} page(s), accepted ${result.periodCensus.candidateCount}, collapsed ${result.periodCensus.duplicateCandidateCount} duplicate(s), excluded ${result.periodCensus.excludedCandidateCount}, and left ${result.periodCensus.unmappedCandidateCount} unmapped. Census ${result.periodCensus.complete ? "complete" : "partial"}.`;
-  const text = [
-    "### Scope and time window",
-    opening,
-    "### Sources and freshness",
-    sources.length === 0
-      ? "No matching connected source produced authorized evidence."
-      : `${sources.map((source) => sourceLabel[source]).join(", ")} contributed evidence. Latest source update: ${latestSourceUpdate ?? "not reported"}.`,
-    ...(censusCoverage === undefined ? [] : ["### Coverage", censusCoverage]),
-    "### Evidence",
-    ...(evidence.length === 0
-      ? ["- No source-backed evidence matched the requested scope."]
-      : evidence),
-    "### Conflicts and gaps",
-    answer.conflicts.length === 0
-      ? `No verified cross-source conflict was found. Gaps: ${gaps.length === 0 ? "none reported" : gaps.join(", ")}.`
-      : `${answer.conflicts.length} verified cross-source conflict(s) are disclosed above. Gaps: ${gaps.length === 0 ? "none reported" : gaps.join(", ")}.`,
-    "### Inference boundary",
-    "The evidence above is source-observed. Missing fields remain unknown; no uncited recommendation or ownership inference was added.",
-    ...(action === undefined ? [] : ["### Action", action]),
-  ].join("\n");
-  return { ...answer, text, citations: answer.citations.filter(({ url }) => text.includes(url)) };
+  return answer;
 };
 
 const ratio = (numerator: number, denominator: number): number =>
@@ -1208,21 +1054,12 @@ const responseAcceptance = (
   const reportProduct =
     (responseProduct === "period_delivery_brief" || responseProduct === "leadership_report") &&
     result.periodDeliveryReport !== undefined;
-  const materialLines = reportProduct
-    ? lines.filter(
-        (line) =>
-          !line.startsWith("#") &&
-          /\]\(https:\/\//.test(line) &&
-          !line.toLocaleLowerCase("en").includes("coverage"),
-      )
-    : lines.filter(
-        (line) =>
-          /^(?:-|\d+\.)\s/.test(line) &&
-          !line.includes("**Coverage:**") &&
-          !line.includes("No explicit source-backed") &&
-          !line.includes("No source-backed evidence"),
-      );
-  const citedLines = materialLines.filter((line) => /\]\(https:\/\//.test(line));
+  const referencesIndex = lines.findIndex(
+    (line) => line === "### References" || line === "## References",
+  );
+  const materialLines = lines
+    .slice(0, referencesIndex < 0 ? lines.length : referencesIndex)
+    .filter((line) => line.startsWith("- "));
   const allowedUrls = new Set([
     ...result.items.map((item) => item.citationUrl),
     ...result.conflicts.flatMap((conflict) =>
@@ -1241,7 +1078,9 @@ const responseAcceptance = (
       Number.isFinite(indexedAt) && Math.max(0, requestedAt - indexedAt) <= policy.freshnessWindowMs
     );
   }).length;
-  const citationCoverage = ratio(citedLines.length, materialLines.length);
+  const citedStatements =
+    materialLines.length === 0 ? 0 : linkedUrls.length > 0 ? materialLines.length : 0;
+  const citationCoverage = ratio(citedStatements, materialLines.length);
   const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
   const completenessPassed =
     result.complete &&
@@ -1250,31 +1089,10 @@ const responseAcceptance = (
   const citationPassed = citationCoverage === 1;
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;
-  const headings = new Set(lines.filter((line) => line.startsWith("### ")));
-  const formatPassed =
-    responseMode === "fast"
-      ? headings.size === 0 && lines.length <= (policy.maximumLines ?? 5) + 2
-      : responseMode === "structured"
-        ? headings.has("### Delivery brief") && headings.has("### Evidence")
-        : reportProduct
-          ? (answer.text.includes("## Executive summary") &&
-              answer.text.includes("## Delivered by capability") &&
-              answer.text.includes("## Outcomes and business context") &&
-              answer.text.includes("## Gaps and unknowns")) ||
-            [
-              "### Executive summary",
-              "### Outcomes and delivery confidence",
-              "### Gaps and incomplete delivery chains",
-              "### Coverage and freshness",
-              "### Method and inference boundary",
-            ].every((heading) => headings.has(heading))
-          : [
-              "### Scope and time window",
-              "### Sources and freshness",
-              "### Evidence",
-              "### Conflicts and gaps",
-              "### Inference boundary",
-            ].every((heading) => headings.has(heading));
+  const headings = new Set(lines.filter((line) => /^#{2,3} /.test(line)));
+  const formatPassed = reportProduct
+    ? headings.has("## What the team delivered") && headings.has("## References")
+    : headings.size > 0 && headings.has("### References");
   const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
@@ -1287,7 +1105,7 @@ const responseAcceptance = (
     completenessRatio,
     completenessPassed,
     materialStatements: materialLines.length,
-    citedStatements: citedLines.length,
+    citedStatements,
     citationCoverage,
     citationPassed,
     groundingPassed,

@@ -134,16 +134,12 @@ describe("AI Delivery Assistant capability matrix", () => {
 
     expect(answer.plan.intents).toEqual(row.intents);
     expect(answer.status).toBe("ok");
-    if (answer.responseProduct === "period_delivery_brief") {
-      expect(answer.text.split("\n").length).toBeGreaterThan(5);
-      expect(answer.text).toContain("### Scope and time window");
-      expect(answer.text).toContain("### Evidence");
-    } else {
-      expect(answer.text.split("\n").length).toBeLessThanOrEqual(5);
-      expect(answer.text.split("\n")[0]).not.toMatch(/^(?:-|\d+\.)\s/);
-      expect(answer.text).toMatch(/- .+ \*\*/u);
-    }
-    if (row.intents.includes("next_actions")) expect(answer.text).toContain("1. ➡️ **Next:**");
+    expect(answer.text.split("\n")[0]).toMatch(/^## /);
+    expect(answer.text).toMatch(/^- /m);
+    expect(answer.text).toContain("### References");
+    expect(answer.text).not.toContain("Coverage");
+    expect(answer.text).not.toContain("Evidence");
+    if (row.intents.includes("next_actions")) expect(answer.text).toContain("## Next");
     else expect(answer.text).not.toContain("Recommended next step");
     expect(answer.citations.length).toBeGreaterThan(0);
   });
