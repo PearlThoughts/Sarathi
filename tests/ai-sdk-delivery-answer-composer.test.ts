@@ -64,6 +64,20 @@ describe("AI SDK delivery answer composer", () => {
           observedAt: "2026-07-29T11:00:00.000Z",
           dedupeKey: "teams:publishing",
         },
+        ...Array.from({ length: 60 }, (_, index) => ({
+          id: `supplemental-${index}`,
+          workspaceId: "workspace",
+          source: index % 2 === 0 ? ("vault" as const) : ("teams" as const),
+          selector: "knowledge" as const,
+          intent: "delivered" as const,
+          title: `Supplemental context ${index}`,
+          summary: "x".repeat(1_200),
+          citationUrl: `https://context.example.test/${index}`,
+          sensitivity: "internal" as const,
+          authority: 0.7,
+          observedAt: "2026-07-29T12:00:00.000Z",
+          dedupeKey: `supplemental:${index}`,
+        })),
       ],
       conflicts: [],
       periodDeliveryReport: {
@@ -181,10 +195,20 @@ describe("AI SDK delivery answer composer", () => {
         },
       ],
     });
-    expect(envelope?.evidence.map(({ source }) => source)).toEqual(["github", "vault", "teams"]);
+    expect(envelope?.evidence.slice(0, 3).map(({ source }) => source)).toEqual([
+      "github",
+      "vault",
+      "teams",
+    ]);
     expect(envelope?.evidence[0]).toMatchObject({
       title: "Completed change — Modern Website Builder: SEO metadata publishing",
       sourceUrl: "https://github.com/example/product/pull/101",
     });
+    expect(envelope?.evidence).toHaveLength(37);
+    expect(
+      envelope?.evidence
+        .slice(1)
+        .every(({ excerpt, title }) => excerpt.length <= 900 && title.length <= 320),
+    ).toBe(true);
   });
 });
