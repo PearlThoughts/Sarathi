@@ -39,10 +39,41 @@ export type ContextEvidence = {
   readonly actorId?: string | undefined;
 };
 
+export type DeliveryReportPresentation = {
+  readonly kind: "delivery_report";
+  readonly period:
+    | {
+        readonly kind: "absolute";
+        readonly fromInclusive: string;
+        readonly toExclusive: string;
+        readonly timeZone: string;
+      }
+    | {
+        readonly kind: "source_defined";
+        readonly reference: string;
+        readonly timeZone: string;
+      };
+  readonly coverage: {
+    readonly complete: boolean;
+    readonly examinedRecords: number;
+    readonly acceptedChanges: number;
+    readonly duplicateRecords: number;
+    readonly excludedRecords: number;
+    readonly unmappedChanges: number;
+    readonly unavailableSources: readonly string[];
+  };
+  readonly capabilitySections: readonly {
+    readonly title: string;
+    readonly changeCount: number;
+    readonly evidencedInitiatives: readonly string[];
+  }[];
+};
+
 export type AuthorizedContextEnvelope = {
   readonly workspaceId: string;
   readonly question: string;
   readonly evidence: readonly ContextEvidence[];
+  readonly presentation?: DeliveryReportPresentation | undefined;
 };
 
 export type GroundedAnswer = {

@@ -63,7 +63,7 @@ export const deliveryResponseProductPolicies: Readonly<
   },
   period_delivery_brief: {
     product: "period_delivery_brief",
-    responseMode: "structured",
+    responseMode: "deep_dive",
   },
   leadership_report: {
     product: "leadership_report",
@@ -85,7 +85,7 @@ const leadershipReport =
 const implementationInvestigation =
   /\b(?:implementation investigation|investigat(?:e|ion).*(?:implementation|code|repository)|(?:implementation|code|repository).*(?:deep[ -]?dive|investigat(?:e|ion)))\b/i;
 const periodDeliveryBrief =
-  /\b(?:weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b.*\b(?:delivery|status|report|brief|summary|delivered)\b|\b(?:delivery|status|report|brief|summary|delivered)\b.*\b(?:weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b/i;
+  /\b(?:yesterday|this\s+week|last\s+week|previous\s+week|weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b.*\b(?:deliver(?:y|ed)?|status|report|brief|summary|done|accomplished|achieved)\b|\b(?:deliver(?:y|ed)?|status|report|brief|summary|done|accomplished|achieved)\b.*\b(?:yesterday|this\s+week|last\s+week|previous\s+week|weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b|\bwhat\s+did\b.{0,80}\bdo\b.{0,80}\b(?:yesterday|this\s+week|last\s+week|previous\s+week|last\s+\d{1,3}\s+days?)\b/i;
 
 export const selectDeliveryResponseProduct = (
   question: string,

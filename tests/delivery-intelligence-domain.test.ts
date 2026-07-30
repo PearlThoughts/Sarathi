@@ -39,6 +39,12 @@ describe("delivery intelligence domain", () => {
         time: { kind: "lookback", days: 37 },
         census: { pageSize: 200, maximumCandidates: 50_000 },
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "knowledge",
+        time: { kind: "lookback", days: 37 },
+        limit: 20,
+      }),
     ]);
   });
 
@@ -87,13 +93,17 @@ describe("delivery intelligence domain", () => {
 
   it("preserves sprint and release periods as explicit source-defined boundaries", () => {
     expect(
-      planDeliveryQuestion("Give me the previous sprint delivery report")?.operations.at(-1),
+      planDeliveryQuestion("Give me the previous sprint delivery report")?.operations.find(
+        ({ select }) => select === "period_census",
+      ),
     ).toMatchObject({
       select: "period_census",
       time: { kind: "jira_sprint", sprint: "previous" },
     });
     expect(
-      planDeliveryQuestion("Give me the release v2.4 delivery report")?.operations.at(-1),
+      planDeliveryQuestion("Give me the release v2.4 delivery report")?.operations.find(
+        ({ select }) => select === "period_census",
+      ),
     ).toMatchObject({
       select: "period_census",
       time: { kind: "release", release: "v2.4" },
@@ -118,7 +128,7 @@ describe("delivery intelligence domain", () => {
       "leadership_report",
     );
     expect(deliveryTransportTimeoutMs("operational_answer", 7_000)).toBe(7_000);
-    expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(17_000);
+    expect(deliveryTransportTimeoutMs("period_delivery_brief", 7_000)).toBe(155_000);
     expect(deliveryTransportTimeoutMs("leadership_report", 7_000)).toBe(155_000);
   });
 
@@ -225,7 +235,12 @@ describe("delivery intelligence domain", () => {
       select: "period_census",
       time: { kind: "jira_sprint", sprint: "previous" },
     });
-    expect(plan?.operations[3]?.time).toEqual({ kind: "workspace_week" });
+    expect(plan?.operations[3]).toMatchObject({
+      purpose: "delivered",
+      select: "knowledge",
+      time: { kind: "jira_sprint", sprint: "previous" },
+    });
+    expect(plan?.operations[4]?.time).toEqual({ kind: "workspace_week" });
   });
 
   it("recognizes activity summaries regardless of phrase order and keeps activity primary", () => {
@@ -277,6 +292,9 @@ describe("delivery intelligence domain", () => {
   it("uses the previous workspace week for delivered-last-week questions", () => {
     const plan = planDeliveryQuestion("What was delivered last week?");
 
+    expect(selectDeliveryResponseProduct("What was delivered last week?")).toBe(
+      "period_delivery_brief",
+    );
     expect(plan?.requiredSources).toEqual(["jira", "github"]);
     expect(plan?.operations).toEqual([
       expect.objectContaining({
@@ -308,12 +326,20 @@ describe("delivery intelligence domain", () => {
         select: "period_census",
         time: { kind: "workspace_previous_week" },
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "knowledge",
+        time: { kind: "workspace_previous_week" },
+      }),
     ]);
   });
 
   it("bounds delivered-this-week questions to the current workspace week", () => {
     const plan = planDeliveryQuestion("What was delivered this week?");
 
+    expect(selectDeliveryResponseProduct("What was delivered this week?")).toBe(
+      "period_delivery_brief",
+    );
     expect(plan?.requiredSources).toEqual(["jira", "github"]);
     expect(plan?.operations).toEqual([
       expect.objectContaining({
@@ -332,6 +358,12 @@ describe("delivery intelligence domain", () => {
         select: "period_census",
         time: { kind: "workspace_week" },
       }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "knowledge",
+        time: { kind: "workspace_week" },
+        limit: 20,
+      }),
     ]);
   });
 
@@ -342,7 +374,48 @@ describe("delivery intelligence domain", () => {
       expect.objectContaining({ purpose: "delivered", limit: 3 }),
       expect.objectContaining({ purpose: "delivered", select: "observations", limit: 3 }),
       expect.objectContaining({ purpose: "delivered", select: "period_census" }),
+      expect.objectContaining({ purpose: "delivered", select: "knowledge", limit: 3 }),
     ]);
+  });
+
+  it("treats yesterday as its own closed workspace day and selects report synthesis", () => {
+    const plan = planDeliveryQuestion("What did the team deliver yesterday?");
+
+    expect(selectDeliveryResponseProduct("What did the team deliver yesterday?")).toBe(
+      "period_delivery_brief",
+    );
+    expect(plan?.operations).toEqual([
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "objects",
+        time: { kind: "workspace_previous_day" },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "observations",
+        time: { kind: "workspace_previous_day" },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "period_census",
+        time: { kind: "workspace_previous_day" },
+      }),
+      expect.objectContaining({
+        purpose: "delivered",
+        select: "knowledge",
+        time: { kind: "workspace_previous_day" },
+      }),
+    ]);
+    expect(
+      resolveDeliveryTimeConstraint(
+        { kind: "workspace_previous_day" },
+        "2026-07-20T13:09:00.000Z",
+        "Asia/Kolkata",
+      ),
+    ).toEqual({
+      fromInclusive: "2026-07-18T18:30:00.000Z",
+      toExclusive: "2026-07-19T18:30:00.000Z",
+    });
   });
 
   it("widens whole-team weekly work retrieval unless the user requests a top limit", () => {

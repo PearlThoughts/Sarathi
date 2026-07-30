@@ -7,19 +7,25 @@ import {
 describe("delivery reporting period boundaries", () => {
   it("parses arbitrary and source-defined report periods", () => {
     expect(
-      planDeliveryQuestion("Give me a delivery report for the last 37 days")?.operations.at(-1),
+      planDeliveryQuestion("Give me a delivery report for the last 37 days")?.operations.find(
+        ({ select }) => select === "period_census",
+      ),
     ).toMatchObject({
       select: "period_census",
       time: { kind: "lookback", days: 37 },
     });
     expect(
-      planDeliveryQuestion("Give me the previous sprint delivery report")?.operations.at(-1),
+      planDeliveryQuestion("Give me the previous sprint delivery report")?.operations.find(
+        ({ select }) => select === "period_census",
+      ),
     ).toMatchObject({
       select: "period_census",
       time: { kind: "jira_sprint", sprint: "previous" },
     });
     expect(
-      planDeliveryQuestion("Give me the release v2.4 delivery report")?.operations.at(-1),
+      planDeliveryQuestion("Give me the release v2.4 delivery report")?.operations.find(
+        ({ select }) => select === "period_census",
+      ),
     ).toMatchObject({
       select: "period_census",
       time: { kind: "release", release: "v2.4" },

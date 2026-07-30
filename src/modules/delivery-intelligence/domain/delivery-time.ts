@@ -74,6 +74,20 @@ export const resolveDeliveryTimeConstraint = (
     ).toISOString(),
   };
   if (constraint.kind === "workspace_day") return day;
+  if (constraint.kind === "workspace_previous_day") {
+    const previousDate = new Date(currentDate.getTime() - 86_400_000);
+    return {
+      fromInclusive: zonedMidnight(
+        {
+          year: previousDate.getUTCFullYear(),
+          month: previousDate.getUTCMonth() + 1,
+          day: previousDate.getUTCDate(),
+        },
+        timeZone,
+      ).toISOString(),
+      toExclusive: day.fromInclusive,
+    };
+  }
   if (constraint.kind === "lookback") {
     const firstDate = new Date(currentDate.getTime() - (constraint.days - 1) * 86_400_000);
     return {

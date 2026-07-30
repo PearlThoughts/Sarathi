@@ -697,21 +697,29 @@ const composeWithModel = (
   },
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const deterministic = composeAnswer(request, plan, result, responseMode);
-  if (responseMode !== "fast") return Effect.succeed(deterministic);
-  const items = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general").slice(
-    0,
-    deliveryResponseModePolicies[responseMode].maximumItems,
-  );
+  const reportComposition =
+    responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
+  if (responseMode !== "fast" && !reportComposition) return Effect.succeed(deterministic);
+  const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");
+  const maximumItems = deliveryResponseModePolicies[responseMode].maximumItems;
+  const items =
+    maximumItems === undefined
+      ? rankedItems.filter((item) => item.selector !== "period_census")
+      : rankedItems.slice(0, maximumItems);
   const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
   if (
-    items.length < 2 ||
-    !hasSourceBackedAction ||
-    (result.missingRequiredIntents?.length ?? 0) > 0 ||
-    (deterministic.mentions?.length ?? 0) > 0
+    responseMode === "fast" &&
+    (items.length < 2 ||
+      !hasSourceBackedAction ||
+      (result.missingRequiredIntents?.length ?? 0) > 0 ||
+      (deterministic.mentions?.length ?? 0) > 0)
   )
     return Effect.succeed(deterministic);
   const allowedCitationUrls = new Set([
     ...items.map((item) => item.citationUrl),
+    ...(result.periodDeliveryReport?.capsules.flatMap((capsule) =>
+      capsule.citations.map(({ url }) => url),
+    ) ?? []),
     ...result.conflicts.flatMap((conflict) =>
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
@@ -724,6 +732,7 @@ const composeWithModel = (
       plan,
       items,
       conflicts: result.conflicts,
+      periodDeliveryReport: result.periodDeliveryReport,
       responseProduct,
       responseMode,
       responseBudget,
@@ -740,6 +749,30 @@ const composeWithModel = (
       Effect.flatMap((composed) =>
         Effect.try({
           try: () => {
+            if (reportComposition) {
+              const text = composed.text.trim();
+              if (
+                ![
+                  "## Executive summary",
+                  "## Delivered by capability",
+                  "## Outcomes and business context",
+                  "## Gaps and unknowns",
+                ].every((heading) => text.includes(heading))
+              )
+                throw new Error("Composed delivery report lacks the required synthesis structure.");
+              if (
+                composed.citations.some(
+                  ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
+                )
+              )
+                throw new Error("Composed delivery report contains an unknown citation.");
+              return {
+                ...deterministic,
+                text,
+                citations: composed.citations,
+                mentions: [],
+              };
+            }
             const lines = composed.text
               .split(/\r?\n/)
               .map((line) => line.trim())
@@ -951,7 +984,7 @@ const renderLeadershipReport = (
     const omitted = section.capsules.length - shown.length;
     return [
       `### ${index + 1}. ${safeText(section.title)}`,
-      `${section.capsules.length} source-supported change${section.capsules.length === 1 ? " was" : "s were"} completed in this capability during the quarter.`,
+      `${section.capsules.length} source-supported change${section.capsules.length === 1 ? " was" : "s were"} completed in this capability during the period.`,
       `**Evidence-backed initiative index:** ${section.evidencedAliases.map(safeText).join("; ")}.`,
       ...shown.map(capsuleLine),
       ...(omitted === 0
@@ -974,7 +1007,7 @@ const renderLeadershipReport = (
     `## ${reportPeriodTitle(report)}`,
     `**Period:** ${reportPeriodLabel(report)}`,
     "### Executive summary",
-    `The quarter’s authorized evidence contains ${report.capsules.length} accepted delivery change${report.capsules.length === 1 ? "" : "s"}. Of these, ${mappedCapsuleCount} map to ${report.capabilitySections.length} reviewed theme${report.capabilitySections.length === 1 ? "" : "s"}: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The remaining ${report.unmappedCapsules.length} stay outside the reviewed capability mapping and are disclosed as a coverage gap, not presented as themed delivery. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
+    `The period’s authorized evidence contains ${report.capsules.length} accepted delivery change${report.capsules.length === 1 ? "" : "s"}. Of these, ${mappedCapsuleCount} map to ${report.capabilitySections.length} reviewed theme${report.capabilitySections.length === 1 ? "" : "s"}: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The remaining ${report.unmappedCapsules.length} stay outside the reviewed capability mapping and are disclosed as a coverage gap, not presented as themed delivery. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
     ...(sectionLines.length === 0
       ? ["- No accepted change could be mapped to a declared capability."]
       : sectionLines),
@@ -1020,7 +1053,25 @@ const renderResponseMode = (
   _elapsedMs: number,
 ): DeliveryAnswerDraft => {
   if (responseMode === "fast") return answer;
-  if (responseProduct === "leadership_report" && result.periodDeliveryReport !== undefined)
+  const reportProduct =
+    responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
+  if (
+    reportProduct &&
+    result.periodDeliveryReport !== undefined &&
+    answer.text.includes("## Executive summary") &&
+    answer.text.includes("## Delivered by capability")
+  )
+    return {
+      ...answer,
+      status:
+        !result.complete || result.unavailableSources.length > 0
+          ? "partial"
+          : result.periodDeliveryReport.capsules.length === 0
+            ? "empty"
+            : "ok",
+      periodDeliveryReport: result.periodDeliveryReport,
+    };
+  if (reportProduct && result.periodDeliveryReport !== undefined)
     return renderLeadershipReport(answer, result.periodDeliveryReport, result, _elapsedMs);
   if (responseProduct === "leadership_report")
     return {
@@ -1147,16 +1198,23 @@ const responseAcceptance = (
   ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
   const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
-  const materialLines =
-    responseProduct === "leadership_report"
-      ? lines.filter((line) => /^- \*\*.+\*\* —/.test(line))
-      : lines.filter(
-          (line) =>
-            /^(?:-|\d+\.)\s/.test(line) &&
-            !line.includes("**Coverage:**") &&
-            !line.includes("No explicit source-backed") &&
-            !line.includes("No source-backed evidence"),
-        );
+  const reportProduct =
+    (responseProduct === "period_delivery_brief" || responseProduct === "leadership_report") &&
+    result.periodDeliveryReport !== undefined;
+  const materialLines = reportProduct
+    ? lines.filter(
+        (line) =>
+          !line.startsWith("#") &&
+          /\]\(https:\/\//.test(line) &&
+          !line.toLocaleLowerCase("en").includes("coverage"),
+      )
+    : lines.filter(
+        (line) =>
+          /^(?:-|\d+\.)\s/.test(line) &&
+          !line.includes("**Coverage:**") &&
+          !line.includes("No explicit source-backed") &&
+          !line.includes("No source-backed evidence"),
+      );
   const citedLines = materialLines.filter((line) => /\]\(https:\/\//.test(line));
   const allowedUrls = new Set([
     ...result.items.map((item) => item.citationUrl),
@@ -1191,8 +1249,12 @@ const responseAcceptance = (
       ? headings.size === 0 && lines.length <= (policy.maximumLines ?? 5) + 2
       : responseMode === "structured"
         ? headings.has("### Delivery brief") && headings.has("### Evidence")
-        : responseProduct === "leadership_report"
-          ? [
+        : reportProduct
+          ? (answer.text.includes("## Executive summary") &&
+              answer.text.includes("## Delivered by capability") &&
+              answer.text.includes("## Outcomes and business context") &&
+              answer.text.includes("## Gaps and unknowns")) ||
+            [
               "### Executive summary",
               "### Outcomes and delivery confidence",
               "### Gaps and incomplete delivery chains",
@@ -1314,6 +1376,91 @@ const planForResponseMode = (
           : Math.min(50, Math.max(operation.limit, minimumLimit)),
     })),
   };
+};
+
+const periodReportEnrichmentQuestions = (report: PeriodDeliveryReport): readonly string[] => {
+  const capabilityQuestions = report.capabilitySections.map((section) => {
+    const initiatives = section.capsules
+      .slice(0, 8)
+      .map(({ title }) => safeText(title))
+      .join("; ");
+    return `Project rationale, customer or business outcome, decisions, launch context, and delivery details for ${safeText(section.title)}${initiatives === "" ? "" : `: ${initiatives}`}`;
+  });
+  const unmapped =
+    report.unmappedCapsules.length === 0
+      ? []
+      : [
+          `Project rationale, customer or business outcome, decisions, launch context, and delivery details for these unmapped changes: ${report.unmappedCapsules
+            .slice(0, 12)
+            .map(({ title }) => safeText(title))
+            .join("; ")}`,
+        ];
+  return [...capabilityQuestions, ...unmapped];
+};
+
+const retrievePeriodReportEnrichment = (
+  sources: readonly DeliveryQuerySource[],
+  context: Parameters<DeliveryQuerySource["execute"]>[0],
+  report: PeriodDeliveryReport,
+  sourceTimeoutMs: number,
+): Effect.Effect<readonly DeliveryResultItem[]> => {
+  const knowledgeSources = sources.filter((source) => source.selectors.includes("knowledge"));
+  const questions = periodReportEnrichmentQuestions(report);
+  if (knowledgeSources.length === 0 || questions.length === 0) return Effect.succeed([]);
+  return Effect.all(
+    questions.flatMap((question, index) => {
+      const plan: DeliveryQueryPlan = {
+        version: 1,
+        intents: ["delivered"],
+        operations: [
+          {
+            id: `delivery-report-enrichment-${index + 1}`,
+            purpose: "delivered",
+            select: "knowledge",
+            limit: 20,
+          },
+        ],
+        answerMode: "model_assisted",
+        maximumLines: 3,
+        requiresFinance: false,
+      };
+      return knowledgeSources.map((source) =>
+        source
+          .execute(
+            {
+              ...context,
+              question,
+            },
+            plan,
+          )
+          .pipe(
+            Effect.timeoutFail({
+              duration: sourceTimeoutMs,
+              onTimeout: () =>
+                new RepositoryError({
+                  message: `${source.source} report enrichment exceeded its response budget.`,
+                  operation: `delivery-report-enrichment-${source.source}`,
+                }),
+            }),
+            Effect.either,
+          ),
+      );
+    }),
+    { concurrency: 4 },
+  ).pipe(
+    Effect.map((results) =>
+      uniqueRanked(
+        results
+          .flatMap((result) => (result._tag === "Right" ? result.right.items : []))
+          .filter(
+            (item) =>
+              item.selector === "knowledge" &&
+              item.workspaceId === context.workspaceId &&
+              isSensitivityAtOrBelow(item.sensitivity, context.maximumSensitivity),
+          ),
+      ),
+    ),
+  );
 };
 
 export const createDeliveryAssistant = (
@@ -1480,7 +1627,8 @@ export const createDeliveryAssistant = (
               (intent) => !representedIntents.has(intent),
             );
             const periodDeliveryReport =
-              responseProduct === "leadership_report" &&
+              (responseProduct === "leadership_report" ||
+                responseProduct === "period_delivery_brief") &&
               merged.periodCensus !== undefined &&
               configuration.capabilityLedger !== undefined
                 ? buildPeriodDeliveryReport({
@@ -1489,62 +1637,79 @@ export const createDeliveryAssistant = (
                     capabilityLedger: configuration.capabilityLedger,
                   })
                 : undefined;
-            const reportMissingDelivery =
-              responseProduct === "leadership_report" &&
-              plan.intents.includes("delivered") &&
-              (periodDeliveryReport === undefined || periodDeliveryReport.capsules.length === 0);
-            const completed: DeliveryQueryResult = {
-              ...merged,
-              complete:
-                merged.complete && missingRequiredSources.length === 0 && !reportMissingDelivery,
-              missingRequiredSources,
-              missingRequiredIntents: [
-                ...new Set([
-                  ...missingRequiredIntents,
-                  ...(reportMissingDelivery ? (["delivered"] as const) : []),
-                ]),
-              ],
-              ...(periodDeliveryReport === undefined ? {} : { periodDeliveryReport }),
-            };
-            const remainingCompositionBudgetMs = totalBudgetMs - (Date.now() - startedAt) - 100;
-            const composed =
-              configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
-                ? Effect.succeed(composeAnswer(request, plan, completed, responseMode))
-                : composeWithModel(
-                    configuration.answerComposer,
-                    request,
-                    plan,
-                    completed,
-                    Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
-                    responseMode,
-                    responseProduct,
-                    responseBudget,
+            const enrichment =
+              periodDeliveryReport === undefined || configuration.answerComposer === undefined
+                ? Effect.succeed([])
+                : retrievePeriodReportEnrichment(
+                    configuration.sources,
+                    context,
+                    periodDeliveryReport,
+                    sourceTimeoutMs,
                   );
-            return composed.pipe(
-              Effect.map((draft) => {
-                const elapsedMs = Math.max(0, Date.now() - startedAt);
-                const rendered = renderResponseMode(
-                  draft,
-                  request,
-                  completed,
-                  responseMode,
-                  responseProduct,
-                  elapsedMs,
-                );
-                return {
-                  ...rendered,
-                  responseMode,
-                  responseProduct,
-                  responseBudget,
-                  acceptance: responseAcceptance(
-                    rendered,
-                    request,
-                    completed,
-                    responseMode,
-                    responseProduct,
-                    elapsedMs,
-                  ),
+            return enrichment.pipe(
+              Effect.flatMap((enrichmentItems) => {
+                const reportMissingDelivery =
+                  responseProduct === "leadership_report" &&
+                  plan.intents.includes("delivered") &&
+                  (periodDeliveryReport === undefined ||
+                    periodDeliveryReport.capsules.length === 0);
+                const completed: DeliveryQueryResult = {
+                  ...merged,
+                  items: uniqueRanked([...merged.items, ...enrichmentItems]),
+                  complete:
+                    merged.complete &&
+                    missingRequiredSources.length === 0 &&
+                    !reportMissingDelivery,
+                  missingRequiredSources,
+                  missingRequiredIntents: [
+                    ...new Set([
+                      ...missingRequiredIntents,
+                      ...(reportMissingDelivery ? (["delivered"] as const) : []),
+                    ]),
+                  ],
+                  ...(periodDeliveryReport === undefined ? {} : { periodDeliveryReport }),
                 };
+                const remainingCompositionBudgetMs = totalBudgetMs - (Date.now() - startedAt) - 100;
+                const composed =
+                  configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
+                    ? Effect.succeed(composeAnswer(request, plan, completed, responseMode))
+                    : composeWithModel(
+                        configuration.answerComposer,
+                        request,
+                        plan,
+                        completed,
+                        Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
+                        responseMode,
+                        responseProduct,
+                        responseBudget,
+                      );
+                return composed.pipe(
+                  Effect.map((draft) => {
+                    const elapsedMs = Math.max(0, Date.now() - startedAt);
+                    const rendered = renderResponseMode(
+                      draft,
+                      request,
+                      completed,
+                      responseMode,
+                      responseProduct,
+                      elapsedMs,
+                    );
+                    return {
+                      ...rendered,
+                      responseMode,
+                      responseProduct,
+                      responseBudget,
+                      acceptance: responseAcceptance(
+                        rendered,
+                        request,
+                        completed,
+                        responseMode,
+                        responseProduct,
+                        elapsedMs,
+                      ),
+                    };
+                  }),
+                );
               }),
             );
           }),

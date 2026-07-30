@@ -84,6 +84,7 @@ export type DeliveryTimeConstraint =
       readonly toExclusive: string;
     }
   | { readonly kind: "workspace_day" }
+  | { readonly kind: "workspace_previous_day" }
   | { readonly kind: "workspace_week" }
   | { readonly kind: "workspace_previous_week" }
   | {
@@ -325,6 +326,8 @@ const periodConstraint = (
 ): DeliveryTimeConstraint | undefined => {
   if (sprintTime !== undefined) return sprintTime;
   if (requestedLookbackDays !== undefined) return { kind: "lookback", days: requestedLookbackDays };
+  if (has(value, /\byesterday\b/)) return { kind: "workspace_previous_day" };
+  if (has(value, /\btoday\b/)) return { kind: "workspace_day" };
   if (has(value, /\b(?:last|previous) week\b/)) return { kind: "workspace_previous_week" };
   if (has(value, /\bthis week\b/)) return { kind: "workspace_week" };
   const explicitMonth = new RegExp(
@@ -390,12 +393,17 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ? { kind: "jira_sprint", sprint: "current" }
       : undefined;
   const reportPeriod = periodConstraint(value, requestedLookbackDays, sprintTime);
+  const deliveryCompletionQuestion =
+    has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished|done|accomplished|achieved)\b/) ||
+    (reportPeriod !== undefined &&
+      reportPeriod.kind !== "workspace_day" &&
+      has(value, /\bwhat\s+did\b.{0,80}\bdo\b/));
   const periodReportQuestion =
     has(
       value,
       /\b(?:delivery|leadership|executive|weekly|monthly|quarterly|sprint|release|period)\s+(?:report|brief|summary)\b/,
     ) ||
-    (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) && reportPeriod !== undefined);
+    (deliveryCompletionQuestion && reportPeriod !== undefined);
   const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
@@ -489,7 +497,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       time: sprintTime,
       limit: top,
     });
-  if (has(value, /\b(?:deliver(?:ed)?|completed|shipped|finished)\b/) || periodReportQuestion) {
+  if (deliveryCompletionQuestion || periodReportQuestion) {
     const time = reportPeriod;
     const limit =
       time?.kind === "workspace_week" || time?.kind === "workspace_previous_week"
@@ -529,6 +537,12 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         time,
         census: { pageSize: 200, maximumCandidates: 50_000 },
         limit: 1,
+      });
+    if (periodReportQuestion)
+      add("delivered", {
+        select: "knowledge",
+        time,
+        limit: explicitlyLimited ? top : 20,
       });
   }
   const currentWorkQuestion =
