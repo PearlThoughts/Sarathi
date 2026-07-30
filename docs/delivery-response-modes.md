@@ -27,8 +27,8 @@ Comparison, risk-report, and explicit structured-brief wording selects structure
 Deep-dive, comprehensive, investigation, root-cause, history, trend, and delivered-period wording selects deep-dive mode.
 
 - Source safety timeout: 90 seconds.
-- Composition safety timeout: 60 seconds.
-- Total safety budget: 150 seconds.
+- Composition safety timeout: 120 seconds.
+- Total safety budget: 240 seconds.
 - No latency acceptance target or fixed line/item presentation cap.
 - Format: the structure required by the question and evidence. Ordinary investigations retain explicit scope, sources, evidence, gaps, and inference boundaries.
 - Each bounded query operation may return up to 50 records. Exhaustive period-census retrieval is configured separately and cannot silently collapse into the fast format.

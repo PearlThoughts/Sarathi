@@ -48,8 +48,8 @@ export const deliveryResponseModePolicies: Readonly<
   deep_dive: {
     mode: "deep_dive",
     sourceTimeoutMs: 90_000,
-    compositionTimeoutMs: 60_000,
-    totalBudgetMs: 150_000,
+    compositionTimeoutMs: 120_000,
+    totalBudgetMs: 240_000,
     freshnessWindowMs: 2 * 60 * 60 * 1_000,
   },
 };
