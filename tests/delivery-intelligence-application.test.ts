@@ -185,20 +185,27 @@ describe("delivery intelligence application", () => {
   });
 
   it("composes a sub-30-day report from completed changes and cross-source context", async () => {
+    let compositionAttempt = 0;
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
       Effect.succeed({
-        text: [
-          "## Executive summary",
-          "The team completed the publishing foundation and aligned the operational handoff.",
-          "## Delivered by capability",
-          "### Modern Website Builder",
-          "SEO publishing moved through a merged implementation, while the Vault record preserves the product rationale. [PR](https://example.com/github/publishing-pr)",
-          "## Outcomes and business context",
-          "The indexed context establishes the release rationale but contains no measured customer outcome.",
-          "## Gaps and unknowns",
-          "Customer adoption remains unknown from the supplied period context.",
-        ].join("\n"),
-        citations: [{ label: "PR", url: "https://example.com/github/publishing-pr" }],
+        text:
+          compositionAttempt++ === 0
+            ? "## Delivery report\nFirst composition omitted the required synthesis structure."
+            : [
+                "## Executive summary",
+                "The team completed the publishing foundation and aligned the operational handoff.",
+                "## Delivered by capability",
+                "### Modern Website Builder",
+                "SEO publishing moved through a merged implementation, while the Vault record preserves the product rationale. [PR](https://example.com/github/publishing-pr)",
+                "## Outcomes and business context",
+                "The indexed context establishes the release rationale but contains no measured customer outcome.",
+                "## Gaps and unknowns",
+                "Customer adoption remains unknown from the supplied period context.",
+              ].join("\n"),
+        citations:
+          compositionAttempt === 1
+            ? []
+            : [{ label: "PR", url: "https://example.com/github/publishing-pr" }],
       }),
     );
     const execute = vi.fn<DeliveryQuerySource["execute"]>((context) =>
@@ -301,7 +308,7 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(compose).toHaveBeenCalledOnce();
+    expect(compose).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls[1]?.[0].question).toContain(
       "Project rationale, customer or business outcome",

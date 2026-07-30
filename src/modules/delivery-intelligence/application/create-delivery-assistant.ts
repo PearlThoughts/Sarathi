@@ -724,8 +724,8 @@ const composeWithModel = (
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
   ]);
-  return composer
-    .compose({
+  const composition = Effect.suspend(() =>
+    composer.compose({
       workspaceId: request.workspaceId,
       question: request.question,
       requestedAt: request.requestedAt,
@@ -736,83 +736,88 @@ const composeWithModel = (
       responseProduct,
       responseMode,
       responseBudget,
-    })
-    .pipe(
-      Effect.timeoutFail({
-        duration: timeoutMs,
-        onTimeout: () =>
-          new RepositoryError({
-            message: "Delivery answer composition exceeded its response budget.",
-            operation: "delivery-answer-composition",
-          }),
-      }),
-      Effect.flatMap((composed) =>
-        Effect.try({
-          try: () => {
-            if (reportComposition) {
-              const text = composed.text.trim();
-              if (
-                ![
-                  "## Executive summary",
-                  "## Delivered by capability",
-                  "## Outcomes and business context",
-                  "## Gaps and unknowns",
-                ].every((heading) => text.includes(heading))
-              )
-                throw new Error("Composed delivery report lacks the required synthesis structure.");
-              if (
-                composed.citations.some(
-                  ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
-                )
-              )
-                throw new Error("Composed delivery report contains an unknown citation.");
-              return {
-                ...deterministic,
-                text,
-                citations: composed.citations,
-                mentions: [],
-              };
-            }
-            const lines = composed.text
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter(Boolean);
+    }),
+  ).pipe(
+    Effect.flatMap((composed) =>
+      Effect.try({
+        try: () => {
+          if (reportComposition) {
+            const text = composed.text.trim();
             if (
-              lines.length < 3 ||
-              lines.length >
-                (deliveryResponseModePolicies[responseMode].maximumLines ??
-                  Number.POSITIVE_INFINITY) +
-                  2
+              ![
+                "## Executive summary",
+                "## Delivered by capability",
+                "## Outcomes and business context",
+                "## Gaps and unknowns",
+              ].every((heading) => text.includes(heading))
             )
-              throw new Error("Composed delivery answer has an invalid line count.");
-            if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
-              throw new Error("Composed delivery answer lacks a short opening paragraph.");
-            if (!lines.slice(1, -1).some((line) => line.startsWith("- ")))
-              throw new Error("Composed delivery answer lacks scannable evidence bullets.");
-            if (!/^1\.\s/.test(lines.at(-1) ?? ""))
-              throw new Error("Composed delivery answer lacks an explicit next action.");
+              throw new Error("Composed delivery report lacks the required synthesis structure.");
             if (
               composed.citations.some(
                 ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
               )
             )
-              throw new Error("Composed delivery answer contains an unknown citation.");
+              throw new Error("Composed delivery report contains an unknown citation.");
             return {
               ...deterministic,
-              text: lines.join("\n"),
+              text,
               citations: composed.citations,
               mentions: [],
             };
-          },
-          catch: () =>
-            new RepositoryError({
-              message: "Delivery answer composition was invalid.",
-              operation: "delivery-answer-composition-validation",
-            }),
+          }
+          const lines = composed.text
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          if (
+            lines.length < 3 ||
+            lines.length >
+              (deliveryResponseModePolicies[responseMode].maximumLines ??
+                Number.POSITIVE_INFINITY) +
+                2
+          )
+            throw new Error("Composed delivery answer has an invalid line count.");
+          if (/^(?:-|\d+\.)\s/.test(lines[0] ?? ""))
+            throw new Error("Composed delivery answer lacks a short opening paragraph.");
+          if (!lines.slice(1, -1).some((line) => line.startsWith("- ")))
+            throw new Error("Composed delivery answer lacks scannable evidence bullets.");
+          if (!/^1\.\s/.test(lines.at(-1) ?? ""))
+            throw new Error("Composed delivery answer lacks an explicit next action.");
+          if (
+            composed.citations.some(
+              ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
+            )
+          )
+            throw new Error("Composed delivery answer contains an unknown citation.");
+          return {
+            ...deterministic,
+            text: lines.join("\n"),
+            citations: composed.citations,
+            mentions: [],
+          };
+        },
+        catch: () =>
+          new RepositoryError({
+            message: "Delivery answer composition was invalid.",
+            operation: "delivery-answer-composition-validation",
+          }),
+      }),
+    ),
+  );
+  const retriedComposition = reportComposition
+    ? composition.pipe(Effect.retry({ times: 1 }))
+    : composition;
+  return retriedComposition.pipe(
+    Effect.timeoutFail({
+      duration: timeoutMs,
+      onTimeout: () =>
+        new RepositoryError({
+          message: "Delivery answer composition exceeded its response budget.",
+          operation: "delivery-answer-composition",
         }),
-      ),
-      Effect.catchAll(() => Effect.succeed(deterministic)),
-    );
+    }),
+    Effect.catchAll(() => Effect.succeed(deterministic)),
+  );
 };
 
 const responseSources = (
