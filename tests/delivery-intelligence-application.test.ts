@@ -452,13 +452,16 @@ describe("delivery intelligence application", () => {
         passed: true,
       },
     });
-    expect(answer.text).toContain("## Q2 2026 delivery report");
+    expect(answer.text).toContain("## Executive summary");
+    expect(answer.text).toContain("**Report:** Q2 2026 delivery report");
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
+    expect(answer.text).toContain("## Delivered by capability");
     expect(answer.text).toContain("### 1. SEO improvements");
     expect(answer.text).toContain(
       "1 source-supported change was completed in this capability during the period.",
     );
-    expect(answer.text).toContain("### Outcomes and delivery confidence");
+    expect(answer.text).toContain("## Outcomes and business context");
+    expect(answer.text).toContain("## Gaps and unknowns");
     expect(answer.text).toContain("Business impact:** Not established");
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");

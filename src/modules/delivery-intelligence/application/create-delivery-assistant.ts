@@ -1009,17 +1009,19 @@ const renderLeadershipReport = (
     )
     .join("; ");
   const text = [
-    `## ${reportPeriodTitle(report)}`,
+    "## Executive summary",
+    `**Report:** ${reportPeriodTitle(report)}`,
     `**Period:** ${reportPeriodLabel(report)}`,
-    "### Executive summary",
     `The period’s authorized evidence contains ${report.capsules.length} accepted delivery change${report.capsules.length === 1 ? "" : "s"}. Of these, ${mappedCapsuleCount} map to ${report.capabilitySections.length} reviewed theme${report.capabilitySections.length === 1 ? "" : "s"}: ${report.capabilitySections.map(({ title }) => title).join("; ")}. The remaining ${report.unmappedCapsules.length} stay outside the reviewed capability mapping and are disclosed as a coverage gap, not presented as themed delivery. The report below retains initiative-level evidence and citations instead of substituting a small top-ranked result set.`,
+    "## Delivered by capability",
     ...(sectionLines.length === 0
       ? ["- No accepted change could be mapped to a declared capability."]
       : sectionLines),
-    "### Outcomes and delivery confidence",
+    "## Outcomes and business context",
     `- **Observed delivery:** ${report.capsules.length} change${report.capsules.length === 1 ? "" : "s"} reached a merged, released, or deployed stage in the requested period.`,
     "- **Business impact:** Not established by the indexed completion evidence. The report does not convert technical delivery into customer or commercial impact.",
-    "### Gaps and incomplete delivery chains",
+    "## Gaps and unknowns",
+    "### Delivery-chain and mapping gaps",
     `- ${report.incompleteChainCount} change${report.incompleteChainCount === 1 ? "" : "s"} have no separately observed later-stage evidence such as release, deployment, acceptance, or impact.`,
     `- ${report.unmappedCapsules.length} accepted change${report.unmappedCapsules.length === 1 ? "" : "s"} remain${report.unmappedCapsules.length === 1 ? "s" : ""} outside the reviewed capability ledger; they are counted in coverage but intentionally omitted from the executive highlights.`,
     ...(result.unavailableSources.length === 0
