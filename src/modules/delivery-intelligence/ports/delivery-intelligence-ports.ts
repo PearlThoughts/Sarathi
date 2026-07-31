@@ -216,6 +216,7 @@ export type DeliveryAssistantAnswer = {
 };
 
 export type DeliveryAnswerCompositionInput = {
+  readonly compositionAttempt: "full" | "reduced";
   readonly workspaceId: string;
   readonly question: string;
   readonly requestedAt: string;

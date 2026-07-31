@@ -201,13 +201,22 @@ export const createGroundedAnswerGenerator = (
             ),
             experimental_telemetry: { isEnabled: false },
           });
-          const answer = deliveryReport
-            ? validateDeliveryReport(
-                result.text,
-                envelope.evidence,
-                envelope.presentation?.sprintReview !== undefined,
-              )
-            : validateConciseCitedAnswer(result.text, envelope.evidence);
+          const answer = (() => {
+            try {
+              return deliveryReport
+                ? validateDeliveryReport(
+                    result.text,
+                    envelope.evidence,
+                    envelope.presentation?.sprintReview !== undefined,
+                  )
+                : validateConciseCitedAnswer(result.text, envelope.evidence);
+            } catch {
+              throw new RepositoryError({
+                message: "Model output failed answer composition validation.",
+                operation: "delivery-answer-composition-validation",
+              });
+            }
+          })();
           diagnostics({
             event: "model_provider",
             outcome: "succeeded",
@@ -230,11 +239,13 @@ export const createGroundedAnswerGenerator = (
           throw error;
         }
       },
-      catch: () =>
-        new RepositoryError({
-          message: "OpenRouter answer generation is unavailable.",
-          operation: "openrouter-answer-generation",
-        }),
+      catch: (error) =>
+        error instanceof RepositoryError
+          ? error
+          : new RepositoryError({
+              message: "OpenRouter answer generation is unavailable.",
+              operation: "openrouter-answer-generation",
+            }),
     }),
 });
 

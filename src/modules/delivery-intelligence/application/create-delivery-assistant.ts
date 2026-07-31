@@ -907,146 +907,148 @@ const composeWithModel = (
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
   ]);
-  const composition = Effect.suspend(() =>
-    composer.compose({
-      workspaceId: request.workspaceId,
-      question: request.question,
-      requestedAt: request.requestedAt,
-      plan,
-      items,
-      conflicts: result.conflicts,
-      periodDeliveryReport: result.periodDeliveryReport,
-      responseProduct,
-      responseMode,
-      responseBudget,
-    }),
-  ).pipe(
-    Effect.flatMap((composed) =>
-      Effect.try({
-        try: () => {
-          if (reportComposition) {
-            const text = composed.text.trim();
-            const requiredHeadings =
-              result.periodDeliveryReport?.sprintReview === undefined
-                ? [
-                    "## Delivered",
-                    "## In progress",
-                    "## Waiting or blocked",
-                    "## Decisions needed",
-                    "## References",
-                  ]
-                : [
-                    "## Sprint overview",
-                    "## Previous sprint",
-                    "## Current sprint",
-                    "## Q3 alignment",
-                    "## Waiting or decisions",
-                    "## Jira hygiene",
-                    "## References",
-                  ];
-            if (!requiredHeadings.every((heading) => text.includes(heading)))
-              throw new Error("Composed delivery report lacks the required synthesis structure.");
-            const report = result.periodDeliveryReport;
-            const review = report?.sprintReview;
-            const sprintDateIsPresent = (value: string): boolean => {
-              const parsed = new Date(value);
-              if (Number.isNaN(parsed.getTime())) return false;
-              return [
-                value.slice(0, 10),
-                new Intl.DateTimeFormat("en-GB", {
-                  timeZone: request.timeZone,
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                }).format(parsed),
-              ].some((candidate) => text.includes(candidate));
-            };
-            for (const [label, sprint] of [
-              ["previous", review?.previousSprint],
-              ["current", review?.currentSprint],
-            ] as const) {
-              if (review === undefined) break;
+  const composition = (compositionAttempt: "full" | "reduced") =>
+    Effect.suspend(() =>
+      composer.compose({
+        compositionAttempt,
+        workspaceId: request.workspaceId,
+        question: request.question,
+        requestedAt: request.requestedAt,
+        plan,
+        items,
+        conflicts: result.conflicts,
+        periodDeliveryReport: result.periodDeliveryReport,
+        responseProduct,
+        responseMode,
+        responseBudget,
+      }),
+    ).pipe(
+      Effect.flatMap((composed) =>
+        Effect.try({
+          try: () => {
+            if (reportComposition) {
+              const text = composed.text.trim();
+              const requiredHeadings =
+                result.periodDeliveryReport?.sprintReview === undefined
+                  ? [
+                      "## Delivered",
+                      "## In progress",
+                      "## Waiting or blocked",
+                      "## Decisions needed",
+                      "## References",
+                    ]
+                  : [
+                      "## Sprint overview",
+                      "## Previous sprint",
+                      "## Current sprint",
+                      "## Q3 alignment",
+                      "## Waiting or decisions",
+                      "## Jira hygiene",
+                      "## References",
+                    ];
+              if (!requiredHeadings.every((heading) => text.includes(heading)))
+                throw new Error("Composed delivery report lacks the required synthesis structure.");
+              const report = result.periodDeliveryReport;
+              const review = report?.sprintReview;
+              const sprintDateIsPresent = (value: string): boolean => {
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) return false;
+                return [
+                  value.slice(0, 10),
+                  new Intl.DateTimeFormat("en-GB", {
+                    timeZone: request.timeZone,
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  }).format(parsed),
+                ].some((candidate) => text.includes(candidate));
+              };
+              for (const [label, sprint] of [
+                ["previous", review?.previousSprint],
+                ["current", review?.currentSprint],
+              ] as const) {
+                if (review === undefined) break;
+                if (
+                  sprint === undefined ||
+                  sprint.startAt === undefined ||
+                  sprint.endAt === undefined ||
+                  !text.includes(sprint.name) ||
+                  !sprintDateIsPresent(sprint.startAt) ||
+                  !sprintDateIsPresent(sprint.endAt)
+                )
+                  throw new Error(
+                    `Composed sprint report omits the ${label} sprint identity or dates.`,
+                  );
+              }
+              if (review?.initiatives.some(({ title }) => !text.includes(title)))
+                throw new Error("Composed sprint report omits a governed initiative identity.");
               if (
-                sprint === undefined ||
-                sprint.startAt === undefined ||
-                sprint.endAt === undefined ||
-                !text.includes(sprint.name) ||
-                !sprintDateIsPresent(sprint.startAt) ||
-                !sprintDateIsPresent(sprint.endAt)
+                /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
+                  text,
+                ) ||
+                /\b(?:sir here is|please test|test done\?)\b/i.test(text)
               )
-                throw new Error(
-                  `Composed sprint report omits the ${label} sprint identity or dates.`,
-                );
-            }
-            if (review?.initiatives.some(({ title }) => !text.includes(title)))
-              throw new Error("Composed sprint report omits a governed initiative identity.");
-            if (
-              /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
+                throw new Error("Composed delivery report contains prohibited report prose.");
+              const referencesAt = text.indexOf("## References");
+              const citedUrls = [...text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
+                match[1] === undefined ? [] : [match[1]],
+              );
+              if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
+                throw new Error("Composed delivery report contains an unknown inline citation.");
+              if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
+                throw new Error("Composed delivery report citations must remain in References.");
+              if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
+                throw new Error("Composed delivery report lacks compact references.");
+              if (
+                composed.citations.some(
+                  ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
+                )
+              )
+                throw new Error("Composed delivery report contains an unknown citation.");
+              return {
+                ...deterministic,
                 text,
-              ) ||
-              /\b(?:sir here is|please test|test done\?)\b/i.test(text)
-            )
-              throw new Error("Composed delivery report contains prohibited report prose.");
-            const referencesAt = text.indexOf("## References");
-            const citedUrls = [...text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
-              match[1] === undefined ? [] : [match[1]],
-            );
-            if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
-              throw new Error("Composed delivery report contains an unknown inline citation.");
-            if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
-              throw new Error("Composed delivery report citations must remain in References.");
-            if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
-              throw new Error("Composed delivery report lacks compact references.");
+                citations: composed.citations,
+                mentions: [],
+                ...(result.periodDeliveryReport === undefined
+                  ? {}
+                  : { periodDeliveryReport: result.periodDeliveryReport }),
+              };
+            }
+            const lines = composed.text
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean);
+            if (!lines.some((line) => line.startsWith("## ")))
+              throw new Error("Composed delivery answer lacks topic headings.");
+            if (!lines.some((line) => line.startsWith("- ")))
+              throw new Error("Composed delivery answer lacks scannable bullets.");
+            if (!lines.includes("### References"))
+              throw new Error("Composed delivery answer lacks a references footer.");
             if (
               composed.citations.some(
                 ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
               )
             )
-              throw new Error("Composed delivery report contains an unknown citation.");
+              throw new Error("Composed delivery answer contains an unknown citation.");
             return {
               ...deterministic,
-              text,
+              text: lines.join("\n"),
               citations: composed.citations,
               mentions: [],
-              ...(result.periodDeliveryReport === undefined
-                ? {}
-                : { periodDeliveryReport: result.periodDeliveryReport }),
             };
-          }
-          const lines = composed.text
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean);
-          if (!lines.some((line) => line.startsWith("## ")))
-            throw new Error("Composed delivery answer lacks topic headings.");
-          if (!lines.some((line) => line.startsWith("- ")))
-            throw new Error("Composed delivery answer lacks scannable bullets.");
-          if (!lines.includes("### References"))
-            throw new Error("Composed delivery answer lacks a references footer.");
-          if (
-            composed.citations.some(
-              ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
-            )
-          )
-            throw new Error("Composed delivery answer contains an unknown citation.");
-          return {
-            ...deterministic,
-            text: lines.join("\n"),
-            citations: composed.citations,
-            mentions: [],
-          };
-        },
-        catch: () =>
-          new RepositoryError({
-            message: "Delivery answer composition was invalid.",
-            operation: "delivery-answer-composition-validation",
-          }),
-      }),
-    ),
-  );
+          },
+          catch: () =>
+            new RepositoryError({
+              message: "Delivery answer composition was invalid.",
+              operation: "delivery-answer-composition-validation",
+            }),
+        }),
+      ),
+    );
   const retriedComposition = reportComposition
-    ? composition.pipe(Effect.retry({ times: 1 }))
-    : composition;
+    ? composition("full").pipe(Effect.catchAll(() => composition("reduced")))
+    : composition("full");
   return retriedComposition.pipe(
     Effect.timeoutFail({
       duration: timeoutMs,
