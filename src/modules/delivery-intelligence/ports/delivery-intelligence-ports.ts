@@ -215,6 +215,7 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-timeout"
           | "report-composition-empty"
           | "report-composition-structure"
+          | "report-sprint-projection-missing"
           | "report-composition-sprint-identity"
           | "report-composition-initiative-identity"
           | "report-composition-citations-missing"

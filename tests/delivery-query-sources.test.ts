@@ -555,6 +555,163 @@ describe("delivery intelligence live query sources", () => {
     ]);
   });
 
+  it("discovers the Jira Sprint custom field and reconstructs historical sprint membership", async () => {
+    const sprintFieldId = "customfield_10020";
+    const previousSprint = {
+      id: 101,
+      name: "Sprint 14",
+      state: "closed",
+      startDate: "2026-07-07T03:30:00.000Z",
+      endDate: "2026-07-18T12:30:00.000Z",
+      completeDate: "2026-07-18T12:45:00.000Z",
+    };
+    const currentSprint = {
+      id: 102,
+      name: "Sprint 15",
+      state: "active",
+      startDate: "2026-07-21T03:30:00.000Z",
+      endDate: "2026-08-01T12:30:00.000Z",
+    };
+    const plannedIssue = {
+      key: "DEMO-31",
+      fields: {
+        summary: "Complete the governed onboarding flow",
+        created: "2026-06-20T09:00:00.000Z",
+        updated: "2026-07-17T10:00:00.000Z",
+        resolutiondate: "2026-07-17T10:00:00.000Z",
+        status: { name: "Done", statusCategory: { key: "done" } },
+        [sprintFieldId]: [previousSprint],
+      },
+    };
+    const rolloverIssue = {
+      key: "DEMO-32",
+      fields: {
+        summary: "Finish the release handoff",
+        created: "2026-06-20T09:00:00.000Z",
+        updated: "2026-07-24T10:00:00.000Z",
+        status: { name: "In Progress", statusCategory: { key: "indeterminate" } },
+        [sprintFieldId]: [previousSprint, currentSprint],
+      },
+    };
+    const requestedSearchFields: Array<readonly string[]> = [];
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/rest/api/3/field/search")
+          return Response.json({
+            values: [
+              {
+                id: sprintFieldId,
+                name: "Sprint",
+                schema: { custom: "com.pyxis.greenhopper.jira:gh-sprint", type: "array" },
+              },
+            ],
+          });
+        if (url.pathname === "/rest/api/3/search/jql") {
+          const body = JSON.parse(String(init?.body)) as {
+            readonly jql: string;
+            readonly fields: readonly string[];
+          };
+          requestedSearchFields.push(body.fields);
+          return Response.json({
+            issues: body.jql.includes("openSprints()")
+              ? [rolloverIssue]
+              : [plannedIssue, rolloverIssue],
+          });
+        }
+        if (url.pathname.endsWith("/DEMO-31/changelog"))
+          return Response.json({
+            values: [
+              {
+                created: "2026-07-06T09:00:00.000Z",
+                items: [{ field: "Sprint", fromString: null, toString: "Sprint 14" }],
+              },
+              {
+                created: "2026-07-17T10:00:00.000Z",
+                items: [{ field: "status", fromString: "In Progress", toString: "Done" }],
+              },
+            ],
+          });
+        return Response.json({
+          values: [
+            {
+              created: "2026-07-10T09:00:00.000Z",
+              items: [{ field: "Sprint", fromString: null, toString: "Sprint 14" }],
+            },
+          ],
+        });
+      },
+    });
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["commitments", "delivered", "current_work"],
+      operations: [
+        {
+          id: "previous-commitments",
+          purpose: "commitments",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "previous" },
+          limit: 50,
+        },
+        {
+          id: "previous-delivered",
+          purpose: "delivered",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "previous" },
+          limit: 50,
+        },
+        {
+          id: "current-work",
+          purpose: "current_work",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "current" },
+          limit: 50,
+        },
+      ],
+      answerMode: "model_assisted",
+      maximumLines: 6,
+      requiresFinance: false,
+      requiredSources: ["jira"],
+    };
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(requestedSearchFields).toHaveLength(3);
+    expect(requestedSearchFields.every((fields) => fields.includes(sprintFieldId))).toBe(true);
+    expect(requestedSearchFields.every((fields) => !fields.includes("sprint"))).toBe(true);
+    expect(
+      result.items.find(
+        ({ id, intent }) => id === "jira:DEMO-31:previous" && intent === "commitments",
+      )?.planning,
+    ).toMatchObject({
+      previousSprint: { name: "Sprint 14" },
+      sprintClassifications: ["planned_at_start", "completed_during_sprint"],
+    });
+    expect(
+      result.items.find(
+        ({ id, intent }) => id === "jira:DEMO-32:previous" && intent === "commitments",
+      )?.planning,
+    ).toMatchObject({
+      previousSprint: { name: "Sprint 14" },
+      currentSprint: { name: "Sprint 15" },
+      sprintClassifications: ["added_during_sprint", "rolled_into_current"],
+    });
+    expect(
+      result.items.find(
+        ({ id, intent }) => id === "jira:DEMO-32:current" && intent === "current_work",
+      )?.planning,
+    ).toMatchObject({
+      currentSprint: { name: "Sprint 15" },
+      sprintClassifications: ["current_sprint", "rolled_into_current"],
+    });
+  });
+
   it("returns both Jira risks and a ranked next action for a compound question", async () => {
     const observedJql: string[] = [];
     const question = "What are the delivery risks and next action?";
@@ -1208,11 +1365,51 @@ describe("delivery intelligence live query sources", () => {
       projectKeys: ["DEMO"],
       fetcher: async (input, init) => {
         const url = String(input);
+        if (url.includes("/field/search"))
+          return Response.json({
+            values: [
+              {
+                id: "customfield_10020",
+                name: "Sprint",
+                schema: { custom: "com.pyxis.greenhopper.jira:gh-sprint", type: "array" },
+              },
+            ],
+          });
         if (url.includes("/changelog")) {
           changelogRequests += 1;
-          return Response.json({ values: [] });
+          return Response.json({
+            values: url.includes("DEMO-42")
+              ? [
+                  {
+                    created: "2026-07-13T09:00:00.000Z",
+                    items: [
+                      {
+                        field: "Sprint",
+                        fromString: null,
+                        toString: "Delivery Sprint 8",
+                      },
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    created: "2026-07-20T09:00:00.000Z",
+                    items: [
+                      {
+                        field: "Sprint",
+                        fromString: null,
+                        toString: "Delivery Sprint 8",
+                      },
+                    ],
+                  },
+                ],
+          });
         }
-        const { jql } = JSON.parse(String(init?.body)) as { readonly jql: string };
+        const { jql, fields } = JSON.parse(String(init?.body)) as {
+          readonly jql: string;
+          readonly fields: readonly string[];
+        };
+        expect(fields).toContain("customfield_10020");
         return Response.json({
           issues: [
             {
@@ -1226,7 +1423,7 @@ describe("delivery intelligence live query sources", () => {
                   statusCategory: { key: "indeterminate" },
                 },
                 assignee: { displayName: "Pavithra" },
-                sprint: [
+                customfield_10020: [
                   {
                     id: 81,
                     name: "Delivery Sprint 8",
@@ -1256,7 +1453,7 @@ describe("delivery intelligence live query sources", () => {
                   statusCategory: { key: "indeterminate" },
                 },
                 assignee: { displayName: "Alex" },
-                sprint: [
+                customfield_10020: [
                   {
                     id: 81,
                     name: "Delivery Sprint 8",
