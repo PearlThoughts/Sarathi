@@ -896,9 +896,13 @@ const composeWithModel = (
           if (reportComposition) {
             const text = composed.text.trim();
             if (
-              !["## What the team delivered", "## References"].every((heading) =>
-                text.includes(heading),
-              )
+              ![
+                "## Delivered",
+                "## In progress",
+                "## Waiting or blocked",
+                "## Decisions needed",
+                "## References",
+              ].every((heading) => text.includes(heading))
             )
               throw new Error("Composed delivery report lacks the required synthesis structure.");
             if (
@@ -961,35 +965,6 @@ const composeWithModel = (
   );
 };
 
-const localDateParts = (
-  value: string,
-  timeZone: string,
-): { readonly year: number; readonly month: number; readonly day: number } => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(new Date(value));
-  const part = (type: "year" | "month" | "day"): number =>
-    Number(parts.find((candidate) => candidate.type === type)?.value ?? 0);
-  return { year: part("year"), month: part("month"), day: part("day") };
-};
-
-const reportPeriodTitle = (report: PeriodDeliveryReport): string => {
-  if (report.census.boundary.kind !== "absolute") return "Delivery report";
-  const start = localDateParts(report.census.boundary.fromInclusive, report.census.timeZone);
-  const end = localDateParts(report.census.boundary.toExclusive, report.census.timeZone);
-  const quarter =
-    start.day === 1 &&
-    [1, 4, 7, 10].includes(start.month) &&
-    end.day === 1 &&
-    end.month === ((start.month + 2) % 12) + 1
-      ? Math.floor((start.month - 1) / 3) + 1
-      : undefined;
-  return quarter === undefined ? "Delivery report" : `Q${quarter} ${start.year} delivery report`;
-};
-
 const reportPeriodLabel = (report: PeriodDeliveryReport): string => {
   if (report.census.boundary.kind !== "absolute")
     return `${report.census.boundary.reference} (${report.census.timeZone})`;
@@ -1009,12 +984,10 @@ const renderLeadershipReport = (
   result: DeliveryQueryResult,
   _elapsedMs: number,
 ): DeliveryAnswerDraft => {
-  const citationLabels = new Map<string, string>();
   const citations: { label: string; url: string }[] = [];
   const registerCitation = (source: DeliverySourceKind, url: string): void => {
-    if (citationLabels.has(url) || citations.length >= 12) return;
+    if (citations.some((citation) => citation.url === url) || citations.length >= 20) return;
     const label = `${sourceLabel[source]} ${citations.length + 1}`;
-    citationLabels.set(url, label);
     citations.push({ label, url });
   };
   const referenceLines = (): readonly string[] => {
@@ -1044,91 +1017,66 @@ const renderLeadershipReport = (
     const summary = cleanHeadline(capsule.summary);
     return summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en") ? "" : summary;
   };
+  const capabilityTitle = (capsule: PeriodDeliveryReport["capsules"][number]): string =>
+    report.capabilitySections.find(({ key }) => capsule.capabilityKeys.includes(key))?.title ??
+    (capsule.alignment === "emerging_requirement" ? "Emerging requirement" : "Unaccounted work");
+  const lifecycleLabel: Readonly<
+    Record<PeriodDeliveryReport["capsules"][number]["lifecycleState"], string>
+  > = {
+    scoped: "Scoped",
+    implementing: "Implementing",
+    development_ready: "Development-ready",
+    qa: "QA",
+    production: "Production",
+    accepted: "Accepted",
+  };
   const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
     for (const { source, url } of capsule.citations.slice(0, 2)) registerCitation(source, url);
     const title = cleanHeadline(capsule.title);
     const safeSummary = narrativeSummary(capsule);
-    return safeSummary === "" ||
-      safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
-      ? `- **${title}**`
-      : `- **${title}** — ${safeSummary}`;
+    const detail =
+      safeSummary === "" || safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
+        ? title
+        : safeSummary;
+    return `- **${safeText(capabilityTitle(capsule))}** — ${detail} _(${lifecycleLabel[capsule.lifecycleState]})_`;
   };
-  const estimatedCapsuleLineLength = (capsule: PeriodDeliveryReport["capsules"][number]): number =>
-    cleanHeadline(capsule.title).length + narrativeSummary(capsule).length + 10;
-  const reportFailure = (reasons: readonly string[], status: "partial" | "empty") => ({
-    ...answer,
-    text: [
-      `## ${reportPeriodTitle(report)}`,
-      `**Period:** ${reportPeriodLabel(report)}`,
-      "### Report unavailable",
-      "Sarathi could not produce a reliable leadership report from the authorized indexed corpus.",
-      ...reasons.map((reason) => `- ${reason}`),
-      "No delivery conclusion was generated from incomplete or insufficient evidence.",
-    ].join("\n"),
-    citations: [],
-    status,
-    periodDeliveryReport: report,
-  });
-  if (!report.census.complete || result.unavailableSources.length > 0)
-    return reportFailure(
-      [
-        ...(!report.census.complete
-          ? [
-              `The authorized period census is partial after ${report.census.pagination.pagesRead} page(s); omissions cannot be interpreted as no delivery.`,
-            ]
-          : []),
-        ...(result.unavailableSources.length === 0
-          ? []
-          : [
-              `Required source coverage is unavailable: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}.`,
-            ]),
-      ],
-      "partial",
-    );
-  if (report.capsules.length === 0)
-    return reportFailure(
-      [
-        `The complete census examined ${report.census.examinedCandidateCount} authorized records but found no change with qualifying merged, released, or deployed evidence in the requested period.`,
-      ],
-      "empty",
-    );
-  const rankedSections = report.capabilitySections;
-  const selectedByCapability = new Map<string, PeriodDeliveryReport["capsules"][number][]>(
-    rankedSections.map((section) => [section.key, []]),
-  );
-  const teamsReportCharacterBudget = 18_000;
-  let selectedCharacters = 0;
-  const maximumSectionDepth = Math.max(...rankedSections.map(({ capsules }) => capsules.length));
-  for (let depth = 0; depth < maximumSectionDepth; depth += 1) {
-    for (const section of rankedSections) {
-      const capsule = section.capsules[depth];
-      if (capsule === undefined) continue;
-      const estimatedLength = estimatedCapsuleLineLength(capsule);
-      if (selectedCharacters + estimatedLength > teamsReportCharacterBudget) continue;
-      selectedByCapability.get(section.key)?.push(capsule);
-      selectedCharacters += estimatedLength;
+  const deliveredLines = report.deliveredEpisodes.map(capsuleLine);
+  const inProgressLines = report.inProgressEpisodes.map(capsuleLine);
+  const dependencyLines = report.dependencies.map((dependency) => {
+    for (const url of dependency.citations) {
+      const source = report.capsules
+        .flatMap(({ citations: episodeCitations }) => episodeCitations)
+        .find((citation) => citation.url === url)?.source;
+      if (source !== undefined) registerCitation(source, url);
     }
-  }
-  const sectionLines = rankedSections.flatMap((section, index) => {
-    const shown = selectedByCapability.get(section.key) ?? [];
-    const omitted = section.capsules.length - shown.length;
-    return [
-      `### ${index + 1}. ${safeText(section.title)}`,
-      ...shown.map(capsuleLine),
-      ...(omitted === 0
-        ? []
-        : [
-            `- _${omitted} additional change${omitted === 1 ? "" : "s"} not shown in this Teams message._`,
-          ]),
-      "",
-    ];
+    const capability =
+      dependency.capabilityKey === undefined
+        ? "Unaccounted work"
+        : (report.capabilitySections.find(({ key }) => key === dependency.capabilityKey)?.title ??
+          "Unaccounted work");
+    const since =
+      dependency.since === undefined
+        ? ""
+        : ` since ${new Intl.DateTimeFormat("en-GB", { timeZone: report.census.timeZone, day: "numeric", month: "short" }).format(new Date(dependency.since))}`;
+    return `- **${safeText(capability)}** — ${safeText(dependency.waiting)} is waiting for ${safeText(dependency.awaited)}${since}. Required action: ${safeText(dependency.requiredAction)}`;
   });
+  const decisionLines = report.decisionsNeeded.map((decision) => `- ${safeText(decision)}`);
   const text = [
-    "## What the team delivered",
+    "## Delivered",
     `**Period:** ${reportPeriodLabel(report)}`,
-    ...(sectionLines.length === 0
-      ? ["- No delivered feature could be mapped to a capability."]
-      : sectionLines),
+    ...(deliveredLines.length === 0
+      ? ["- No episode reached production or acceptance in this period."]
+      : deliveredLines),
+    "## In progress",
+    ...(inProgressLines.length === 0
+      ? ["- No material active episode was found."]
+      : inProgressLines),
+    "## Waiting or blocked",
+    ...(dependencyLines.length === 0
+      ? ["- No active human or operational wait was found."]
+      : dependencyLines),
+    "## Decisions needed",
+    ...(decisionLines.length === 0 ? ["- No decision requiring action was found."] : decisionLines),
     ...referenceLines(),
   ].join("\n");
   return {
@@ -1159,7 +1107,10 @@ const renderResponseMode = (
   if (
     reportProduct &&
     result.periodDeliveryReport !== undefined &&
-    answer.text.includes("## What the team delivered") &&
+    answer.text.includes("## Delivered") &&
+    answer.text.includes("## In progress") &&
+    answer.text.includes("## Waiting or blocked") &&
+    answer.text.includes("## Decisions needed") &&
     answer.text.includes("## References")
   )
     return {
@@ -1213,10 +1164,10 @@ const responseAcceptance = (
 ): DeliveryResponseAcceptance => {
   const policy = deliveryResponseModePolicies[responseMode];
   const missingIntents = new Set(result.missingRequiredIntents ?? []);
-  const periodReport =
+  const reportProduct =
     (responseProduct === "period_delivery_brief" || responseProduct === "leadership_report") &&
     answer.plan.operations.some(({ select }) => select === "period_census");
-  const acceptanceIntents = periodReport
+  const acceptanceIntents = reportProduct
     ? answer.plan.intents.filter((intent) => intent === "delivered")
     : answer.plan.intents;
   const requestedIntents = acceptanceIntents.length;
@@ -1236,9 +1187,7 @@ const responseAcceptance = (
   ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
   const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
-  const reportProduct =
-    (responseProduct === "period_delivery_brief" || responseProduct === "leadership_report") &&
-    result.periodDeliveryReport !== undefined;
+  const structuredReportProduct = reportProduct && result.periodDeliveryReport !== undefined;
   const referencesIndex = lines.findIndex(
     (line) => line === "### References" || line === "## References",
   );
@@ -1275,8 +1224,14 @@ const responseAcceptance = (
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;
   const headings = new Set(lines.filter((line) => /^#{2,3} /.test(line)));
-  const formatPassed = reportProduct
-    ? headings.has("## What the team delivered") && headings.has("## References")
+  const formatPassed = structuredReportProduct
+    ? [
+        "## Delivered",
+        "## In progress",
+        "## Waiting or blocked",
+        "## Decisions needed",
+        "## References",
+      ].every((heading) => headings.has(heading))
     : headings.size > 0 && headings.has("### References");
   const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
@@ -1394,13 +1349,13 @@ const periodReportEnrichmentQuestions = (report: PeriodDeliveryReport): readonly
       .slice(0, 8)
       .map(({ title }) => safeText(title))
       .join("; ");
-    return `Project rationale, customer or business outcome, decisions, launch context, and delivery details for ${safeText(section.title)}${initiatives === "" ? "" : `: ${initiatives}`}`;
+    return `Latest delivery state, decisions, emerging requirements, human waits, awaited action, acceptance, and project rationale for ${safeText(section.title)}${initiatives === "" ? "" : `: ${initiatives}`}`;
   });
   const unmapped =
     report.unmappedCapsules.length === 0
       ? []
       : [
-          `Project rationale, customer or business outcome, decisions, launch context, and delivery details for these unmapped changes: ${report.unmappedCapsules
+          `Latest delivery state, decisions, emerging requirements, human waits, awaited action, acceptance, and initiative placement for these unaccounted changes: ${report.unmappedCapsules
             .slice(0, 12)
             .map(({ title }) => safeText(title))
             .join("; ")}`,

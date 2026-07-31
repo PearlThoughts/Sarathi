@@ -67,6 +67,38 @@ export type DeliveryReportPresentation = {
     readonly changeCount: number;
     readonly evidencedInitiatives: readonly string[];
   }[];
+  readonly episodes: readonly {
+    readonly id: string;
+    readonly capability: string;
+    readonly initiative?: string | undefined;
+    readonly title: string;
+    readonly lifecycleState:
+      | "scoped"
+      | "implementing"
+      | "development_ready"
+      | "qa"
+      | "production"
+      | "accepted";
+    readonly alignment:
+      | "governed_initiative"
+      | "operational_support"
+      | "emerging_requirement"
+      | "unaccounted_work";
+    readonly owners: readonly string[];
+  }[];
+  readonly dependencies: readonly {
+    readonly waiting: string;
+    readonly awaited: string;
+    readonly since?: string | undefined;
+    readonly requiredAction: string;
+    readonly episodeId: string;
+  }[];
+  readonly decisionsNeeded: readonly string[];
+  readonly jiraAdvisories: readonly {
+    readonly kind: string;
+    readonly episodeId: string;
+    readonly message: string;
+  }[];
 };
 
 export type AuthorizedContextEnvelope = {

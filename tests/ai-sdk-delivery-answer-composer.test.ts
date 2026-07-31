@@ -120,9 +120,14 @@ describe("AI SDK delivery answer composer", () => {
             id: "github:pull:101",
             title: "SEO metadata publishing",
             summary: "Published SEO metadata throughout the website builder.",
+            latestActivityAt: "2026-07-29T09:00:00.000Z",
             completedAt: "2026-07-29T09:00:00.000Z",
             completionStage: "merged",
+            lifecycleState: "development_ready",
+            alignment: "governed_initiative",
+            initiativeTitle: "Atlas Site Composer",
             capabilityKeys: ["modern-website-builder"],
+            owners: [],
             sources: ["github"],
             citations: [
               {
@@ -130,6 +135,8 @@ describe("AI SDK delivery answer composer", () => {
                 url: "https://github.com/example/product/pull/101",
               },
             ],
+            dependencies: [],
+            jiraAdvisories: [],
             chain: [],
           },
         ],
@@ -143,9 +150,14 @@ describe("AI SDK delivery answer composer", () => {
                 id: "github:pull:101",
                 title: "SEO metadata publishing",
                 summary: "Published SEO metadata throughout the website builder.",
+                latestActivityAt: "2026-07-29T09:00:00.000Z",
                 completedAt: "2026-07-29T09:00:00.000Z",
                 completionStage: "merged",
+                lifecycleState: "development_ready",
+                alignment: "governed_initiative",
+                initiativeTitle: "Atlas Site Composer",
                 capabilityKeys: ["modern-website-builder"],
+                owners: [],
                 sources: ["github"],
                 citations: [
                   {
@@ -153,6 +165,8 @@ describe("AI SDK delivery answer composer", () => {
                     url: "https://github.com/example/product/pull/101",
                   },
                 ],
+                dependencies: [],
+                jiraAdvisories: [],
                 chain: [],
               },
             ],
@@ -165,7 +179,13 @@ describe("AI SDK delivery answer composer", () => {
             ],
           },
         ],
+        deliveredEpisodes: [],
+        inProgressEpisodes: [],
+        dependencies: [],
+        decisionsNeeded: [],
+        jiraAdvisories: [],
         unmappedCapsules: [],
+        excludedImmaterialActivityCount: 0,
         incompleteChainCount: 1,
       },
       responseProduct: "period_delivery_brief",
@@ -194,6 +214,13 @@ describe("AI SDK delivery answer composer", () => {
           evidencedInitiatives: ["SEO publishing"],
         },
       ],
+      episodes: [
+        expect.objectContaining({
+          capability: "Atlas Site Composer",
+          initiative: "Atlas Site Composer",
+          lifecycleState: "development_ready",
+        }),
+      ],
     });
     expect(envelope?.evidence.slice(0, 3).map(({ source }) => source)).toEqual([
       "github",
@@ -201,7 +228,7 @@ describe("AI SDK delivery answer composer", () => {
       "teams",
     ]);
     expect(envelope?.evidence[0]).toMatchObject({
-      title: "Completed change — Atlas Site Composer: SEO metadata publishing",
+      title: "Delivery episode — Atlas Site Composer: SEO metadata publishing",
       sourceUrl: "https://github.com/example/product/pull/101",
     });
     expect(envelope?.evidence).toHaveLength(37);
