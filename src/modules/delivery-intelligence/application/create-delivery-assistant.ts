@@ -98,6 +98,7 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-timeout":
     case "report-composition-empty":
     case "report-composition-structure":
+    case "report-sprint-projection-missing":
     case "report-composition-sprint-identity":
     case "report-composition-initiative-identity":
     case "report-composition-citations-missing":
@@ -915,6 +916,15 @@ const composeWithModel = (
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const reportComposition =
     responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
+  const requiresSprintReview = plan.operations.some(({ time }) => time?.kind === "jira_sprint");
+  if (
+    reportComposition &&
+    requiresSprintReview &&
+    result.periodDeliveryReport?.sprintReview === undefined
+  )
+    return Effect.succeed(
+      reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED", "report-sprint-projection-missing"),
+    );
   const deterministic = composeAnswer(request, plan, result, responseMode);
   if (responseMode !== "fast" && !reportComposition) return Effect.succeed(deterministic);
   const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");

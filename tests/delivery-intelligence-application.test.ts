@@ -2060,6 +2060,81 @@ describe("delivery intelligence application", () => {
     });
   });
 
+  it("fails safely when sprint intent has no reconstructed sprint projection", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() =>
+      Effect.die("the missing sprint projection must stop before composition"),
+    );
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge", "github_live", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item(
+                "jira",
+                "generic-period-item",
+                "Completed onboarding capability",
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              subjectAliases: ["Onboarding"],
+              completionStage: "development_ready" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus: compilePeriodCensus({
+            boundary: {
+              kind: "absolute",
+              fromInclusive: "2026-07-01T00:00:00.000Z",
+              toExclusive: "2026-08-01T00:00:00.000Z",
+            },
+            timeZone: "Asia/Kolkata",
+            candidates: [],
+            configuredSources: [],
+            sourceCheckpoints: new Map(),
+            pageSize: 200,
+            pagesRead: 1,
+            paginationExhausted: true,
+            maximumCandidates: 50_000,
+          }),
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            { key: "onboarding", title: "Onboarding", aliases: [{ value: "Onboarding" }] },
+          ],
+        },
+      }).answer({
+        ...request,
+        question:
+          "What did we commit to in the previous sprint, what was completed, what was added during the sprint, and what rolled over?",
+      }),
+    );
+
+    expect(compose).not.toHaveBeenCalled();
+    expect(answer).toMatchObject({
+      status: "failed",
+      citations: [],
+      failure: {
+        code: "SARATHI-REPORT-COMPOSITION-FAILED",
+        classification: "SARATHI-REPORT-QUALITY-FAILED",
+        diagnosticCode: "report-sprint-projection-missing",
+      },
+      acceptance: { passed: false },
+    });
+    expect(answer.text).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
+    expect(answer.text).not.toContain("Completed onboarding capability");
+  });
+
   it("synthesizes only authorized deduplicated records and validates model citations", async () => {
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
       Effect.succeed({

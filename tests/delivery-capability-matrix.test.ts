@@ -34,6 +34,19 @@ const reportComposer: DeliveryAnswerComposer = {
       ({ url }, index) => `- [Reference ${index + 1}](${url})`,
     );
     const review = report?.sprintReview;
+    const sprintLabel = (
+      sprint:
+        | {
+            readonly name: string;
+            readonly startAt?: string | undefined;
+            readonly endAt?: string | undefined;
+          }
+        | undefined,
+      fallback: string,
+    ): string =>
+      sprint === undefined
+        ? fallback
+        : `${sprint.name} (${sprint.startAt?.slice(0, 10) ?? "start unknown"} to ${sprint.endAt?.slice(0, 10) ?? "end unknown"})`;
     return Effect.succeed({
       text:
         review === undefined
@@ -51,7 +64,7 @@ const reportComposer: DeliveryAnswerComposer = {
             ].join("\n")
           : [
               "## Sprint overview",
-              `- ${review.previousSprint?.name ?? "Previous sprint"} was reviewed against ${review.currentSprint?.name ?? "the current sprint"}.`,
+              `- ${sprintLabel(review.previousSprint, "Previous sprint")} was reviewed against ${sprintLabel(review.currentSprint, "the current sprint")}.`,
               "## Previous sprint",
               "- Completed and rollover work was consolidated by capability.",
               "## Current sprint",
@@ -157,6 +170,38 @@ const genericSource: DeliveryQuerySource = {
       indexedAt: context.requestedAt,
       dedupeKey: `${operation.purpose}:${index}`,
       ...(operation.purpose === "delivered" ? { completionStage: "deployed" as const } : {}),
+      ...(operation.time?.kind === "jira_sprint"
+        ? {
+            planning: {
+              externalKey: `DEMO-${index + 1}`,
+              status: operation.purpose === "delivered" ? "Done" : "In Progress",
+              sprint:
+                operation.time.sprint === "previous" ? "Delivery Sprint 8" : "Delivery Sprint 9",
+              hasDependency: false,
+              hasAcceptanceInformation: false,
+              previousSprint: {
+                id: "81",
+                name: "Delivery Sprint 8",
+                state: "closed" as const,
+                startAt: "2026-07-01T03:30:00.000Z",
+                endAt: "2026-07-14T03:30:00.000Z",
+              },
+              currentSprint: {
+                id: "82",
+                name: "Delivery Sprint 9",
+                state: "active" as const,
+                startAt: "2026-07-15T03:30:00.000Z",
+                endAt: "2026-07-28T03:30:00.000Z",
+              },
+              sprintClassifications:
+                operation.time.sprint === "current"
+                  ? (["current_sprint"] as const)
+                  : operation.purpose === "delivered"
+                    ? (["planned_at_start", "completed_during_sprint"] as const)
+                    : (["planned_at_start"] as const),
+            },
+          }
+        : {}),
     }));
     const representedSources = new Set(items.map(({ source }) => source));
     const firstOperation = plan.operations[0];

@@ -89,6 +89,12 @@ type JiraSearchResult = {
   readonly issues: readonly JiraIssue[];
   readonly exhausted: boolean;
 };
+type JiraField = {
+  readonly id?: string;
+  readonly name?: string;
+  readonly schema?: { readonly custom?: string; readonly type?: string };
+};
+type JiraFieldSearchResponse = { readonly values?: readonly JiraField[] };
 type JiraHistory = {
   readonly id?: string;
   readonly created?: string;
@@ -317,6 +323,22 @@ const readIssueHistory = async (
   return histories;
 };
 
+const discoverSprintFieldId = async (
+  configuration: JiraDeliveryQueryConfiguration,
+): Promise<string> => {
+  const page = await requestJson<JiraFieldSearchResponse>(
+    configuration,
+    "/rest/api/3/field/search?type=custom&query=Sprint&maxResults=50",
+  );
+  const fields = page.values ?? [];
+  const sprintField =
+    fields.find(({ schema }) => schema?.custom?.endsWith(":gh-sprint") === true) ??
+    fields.find(({ name }) => name?.trim().toLowerCase() === "sprint");
+  if (sprintField?.id === undefined || !/^customfield_\d+$/.test(sprintField.id))
+    throw new Error("Jira Sprint field is unavailable.");
+  return sprintField.id;
+};
+
 const sprintValues = (issue: JiraIssue): readonly JiraSprint[] =>
   Object.values(issue.fields ?? {}).flatMap((value) => {
     if (!Array.isArray(value)) return [];
@@ -390,6 +412,20 @@ const planningForSprint = (
               !(change.fromString ?? "").includes(previous.name ?? ""),
           ),
       ));
+  const plannedAtPreviousStart =
+    previous !== undefined &&
+    previous.startDate !== undefined &&
+    histories.some(
+      (history) =>
+        history.created !== undefined &&
+        Date.parse(history.created) <= Date.parse(previous.startDate ?? "") &&
+        (history.items ?? []).some(
+          (change) =>
+            change.field?.toLowerCase() === "sprint" &&
+            (change.toString ?? "").includes(previous.name ?? "") &&
+            !(change.fromString ?? "").includes(previous.name ?? ""),
+        ),
+    );
   const rolledIntoCurrent =
     previous !== undefined &&
     current !== undefined &&
@@ -397,7 +433,8 @@ const planningForSprint = (
     issueLifecycleState(issue) !== "canceled";
   const classifications: DeliverySprintClassification[] = [];
   if (perspective === "previous" && previous !== undefined) {
-    classifications.push(addedDuringPrevious ? "added_during_sprint" : "planned_at_start");
+    if (addedDuringPrevious) classifications.push("added_during_sprint");
+    else if (plannedAtPreviousStart) classifications.push("planned_at_start");
     if (completedDuringPrevious) classifications.push("completed_during_sprint");
     else if (rolledIntoCurrent) classifications.push("rolled_into_current");
     else classifications.push("dropped");
@@ -482,6 +519,7 @@ const searchIssues = async (
   configuration: JiraDeliveryQueryConfiguration,
   jql: string,
   limit: number,
+  sprintFieldId?: string,
 ): Promise<JiraSearchResult> => {
   const issues: JiraIssue[] = [];
   const seenPageTokens = new Set<string>();
@@ -504,7 +542,7 @@ const searchIssues = async (
           "labels",
           "components",
           "issuelinks",
-          "sprint",
+          ...(sprintFieldId === undefined ? [] : [sprintFieldId]),
         ],
         maxResults: Math.min(100, limit - issues.length),
         ...(nextPageToken === undefined ? {} : { nextPageToken }),
@@ -896,6 +934,12 @@ export const createJiraDeliveryQuerySource = (
           const query = asJiraQuery(context, operation, plan.subject);
           return query === undefined ? [] : [query];
         });
+        const needsSprintProjection = queries.some(
+          ({ operation }) => operation.time?.kind === "jira_sprint",
+        );
+        const sprintFieldId = needsSprintProjection
+          ? await discoverSprintFieldId(configuration)
+          : undefined;
         const searches = await Promise.all(
           queries.map(async (query) => {
             const jql = jqlForView(query.operation.purpose, projects, query);
@@ -907,6 +951,7 @@ export const createJiraDeliveryQuerySource = (
                 query.operation.purpose === "blockers"
                 ? Math.min(query.limit * 40, 500)
                 : Math.min(query.limit * 3, 50),
+              query.operation.time?.kind === "jira_sprint" ? sprintFieldId : undefined,
             );
             return { query, jql, ...result };
           }),
