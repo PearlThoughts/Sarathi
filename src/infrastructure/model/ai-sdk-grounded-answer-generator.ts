@@ -85,6 +85,13 @@ const reportReferenceIndexes = (text: string): readonly number[] =>
     return Number.isSafeInteger(value) ? [value - 1] : [];
   });
 
+const removeReportReferenceMarkers = (text: string): string =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s*\[R[1-9]\d*\]/g, "").trimEnd())
+    .join("\n")
+    .trimEnd();
+
 const referenceSourceLabel = (source: string): string =>
   ({
     email: "Email",
@@ -198,8 +205,6 @@ const validateDeliveryReport = (
   if (markdownCitationUrls(answer.slice(0, referencesAt)).length > 0)
     invalidModelReport("report-composition-citation-placement");
   const referenceIndexes = reportReferenceIndexes(answer);
-  if (reportReferenceIndexes(answer.slice(0, referencesAt)).length > 0)
-    invalidModelReport("report-composition-citation-placement");
   if (referenceIndexes.some((index) => evidence[index] === undefined))
     invalidModelReport("report-composition-reference-id-unknown");
   if (evidence.length > 0 && citations.length === 0 && referenceIndexes.length === 0)
@@ -211,7 +216,11 @@ const validateDeliveryReport = (
   )
     invalidModelReport("report-composition-prohibited-prose");
   if (referenceIndexes.length === 0) return { text: answer, citationUrls: [...new Set(citations)] };
-  return resolveReportReferenceFooter(answer.slice(0, referencesAt), referenceIndexes, evidence);
+  return resolveReportReferenceFooter(
+    removeReportReferenceMarkers(answer.slice(0, referencesAt)),
+    referenceIndexes,
+    evidence,
+  );
 };
 
 const noModelProviderDiagnostics: ModelProviderDiagnosticSink = () => undefined;

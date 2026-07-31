@@ -35,7 +35,7 @@ Deep-dive, comprehensive, investigation, root-cause, history, trend, and deliver
 
 Period-report products use model composition over the reconstructed change capsules plus retrieved project context. They are published only after the composed response passes the complete report-quality contract. Provider failure, timeout, malformed output, invalid citations, or failed quality validation produces only the short safe composition-failure notice; deterministic report content and partial envelopes are never published.
 
-Report composition uses opaque reference IDs instead of asking the model to reproduce source URLs. Sarathi validates every selected ID, resolves it to an authorized URL, and builds the compact reference footer before the final quality gate. Unknown or misplaced IDs fail composition.
+Report composition uses opaque reference IDs instead of asking the model to reproduce source URLs. Sarathi validates every selected ID, removes the internal markers from composed prose, resolves them to authorized URLs, and builds the compact reference footer before the final quality gate. Unknown IDs and inline URLs fail composition.
 
 ### Sub-30-day delivery reports
 
