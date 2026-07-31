@@ -347,8 +347,19 @@ const normalizedAlignmentText = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-const normalizedAlignmentToken = (value: string): string =>
-  value.length > 4 && value.endsWith("s") ? value.slice(0, -1) : value;
+const alignmentMorphologyPrefixes = [
+  "automat",
+  "implement",
+  "integrat",
+  "migrat",
+  "remediat",
+  "vulnerab",
+] as const;
+
+const normalizedAlignmentToken = (value: string): string => {
+  const singular = value.length > 3 && value.endsWith("s") ? value.slice(0, -1) : value;
+  return alignmentMorphologyPrefixes.find((prefix) => singular.startsWith(prefix)) ?? singular;
+};
 
 const alignmentTokens = (value: string): readonly string[] =>
   normalizedAlignmentText(value)
