@@ -132,7 +132,7 @@ const resultFor = (
     observedAt: node.updatedAt,
     sourceCreatedAt: node.createdAt,
     sourceUpdatedAt: node.updatedAt,
-    subjectAliases: [node.id, node.title, ...declaredAliases(node)],
+    subjectAliases: [node.title, ...declaredAliases(node)],
     lifecycleState: lifecycleState(node.state),
     dedupeKey: `declared-intent:${node.id}:${node.updatedAt}`,
     evidenceRole: "declared_intent",

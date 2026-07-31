@@ -72,6 +72,15 @@ describe("initiative-first delivery alignment", () => {
             citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
           }),
+          item({
+            id: "initiative-token",
+            source: "strategy",
+            intent: "current_work",
+            title: "Improve GA mapping token refresh",
+            summary: "Quarter 3 initiative. Plan status: In Progress.",
+            citationUrl: "https://sources.example.test/quarterly-plan",
+            evidenceRole: "declared_intent",
+          }),
         ]),
         source("jira", [
           item({
@@ -90,6 +99,24 @@ describe("initiative-first delivery alignment", () => {
             summary: "Operational maintenance.",
             lifecycleState: "active",
           }),
+          item({
+            id: "work-token",
+            source: "jira",
+            intent: "current_work",
+            title: "Renew LinkedIn access token and refresh token",
+            summary: "Renew the social network integration credentials.",
+            lifecycleState: "active",
+          }),
+          ...Array.from({ length: 6 }, (_, index) =>
+            item({
+              id: `work-maintenance-${index + 1}`,
+              source: "jira",
+              intent: "current_work",
+              title: `Operational maintenance task ${index + 1}`,
+              summary: "Routine operational maintenance.",
+              lifecycleState: "active",
+            }),
+          ),
         ]),
       ],
       now: () => new Date(requestedAt),
@@ -116,6 +143,13 @@ describe("initiative-first delivery alignment", () => {
     );
     expect(answer.text).toContain("## Unassigned work");
     expect(answer.text).toContain("- Renew a vendor certificate");
+    expect(answer.text).toContain("- Renew LinkedIn access token and refresh token");
+    expect(answer.text).not.toContain(
+      "**Improve GA mapping token refresh** — Renew LinkedIn access token and refresh token",
+    );
+    expect(answer.text).toContain("- **Jira:**");
+    expect(answer.text).toContain("_+3 more_");
+    expect(answer.citations.filter(({ label }) => label.startsWith("Jira"))).toHaveLength(6);
     expect(answer.text).not.toContain("**Planned:**");
   });
 });
