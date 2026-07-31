@@ -45,12 +45,22 @@ describe("initiative-first delivery alignment", () => {
       sources: [
         source("intent", [
           item({
+            id: "initiative-admin",
+            source: "strategy",
+            intent: "current_work",
+            title: "Admin workflow",
+            summary: "Quarter 3 initiative. Plan status: In Progress.",
+            citationUrl: "https://sources.example.test/quarterly-plan",
+            evidenceRole: "declared_intent",
+          }),
+          item({
             id: "initiative-routing",
             source: "strategy",
             intent: "current_work",
             title: "Lead routing dashboard",
             summary:
               "Quarter 3 initiative. Also known as: routing dashboard. Plan status: In Progress.",
+            citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
           }),
           item({
@@ -59,6 +69,7 @@ describe("initiative-first delivery alignment", () => {
             intent: "goals",
             title: "Growth",
             summary: "Quarter 3 goal. Plan status: Active.",
+            citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
           }),
         ]),

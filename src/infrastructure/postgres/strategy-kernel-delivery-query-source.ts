@@ -85,6 +85,16 @@ const summary = (node: IntentNode): string =>
     .filter((value): value is string => value !== undefined && value !== "")
     .join(" · ");
 
+const declaredAliases = (node: IntentNode): readonly string[] => {
+  const aliases = /Also known as:\s*([^.]+)\./i.exec(node.body)?.[1];
+  return aliases === undefined
+    ? []
+    : aliases
+        .split(",")
+        .map((alias) => alias.trim())
+        .filter(Boolean);
+};
+
 const overlapsOperationTime = (
   node: IntentNode,
   operation: DeliveryQueryOperation,
@@ -122,7 +132,7 @@ const resultFor = (
     observedAt: node.updatedAt,
     sourceCreatedAt: node.createdAt,
     sourceUpdatedAt: node.updatedAt,
-    subjectAliases: [node.id, node.title],
+    subjectAliases: [node.id, node.title, ...declaredAliases(node)],
     lifecycleState: lifecycleState(node.state),
     dedupeKey: `declared-intent:${node.id}:${node.updatedAt}`,
     evidenceRole: "declared_intent",
