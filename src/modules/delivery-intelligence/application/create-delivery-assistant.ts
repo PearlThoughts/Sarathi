@@ -104,6 +104,8 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-citation-unknown":
     case "report-composition-citation-url-unknown":
     case "report-composition-reference-id-unknown":
+    case "report-composition-text-citation-unknown":
+    case "report-composition-composer-citation-unknown":
     case "report-composition-citation-placement":
     case "report-composition-prohibited-prose":
     case "report-composition-invalid":
@@ -1024,7 +1026,7 @@ const composeWithModel = (
                 match[1] === undefined ? [] : [match[1]],
               );
               if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
-                invalidReport("report-composition-citation-unknown");
+                invalidReport("report-composition-text-citation-unknown");
               if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
                 invalidReport("report-composition-citation-placement");
               if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
@@ -1034,7 +1036,7 @@ const composeWithModel = (
                   ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
                 )
               )
-                invalidReport("report-composition-citation-unknown");
+                invalidReport("report-composition-composer-citation-unknown");
               return {
                 ...deterministic,
                 text,

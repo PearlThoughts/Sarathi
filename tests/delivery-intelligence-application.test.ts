@@ -2528,7 +2528,7 @@ describe("delivery intelligence application", () => {
     expect(compose).toHaveBeenCalledTimes(2);
     expect(answer.status).toBe("failed");
     expect(answer.failure?.classification).toBe("SARATHI-REPORT-COMPOSITION-INVALID");
-    expect(answer.failure?.diagnosticCode).toBe("report-composition-citation-unknown");
+    expect(answer.failure?.diagnosticCode).toBe("report-composition-text-citation-unknown");
     expect(answer.text).not.toContain("Raw deterministic capsule inventory");
     expect(answer.text).not.toContain("outside.example.test");
     expect(answer.acceptance.passed).toBe(false);
