@@ -417,6 +417,94 @@ describe("teams mention", () => {
     expect(reporterCalls).toBe(1);
   });
 
+  it("posts only the safe report failure notice and records the Teams operation as failed", async () => {
+    const fixture = dependencies();
+    let postedText = "";
+    const deliveryDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      deliveryTimeZone: "Asia/Kolkata",
+      delivery: {
+        reply: (_command, answer) =>
+          Effect.sync(() => {
+            postedText = answer.text;
+          }),
+      },
+      deliveryAssistant: {
+        answer: (request) => {
+          if (request.plan === undefined) throw new Error("Expected compiled delivery plan");
+          return Effect.succeed({
+            text: [
+              "Response composition failed.",
+              "",
+              "Error code: SARATHI-REPORT-COMPOSITION-FAILED",
+              "Correlation code: SAR-1234ABCD",
+              "Please retry the request.",
+            ].join("\n"),
+            citations: [],
+            unavailableSources: [],
+            status: "failed",
+            plan: request.plan,
+            conflicts: [],
+            responseMode: "deep_dive",
+            responseProduct: "period_delivery_brief",
+            responseBudget: {
+              sourceTimeoutMs: 90_000,
+              compositionTimeoutMs: 120_000,
+              totalBudgetMs: 240_000,
+            },
+            acceptance: {
+              mode: "deep_dive",
+              product: "period_delivery_brief",
+              elapsedMs: 10,
+              latencyPassed: true,
+              requestedIntents: 1,
+              coveredIntents: 0,
+              completenessRatio: 0,
+              completenessPassed: false,
+              materialStatements: 0,
+              citedStatements: 0,
+              citationCoverage: 1,
+              citationPassed: true,
+              groundingPassed: true,
+              freshEvidence: 0,
+              evaluatedEvidence: 0,
+              freshnessCoverage: 1,
+              freshnessPassed: true,
+              formatPassed: false,
+              passed: false,
+            },
+            failure: {
+              code: "SARATHI-REPORT-COMPOSITION-FAILED",
+              classification: "SARATHI-REPORT-PROVIDER-FAILED",
+              correlationCode: "SAR-1234ABCD",
+            },
+          });
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention(
+          {
+            ...command,
+            rootActivityId: command.activityId,
+            question: "What was delivered last week?",
+          },
+          deliveryDependencies,
+        ),
+      ),
+    ).resolves.toMatchObject({
+      kind: "answered",
+      answer: { status: "failed", citations: [] },
+    });
+    expect(postedText).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
+    expect(postedText).not.toContain("## Delivered");
+    expect(fixture.state()).toBe("failed-retryable");
+    expect(fixture.calls.delivered()).toBe(0);
+    expect(fixture.calls.failed()).toBe(1);
+  });
+
   it("denies a delivery question before context retrieval when the boundary disallows it", async () => {
     const fixture = dependencies();
     let contextCalls = 0;

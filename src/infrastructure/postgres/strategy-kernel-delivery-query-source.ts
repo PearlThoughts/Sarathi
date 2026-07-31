@@ -136,6 +136,12 @@ const resultFor = (
     lifecycleState: lifecycleState(node.state),
     dedupeKey: `declared-intent:${node.id}:${node.updatedAt}`,
     evidenceRole: "declared_intent",
+    strategy: {
+      kind: node.kind === "commitment" ? "initiative" : "goal",
+      state: node.state,
+      ...(node.horizonStart === undefined ? {} : { horizonStart: node.horizonStart }),
+      ...(node.horizonEnd === undefined ? {} : { horizonEnd: node.horizonEnd }),
+    },
   };
 };
 

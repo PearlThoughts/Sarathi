@@ -147,4 +147,6 @@ export type {
   DeliveryQuerySource,
   DeliveryReportingConfiguration,
   DeliveryResultItem,
+  DeliverySprintClassification,
+  DeliverySprintReference,
 } from "./ports/delivery-intelligence-ports.ts";

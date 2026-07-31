@@ -366,6 +366,127 @@ const periodConstraint = (
 
 export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | undefined => {
   const value = question.replace(/\s+/g, " ").trim().toLowerCase();
+  const sprintReviewQuestion =
+    /\bsprint review(?: and outlook)?\b/.test(value) ||
+    (/\b(?:previous|current|this)[- ]sprint\b/.test(value) &&
+      /\b(?:planned|commit(?:ted)?|added|roll(?:ed)? over|health|owner|initiative|align(?:ment)?|activity|waiting|decision|outlook|q[1-4])\b/.test(
+        value,
+      ));
+  if (sprintReviewQuestion) {
+    const operations: DeliveryQueryOperation[] = [
+      {
+        id: "previous-sprint-commitments",
+        purpose: "commitments",
+        select: "objects",
+        objectKinds: ["work_item", "deliverable"],
+        predicates: [{ field: "source", operator: "equals", value: "jira" }],
+        time: { kind: "jira_sprint", sprint: "previous" },
+        limit: 20,
+      },
+      {
+        id: "previous-sprint-delivered",
+        purpose: "delivered",
+        select: "objects",
+        objectKinds: ["work_item", "deliverable"],
+        predicates: [{ field: "source", operator: "equals", value: "jira" }],
+        time: { kind: "jira_sprint", sprint: "previous" },
+        limit: 20,
+      },
+      {
+        id: "current-sprint-work",
+        purpose: "current_work",
+        select: "objects",
+        objectKinds: ["work_item", "deliverable"],
+        predicates: [{ field: "source", operator: "equals", value: "jira" }],
+        time: { kind: "jira_sprint", sprint: "current" },
+        limit: 20,
+      },
+      {
+        id: "current-sprint-dependencies",
+        purpose: "dependencies",
+        select: "relations",
+        relationKinds: ["depends_on", "blocks"],
+        time: { kind: "jira_sprint", sprint: "current" },
+        limit: 20,
+      },
+      {
+        id: "current-sprint-blockers",
+        purpose: "blockers",
+        select: "objects",
+        objectKinds: ["work_item"],
+        time: { kind: "jira_sprint", sprint: "current" },
+        limit: 20,
+      },
+      {
+        id: "quarter-goals",
+        purpose: "goals",
+        select: "objects",
+        objectKinds: ["goal"],
+        predicates: [{ field: "source", operator: "equals", value: "strategy" }],
+        time: { kind: "workspace_quarter", quarter: "current" },
+        limit: 20,
+      },
+      {
+        id: "quarter-initiatives",
+        purpose: "commitments",
+        select: "objects",
+        objectKinds: ["commitment", "deliverable"],
+        predicates: [{ field: "source", operator: "equals", value: "strategy" }],
+        time: { kind: "workspace_quarter", quarter: "current" },
+        limit: 20,
+      },
+      {
+        id: "cross-source-activity",
+        purpose: "activity",
+        select: "observations",
+        time: { kind: "lookback", days: 30 },
+        limit: 20,
+      },
+      {
+        id: "code-delivery",
+        purpose: "delivered",
+        select: "observations",
+        predicates: [
+          { field: "source", operator: "equals", value: "github" },
+          { field: "kind", operator: "in", value: ["pull_request", "commit", "deployment"] },
+        ],
+        time: { kind: "lookback", days: 30 },
+        limit: 20,
+      },
+      {
+        id: "delivery-context",
+        purpose: "delivered",
+        select: "knowledge",
+        time: { kind: "lookback", days: 30 },
+        limit: 20,
+      },
+      {
+        id: "sprint-report-census",
+        purpose: "delivered",
+        select: "period_census",
+        time: { kind: "lookback", days: 30 },
+        census: { pageSize: 200, maximumCandidates: 50_000 },
+        limit: 1,
+      },
+    ];
+    return validateDeliveryQueryPlan({
+      version: 1,
+      intents: [
+        "commitments",
+        "delivered",
+        "current_work",
+        "dependencies",
+        "blockers",
+        "goals",
+        "activity",
+      ],
+      operations,
+      answerMode: "model_assisted",
+      maximumLines: 6,
+      requiresFinance: false,
+      requiredSources: ["jira", "strategy", "teams", "vault", "github"],
+    });
+  }
   const intents: DeliveryQuestionIntent[] = [];
   const operations: DeliveryQueryOperation[] = [];
   const add = (

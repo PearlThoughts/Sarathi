@@ -75,10 +75,38 @@ export type DeliveryResultItem = {
         readonly sprint?: string | undefined;
         readonly hasDependency: boolean;
         readonly hasAcceptanceInformation: boolean;
+        readonly previousSprint?: DeliverySprintReference | undefined;
+        readonly currentSprint?: DeliverySprintReference | undefined;
+        readonly sprintClassifications?: readonly DeliverySprintClassification[] | undefined;
+      }
+    | undefined;
+  readonly strategy?:
+    | {
+        readonly kind: "goal" | "initiative";
+        readonly state: string;
+        readonly horizonStart?: string | undefined;
+        readonly horizonEnd?: string | undefined;
       }
     | undefined;
   readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
   readonly completionStage?: DeliveryCompletionStage | undefined;
+};
+
+export type DeliverySprintClassification =
+  | "planned_at_start"
+  | "added_during_sprint"
+  | "completed_during_sprint"
+  | "rolled_into_current"
+  | "dropped"
+  | "current_sprint";
+
+export type DeliverySprintReference = {
+  readonly id?: string | undefined;
+  readonly name: string;
+  readonly state: "active" | "closed" | "future" | "unknown";
+  readonly startAt?: string | undefined;
+  readonly endAt?: string | undefined;
+  readonly completeAt?: string | undefined;
 };
 
 export type DeliveryOwnerReference = {
@@ -157,7 +185,7 @@ export type DeliveryAssistantAnswer = {
     readonly label: string;
     readonly url: string;
   }[];
-  readonly status: "ok" | "partial" | "empty";
+  readonly status: "ok" | "partial" | "empty" | "failed";
   readonly responseMode: DeliveryResponseMode;
   readonly responseProduct: DeliveryResponseProduct;
   readonly responseBudget: {
@@ -173,6 +201,17 @@ export type DeliveryAssistantAnswer = {
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
   readonly periodCensus?: PeriodCensus | undefined;
   readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
+  readonly failure?:
+    | {
+        readonly code: "SARATHI-REPORT-COMPOSITION-FAILED";
+        readonly classification:
+          | "SARATHI-REPORT-PROVIDER-FAILED"
+          | "SARATHI-REPORT-COMPOSITION-TIMEOUT"
+          | "SARATHI-REPORT-COMPOSITION-INVALID"
+          | "SARATHI-REPORT-QUALITY-FAILED";
+        readonly correlationCode: string;
+      }
+    | undefined;
   readonly mentions?: readonly DeliveryActionTarget[];
 };
 

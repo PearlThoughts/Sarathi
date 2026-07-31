@@ -1196,4 +1196,146 @@ describe("delivery intelligence live query sources", () => {
       },
     ]);
   });
+
+  it("reconstructs previous-sprint commitment and rollover from Jira sprint history", async () => {
+    let changelogRequests = 0;
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (input, init) => {
+        const url = String(input);
+        if (url.includes("/changelog")) {
+          changelogRequests += 1;
+          return Response.json({ values: [] });
+        }
+        const { jql } = JSON.parse(String(init?.body)) as { readonly jql: string };
+        return Response.json({
+          issues: [
+            {
+              key: "DEMO-42",
+              fields: {
+                summary: "Complete the lead-routing dashboard",
+                created: "2026-07-01T09:00:00.000Z",
+                updated: "2026-07-30T09:00:00.000Z",
+                status: {
+                  name: "In Progress",
+                  statusCategory: { key: "indeterminate" },
+                },
+                assignee: { displayName: "Pavithra" },
+                sprint: [
+                  {
+                    id: 81,
+                    name: "Delivery Sprint 8",
+                    state: "closed",
+                    startDate: "2026-07-14T03:30:00.000Z",
+                    endDate: "2026-07-28T03:30:00.000Z",
+                    completeDate: "2026-07-28T04:00:00.000Z",
+                  },
+                  {
+                    id: 82,
+                    name: "Delivery Sprint 9",
+                    state: "active",
+                    startDate: "2026-07-28T03:30:00.000Z",
+                    endDate: "2026-08-11T03:30:00.000Z",
+                  },
+                ],
+              },
+            },
+            {
+              key: "DEMO-43",
+              fields: {
+                summary: "Add a campaign routing rule",
+                created: "2026-07-20T09:00:00.000Z",
+                updated: "2026-07-30T10:00:00.000Z",
+                status: {
+                  name: "In Progress",
+                  statusCategory: { key: "indeterminate" },
+                },
+                assignee: { displayName: "Alex" },
+                sprint: [
+                  {
+                    id: 81,
+                    name: "Delivery Sprint 8",
+                    state: "closed",
+                    startDate: "2026-07-14T03:30:00.000Z",
+                    endDate: "2026-07-28T03:30:00.000Z",
+                    completeDate: "2026-07-28T04:00:00.000Z",
+                  },
+                  {
+                    id: 82,
+                    name: "Delivery Sprint 9",
+                    state: "active",
+                    startDate: "2026-07-28T03:30:00.000Z",
+                    endDate: "2026-08-11T03:30:00.000Z",
+                  },
+                ],
+              },
+            },
+          ],
+          ...(jql.includes("closedSprints") || jql.includes("openSprints") ? {} : {}),
+        });
+      },
+    });
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["commitments", "current_work"],
+      operations: [
+        {
+          id: "previous-commitment",
+          purpose: "commitments",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "previous" },
+          limit: 20,
+        },
+        {
+          id: "current-work",
+          purpose: "current_work",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "current" },
+          limit: 20,
+        },
+      ],
+      answerMode: "deterministic",
+      maximumLines: 4,
+      requiresFinance: false,
+      requiredSources: ["jira"],
+    };
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          intent: "commitments",
+          planning: expect.objectContaining({
+            previousSprint: expect.objectContaining({
+              name: "Delivery Sprint 8",
+              startAt: "2026-07-14T03:30:00.000Z",
+              endAt: "2026-07-28T03:30:00.000Z",
+            }),
+            currentSprint: expect.objectContaining({ name: "Delivery Sprint 9" }),
+            sprintClassifications: ["planned_at_start", "rolled_into_current"],
+          }),
+        }),
+        expect.objectContaining({
+          intent: "current_work",
+          planning: expect.objectContaining({
+            sprintClassifications: ["current_sprint", "rolled_into_current"],
+          }),
+        }),
+        expect.objectContaining({
+          intent: "commitments",
+          title: "Add a campaign routing rule",
+          planning: expect.objectContaining({
+            sprintClassifications: ["added_during_sprint", "rolled_into_current"],
+          }),
+        }),
+      ]),
+    );
+    expect(changelogRequests).toBe(2);
+  });
 });

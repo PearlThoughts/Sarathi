@@ -235,6 +235,12 @@ export const handleTeamsMention = (
           reason: "Sarathi could not deliver the response; retry safely.",
         } as const;
       }
+      if (answer.status === "failed") {
+        yield* dependencies.audit
+          .markFailed(command.activityId, "failed-retryable", resolved.workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        return { kind: "answered", answer } as const;
+      }
       yield* dependencies.audit
         .markDelivered(command.activityId, resolved.workspaceId)
         .pipe(Effect.orElseSucceed(() => undefined));

@@ -54,6 +54,133 @@ const item = (
   dedupeKey: summary.toLowerCase(),
 });
 
+const capabilityReportComposer: DeliveryAnswerComposer = {
+  compose: (input) => {
+    const report = input.periodDeliveryReport;
+    if (report === undefined)
+      return Effect.fail(
+        new RepositoryError({ message: "missing report", operation: "test-report-composer" }),
+      );
+    const selected = [
+      ...new Map(
+        report.capabilitySections
+          .flatMap(({ capsules }) => capsules)
+          .map((capsule) => [capsule.id, capsule]),
+      ).values(),
+    ].slice(0, 20);
+    const citations = (
+      selected.length === 0
+        ? input.items.slice(0, 20).map(({ source, citationUrl: url }) => ({ source, url }))
+        : selected.flatMap((capsule) => capsule.citations.slice(0, 1))
+    ).map(({ source, url }, index) => ({ label: `${source}-${index + 1}`, url }));
+    const uniqueCitations = [
+      ...new Map(citations.map((citation) => [citation.url, citation])).values(),
+    ];
+    const references = uniqueCitations.map(
+      ({ url }, index) => `- [Reference ${index + 1}](${url})`,
+    );
+    if (report.sprintReview !== undefined) {
+      const review = report.sprintReview;
+      const sprintLabel = (
+        sprint: typeof review.previousSprint | typeof review.currentSprint,
+        fallback: string,
+      ): string =>
+        sprint === undefined
+          ? fallback
+          : `${sprint.name} (${sprint.startAt?.slice(0, 10) ?? "start unknown"} to ${sprint.endAt?.slice(0, 10) ?? "end unknown"})`;
+      const initiativeLines = review.initiatives.map(
+        (initiative) =>
+          `- **${initiative.title} — ${initiative.health}:** ${initiative.progress}; ${initiative.healthExplanation}`,
+      );
+      return Effect.succeed({
+        text: [
+          "## Sprint overview",
+          `- ${sprintLabel(review.previousSprint, "Previous sprint")} closed; ${sprintLabel(review.currentSprint, "Current sprint")} is active.`,
+          "## Previous sprint",
+          ...review.completedDuringSprint.map(({ title }) => `- **Delivered:** ${title}`),
+          ...review.rolledIntoCurrent.map(({ title }) => `- **Rolled over:** ${title}`),
+          ...review.addedDuringSprint.map(({ title }) => `- **Added during sprint:** ${title}`),
+          ...(review.dropped.length === 0
+            ? ["- No dropped or superseded work was observed."]
+            : review.dropped.map(({ title }) => `- **Dropped:** ${title}`)),
+          "## Current sprint",
+          ...(initiativeLines.length === 0
+            ? review.currentSprintWork.map(({ title }) => `- **Unknown:** ${title}`)
+            : initiativeLines),
+          "## Q3 alignment",
+          ...initiativeLines,
+          ...(review.initiativesWithoutCurrentSprintActivity.length === 0
+            ? []
+            : [
+                `- **No current-sprint activity:** ${review.initiativesWithoutCurrentSprintActivity.map(({ title }) => title).join(", ")}`,
+              ]),
+          ...(review.unaccountedWork.length === 0
+            ? []
+            : [
+                `- **Unaccounted work:** ${review.unaccountedWork.map(({ title }) => title).join(", ")}`,
+              ]),
+          "## Waiting or decisions",
+          ...(report.dependencies.length === 0
+            ? ["- No material wait was observed."]
+            : report.dependencies.map(
+                ({ waiting, awaited, requiredAction }) =>
+                  `- ${waiting} is waiting for ${awaited}. ${requiredAction}`,
+              )),
+          "## Jira hygiene",
+          ...(report.jiraAdvisories.length === 0
+            ? ["- No Jira correction was identified."]
+            : report.jiraAdvisories.map(({ message }) => `- ${message}`)),
+          "## References",
+          ...references,
+        ].join("\n"),
+        citations: uniqueCitations,
+      });
+    }
+    const period =
+      report.census.boundary.kind === "absolute"
+        ? "1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)"
+        : report.census.boundary.reference;
+    const lineFor = (capsule: (typeof report.capsules)[number]): string => {
+      const capability =
+        report.capabilitySections.find(({ key }) => capsule.capabilityKeys.includes(key))?.title ??
+        "Unaccounted work";
+      return `- **${capability}** — ${capsule.title}`;
+    };
+    return Effect.succeed({
+      text: [
+        "## Delivered",
+        `**Period:** ${period}`,
+        ...selected
+          .filter(
+            ({ lifecycleState }) =>
+              lifecycleState === "production" || lifecycleState === "accepted",
+          )
+          .map(lineFor),
+        "## In progress",
+        ...selected
+          .filter(
+            ({ lifecycleState }) =>
+              lifecycleState !== "production" && lifecycleState !== "accepted",
+          )
+          .map(lineFor),
+        "## Waiting or blocked",
+        ...(report.dependencies.length === 0
+          ? ["- No active waits."]
+          : report.dependencies.map(
+              ({ waiting, awaited }) => `- ${waiting} is waiting for ${awaited}.`,
+            )),
+        "## Decisions needed",
+        ...(report.decisionsNeeded.length === 0
+          ? ["- No decisions."]
+          : report.decisionsNeeded.map((decision) => `- ${decision}`)),
+        "## References",
+        ...references,
+      ].join("\n"),
+      citations: uniqueCitations,
+    });
+  },
+};
+
 describe("delivery intelligence application", () => {
   it("allows bounded live sources to finish before the Teams response deadline", () => {
     expect(deliveryResponseBudget).toEqual({
@@ -142,6 +269,7 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({
         sources: [source],
+        answerComposer: capabilityReportComposer,
         capabilityLedger: {
           version: 1,
           capabilities: [
@@ -251,6 +379,15 @@ describe("delivery intelligence application", () => {
                 ),
                 selector: "observations",
               },
+              {
+                ...item(
+                  "jira",
+                  "publishing-work",
+                  "DEMO-41 completed SEO metadata publishing",
+                  "delivered",
+                ),
+                lifecycleState: "done" as const,
+              },
             ],
             conflicts: [],
             unavailableSources: [],
@@ -328,6 +465,7 @@ describe("delivery intelligence application", () => {
       },
     });
     expect(compose.mock.calls[0]?.[0].items.map(({ source }) => source).toSorted()).toEqual([
+      "jira",
       "teams",
       "vault",
     ]);
@@ -424,6 +562,7 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({
         sources: [source],
+        answerComposer: capabilityReportComposer,
         capabilityLedger: {
           version: 1,
           capabilities: [
@@ -559,6 +698,7 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({
         sources: [source],
+        answerComposer: capabilityReportComposer,
         capabilityLedger: {
           version: 1,
           capabilities: [
@@ -663,6 +803,12 @@ describe("delivery intelligence application", () => {
               completionStage: "merged" as const,
               observedAt: `2026-05-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`,
             })),
+            {
+              ...item("jira", "PROJ-700", "PROJ-700 builder dependency hardening 0", "delivered"),
+              selector: "period_census" as const,
+              completionStage: "development_ready" as const,
+              dedupeKey: "PROJ-700",
+            },
           ],
           conflicts: [],
           unavailableSources: [],
@@ -672,7 +818,11 @@ describe("delivery intelligence application", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [source], capabilityLedger }).answer({
+      createDeliveryAssistant({
+        sources: [source],
+        capabilityLedger,
+        answerComposer: capabilityReportComposer,
+      }).answer({
         ...request,
         question: "What have we delivered in the previous quarter?",
       }),
@@ -725,24 +875,31 @@ describe("delivery intelligence application", () => {
       selectors: ["period_census"],
       execute: () =>
         Effect.succeed({
-          items: Array.from({ length: 200 }, (_, index) => {
-            const title =
-              index === 0
-                ? "Landing page builder initiative"
-                : index === 1
-                  ? "Subpage builder initiative"
-                  : index === 2
-                    ? "Widget integration builder initiative"
-                    : `Generic builder maintenance ${index}`;
-            return {
-              ...item("github", `builder-${index}`, title, "delivered"),
+          items: [
+            ...Array.from({ length: 200 }, (_, index) => {
+              const title =
+                index === 0
+                  ? "Landing page builder initiative"
+                  : index === 1
+                    ? "Subpage builder initiative"
+                    : index === 2
+                      ? "Widget integration builder initiative"
+                      : `Generic builder maintenance ${index}`;
+              return {
+                ...item("github", `builder-${index}`, title, "delivered"),
+                selector: "period_census" as const,
+                title,
+                summary: `github:example/repository:activity:pull_request:${index}: raw projection summary that must not appear${index === 0 ? " for modern web composer" : ""} ${"x".repeat(160)}`,
+                completionStage: "merged" as const,
+                observedAt: "2026-06-20T10:00:00.000Z",
+              };
+            }),
+            {
+              ...item("jira", "builder-0", "Landing page builder initiative", "delivered"),
               selector: "period_census" as const,
-              title,
-              summary: `github:example/repository:activity:pull_request:${index}: raw projection summary that must not appear${index === 0 ? " for modern web composer" : ""} ${"x".repeat(160)}`,
-              completionStage: "merged" as const,
-              observedAt: "2026-06-20T10:00:00.000Z",
-            };
-          }),
+              completionStage: "development_ready" as const,
+            },
+          ],
           conflicts: [],
           unavailableSources: [],
           complete: true,
@@ -751,12 +908,17 @@ describe("delivery intelligence application", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [source], capabilityLedger }).answer({
+      createDeliveryAssistant({
+        sources: [source],
+        capabilityLedger,
+        answerComposer: capabilityReportComposer,
+      }).answer({
         ...request,
         question: "What have we delivered in the previous quarter?",
       }),
     );
 
+    expect(answer.failure).toBeUndefined();
     expect(answer.citations.length).toBeLessThan(200);
     expect(answer.citations.every(({ url }) => answer.text.includes(url))).toBe(true);
     expect(answer.text).not.toContain("github:example/repository:activity");
@@ -975,6 +1137,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("Recommended next step");
     expect(answer.text.match(/Merged delivery report/g)).toHaveLength(1);
     expect(answer.citations).toHaveLength(2);
+    expect(answer.failure).toBeUndefined();
     expect(answer.status).toBe("ok");
     expect(answer.responseMode).toBe("fast");
     expect(answer.acceptance).toMatchObject({
@@ -1018,12 +1181,9 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.status).toBe("partial");
-    expect(answer.missingRequiredSources).toEqual(["github"]);
-    expect(answer.text).toContain("DEMO-20 Done");
-    expect(answer.text).toContain("## Missing");
-    expect(answer.text).toContain("No matching GitHub result was available.");
-    expect(answer.text).not.toContain("Coverage");
+    expect(answer.status).toBe("failed");
+    expect(answer.text).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
+    expect(answer.text).not.toContain("DEMO-20 Done");
     expect(answer.acceptance.completenessPassed).toBe(false);
     expect(answer.acceptance.passed).toBe(false);
   });
@@ -1075,7 +1235,7 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [source] }).answer({
         ...request,
-        question: "What was delivered this week?",
+        question: "What delivery items were completed?",
       }),
     );
 
@@ -1083,7 +1243,7 @@ describe("delivery intelligence application", () => {
     expect(answer.missingRequiredSources).toEqual([]);
     expect(answer.citations.map(({ label }) => label)).toEqual(["Jira 1", "GitHub 2", "Jira 3"]);
     expect(answer.text).toContain("DEMO-21 Done");
-    expect(answer.text).toContain("Kamesh — Merged the builder release");
+    expect(answer.text).toContain("Merged the builder release");
     expect(answer.text).toContain("DEMO-22 Done");
     expect(answer.text).toContain("## Delivered");
     expect(answer.text).toContain("### References");
@@ -1197,7 +1357,7 @@ describe("delivery intelligence application", () => {
         now: () => new Date(request.requestedAt),
       }).answer({
         ...request,
-        question: "Give me a structured weekly report",
+        question: "Give me a structured activity update",
         responseMode: "structured",
         plan,
       }),
@@ -1883,8 +2043,9 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.status).toBe("partial");
-    expect(answer.unavailableSources).toEqual(["teams"]);
+    expect(answer.status).toBe("failed");
+    expect(answer.text).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
+    expect(answer.text).not.toContain("Jira delivery evidence");
     expect(answer.acceptance).toMatchObject({
       product: "period_delivery_brief",
       completenessPassed: false,
@@ -2062,5 +2223,308 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("No matching items found");
     expect(answer.text).not.toContain("source-backed");
     expect(answer.text).not.toContain("Modern lead form");
+  });
+
+  it("renders a cohesive Sprint Review and Outlook and keeps fresh indexed Teams fallback", async () => {
+    const previousSprint = {
+      id: "81",
+      name: "Delivery Sprint 8",
+      state: "closed" as const,
+      startAt: "2026-07-14T03:30:00.000Z",
+      endAt: "2026-07-28T03:30:00.000Z",
+    };
+    const currentSprint = {
+      id: "82",
+      name: "Delivery Sprint 9",
+      state: "active" as const,
+      startAt: "2026-07-28T03:30:00.000Z",
+      endAt: "2026-08-11T03:30:00.000Z",
+    };
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-06-30T18:30:00.000Z",
+        toExclusive: "2026-07-31T18:30:00.000Z",
+      },
+      timeZone: request.timeZone,
+      candidates: [],
+      configuredSources: ["jira", "strategy", "teams", "vault", "github"],
+      sourceCheckpoints: new Map([
+        ["jira", "2026-07-31T12:00:00.000Z"],
+        ["strategy", "2026-07-31T12:00:00.000Z"],
+        ["teams", "2026-07-31T12:00:00.000Z"],
+        ["vault", "2026-07-31T12:00:00.000Z"],
+        ["github", "2026-07-31T12:00:00.000Z"],
+      ]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const jira = {
+      ...item(
+        "jira",
+        "DEMO-42",
+        "Pavithra — DEMO-42 In Progress: Lead-routing dashboard",
+        "current_work",
+      ),
+      owner: { source: "jira" as const, displayName: "Pavithra" },
+      planning: {
+        externalKey: "DEMO-42",
+        status: "In Progress",
+        sprint: currentSprint.name,
+        hasDependency: false,
+        hasAcceptanceInformation: false,
+        previousSprint,
+        currentSprint,
+        sprintClassifications: [
+          "planned_at_start",
+          "rolled_into_current",
+          "current_sprint",
+        ] as const,
+      },
+    };
+    const projection: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "relations", "observations", "knowledge", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            jira,
+            {
+              ...jira,
+              id: "DEMO-42-previous",
+              intent: "commitments" as const,
+              dedupeKey: "jira:DEMO-42:previous",
+            },
+            {
+              ...item("strategy", "initiative-1", "Increase qualified lead response", "goals"),
+              intent: "commitments" as const,
+              evidenceRole: "declared_intent" as const,
+              strategy: { kind: "initiative" as const, state: "active" },
+              subjectAliases: ["lead-routing dashboard", "qualified lead response"],
+            },
+            {
+              ...item("teams", "message-1", "DEMO-42 please test; test not yet done", "activity"),
+              title: "Lead-routing dashboard QA coordination",
+              indexedAt: "2026-07-31T12:30:00.000Z",
+              observedAt: "2026-07-31T12:00:00.000Z",
+            },
+            {
+              ...item("vault", "requirement-1", "DEMO-42 requires lead routing QA", "current_work"),
+              title: "Lead-routing dashboard acceptance requirement",
+            },
+            {
+              ...item("github", "pull-42", "DEMO-42 lead-routing dashboard merged", "delivered"),
+              selector: "observations" as const,
+              completionStage: "development_ready" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+    const liveTeams: DeliveryQuerySource = {
+      source: "teams",
+      selectors: ["objects", "observations"],
+      execute: () =>
+        Effect.fail(
+          new RepositoryError({ message: "live Teams timeout", operation: "test-live-teams" }),
+        ),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [projection, liveTeams],
+        answerComposer: capabilityReportComposer,
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            {
+              key: "lead-routing-dashboard",
+              title: "Lead-routing dashboard",
+              aliases: [{ value: "lead-routing dashboard" }],
+            },
+          ],
+        },
+      }).answer({
+        ...request,
+        requestedAt: "2026-07-31T13:00:00.000Z",
+        question:
+          "Give me a Sprint Review and Outlook suitable for Pavithra to share with leadership.",
+      }),
+    );
+
+    expect(answer.failure).toBeUndefined();
+    expect(answer.status).toBe("ok");
+    expect(answer.unavailableSources).not.toContain("teams");
+    for (const heading of [
+      "## Sprint overview",
+      "## Previous sprint",
+      "## Current sprint",
+      "## Q3 alignment",
+      "## Waiting or decisions",
+      "## Jira hygiene",
+      "## References",
+    ])
+      expect(answer.text).toContain(heading);
+    expect(answer.text).toContain("Delivery Sprint 8");
+    expect(answer.text).toContain("Delivery Sprint 9");
+    expect(answer.text).toContain("Increase qualified lead response");
+    expect(answer.text).toContain("Rolled over");
+    expect(answer.text).not.toContain("please test; test not yet done");
+    expect(answer.acceptance.passed).toBe(true);
+  });
+
+  it("publishes only a short failed result when both report composition attempts fail", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() =>
+      Effect.fail(
+        new RepositoryError({
+          message: "provider unavailable",
+          operation: "openrouter-answer-generation",
+        }),
+      ),
+    );
+    const rawEnvelopeMarker = `RAW-CAPSULE-${"x".repeat(20_000)}`;
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-07-20T18:30:00.000Z",
+        toExclusive: "2026-07-27T18:30:00.000Z",
+      },
+      timeZone: request.timeZone,
+      candidates: [],
+      configuredSources: ["jira", "github"],
+      sourceCheckpoints: new Map([
+        ["jira", "2026-07-27T12:00:00.000Z"],
+        ["github", "2026-07-27T12:00:00.000Z"],
+      ]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "DEMO-90", `DEMO-90 ${rawEnvelopeMarker}`, "delivered"),
+              lifecycleState: "done" as const,
+            },
+            {
+              ...item("github", "DEMO-90", `DEMO-90 ${rawEnvelopeMarker}`, "delivered"),
+              selector: "period_census" as const,
+              completionStage: "development_ready" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [{ key: "release", title: "Release", aliases: [{ value: "DEMO-90" }] }],
+        },
+      }).answer({ ...request, question: "What was delivered last week?" }),
+    );
+
+    expect(compose).toHaveBeenCalledTimes(2);
+    expect(answer.status).toBe("failed");
+    expect(answer.failure).toMatchObject({
+      code: "SARATHI-REPORT-COMPOSITION-FAILED",
+      classification: "SARATHI-REPORT-PROVIDER-FAILED",
+    });
+    expect(answer.text).toMatch(/^Response composition failed\./);
+    expect(answer.text).not.toContain("RAW-CAPSULE");
+    expect(answer.text).not.toContain("## Delivered");
+    expect(answer.citations).toEqual([]);
+    expect(answer.acceptance.passed).toBe(false);
+  });
+
+  it("rejects structurally invalid or unknown-citation report output without fallback", async () => {
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() =>
+      Effect.succeed({
+        text: [
+          "## Delivered",
+          "- Raw deterministic capsule inventory must not escape.",
+          "## In progress",
+          "- None.",
+          "## Waiting or blocked",
+          "- None.",
+          "## Decisions needed",
+          "- None.",
+          "## References",
+          "- [Unknown](https://outside.example.test/invented)",
+        ].join("\n"),
+        citations: [{ label: "Unknown", url: "https://outside.example.test/invented" }],
+      }),
+    );
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-07-20T18:30:00.000Z",
+        toExclusive: "2026-07-27T18:30:00.000Z",
+      },
+      timeZone: request.timeZone,
+      candidates: [],
+      configuredSources: ["jira", "github"],
+      sourceCheckpoints: new Map([
+        ["jira", "2026-07-27T12:00:00.000Z"],
+        ["github", "2026-07-27T12:00:00.000Z"],
+      ]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "period_census"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            item("jira", "DEMO-91", "DEMO-91 release work", "delivered"),
+            {
+              ...item("github", "DEMO-91", "DEMO-91 release work", "delivered"),
+              selector: "period_census" as const,
+              completionStage: "development_ready" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: { compose },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [{ key: "release", title: "Release", aliases: [{ value: "DEMO-91" }] }],
+        },
+      }).answer({ ...request, question: "What was delivered last week?" }),
+    );
+
+    expect(compose).toHaveBeenCalledTimes(2);
+    expect(answer.status).toBe("failed");
+    expect(answer.failure?.classification).toBe("SARATHI-REPORT-COMPOSITION-INVALID");
+    expect(answer.text).not.toContain("Raw deterministic capsule inventory");
+    expect(answer.text).not.toContain("outside.example.test");
+    expect(answer.acceptance.passed).toBe(false);
   });
 });

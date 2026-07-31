@@ -1,11 +1,80 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  type CapabilityLedger,
   createDeliveryAssistant,
+  type DeliveryAnswerComposer,
   type DeliveryQuerySource,
   type DeliveryQuestionIntent,
   type DeliveryResultItem,
 } from "../src/modules/delivery-intelligence/index.ts";
+
+const capabilityLedger: CapabilityLedger = {
+  version: 1,
+  capabilities: [
+    {
+      key: "delivery-model",
+      title: "Delivery model",
+      aliases: [{ value: "resolved" }],
+    },
+  ],
+};
+
+const reportComposer: DeliveryAnswerComposer = {
+  compose: (input) => {
+    const report = input.periodDeliveryReport;
+    const referenceCandidates = [
+      ...(report?.capsules.flatMap(({ citations }) => citations) ?? []),
+      ...input.items.map(({ source, citationUrl: url }) => ({ source, url })),
+    ];
+    const selectedReferences = [
+      ...new Map(referenceCandidates.map((reference) => [reference.url, reference])).values(),
+    ].slice(0, 10);
+    const references = selectedReferences.map(
+      ({ url }, index) => `- [Reference ${index + 1}](${url})`,
+    );
+    const review = report?.sprintReview;
+    return Effect.succeed({
+      text:
+        review === undefined
+          ? [
+              "## Delivered",
+              "- Delivery activity was consolidated by capability.",
+              "## In progress",
+              "- Active work remains visible in the delivery model.",
+              "## Waiting or blocked",
+              "- No material wait was observed.",
+              "## Decisions needed",
+              "- No decision was identified.",
+              "## References",
+              ...references,
+            ].join("\n")
+          : [
+              "## Sprint overview",
+              `- ${review.previousSprint?.name ?? "Previous sprint"} was reviewed against ${review.currentSprint?.name ?? "the current sprint"}.`,
+              "## Previous sprint",
+              "- Completed and rollover work was consolidated by capability.",
+              "## Current sprint",
+              "- Active work, ownership and health were consolidated.",
+              "## Q3 alignment",
+              ...review.initiatives.map(
+                ({ title, health, healthExplanation }) =>
+                  `- **${title} — ${health}:** ${healthExplanation}`,
+              ),
+              "## Waiting or decisions",
+              "- No material wait was observed.",
+              "## Jira hygiene",
+              "- No Jira correction was identified.",
+              "## References",
+              ...references,
+            ].join("\n"),
+      citations: selectedReferences.map(({ url }, index) => ({
+        label: `Reference ${index + 1}`,
+        url,
+      })),
+    });
+  },
+};
 
 const capabilityQuestions: readonly {
   readonly question: string;
@@ -85,7 +154,9 @@ const genericSource: DeliveryQuerySource = {
       sensitivity: "internal" as const,
       authority: 0.9,
       observedAt: context.requestedAt,
+      indexedAt: context.requestedAt,
       dedupeKey: `${operation.purpose}:${index}`,
+      ...(operation.purpose === "delivered" ? { completionStage: "deployed" as const } : {}),
     }));
     const representedSources = new Set(items.map(({ source }) => source));
     const firstOperation = plan.operations[0];
@@ -104,7 +175,11 @@ const genericSource: DeliveryQuerySource = {
           sensitivity: "internal",
           authority: 0.9,
           observedAt: context.requestedAt,
+          indexedAt: context.requestedAt,
           dedupeKey: `${firstOperation.purpose}:${source}`,
+          ...(firstOperation.purpose === "delivered"
+            ? { completionStage: "deployed" as const }
+            : {}),
         });
       }
     return Effect.succeed({
@@ -112,6 +187,38 @@ const genericSource: DeliveryQuerySource = {
       conflicts: [],
       unavailableSources: [],
       complete: true,
+      ...(plan.operations.some(({ select }) => select === "period_census")
+        ? {
+            periodCensus: {
+              version: 1 as const,
+              boundary: {
+                kind: "source_defined" as const,
+                source: "jira" as const,
+                reference: "test delivery period",
+              },
+              timeZone: context.timeZone,
+              examinedCandidateCount: items.length,
+              candidateCount: items.length,
+              deliveredCandidateCount: items.filter(
+                ({ completionStage }) => completionStage !== undefined,
+              ).length,
+              excludedCandidateCount: 0,
+              duplicateCandidateCount: 0,
+              unmappedCandidateCount: 0,
+              exclusions: {},
+              unavailableSources: [],
+              sourceCoverage: [],
+              pagination: {
+                pageSize: 200,
+                pagesRead: 1,
+                exhausted: true,
+                maximumCandidates: 50_000,
+              },
+              complete: true,
+              replayChecksum: "sha256-capability-matrix",
+            },
+          }
+        : {}),
     });
   },
 };
@@ -121,7 +228,11 @@ describe("AI Delivery Assistant capability matrix", () => {
     capabilityQuestions,
   )("answers $question through reusable query operations", async (row) => {
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [genericSource] }).answer({
+      createDeliveryAssistant({
+        sources: [genericSource],
+        answerComposer: reportComposer,
+        capabilityLedger,
+      }).answer({
         workspaceId: "workspace-atlas",
         actorId: "actor-atlas",
         maximumSensitivity: "internal",
@@ -136,7 +247,12 @@ describe("AI Delivery Assistant capability matrix", () => {
     expect(answer.status).toBe("ok");
     expect(answer.text.split("\n")[0]).toMatch(/^## /);
     expect(answer.text).toMatch(/^- /m);
-    expect(answer.text).toContain("### References");
+    expect(answer.text).toContain(
+      answer.responseProduct === "period_delivery_brief" ||
+        answer.responseProduct === "leadership_report"
+        ? "## References"
+        : "### References",
+    );
     expect(answer.text).not.toContain("Coverage");
     expect(answer.text).not.toContain("Evidence");
     if (row.intents.includes("next_actions")) expect(answer.text).toContain("## Next");
@@ -158,7 +274,11 @@ describe("AI Delivery Assistant capability matrix", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [genericSource, optionalLiveSource] }).answer({
+      createDeliveryAssistant({
+        sources: [genericSource, optionalLiveSource],
+        answerComposer: reportComposer,
+        capabilityLedger,
+      }).answer({
         workspaceId: "workspace-atlas",
         actorId: "actor-atlas",
         maximumSensitivity: "internal",

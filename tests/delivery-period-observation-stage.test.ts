@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { periodObservationCompletionStage } from "../src/infrastructure/postgres/delivery-intelligence-query-source.ts";
 
 describe("period observation completion stages", () => {
-  it("classifies an exact Jira transition to Done as accepted evidence", () => {
+  it("classifies an exact Jira transition to Done as development-ready evidence", () => {
     expect(
       periodObservationCompletionStage({
         source: "jira",
@@ -11,7 +11,7 @@ describe("period observation completion stages", () => {
         subjectLifecycleState: "done",
         summary: "PROJ-123 changed from In Progress to Done",
       }),
-    ).toBe("accepted");
+    ).toBe("development_ready");
   });
 
   it("does not use a later current-state refresh as period acceptance evidence", () => {

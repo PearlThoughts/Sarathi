@@ -127,6 +127,8 @@ describe("AI SDK delivery answer composer", () => {
             alignment: "governed_initiative",
             initiativeTitle: "Atlas Site Composer",
             capabilityKeys: ["modern-website-builder"],
+            sprintClassifications: [],
+            blocked: false,
             owners: [],
             sources: ["github"],
             citations: [
@@ -157,6 +159,8 @@ describe("AI SDK delivery answer composer", () => {
                 alignment: "governed_initiative",
                 initiativeTitle: "Atlas Site Composer",
                 capabilityKeys: ["modern-website-builder"],
+                sprintClassifications: [],
+                blocked: false,
                 owners: [],
                 sources: ["github"],
                 citations: [

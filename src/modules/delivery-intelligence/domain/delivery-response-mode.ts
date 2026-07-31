@@ -77,11 +77,13 @@ const structuredBrief =
   /\b(?:structured brief|status report|weekly report|sprint report|release report|risk report|comparison|compare|quarterly|executive brief)\b/i;
 
 const leadershipReport =
-  /\b(?:leadership report|executive report|quarterly report|comprehensive (?:delivery )?report)\b|\b(?:delivered|delivery|completed|shipped|finished)\b.*\b(?:this|current|last|previous)\s+quarter\b|\b(?:this|current|last|previous)\s+quarter\b.*\b(?:delivered|delivery|completed|shipped|finished)\b/i;
+  /\b(?:leadership report|executive report|quarterly report|comprehensive (?:delivery )?report|sprint review and outlook)\b|\b(?:delivered|delivery|completed|shipped|finished)\b.*\b(?:this|current|last|previous)\s+quarter\b|\b(?:this|current|last|previous)\s+quarter\b.*\b(?:delivered|delivery|completed|shipped|finished)\b/i;
 const implementationInvestigation =
   /\b(?:implementation investigation|investigat(?:e|ion).*(?:implementation|code|repository)|(?:implementation|code|repository).*(?:deep[ -]?dive|investigat(?:e|ion)))\b/i;
 const periodDeliveryBrief =
   /\b(?:yesterday|this\s+week|last\s+week|previous\s+week|weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b.*\b(?:deliver(?:y|ed)?|status|report|brief|summary|done|accomplished|achieved)\b|\b(?:deliver(?:y|ed)?|status|report|brief|summary|done|accomplished|achieved)\b.*\b(?:yesterday|this\s+week|last\s+week|previous\s+week|weekly|sprint|release|monthly|month|quarterly|quarter|period|last\s+\d{1,3}\s+days?)\b|\bwhat\s+did\b.{0,80}\bdo\b.{0,80}\b(?:yesterday|this\s+week|last\s+week|previous\s+week|last\s+\d{1,3}\s+days?)\b/i;
+const sprintIntelligence =
+  /\b(?:previous|current|this)[- ]sprint\b.*\b(?:planned|commit(?:ted)?|added|roll(?:ed)? over|health|owner|initiative|align(?:ment)?|activity|waiting|decision|q[1-4])\b|\b(?:planned|commit(?:ted)?|added|roll(?:ed)? over|health|owner|initiative|align(?:ment)?|activity|waiting|decision|q[1-4])\b.*\b(?:previous|current|this)[- ]sprint\b/i;
 
 export const selectDeliveryResponseProduct = (
   question: string,
@@ -90,6 +92,7 @@ export const selectDeliveryResponseProduct = (
   if (requestedProduct !== undefined) return requestedProduct;
   if (implementationInvestigation.test(question)) return "implementation_investigation";
   if (leadershipReport.test(question)) return "leadership_report";
+  if (sprintIntelligence.test(question)) return "period_delivery_brief";
   if (periodDeliveryBrief.test(question)) return "period_delivery_brief";
   return "operational_answer";
 };

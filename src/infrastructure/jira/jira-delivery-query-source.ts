@@ -8,6 +8,8 @@ import {
   type DeliveryQuerySource,
   type DeliveryQuerySubject,
   type DeliveryResultItem,
+  type DeliverySprintClassification,
+  type DeliverySprintReference,
   resolveDeliveryTimeConstraint,
 } from "../../modules/delivery-intelligence/index.ts";
 
@@ -15,6 +17,7 @@ type JiraSupportedIntent =
   | "activity"
   | "dependencies"
   | "blockers"
+  | "commitments"
   | "delivered"
   | "current_work"
   | "ownership"
@@ -114,6 +117,7 @@ const supportedIntents = new Set<JiraSupportedIntent>([
   "activity",
   "dependencies",
   "blockers",
+  "commitments",
   "delivered",
   "current_work",
   "ownership",
@@ -242,6 +246,7 @@ const baseItem = (
   idSuffix: string,
   summary: string,
   occurredAt = issue.fields?.updated ?? query.fromInclusive,
+  sprintPlanning?: Partial<NonNullable<DeliveryResultItem["planning"]>>,
 ): DeliveryResultItem | undefined => {
   if (issue.key === undefined) return undefined;
   const sprint = sprintValues(issue)
@@ -272,9 +277,10 @@ const baseItem = (
       hasDependency: (issue.fields?.issuelinks ?? []).some((link) =>
         /block|depend|require|wait/i.test(`${link.type?.inward ?? ""} ${link.type?.outward ?? ""}`),
       ),
-      hasAcceptanceInformation:
-        issue.fields?.resolutiondate != null ||
-        labels.some((label) => /accept|approved|signed-off|qa-passed/.test(label)),
+      hasAcceptanceInformation: labels.some((label) =>
+        /stakeholder-accept|client-accept|owner-accept|approved|signed-off/.test(label),
+      ),
+      ...sprintPlanning,
     },
     sensitivity: configuration.sensitivity ?? "internal",
     authority: configuration.authority ?? 0.95,
@@ -283,7 +289,7 @@ const baseItem = (
 };
 
 const transitionSummary = (history: JiraHistory | undefined): string | undefined => {
-  const tracked = new Set(["status", "assignee", "resolution", "priority"]);
+  const tracked = new Set(["status", "assignee", "resolution", "priority", "sprint"]);
   const changes = (history?.items ?? []).flatMap((item) => {
     const field = item.field?.toLowerCase();
     if (field === undefined || !tracked.has(field)) return [];
@@ -294,13 +300,22 @@ const transitionSummary = (history: JiraHistory | undefined): string | undefined
 const readIssueHistory = async (
   configuration: JiraDeliveryQueryConfiguration,
   issueKey: string,
-): Promise<readonly JiraHistory[]> =>
-  (
-    await requestJson<JiraChangelogResponse>(
+): Promise<readonly JiraHistory[]> => {
+  const histories: JiraHistory[] = [];
+  let startAt = 0;
+  const pageSize = 100;
+  while (histories.length < 2_000) {
+    const page = await requestJson<JiraChangelogResponse>(
       configuration,
-      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/changelog?startAt=0&maxResults=20`,
-    )
-  ).values ?? [];
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/changelog?startAt=${startAt}&maxResults=${pageSize}`,
+    );
+    const values = page.values ?? [];
+    histories.push(...values);
+    if (values.length < pageSize) break;
+    startAt += values.length;
+  }
+  return histories;
+};
 
 const sprintValues = (issue: JiraIssue): readonly JiraSprint[] =>
   Object.values(issue.fields ?? {}).flatMap((value) => {
@@ -313,6 +328,90 @@ const sprintValues = (issue: JiraIssue): readonly JiraSprint[] =>
         ("id" in candidate || "name" in candidate),
     );
   });
+
+const sprintReference = (sprint: JiraSprint | undefined): DeliverySprintReference | undefined => {
+  const name = sprint?.name?.trim();
+  if (name === undefined || name === "") return undefined;
+  const state = sprint?.state?.toLowerCase();
+  return {
+    ...(sprint?.id === undefined ? {} : { id: String(sprint.id) }),
+    name,
+    state: state === "active" || state === "closed" || state === "future" ? state : "unknown",
+    ...(sprint?.startDate === undefined ? {} : { startAt: sprint.startDate }),
+    ...(sprint?.endDate === undefined ? {} : { endAt: sprint.endDate }),
+    ...(sprint?.completeDate === undefined ? {} : { completeAt: sprint.completeDate }),
+  };
+};
+
+const latestSprint = (issue: JiraIssue, state: "active" | "closed"): JiraSprint | undefined =>
+  sprintValues(issue)
+    .filter((sprint) => sprint.state?.toLowerCase() === state)
+    .toSorted(
+      (left, right) =>
+        Date.parse(right.completeDate ?? right.endDate ?? right.startDate ?? "") -
+        Date.parse(left.completeDate ?? left.endDate ?? left.startDate ?? ""),
+    )[0];
+
+const inSprintWindow = (value: string | null | undefined, sprint: JiraSprint): boolean => {
+  if (value == null || sprint.startDate === undefined || sprint.endDate === undefined) return false;
+  const timestamp = Date.parse(value);
+  return timestamp >= Date.parse(sprint.startDate) && timestamp < Date.parse(sprint.endDate);
+};
+
+const planningForSprint = (
+  issue: JiraIssue,
+  histories: readonly JiraHistory[],
+  perspective: "previous" | "current",
+): Partial<NonNullable<DeliveryResultItem["planning"]>> => {
+  const previous = latestSprint(issue, "closed");
+  const current = latestSprint(issue, "active");
+  const completedDuringPrevious =
+    previous !== undefined &&
+    (inSprintWindow(issue.fields?.resolutiondate, previous) ||
+      histories.some(
+        (history) =>
+          inSprintWindow(history.created, previous) &&
+          (history.items ?? []).some(
+            (change) =>
+              change.field?.toLowerCase() === "status" &&
+              /done|closed|resolved|complete|delivered/i.test(change.toString ?? ""),
+          ),
+      ));
+  const addedDuringPrevious =
+    previous !== undefined &&
+    (inSprintWindow(issue.fields?.created, previous) ||
+      histories.some(
+        (history) =>
+          inSprintWindow(history.created, previous) &&
+          (history.items ?? []).some(
+            (change) =>
+              change.field?.toLowerCase() === "sprint" &&
+              (change.toString ?? "").includes(previous.name ?? "") &&
+              !(change.fromString ?? "").includes(previous.name ?? ""),
+          ),
+      ));
+  const rolledIntoCurrent =
+    previous !== undefined &&
+    current !== undefined &&
+    !completedDuringPrevious &&
+    issueLifecycleState(issue) !== "canceled";
+  const classifications: DeliverySprintClassification[] = [];
+  if (perspective === "previous" && previous !== undefined) {
+    classifications.push(addedDuringPrevious ? "added_during_sprint" : "planned_at_start");
+    if (completedDuringPrevious) classifications.push("completed_during_sprint");
+    else if (rolledIntoCurrent) classifications.push("rolled_into_current");
+    else classifications.push("dropped");
+  }
+  if (perspective === "current" && current !== undefined) {
+    classifications.push("current_sprint");
+    if (rolledIntoCurrent) classifications.push("rolled_into_current");
+  }
+  return {
+    ...(previous === undefined ? {} : { previousSprint: sprintReference(previous) }),
+    ...(current === undefined ? {} : { currentSprint: sprintReference(current) }),
+    sprintClassifications: classifications,
+  };
+};
 
 const escapedJqlText = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
@@ -354,8 +453,13 @@ const jqlForView = (
       return `${scope} AND updated >= "${jiraDate(query.fromInclusive)}" AND updated < "${jiraDate(query.toExclusive)}" ORDER BY updated DESC`;
     case "dependencies":
     case "blockers":
-    case "current_work":
       return `${scope} AND sprint in openSprints() AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
+    case "current_work":
+      return query.operation.time?.kind === "jira_sprint"
+        ? `${scope} AND sprint in openSprints() ORDER BY priority DESC, updated DESC`
+        : `${scope} AND sprint in openSprints() AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
+    case "commitments":
+      return `${scope} AND sprint in closedSprints() ORDER BY updated DESC`;
     case "ownership":
       return `${scope}${ownershipTargetClause(query)} AND statusCategory != Done ORDER BY updated DESC`;
     case "next_actions":
@@ -363,7 +467,7 @@ const jqlForView = (
     case "delivered":
       return query.operation.time?.kind === "jira_sprint" &&
         query.operation.time.sprint === "previous"
-        ? `${scope} AND sprint in closedSprints() AND statusCategory = Done ORDER BY resolutiondate DESC`
+        ? `${scope} AND sprint in closedSprints() ORDER BY updated DESC`
         : `${scope} AND statusCategory = Done AND resolutiondate >= "${jiraDate(query.fromInclusive)}" AND resolutiondate < "${jiraDate(query.toExclusive)}" ORDER BY resolutiondate DESC`;
     case "risks":
       return `${scope} AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
@@ -575,6 +679,56 @@ const deliveredItems = (
   });
 };
 
+const sprintItems = async (
+  configuration: JiraDeliveryQueryConfiguration,
+  query: JiraDeliveryQuery,
+  issues: readonly JiraIssue[],
+  perspective: "previous" | "current",
+  historyFor: (issueKey: string) => Promise<readonly JiraHistory[]>,
+): Promise<readonly DeliveryResultItem[]> => {
+  const targetState = perspective === "previous" ? "closed" : "active";
+  const targetSprint = issues
+    .flatMap((issue) => sprintValues(issue))
+    .filter((sprint) => sprint.state?.toLowerCase() === targetState)
+    .toSorted(
+      (left, right) =>
+        Date.parse(right.completeDate ?? right.endDate ?? right.startDate ?? "") -
+        Date.parse(left.completeDate ?? left.endDate ?? left.startDate ?? ""),
+    )[0];
+  const selected =
+    targetSprint?.id === undefined
+      ? issues
+      : issues.filter((issue) =>
+          sprintValues(issue).some((sprint) => sprint.id === targetSprint.id),
+        );
+  const histories = await Promise.all(selected.map((issue) => historyFor(issue.key ?? "")));
+  return selected.flatMap((issue, index) => {
+    const planning = planningForSprint(issue, histories[index] ?? [], perspective);
+    if (
+      query.operation.purpose === "delivered" &&
+      !planning.sprintClassifications?.includes("completed_during_sprint")
+    )
+      return [];
+    const summaryPrefix =
+      query.operation.purpose === "commitments"
+        ? "planned"
+        : query.operation.purpose === "current_work"
+          ? issueStatus(issue)
+          : "completed";
+    const item = baseItem(
+      configuration,
+      query,
+      issue,
+      `sprint_${query.operation.purpose}`,
+      perspective,
+      `${issue.key} ${summaryPrefix} — ${issueOwner(issue)}: ${issueTitle(issue)}`,
+      issue.fields?.resolutiondate ?? issue.fields?.updated,
+      planning,
+    );
+    return item === undefined ? [] : [item];
+  });
+};
+
 const currentWorkItems = (
   configuration: JiraDeliveryQueryConfiguration,
   query: JiraDeliveryQuery,
@@ -757,6 +911,14 @@ export const createJiraDeliveryQuerySource = (
             return { query, jql, ...result };
           }),
         );
+        const historyCache = new Map<string, Promise<readonly JiraHistory[]>>();
+        const historyFor = (issueKey: string): Promise<readonly JiraHistory[]> => {
+          const existing = historyCache.get(issueKey);
+          if (existing !== undefined) return existing;
+          const pending = readIssueHistory(configuration, issueKey);
+          historyCache.set(issueKey, pending);
+          return pending;
+        };
         const items = await Promise.all(
           searches.map(async ({ query, jql, issues, exhausted }) => {
             const connectedIssues = issues.filter(
@@ -771,10 +933,16 @@ export const createJiraDeliveryQuerySource = (
                   return dependencyItems(configuration, query, connectedIssues);
                 case "blockers":
                   return blockedItems(configuration, query, connectedIssues);
+                case "commitments":
+                  return sprintItems(configuration, query, connectedIssues, "previous", historyFor);
                 case "delivered":
-                  return deliveredItems(configuration, query, connectedIssues);
+                  return query.operation.time?.kind === "jira_sprint"
+                    ? sprintItems(configuration, query, connectedIssues, "previous", historyFor)
+                    : deliveredItems(configuration, query, connectedIssues);
                 case "current_work":
-                  return currentWorkItems(configuration, query, connectedIssues);
+                  return query.operation.time?.kind === "jira_sprint"
+                    ? sprintItems(configuration, query, connectedIssues, "current", historyFor)
+                    : currentWorkItems(configuration, query, connectedIssues);
                 case "ownership":
                   return ownershipItems(configuration, query, connectedIssues);
                 case "next_actions":
