@@ -377,7 +377,7 @@ export const periodObservationCompletionStage = (observation: {
     observation.subjectLifecycleState === "done" &&
     /\bchanged\s+from\b.+\bto\s+(?:done|closed|complete(?:d)?)\b/i.test(observation.summary)
   )
-    return "accepted";
+    return "development_ready";
   return undefined;
 };
 

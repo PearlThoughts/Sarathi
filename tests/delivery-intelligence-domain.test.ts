@@ -18,6 +18,49 @@ import {
 } from "../src/modules/delivery-intelligence/index.ts";
 
 describe("delivery intelligence domain", () => {
+  it("plans one bounded cross-source Sprint Review and Outlook for compound sprint questions", () => {
+    const question =
+      "What did we commit to in the previous sprint, what was completed, what was added during the sprint, and what rolled over?";
+    const plan = planDeliveryQuestion(question);
+
+    expect(selectDeliveryResponseProduct(question)).toBe("period_delivery_brief");
+    expect(plan?.requiredSources).toEqual(["jira", "strategy", "teams", "vault", "github"]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "commitments",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "previous" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "previous" },
+        }),
+        expect.objectContaining({
+          purpose: "current_work",
+          select: "objects",
+          time: { kind: "jira_sprint", sprint: "current" },
+        }),
+        expect.objectContaining({
+          purpose: "commitments",
+          predicates: [{ field: "source", operator: "equals", value: "strategy" }],
+        }),
+        expect.objectContaining({ purpose: "activity", select: "observations" }),
+        expect.objectContaining({ purpose: "delivered", select: "period_census" }),
+      ]),
+    );
+    expect(plan?.operations).toHaveLength(11);
+  });
+
+  it("selects the shared reporting product for the leadership Sprint Review and Outlook", () => {
+    expect(
+      selectDeliveryResponseProduct(
+        "Give me a Sprint Review and Outlook suitable for Pavithra to share with leadership.",
+      ),
+    ).toBe("leadership_report");
+  });
+
   it("parses arbitrary delivery-report periods into exhaustive census operations", () => {
     const plan = planDeliveryQuestion("Give me a delivery report for the last 37 days");
 

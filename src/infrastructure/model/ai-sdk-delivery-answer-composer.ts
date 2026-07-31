@@ -199,6 +199,51 @@ export const createAiSdkDeliveryAnswerComposer = (
                 episodeId,
                 message,
               })),
+              ...(report.sprintReview === undefined
+                ? {}
+                : {
+                    sprintReview: {
+                      ...(report.sprintReview.previousSprint === undefined
+                        ? {}
+                        : { previousSprint: report.sprintReview.previousSprint }),
+                      ...(report.sprintReview.currentSprint === undefined
+                        ? {}
+                        : { currentSprint: report.sprintReview.currentSprint }),
+                      previous: {
+                        plannedAtStart: report.sprintReview.plannedAtStart.map(({ id }) => id),
+                        addedDuringSprint: report.sprintReview.addedDuringSprint.map(
+                          ({ id }) => id,
+                        ),
+                        completedDuringSprint: report.sprintReview.completedDuringSprint.map(
+                          ({ id }) => id,
+                        ),
+                        rolledIntoCurrent: report.sprintReview.rolledIntoCurrent.map(
+                          ({ id }) => id,
+                        ),
+                        dropped: report.sprintReview.dropped.map(({ id }) => id),
+                      },
+                      current: report.sprintReview.currentSprintWork.map(({ id }) => id),
+                      initiatives: report.sprintReview.initiatives.map((initiative) => ({
+                        title: initiative.title,
+                        health: initiative.health,
+                        healthExplanation: initiative.healthExplanation,
+                        progress: initiative.progress,
+                        currentSprintEpisodes: initiative.currentSprintCapsules.map(({ id }) => id),
+                        completedQuarterToDateEpisodes:
+                          initiative.completedQuarterToDateCapsules.map(({ id }) => id),
+                        activeEpisodes: initiative.activeCapsules.map(({ id }) => id),
+                        blockedOrWaitingEpisodes: initiative.blockedOrWaitingCapsules.map(
+                          ({ id }) => id,
+                        ),
+                        rolloverEpisodes: initiative.rolloverCapsules.map(({ id }) => id),
+                      })),
+                      noCurrentSprintActivity:
+                        report.sprintReview.initiativesWithoutCurrentSprintActivity.map(
+                          ({ title }) => title,
+                        ),
+                      unaccountedWork: report.sprintReview.unaccountedWork.map(({ id }) => id),
+                    },
+                  }),
             },
           }),
     });

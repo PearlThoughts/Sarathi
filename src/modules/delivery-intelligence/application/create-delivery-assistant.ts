@@ -50,6 +50,37 @@ type DeliveryAnswerDraft = Omit<
   "responseMode" | "responseProduct" | "responseBudget" | "acceptance"
 >;
 
+type ReportFailureClassification = NonNullable<
+  DeliveryAssistantAnswer["failure"]
+>["classification"];
+
+const reportFailureDraft = (
+  plan: DeliveryQueryPlan,
+  classification: ReportFailureClassification,
+): DeliveryAnswerDraft => {
+  const correlationCode = `SAR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  return {
+    text: [
+      "Response composition failed.",
+      "",
+      "Error code: SARATHI-REPORT-COMPOSITION-FAILED",
+      `Correlation code: ${correlationCode}`,
+      "Please retry the request.",
+    ].join("\n"),
+    citations: [],
+    status: "failed",
+    plan,
+    unavailableSources: [],
+    conflicts: [],
+    mentions: [],
+    failure: {
+      code: "SARATHI-REPORT-COMPOSITION-FAILED",
+      classification,
+      correlationCode,
+    },
+  };
+};
+
 const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
   jira: "Jira",
   vault: "Vault",
@@ -848,9 +879,9 @@ const composeWithModel = (
     readonly totalBudgetMs: number;
   },
 ): Effect.Effect<DeliveryAnswerDraft> => {
-  const deterministic = composeAnswer(request, plan, result, responseMode);
   const reportComposition =
     responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
+  const deterministic = composeAnswer(request, plan, result, responseMode);
   if (responseMode !== "fast" && !reportComposition) return Effect.succeed(deterministic);
   const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");
   const maximumItems = deliveryResponseModePolicies[responseMode].maximumItems;
@@ -895,16 +926,77 @@ const composeWithModel = (
         try: () => {
           if (reportComposition) {
             const text = composed.text.trim();
-            if (
-              ![
-                "## Delivered",
-                "## In progress",
-                "## Waiting or blocked",
-                "## Decisions needed",
-                "## References",
-              ].every((heading) => text.includes(heading))
-            )
+            const requiredHeadings =
+              result.periodDeliveryReport?.sprintReview === undefined
+                ? [
+                    "## Delivered",
+                    "## In progress",
+                    "## Waiting or blocked",
+                    "## Decisions needed",
+                    "## References",
+                  ]
+                : [
+                    "## Sprint overview",
+                    "## Previous sprint",
+                    "## Current sprint",
+                    "## Q3 alignment",
+                    "## Waiting or decisions",
+                    "## Jira hygiene",
+                    "## References",
+                  ];
+            if (!requiredHeadings.every((heading) => text.includes(heading)))
               throw new Error("Composed delivery report lacks the required synthesis structure.");
+            const report = result.periodDeliveryReport;
+            const review = report?.sprintReview;
+            const sprintDateIsPresent = (value: string): boolean => {
+              const parsed = new Date(value);
+              if (Number.isNaN(parsed.getTime())) return false;
+              return [
+                value.slice(0, 10),
+                new Intl.DateTimeFormat("en-GB", {
+                  timeZone: request.timeZone,
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                }).format(parsed),
+              ].some((candidate) => text.includes(candidate));
+            };
+            for (const [label, sprint] of [
+              ["previous", review?.previousSprint],
+              ["current", review?.currentSprint],
+            ] as const) {
+              if (review === undefined) break;
+              if (
+                sprint === undefined ||
+                sprint.startAt === undefined ||
+                sprint.endAt === undefined ||
+                !text.includes(sprint.name) ||
+                !sprintDateIsPresent(sprint.startAt) ||
+                !sprintDateIsPresent(sprint.endAt)
+              )
+                throw new Error(
+                  `Composed sprint report omits the ${label} sprint identity or dates.`,
+                );
+            }
+            if (review?.initiatives.some(({ title }) => !text.includes(title)))
+              throw new Error("Composed sprint report omits a governed initiative identity.");
+            if (
+              /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
+                text,
+              ) ||
+              /\b(?:sir here is|please test|test done\?)\b/i.test(text)
+            )
+              throw new Error("Composed delivery report contains prohibited report prose.");
+            const referencesAt = text.indexOf("## References");
+            const citedUrls = [...text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
+              match[1] === undefined ? [] : [match[1]],
+            );
+            if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
+              throw new Error("Composed delivery report contains an unknown inline citation.");
+            if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
+              throw new Error("Composed delivery report citations must remain in References.");
+            if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
+              throw new Error("Composed delivery report lacks compact references.");
             if (
               composed.citations.some(
                 ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
@@ -916,6 +1008,9 @@ const composeWithModel = (
               text,
               citations: composed.citations,
               mentions: [],
+              ...(result.periodDeliveryReport === undefined
+                ? {}
+                : { periodDeliveryReport: result.periodDeliveryReport }),
             };
           }
           const lines = composed.text
@@ -961,142 +1056,27 @@ const composeWithModel = (
           operation: "delivery-answer-composition",
         }),
     }),
-    Effect.catchAll(() => Effect.succeed(deterministic)),
+    Effect.catchAll((error) =>
+      reportComposition
+        ? Effect.succeed(
+            reportFailureDraft(
+              plan,
+              error.operation === "delivery-answer-composition-validation"
+                ? "SARATHI-REPORT-COMPOSITION-INVALID"
+                : error.operation === "delivery-answer-composition"
+                  ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
+                  : "SARATHI-REPORT-PROVIDER-FAILED",
+            ),
+          )
+        : Effect.succeed(deterministic),
+    ),
   );
-};
-
-const reportPeriodLabel = (report: PeriodDeliveryReport): string => {
-  if (report.census.boundary.kind !== "absolute")
-    return `${report.census.boundary.reference} (${report.census.timeZone})`;
-  const format = new Intl.DateTimeFormat("en-GB", {
-    timeZone: report.census.timeZone,
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-  const endExclusive = new Date(Date.parse(report.census.boundary.toExclusive) - 1);
-  return `${format.format(new Date(report.census.boundary.fromInclusive))} – ${format.format(endExclusive)} (${report.census.timeZone})`;
-};
-
-const renderLeadershipReport = (
-  answer: DeliveryAnswerDraft,
-  report: PeriodDeliveryReport,
-  result: DeliveryQueryResult,
-  _elapsedMs: number,
-): DeliveryAnswerDraft => {
-  const citations: { label: string; url: string }[] = [];
-  const registerCitation = (source: DeliverySourceKind, url: string): void => {
-    if (citations.some((citation) => citation.url === url) || citations.length >= 20) return;
-    const label = `${sourceLabel[source]} ${citations.length + 1}`;
-    citations.push({ label, url });
-  };
-  const referenceLines = (): readonly string[] => {
-    const grouped = new Map<string, { label: string; url: string }[]>();
-    for (const value of citations) {
-      const source = value.label.split(" ")[0] ?? "Source";
-      grouped.set(source, [...(grouped.get(source) ?? []), value]);
-    }
-    return [
-      "## References",
-      ...[...grouped.entries()].map(
-        ([source, values]) =>
-          `- **${source}:** ${values.map(({ url }, index) => `[${index + 1}](${url})`).join(" · ")}`,
-      ),
-    ];
-  };
-  const cleanHeadline = (value: string): string =>
-    safeText(value)
-      .replace(/^PR #\d+:\s*/i, "")
-      .replace(/^\/?[A-Z][A-Z0-9]+-\d+\s*[:—-]?\s*/i, "")
-      .replace(/^(?:feat|fix|chore|docs|refactor|build|ci|test)(?:\([^)]+\))?\s*:\s*/i, "")
-      .replace(/^(?:feature|fix)[/-]/i, "")
-      .trim();
-  const narrativeSummary = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
-    if (/(?:github|jira|vault|teams):[^\s]+(?::|\/)/i.test(capsule.summary)) return "";
-    const title = cleanHeadline(capsule.title);
-    const summary = cleanHeadline(capsule.summary);
-    return summary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en") ? "" : summary;
-  };
-  const capabilityTitle = (capsule: PeriodDeliveryReport["capsules"][number]): string =>
-    report.capabilitySections.find(({ key }) => capsule.capabilityKeys.includes(key))?.title ??
-    (capsule.alignment === "emerging_requirement" ? "Emerging requirement" : "Unaccounted work");
-  const lifecycleLabel: Readonly<
-    Record<PeriodDeliveryReport["capsules"][number]["lifecycleState"], string>
-  > = {
-    scoped: "Scoped",
-    implementing: "Implementing",
-    development_ready: "Development-ready",
-    qa: "QA",
-    production: "Production",
-    accepted: "Accepted",
-  };
-  const capsuleLine = (capsule: PeriodDeliveryReport["capsules"][number]): string => {
-    for (const { source, url } of capsule.citations.slice(0, 2)) registerCitation(source, url);
-    const title = cleanHeadline(capsule.title);
-    const safeSummary = narrativeSummary(capsule);
-    const detail =
-      safeSummary === "" || safeSummary.toLocaleLowerCase("en") === title.toLocaleLowerCase("en")
-        ? title
-        : safeSummary;
-    return `- **${safeText(capabilityTitle(capsule))}** — ${detail} _(${lifecycleLabel[capsule.lifecycleState]})_`;
-  };
-  const deliveredLines = report.deliveredEpisodes.map(capsuleLine);
-  const inProgressLines = report.inProgressEpisodes.map(capsuleLine);
-  const dependencyLines = report.dependencies.map((dependency) => {
-    for (const url of dependency.citations) {
-      const source = report.capsules
-        .flatMap(({ citations: episodeCitations }) => episodeCitations)
-        .find((citation) => citation.url === url)?.source;
-      if (source !== undefined) registerCitation(source, url);
-    }
-    const capability =
-      dependency.capabilityKey === undefined
-        ? "Unaccounted work"
-        : (report.capabilitySections.find(({ key }) => key === dependency.capabilityKey)?.title ??
-          "Unaccounted work");
-    const since =
-      dependency.since === undefined
-        ? ""
-        : ` since ${new Intl.DateTimeFormat("en-GB", { timeZone: report.census.timeZone, day: "numeric", month: "short" }).format(new Date(dependency.since))}`;
-    return `- **${safeText(capability)}** — ${safeText(dependency.waiting)} is waiting for ${safeText(dependency.awaited)}${since}. Required action: ${safeText(dependency.requiredAction)}`;
-  });
-  const decisionLines = report.decisionsNeeded.map((decision) => `- ${safeText(decision)}`);
-  const text = [
-    "## Delivered",
-    `**Period:** ${reportPeriodLabel(report)}`,
-    ...(deliveredLines.length === 0
-      ? ["- No episode reached production or acceptance in this period."]
-      : deliveredLines),
-    "## In progress",
-    ...(inProgressLines.length === 0
-      ? ["- No material active episode was found."]
-      : inProgressLines),
-    "## Waiting or blocked",
-    ...(dependencyLines.length === 0
-      ? ["- No active human or operational wait was found."]
-      : dependencyLines),
-    "## Decisions needed",
-    ...(decisionLines.length === 0 ? ["- No decision requiring action was found."] : decisionLines),
-    ...referenceLines(),
-  ].join("\n");
-  return {
-    ...answer,
-    text,
-    citations,
-    status:
-      !report.census.complete || result.unavailableSources.length > 0
-        ? "partial"
-        : report.capsules.length === 0
-          ? "empty"
-          : "ok",
-    periodDeliveryReport: report,
-  };
 };
 
 const renderResponseMode = (
   answer: DeliveryAnswerDraft,
   _request: DeliveryAssistantRequest,
-  result: DeliveryQueryResult,
+  _result: DeliveryQueryResult,
   responseMode: DeliveryResponseMode,
   responseProduct: DeliveryResponseProduct,
   _elapsedMs: number,
@@ -1104,50 +1084,7 @@ const renderResponseMode = (
   if (responseMode === "fast") return answer;
   const reportProduct =
     responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
-  if (
-    reportProduct &&
-    result.periodDeliveryReport !== undefined &&
-    answer.text.includes("## Delivered") &&
-    answer.text.includes("## In progress") &&
-    answer.text.includes("## Waiting or blocked") &&
-    answer.text.includes("## Decisions needed") &&
-    answer.text.includes("## References")
-  )
-    return {
-      ...answer,
-      status:
-        !result.complete || result.unavailableSources.length > 0
-          ? "partial"
-          : result.periodDeliveryReport.capsules.length === 0
-            ? "empty"
-            : "ok",
-      periodDeliveryReport: result.periodDeliveryReport,
-    };
-  if (reportProduct && result.periodDeliveryReport !== undefined)
-    return renderLeadershipReport(answer, result.periodDeliveryReport, result, _elapsedMs);
-  if (responseProduct === "leadership_report")
-    return {
-      ...answer,
-      text: [
-        "## Leadership report unavailable",
-        "Sarathi could not produce a reliable report from the authorized indexed corpus.",
-        "- The exhaustive period census or reviewed capability projection did not complete.",
-        ...(result.unavailableSources.length === 0
-          ? []
-          : [
-              `- Unavailable source coverage: ${result.unavailableSources.map((source) => sourceLabel[source]).join(", ")}.`,
-            ]),
-        ...(result.missingRequiredSources?.length === 0 ||
-        result.missingRequiredSources === undefined
-          ? []
-          : [
-              `- Required evidence was not found from: ${result.missingRequiredSources.map((source) => sourceLabel[source]).join(", ")}.`,
-            ]),
-        "- No delivery conclusion was generated from the incomplete evidence population.",
-      ].join("\n"),
-      citations: [],
-      status: "partial",
-    };
+  if (reportProduct) return answer;
   return answer;
 };
 
@@ -1170,7 +1107,7 @@ const responseAcceptance = (
   const acceptanceIntents = reportProduct
     ? answer.plan.intents.filter((intent) => intent === "delivered")
     : answer.plan.intents;
-  const requestedIntents = acceptanceIntents.length;
+  const requestedIntents = reportProduct ? 1 : acceptanceIntents.length;
   const emittedIntents = new Set(
     result.items
       .filter((item) => answer.text.includes(item.citationUrl))
@@ -1182,9 +1119,16 @@ const responseAcceptance = (
     )
   )
     emittedIntents.add("conflicts");
-  const coveredIntents = acceptanceIntents.filter(
-    (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
-  ).length;
+  const coveredIntents = reportProduct
+    ? result.periodDeliveryReport !== undefined &&
+      result.periodDeliveryReport.capsules.length > 0 &&
+      result.complete &&
+      (result.missingRequiredSources?.length ?? 0) === 0
+      ? 1
+      : 0
+    : acceptanceIntents.filter(
+        (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
+      ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
   const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
   const structuredReportProduct = reportProduct && result.periodDeliveryReport !== undefined;
@@ -1196,6 +1140,9 @@ const responseAcceptance = (
     .filter((line) => line.startsWith("- "));
   const allowedUrls = new Set([
     ...result.items.map((item) => item.citationUrl),
+    ...(result.periodDeliveryReport?.capsules.flatMap((capsule) =>
+      capsule.citations.map(({ url }) => url),
+    ) ?? []),
     ...result.conflicts.flatMap((conflict) =>
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
@@ -1224,14 +1171,26 @@ const responseAcceptance = (
   const groundingPassed = linkedUrls.every((url) => allowedUrls.has(url));
   const freshnessPassed = freshnessCoverage >= 0.95;
   const headings = new Set(lines.filter((line) => /^#{2,3} /.test(line)));
+  const reportHeadings =
+    result.periodDeliveryReport?.sprintReview === undefined
+      ? [
+          "## Delivered",
+          "## In progress",
+          "## Waiting or blocked",
+          "## Decisions needed",
+          "## References",
+        ]
+      : [
+          "## Sprint overview",
+          "## Previous sprint",
+          "## Current sprint",
+          "## Q3 alignment",
+          "## Waiting or decisions",
+          "## Jira hygiene",
+          "## References",
+        ];
   const formatPassed = structuredReportProduct
-    ? [
-        "## Delivered",
-        "## In progress",
-        "## Waiting or blocked",
-        "## Decisions needed",
-        "## References",
-      ].every((heading) => headings.has(heading))
+    ? reportHeadings.every((heading) => headings.has(heading))
     : headings.size > 0 && headings.has("### References");
   const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
@@ -1255,6 +1214,7 @@ const responseAcceptance = (
     freshnessPassed,
     formatPassed,
     passed:
+      answer.status !== "failed" &&
       latencyPassed &&
       completenessPassed &&
       citationPassed &&
@@ -1542,7 +1502,7 @@ export const createDeliveryAssistant = (
             const successful = results.flatMap(({ result }) =>
               result._tag === "Right" ? [result.right] : [],
             );
-            const unavailableSources = [
+            const reportedUnavailableSources = [
               ...successful.flatMap((result) => result.unavailableSources),
               ...failures.flatMap(({ source }) => {
                 if (source.source === "projection") return ["jira", "vault"] as const;
@@ -1554,15 +1514,28 @@ export const createDeliveryAssistant = (
               (source, index, values): source is DeliverySourceKind =>
                 values.indexOf(source) === index,
             );
+            const mergedItems = successful
+              .flatMap((result) => result.items)
+              .filter(
+                (item) =>
+                  item.workspaceId === request.workspaceId &&
+                  isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity) &&
+                  itemMatchesPlan(item, plan),
+              );
+            const requestedAt = Date.parse(request.requestedAt);
+            const unavailableSources = reportedUnavailableSources.filter(
+              (source) =>
+                !mergedItems.some((item) => {
+                  if (item.source !== source || item.indexedAt === undefined) return false;
+                  const indexedAt = Date.parse(item.indexedAt);
+                  return (
+                    Number.isFinite(indexedAt) &&
+                    Math.max(0, requestedAt - indexedAt) <= responsePolicy.freshnessWindowMs
+                  );
+                }),
+            );
             const merged: DeliveryQueryResult = {
-              items: successful
-                .flatMap((result) => result.items)
-                .filter(
-                  (item) =>
-                    item.workspaceId === request.workspaceId &&
-                    isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity) &&
-                    itemMatchesPlan(item, plan),
-                ),
+              items: mergedItems,
               conflicts: authorizedConflicts(
                 successful.flatMap((result) => result.conflicts),
                 request.workspaceId,
@@ -1618,7 +1591,8 @@ export const createDeliveryAssistant = (
             return enrichment.pipe(
               Effect.flatMap((enrichmentItems) => {
                 const reportMissingDelivery =
-                  responseProduct === "leadership_report" &&
+                  (responseProduct === "leadership_report" ||
+                    responseProduct === "period_delivery_brief") &&
                   plan.intents.includes("delivered") &&
                   (periodDeliveryReport === undefined ||
                     periodDeliveryReport.capsules.length === 0);
@@ -1639,9 +1613,21 @@ export const createDeliveryAssistant = (
                   ...(periodDeliveryReport === undefined ? {} : { periodDeliveryReport }),
                 };
                 const remainingCompositionBudgetMs = totalBudgetMs - (Date.now() - startedAt) - 100;
+                const reportProduct =
+                  responseProduct === "period_delivery_brief" ||
+                  responseProduct === "leadership_report";
                 const composed =
                   configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
-                    ? Effect.succeed(composeAnswer(request, plan, completed, responseMode))
+                    ? Effect.succeed(
+                        reportProduct
+                          ? reportFailureDraft(
+                              plan,
+                              remainingCompositionBudgetMs <= 0
+                                ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
+                                : "SARATHI-REPORT-PROVIDER-FAILED",
+                            )
+                          : composeAnswer(request, plan, completed, responseMode),
+                      )
                     : composeWithModel(
                         configuration.answerComposer,
                         request,
@@ -1663,19 +1649,29 @@ export const createDeliveryAssistant = (
                       responseProduct,
                       elapsedMs,
                     );
+                    const acceptance = responseAcceptance(
+                      rendered,
+                      request,
+                      completed,
+                      responseMode,
+                      responseProduct,
+                      elapsedMs,
+                    );
+                    const qualityFailed =
+                      reportProduct &&
+                      rendered.failure === undefined &&
+                      (completed.periodDeliveryReport === undefined || !acceptance.passed);
+                    const finalRendered = qualityFailed
+                      ? reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED")
+                      : rendered;
                     return {
-                      ...rendered,
+                      ...finalRendered,
                       responseMode,
                       responseProduct,
                       responseBudget,
-                      acceptance: responseAcceptance(
-                        rendered,
-                        request,
-                        completed,
-                        responseMode,
-                        responseProduct,
-                        elapsedMs,
-                      ),
+                      acceptance: qualityFailed
+                        ? { ...acceptance, formatPassed: false, passed: false }
+                        : acceptance,
                     };
                   }),
                 );

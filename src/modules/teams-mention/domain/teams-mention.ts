@@ -99,6 +99,41 @@ export type DeliveryReportPresentation = {
     readonly episodeId: string;
     readonly message: string;
   }[];
+  readonly sprintReview?:
+    | {
+        readonly previousSprint?: {
+          readonly name: string;
+          readonly startAt?: string | undefined;
+          readonly endAt?: string | undefined;
+        };
+        readonly currentSprint?: {
+          readonly name: string;
+          readonly startAt?: string | undefined;
+          readonly endAt?: string | undefined;
+        };
+        readonly previous: {
+          readonly plannedAtStart: readonly string[];
+          readonly addedDuringSprint: readonly string[];
+          readonly completedDuringSprint: readonly string[];
+          readonly rolledIntoCurrent: readonly string[];
+          readonly dropped: readonly string[];
+        };
+        readonly current: readonly string[];
+        readonly initiatives: readonly {
+          readonly title: string;
+          readonly health: "Green" | "Amber" | "Red" | "Unknown";
+          readonly healthExplanation: string;
+          readonly progress: "scoped" | "moving" | "at risk" | "stalled" | "unknown";
+          readonly currentSprintEpisodes: readonly string[];
+          readonly completedQuarterToDateEpisodes: readonly string[];
+          readonly activeEpisodes: readonly string[];
+          readonly blockedOrWaitingEpisodes: readonly string[];
+          readonly rolloverEpisodes: readonly string[];
+        }[];
+        readonly noCurrentSprintActivity: readonly string[];
+        readonly unaccountedWork: readonly string[];
+      }
+    | undefined;
 };
 
 export type AuthorizedContextEnvelope = {

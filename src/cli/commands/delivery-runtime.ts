@@ -475,6 +475,25 @@ export const runDeliveryCommand = async (
       const answer = await (
         dependencies.answer ?? ((input) => answerFromRuntime(input, environment))
       )(request);
+      if (answer.status === "failed")
+        return {
+          exitCode: 1,
+          output: {
+            ok: false,
+            operation: "delivery-query",
+            errorCode: answer.failure?.code ?? "SARATHI-REPORT-COMPOSITION-FAILED",
+            failureClassification: answer.failure?.classification,
+            correlationCode: answer.failure?.correlationCode,
+            answer: {
+              text: answer.text,
+              citations: [],
+              status: answer.status,
+              responseMode: answer.responseMode,
+              responseProduct: answer.responseProduct,
+              acceptance: answer.acceptance,
+            },
+          },
+        };
       return {
         exitCode: 0,
         output: {

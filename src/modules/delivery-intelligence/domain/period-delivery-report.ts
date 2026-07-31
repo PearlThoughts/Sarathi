@@ -44,8 +44,36 @@ export type PeriodDeliveryEvidence = {
         readonly sprint?: string | undefined;
         readonly hasDependency: boolean;
         readonly hasAcceptanceInformation: boolean;
+        readonly previousSprint?: SprintReference | undefined;
+        readonly currentSprint?: SprintReference | undefined;
+        readonly sprintClassifications?: readonly SprintClassification[] | undefined;
       }
     | undefined;
+  readonly strategy?:
+    | {
+        readonly kind: "goal" | "initiative";
+        readonly state: string;
+        readonly horizonStart?: string | undefined;
+        readonly horizonEnd?: string | undefined;
+      }
+    | undefined;
+};
+
+type SprintClassification =
+  | "planned_at_start"
+  | "added_during_sprint"
+  | "completed_during_sprint"
+  | "rolled_into_current"
+  | "dropped"
+  | "current_sprint";
+
+type SprintReference = {
+  readonly id?: string | undefined;
+  readonly name: string;
+  readonly state: "active" | "closed" | "future" | "unknown";
+  readonly startAt?: string | undefined;
+  readonly endAt?: string | undefined;
+  readonly completeAt?: string | undefined;
 };
 
 export type CapabilityAlias = {
@@ -128,6 +156,8 @@ export type ChangeCapsule = {
   readonly alignment: DeliveryEpisodeAlignment;
   readonly initiativeTitle?: string | undefined;
   readonly capabilityKeys: readonly string[];
+  readonly sprintClassifications: readonly SprintClassification[];
+  readonly blocked: boolean;
   readonly owners: readonly string[];
   readonly sources: readonly DeliverySourceKind[];
   readonly citations: readonly {
@@ -137,6 +167,33 @@ export type ChangeCapsule = {
   readonly dependencies: readonly HumanDependency[];
   readonly jiraAdvisories: readonly JiraHygieneAdvisory[];
   readonly chain: readonly DeliveryChainStage[];
+};
+
+type InitiativeProgress = {
+  readonly id: string;
+  readonly title: string;
+  readonly health: "Green" | "Amber" | "Red" | "Unknown";
+  readonly healthExplanation: string;
+  readonly progress: "scoped" | "moving" | "at risk" | "stalled" | "unknown";
+  readonly currentSprintCapsules: readonly ChangeCapsule[];
+  readonly completedQuarterToDateCapsules: readonly ChangeCapsule[];
+  readonly activeCapsules: readonly ChangeCapsule[];
+  readonly blockedOrWaitingCapsules: readonly ChangeCapsule[];
+  readonly rolloverCapsules: readonly ChangeCapsule[];
+};
+
+export type SprintReviewProjection = {
+  readonly previousSprint?: SprintReference | undefined;
+  readonly currentSprint?: SprintReference | undefined;
+  readonly plannedAtStart: readonly ChangeCapsule[];
+  readonly addedDuringSprint: readonly ChangeCapsule[];
+  readonly completedDuringSprint: readonly ChangeCapsule[];
+  readonly rolledIntoCurrent: readonly ChangeCapsule[];
+  readonly dropped: readonly ChangeCapsule[];
+  readonly currentSprintWork: readonly ChangeCapsule[];
+  readonly initiatives: readonly InitiativeProgress[];
+  readonly initiativesWithoutCurrentSprintActivity: readonly InitiativeProgress[];
+  readonly unaccountedWork: readonly ChangeCapsule[];
 };
 
 export type PeriodDeliveryReport = {
@@ -158,6 +215,7 @@ export type PeriodDeliveryReport = {
   readonly unmappedCapsules: readonly ChangeCapsule[];
   readonly excludedImmaterialActivityCount: number;
   readonly incompleteChainCount: number;
+  readonly sprintReview?: SprintReviewProjection | undefined;
 };
 
 const normalized = (value: string): string =>
@@ -195,7 +253,10 @@ const completionStage = (
       ? "deployed"
       : items.some((item) => item.completionStage === "released")
         ? "released"
-        : items.some((item) => item.completionStage === "merged")
+        : items.some(
+              (item) =>
+                item.completionStage === "merged" || item.completionStage === "development_ready",
+            )
           ? "merged"
           : undefined;
 
@@ -213,7 +274,10 @@ const lifecycleForItem = (item: PeriodDeliveryEvidence): DeliveryEpisodeLifecycl
   const awaitingAcceptance = /\b(?:waiting|waits on|pending|needs?|requires?)\b/.test(text);
   if (
     item.completionStage === "accepted" ||
-    (!awaitingAcceptance && /\b(?:accepted|approved|sign off|signed off)\b/.test(text))
+    (!awaitingAcceptance &&
+      /\b(?:stakeholder|client|responsible owner|product owner)\b.{0,40}\b(?:accepted|approved|sign off|signed off)\b/.test(
+        text,
+      ))
   )
     return "accepted";
   if (
@@ -223,7 +287,11 @@ const lifecycleForItem = (item: PeriodDeliveryEvidence): DeliveryEpisodeLifecycl
   )
     return "production";
   if (/\bqa|quality assurance|uat|testing|test ready|in review\b/.test(text)) return "qa";
-  if (item.completionStage === "merged" || /\bmerged|development ready|dev ready\b/.test(text))
+  if (
+    item.completionStage === "merged" ||
+    item.completionStage === "development_ready" ||
+    /\bmerged|development ready|dev ready\b/.test(text)
+  )
     return "development_ready";
   if (
     item.lifecycleState === "active" ||
@@ -555,6 +623,9 @@ export const buildPeriodDeliveryReport = (input: {
       });
       const jiraAdvisories = jiraAdvisoriesFor(id, items, lifecycle);
       const completedAt = stage === undefined ? undefined : latestActivityAt;
+      const sprintClassifications = [
+        ...new Set(items.flatMap((item) => item.planning?.sprintClassifications ?? [])),
+      ];
       return {
         id,
         title: items[0]?.title ?? id,
@@ -574,6 +645,10 @@ export const buildPeriodDeliveryReport = (input: {
           ? {}
           : { initiativeTitle: declaredIntent?.title ?? capability.title }),
         capabilityKeys: capabilityMatch.keys,
+        sprintClassifications,
+        blocked:
+          items.some((item) => item.lifecycleState === "blocked") ||
+          items.some((item) => /\bblocked|impediment|stuck\b/i.test(evidenceText(item))),
         owners: [
           ...new Set(
             items.flatMap((item) =>
@@ -631,6 +706,154 @@ export const buildPeriodDeliveryReport = (input: {
     ...jiraAdvisories.map(({ message }) => message),
   ];
   const unmappedCapsules = capsules.filter(({ alignment }) => alignment === "unaccounted_work");
+  const sprintItems = input.items.filter(
+    (item) => (item.planning?.sprintClassifications?.length ?? 0) > 0,
+  );
+  const previousSprint = sprintItems.find((item) => item.planning?.previousSprint !== undefined)
+    ?.planning?.previousSprint;
+  const currentSprint = sprintItems.find((item) => item.planning?.currentSprint !== undefined)
+    ?.planning?.currentSprint;
+  const initiativeItems = [
+    ...new Map(
+      input.items
+        .filter((item) => item.strategy?.kind === "initiative")
+        .map((item) => [item.dedupeKey, item]),
+    ).values(),
+  ];
+  const healthReferenceAt =
+    input.census.boundary.kind === "absolute"
+      ? Date.parse(input.census.boundary.toExclusive)
+      : Math.max(
+          ...input.census.sourceCoverage.flatMap(({ checkpointAt }) =>
+            checkpointAt === undefined ? [] : [Date.parse(checkpointAt)],
+          ),
+        );
+  const meaningfulTokens = (value: string): readonly string[] =>
+    normalized(value)
+      .split(" ")
+      .filter(
+        (token) =>
+          token.length > 2 &&
+          !["and", "for", "the", "with", "from", "initiative", "q3", "2026"].includes(token),
+      );
+  const matchesInitiative = (
+    capsule: ChangeCapsule,
+    initiative: PeriodDeliveryEvidence,
+  ): boolean => {
+    const text = ` ${normalized(`${capsule.title} ${capsule.summary}`)} `;
+    const aliases = [initiative.title, ...(initiative.subjectAliases ?? [])];
+    return aliases.some((alias) => {
+      const exact = normalized(alias);
+      if (exact.length >= 6 && text.includes(` ${exact} `)) return true;
+      const tokens = meaningfulTokens(alias);
+      const matched = tokens.filter((token) => text.includes(` ${token} `)).length;
+      return tokens.length >= 2 && matched >= 2 && matched / tokens.length >= 2 / 3;
+    });
+  };
+  const initiatives: InitiativeProgress[] = initiativeItems.map((initiative) => {
+    const matching = capsules.filter((capsule) => matchesInitiative(capsule, initiative));
+    const currentSprintCapsules = matching.filter(({ sprintClassifications }) =>
+      sprintClassifications.includes("current_sprint"),
+    );
+    const completedQuarterToDateCapsules = matching.filter(
+      ({ lifecycleState }) => lifecycleRank[lifecycleState] >= lifecycleRank.development_ready,
+    );
+    const activeCapsules = matching.filter(
+      ({ lifecycleState }) =>
+        lifecycleState === "implementing" || lifecycleState === "qa" || lifecycleState === "scoped",
+    );
+    const blockedOrWaitingCapsules = matching.filter(
+      ({ blocked, dependencies: waits }) => blocked || waits.length > 0,
+    );
+    const rolloverCapsules = matching.filter(({ sprintClassifications }) =>
+      sprintClassifications.includes("rolled_into_current"),
+    );
+    const missingOwner = currentSprintCapsules.some(({ owners }) => owners.length === 0);
+    const agingQa =
+      Number.isFinite(healthReferenceAt) &&
+      currentSprintCapsules.some(
+        ({ lifecycleState, latestActivityAt }) =>
+          lifecycleState === "qa" &&
+          healthReferenceAt - Date.parse(latestActivityAt) >= 7 * 24 * 60 * 60 * 1_000,
+      );
+    const health: InitiativeProgress["health"] =
+      currentSprintCapsules.length === 0
+        ? "Unknown"
+        : blockedOrWaitingCapsules.some(({ blocked }) => blocked)
+          ? "Red"
+          : rolloverCapsules.length > 0 ||
+              blockedOrWaitingCapsules.length > 0 ||
+              missingOwner ||
+              agingQa
+            ? "Amber"
+            : "Green";
+    const healthExplanation =
+      health === "Unknown"
+        ? "No executable current-sprint work was observed."
+        : health === "Red"
+          ? "Current work is blocked and requires intervention."
+          : health === "Amber"
+            ? `${[
+                rolloverCapsules.length > 0 ? "rollover" : undefined,
+                blockedOrWaitingCapsules.length > 0 ? "an unresolved dependency" : undefined,
+                missingOwner ? "unclear ownership" : undefined,
+                agingQa ? "work remaining in QA" : undefined,
+              ]
+                .filter((value): value is string => value !== undefined)
+                .join(", ")}.`
+            : "Meaningful current-sprint progress is visible without a material unresolved delay.";
+    return {
+      id: initiative.dedupeKey,
+      title: initiative.title,
+      health,
+      healthExplanation,
+      progress:
+        health === "Red"
+          ? "stalled"
+          : health === "Amber"
+            ? "at risk"
+            : health === "Green"
+              ? "moving"
+              : matching.length > 0
+                ? "scoped"
+                : "unknown",
+      currentSprintCapsules,
+      completedQuarterToDateCapsules,
+      activeCapsules,
+      blockedOrWaitingCapsules,
+      rolloverCapsules,
+    };
+  });
+  const sprintReview: SprintReviewProjection | undefined =
+    sprintItems.length === 0
+      ? undefined
+      : {
+          ...(previousSprint === undefined ? {} : { previousSprint }),
+          ...(currentSprint === undefined ? {} : { currentSprint }),
+          plannedAtStart: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("planned_at_start"),
+          ),
+          addedDuringSprint: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("added_during_sprint"),
+          ),
+          completedDuringSprint: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("completed_during_sprint"),
+          ),
+          rolledIntoCurrent: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("rolled_into_current"),
+          ),
+          dropped: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("dropped"),
+          ),
+          currentSprintWork: capsules.filter(({ sprintClassifications }) =>
+            sprintClassifications.includes("current_sprint"),
+          ),
+          initiatives,
+          initiativesWithoutCurrentSprintActivity: initiatives.filter(
+            ({ currentSprintCapsules }) => currentSprintCapsules.length === 0,
+          ),
+          unaccountedWork: unmappedCapsules,
+        };
   return {
     version: 1,
     census: input.census,
@@ -646,5 +869,6 @@ export const buildPeriodDeliveryReport = (input: {
     incompleteChainCount: capsules.filter(
       ({ lifecycleState }) => lifecycleRank[lifecycleState] < lifecycleRank.accepted,
     ).length,
+    ...(sprintReview === undefined ? {} : { sprintReview }),
   };
 };

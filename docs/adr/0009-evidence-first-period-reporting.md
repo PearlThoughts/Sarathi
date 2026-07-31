@@ -53,6 +53,10 @@ Use structured delivery queries to build the census and delivery chains. Use exa
 
 Model composition receives an authorized `PeriodDeliveryReport` envelope. It may organize and compress the evidence, but it cannot add census members, hide coverage failures, promote inferences, or remove material citation requirements.
 
+The envelope may derive a Sprint Review and Outlook projection from Jira membership history and the same cross-source capsules. This projection distinguishes planned-at-start, added, completed, rolled-over and dropped work, then aligns current-sprint episodes to exact Strategy Kernel initiative identities with explainable Green, Amber, Red or Unknown health.
+
+There is no deterministic report publication fallback. Composition is retried within the report budget, but any terminal provider, timeout, structural, citation, or quality failure yields only a privacy-safe `SARATHI-REPORT-COMPOSITION-FAILED` notice and a failed operation. Jira `Done` is development-ready, not stakeholder acceptance.
+
 ### Response products
 
 Keep distinct response products:

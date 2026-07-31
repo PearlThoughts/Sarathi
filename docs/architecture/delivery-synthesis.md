@@ -167,7 +167,7 @@ Typed census selection supplies candidate episodes. Broader answers then use bou
 4. authorized vector retrieval;
 5. optional live-source refresh when the configured source role requires it.
 
-The model composer receives a bounded episode envelope containing meaningful source prose, decisions, state, and dependencies. Deterministic rendering remains a fallback and a transport constraint, not the primary synthesis method for leadership or multi-day reviews.
+The model composer receives a bounded episode envelope containing meaningful source prose, decisions, state, and dependencies. Weekly, sprint, monthly, quarterly, and leadership reports have no deterministic publication fallback. Provider failure, timeout, malformed output, invalid citations, or failed quality validation returns only the privacy-safe report-composition failure notice; the underlying envelope is never posted.
 
 ## Answer Envelope
 
@@ -179,6 +179,8 @@ The default envelope contains:
 - decisions or corrections needed;
 - compact source links;
 - private internal diagnostics excluded from normal rendering.
+
+Sprint Review and Outlook extends this envelope with reconstructed previous-sprint membership at sprint start, mid-sprint additions, completion, rollover and dropped work; current sprint identity, dates, ownership and lifecycle; and exact governed initiative identities with explainable health. It remains a projection of the same episodes rather than a separate report service.
 
 Materiality, capability order, and decision urgency control presentation. Alias coverage, source order, or provider pagination order must not become ranking criteria.
 

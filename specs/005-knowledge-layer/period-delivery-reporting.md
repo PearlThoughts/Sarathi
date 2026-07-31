@@ -136,7 +136,7 @@ The requested interval must be parsed even when the wording is open-ended, such 
 
 For delivered-period reports, the strongest available completion stage determines period membership according to a declared rule. Generic record update time or ingestion time must not substitute for delivery completion. Work without a qualifying completion stage may appear as active or incomplete, but not as delivered.
 
-An indexed Jira status-transition observation from a non-terminal state to `Done`, `Closed`, or `Completed` is `accepted` evidence at the transition timestamp. It is not release or deployment evidence. A later current-state refresh such as “is Done” does not establish period membership.
+An indexed Jira status-transition observation from a non-terminal state to `Done`, `Closed`, or `Completed` is `development_ready` evidence at the transition timestamp. It is not release, deployment, or stakeholder-acceptance evidence. `accepted` requires explicit confirmation from a stakeholder, client, or responsible owner. A later current-state refresh such as “is Done” does not establish period membership.
 
 ## Source Roles
 
@@ -160,6 +160,8 @@ Response products are explicit:
 - `implementation_investigation`: a code- and revision-specific explanation.
 
 A short Teams answer may summarize a larger accepted report envelope. It must link or offer the fuller report when the question asks for breadth that cannot be represented safely in a few lines.
+
+Period and leadership reports have only two publication outcomes: a fully composed answer that passes structure, citation, grounding, freshness, source-completeness, and product-quality validation; or the short `SARATHI-REPORT-COMPOSITION-FAILED` notice. Internal retry is allowed, but deterministic capsules, partial prose, source inventories, and raw activity are never a report fallback.
 
 ## Thread and Request Context
 
