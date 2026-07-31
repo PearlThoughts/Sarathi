@@ -253,18 +253,6 @@ describe("AI SDK OpenRouter answer generator", () => {
       {
         text: validSections
           .map((line) =>
-            line === "- Delivery is current."
-              ? "- Delivery is current. [R1]"
-              : line.includes("jira.example.test")
-                ? "- [R1]"
-                : line,
-          )
-          .join("\n"),
-        operation: "report-composition-citation-placement",
-      },
-      {
-        text: validSections
-          .map((line) =>
             line === "- Delivery is current." ? "- Evidence-backed delivery is current." : line,
           )
           .join("\n"),
@@ -309,6 +297,25 @@ describe("AI SDK OpenRouter answer generator", () => {
         left: { operation: testCase.operation },
       });
     }
+
+    const inlineReferenceText = validSections
+      .map((line) =>
+        line === "- Delivery is current."
+          ? "- Delivery is current. [R1]"
+          : line.includes("jira.example.test")
+            ? "- [R1]"
+            : line,
+      )
+      .join("\n");
+    const inlineReferenceGenerator = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(inlineReferenceText),
+    );
+    const resolved = await Effect.runPromise(inlineReferenceGenerator.generate(reportEnvelope));
+    expect(resolved.text).not.toContain("[R1]");
+    expect(resolved.text).toContain("- **Jira:** [1](https://jira.example.test/DEMO-754)");
+    expect(resolved.citations).toEqual([
+      { label: "Delivery", url: "https://jira.example.test/DEMO-754" },
+    ]);
   });
 
   it("emits a privacy-safe failure without trying another provider", async () => {
