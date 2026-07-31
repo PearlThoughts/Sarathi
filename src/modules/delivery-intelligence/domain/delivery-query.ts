@@ -497,6 +497,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       time: sprintTime,
       limit: top,
     });
+  const currentWorkQuestion =
+    has(value, /\b(?:doing|working on|current work|in progress)\b/) ||
+    (has(value, /\bthis week\b/) && !deliveryCompletionQuestion);
   if (deliveryCompletionQuestion || periodReportQuestion) {
     const time = reportPeriod;
     const limit =
@@ -544,10 +547,54 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
         time,
         limit: explicitlyLimited ? top : 20,
       });
+    if (periodReportQuestion) {
+      if (!intents.includes("goals"))
+        add("goals", { select: "objects", objectKinds: ["goal"], limit: 20 });
+      if (!intents.includes("commitments"))
+        add("commitments", {
+          select: "objects",
+          objectKinds: ["commitment", "deliverable"],
+          limit: 20,
+        });
+      if (!currentWorkQuestion && !intents.includes("current_work"))
+        add("current_work", {
+          select: "objects",
+          objectKinds: ["work_item"],
+          predicates: [
+            {
+              field: "lifecycleState",
+              operator: "in",
+              value: ["in_progress", "active"],
+            },
+          ],
+          limit: 20,
+        });
+      if (!intents.includes("dependencies"))
+        add("dependencies", {
+          select: "relations",
+          relationKinds: ["depends_on", "blocks"],
+          traversal: {
+            kinds: ["depends_on", "blocks"],
+            direction: "both",
+            maximumDepth: 2,
+          },
+          limit: 20,
+        });
+      if (!intents.includes("blockers"))
+        add("blockers", {
+          select: "objects",
+          objectKinds: ["work_item"],
+          predicates: [
+            {
+              field: "lifecycleState",
+              operator: "in",
+              value: ["blocked", "impeded"],
+            },
+          ],
+          limit: 20,
+        });
+    }
   }
-  const currentWorkQuestion =
-    has(value, /\b(?:doing|working on|current work|in progress)\b/) ||
-    (has(value, /\bthis week\b/) && !intents.includes("delivered"));
   if (currentWorkQuestion)
     add("current_work", {
       select: "objects",
@@ -748,9 +795,10 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       limit: top,
     });
   }
-  if (intents.includes("goals")) add("goals", { select: "knowledge", limit: top });
+  if (intents.includes("goals") && !periodReportQuestion)
+    add("goals", { select: "knowledge", limit: top });
   if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
-  if (intents.includes("goals") && intents.includes("current_work")) {
+  if (intents.includes("goals") && intents.includes("current_work") && !periodReportQuestion) {
     add("current_work", {
       select: "objects",
       objectKinds: ["work_item", "deliverable"],
@@ -799,7 +847,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ...(intents.includes("conflicts") ? (["jira", "teams", "github"] as const) : []),
       ...(intents.includes("capacity") ? (["teams"] as const) : []),
       ...(intents.includes("status") && subject === undefined ? (["jira", "vault"] as const) : []),
-      ...(intents.includes("goals") && intents.includes("current_work")
+      ...(intents.includes("goals") && intents.includes("current_work") && !periodReportQuestion
         ? (["strategy", "jira"] as const)
         : []),
     ]),
