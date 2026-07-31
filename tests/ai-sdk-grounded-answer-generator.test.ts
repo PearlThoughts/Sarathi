@@ -110,7 +110,7 @@ describe("AI SDK OpenRouter answer generator", () => {
   });
 
   it("produces a capability-first delivery-manager synthesis for period reports", async () => {
-    const text = [
+    const modelText = [
       "## Delivered",
       "- Publishing now carries SEO metadata through release.",
       "## In progress",
@@ -120,9 +120,10 @@ describe("AI SDK OpenRouter answer generator", () => {
       "## Decisions needed",
       "- No decisions.",
       "## References",
-      "- [Jira](https://jira.example.test/DEMO-754)",
+      "- [R1]",
     ].join("\n");
-    const model = successfulModel(text);
+    const text = modelText.replace("- [R1]", "- **Jira:** [1](https://jira.example.test/DEMO-754)");
+    const model = successfulModel(modelText);
     const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
     const reportEnvelope = {
       ...envelope,
@@ -175,6 +176,9 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain("acceptedChanges");
     expect(request).toContain("Atlas Site Composer");
     expect(request).toContain("Synthesize the supplied multi-source delivery episodes");
+    expect(request).toContain("never write, copy, alter, or invent a URL");
+    expect(request).toContain("referenceId");
+    expect(request).not.toContain("sourceUrl");
     expect(request).not.toContain("Finish with exactly one numbered");
     expect(request).toContain('"maxOutputTokens":12000');
   });
@@ -232,10 +236,28 @@ describe("AI SDK OpenRouter answer generator", () => {
       },
       {
         text: validSections
+          .map((line) => (line.includes("jira.example.test") ? "- [R2]" : line))
+          .join("\n"),
+        operation: "report-composition-citation-unknown",
+      },
+      {
+        text: validSections
           .map((line) =>
             line === "- Delivery is current."
               ? "- Delivery is current. [Jira](https://jira.example.test/DEMO-754)"
               : line,
+          )
+          .join("\n"),
+        operation: "report-composition-citation-placement",
+      },
+      {
+        text: validSections
+          .map((line) =>
+            line === "- Delivery is current."
+              ? "- Delivery is current. [R1]"
+              : line.includes("jira.example.test")
+                ? "- [R1]"
+                : line,
           )
           .join("\n"),
         operation: "report-composition-citation-placement",
