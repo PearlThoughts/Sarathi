@@ -530,8 +530,9 @@ const composeAnswer = (
   responseMode: DeliveryResponseMode,
 ): DeliveryAnswerDraft => {
   const responsePolicy = deliveryResponseModePolicies[responseMode];
+  const isPeriodReport = plan.operations.some(({ select }) => select === "period_census");
   const isInitiativeAlignment =
-    plan.intents.includes("goals") && plan.intents.includes("current_work");
+    !isPeriodReport && plan.intents.includes("goals") && plan.intents.includes("current_work");
   const maximumDetailLines = isInitiativeAlignment
     ? Number.POSITIVE_INFINITY
     : (responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY);
@@ -1212,7 +1213,13 @@ const responseAcceptance = (
 ): DeliveryResponseAcceptance => {
   const policy = deliveryResponseModePolicies[responseMode];
   const missingIntents = new Set(result.missingRequiredIntents ?? []);
-  const requestedIntents = answer.plan.intents.length;
+  const periodReport =
+    (responseProduct === "period_delivery_brief" || responseProduct === "leadership_report") &&
+    answer.plan.operations.some(({ select }) => select === "period_census");
+  const acceptanceIntents = periodReport
+    ? answer.plan.intents.filter((intent) => intent === "delivered")
+    : answer.plan.intents;
+  const requestedIntents = acceptanceIntents.length;
   const emittedIntents = new Set(
     result.items
       .filter((item) => answer.text.includes(item.citationUrl))
@@ -1224,7 +1231,7 @@ const responseAcceptance = (
     )
   )
     emittedIntents.add("conflicts");
-  const coveredIntents = answer.plan.intents.filter(
+  const coveredIntents = acceptanceIntents.filter(
     (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
   ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
@@ -1626,7 +1633,11 @@ export const createDeliveryAssistant = (
             );
             const representedIntents = new Set(merged.items.map((item) => item.intent));
             if (merged.conflicts.length > 0) representedIntents.add("conflicts");
-            const missingRequiredIntents = plan.intents.filter(
+            const intentsRequiredForCompleteness =
+              responseProduct === "period_delivery_brief" || responseProduct === "leadership_report"
+                ? plan.intents.filter((intent) => intent === "delivered")
+                : plan.intents;
+            const missingRequiredIntents = intentsRequiredForCompleteness.filter(
               (intent) => !representedIntents.has(intent),
             );
             const periodDeliveryReport =
