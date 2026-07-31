@@ -105,7 +105,7 @@ describe("Strategy Kernel delivery query source", () => {
       repository: repository(
         [
           intent({
-            body: "Quarter 3 initiative. Also known as: routing dashboard, lead router. Plan status: In Progress.",
+            body: "Quarter 3 initiative. Also known as: intake dashboard, request router. Plan status: In Progress.",
           }),
         ],
         [evidence()],
@@ -117,8 +117,8 @@ describe("Strategy Kernel delivery query source", () => {
 
     expect(result.items[0]?.subjectAliases).toEqual([
       "Continuously current delivery intelligence",
-      "routing dashboard",
-      "lead router",
+      "intake dashboard",
+      "request router",
     ]);
   });
 

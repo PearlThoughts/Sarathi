@@ -48,7 +48,7 @@ describe("initiative-first delivery alignment", () => {
             id: "initiative-admin",
             source: "strategy",
             intent: "current_work",
-            title: "Admin workflow",
+            title: "Customer lifecycle automation",
             summary: "Quarter 3 initiative. Plan status: In Progress.",
             citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
@@ -57,9 +57,9 @@ describe("initiative-first delivery alignment", () => {
             id: "initiative-routing",
             source: "strategy",
             intent: "current_work",
-            title: "Lead routing dashboard",
+            title: "Partner intake dashboard",
             summary:
-              "Quarter 3 initiative. Also known as: routing dashboard. Plan status: In Progress.",
+              "Quarter 3 initiative. Also known as: intake dashboard. Plan status: In Progress.",
             citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
           }),
@@ -76,7 +76,7 @@ describe("initiative-first delivery alignment", () => {
             id: "initiative-token",
             source: "strategy",
             intent: "current_work",
-            title: "Improve GA mapping token refresh",
+            title: "Vendor mapping token refresh",
             summary: "Quarter 3 initiative. Plan status: In Progress.",
             citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
@@ -85,7 +85,7 @@ describe("initiative-first delivery alignment", () => {
             id: "initiative-cve",
             source: "strategy",
             intent: "current_work",
-            title: "CVE remediation",
+            title: "Package remediation",
             summary: "Quarter 3 initiative. Plan status: In Progress.",
             citationUrl: "https://sources.example.test/quarterly-plan",
             evidenceRole: "declared_intent",
@@ -96,15 +96,15 @@ describe("initiative-first delivery alignment", () => {
             id: "work-routing",
             source: "jira",
             intent: "current_work",
-            title: "Add owner filters to the routing dashboard",
-            summary: "Build the new routing dashboard owner filters.",
+            title: "Add owner filters to the intake dashboard",
+            summary: "Build the new intake dashboard owner filters.",
             lifecycleState: "active",
           }),
           item({
             id: "work-unassigned",
             source: "jira",
             intent: "current_work",
-            title: "Renew a vendor certificate",
+            title: "Renew a service certificate",
             summary: "Operational maintenance.",
             lifecycleState: "active",
           }),
@@ -112,16 +112,16 @@ describe("initiative-first delivery alignment", () => {
             id: "work-token",
             source: "jira",
             intent: "current_work",
-            title: "Renew LinkedIn access token and refresh token",
-            summary: "Renew the social network integration credentials.",
+            title: "Rotate vendor access token and refresh token",
+            summary: "Rotate the external integration credentials.",
             lifecycleState: "active",
           }),
           item({
             id: "work-cve",
             source: "jira",
             intent: "current_work",
-            title: "Remediate dependency CVEs",
-            summary: "Update vulnerable application dependencies.",
+            title: "Remediate outdated packages",
+            summary: "Update vulnerable package versions.",
             lifecycleState: "active",
           }),
           ...Array.from({ length: 6 }, (_, index) =>
@@ -156,14 +156,14 @@ describe("initiative-first delivery alignment", () => {
 
     expect(answer.text).toContain("## Initiative alignment");
     expect(answer.text).toContain(
-      "**Lead routing dashboard** — Add owner filters to the routing dashboard",
+      "**Partner intake dashboard** — Add owner filters to the intake dashboard",
     );
-    expect(answer.text).toContain("**CVE remediation** — Remediate dependency CVEs");
+    expect(answer.text).toContain("**Package remediation** — Remediate outdated packages");
     expect(answer.text).toContain("## Unassigned work");
-    expect(answer.text).toContain("- Renew a vendor certificate");
-    expect(answer.text).toContain("- Renew LinkedIn access token and refresh token");
+    expect(answer.text).toContain("- Renew a service certificate");
+    expect(answer.text).toContain("- Rotate vendor access token and refresh token");
     expect(answer.text).not.toContain(
-      "**Improve GA mapping token refresh** — Renew LinkedIn access token and refresh token",
+      "**Vendor mapping token refresh** — Rotate vendor access token and refresh token",
     );
     expect(answer.text).toContain("- **Jira:**");
     expect(answer.text).toContain("_+4 more_");
