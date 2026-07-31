@@ -53,10 +53,14 @@ type DeliveryAnswerDraft = Omit<
 type ReportFailureClassification = NonNullable<
   DeliveryAssistantAnswer["failure"]
 >["classification"];
+type ReportFailureDiagnosticCode = NonNullable<
+  NonNullable<DeliveryAssistantAnswer["failure"]>["diagnosticCode"]
+>;
 
 const reportFailureDraft = (
   plan: DeliveryQueryPlan,
   classification: ReportFailureClassification,
+  diagnosticCode: ReportFailureDiagnosticCode,
 ): DeliveryAnswerDraft => {
   const correlationCode = `SAR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   return {
@@ -76,9 +80,35 @@ const reportFailureDraft = (
     failure: {
       code: "SARATHI-REPORT-COMPOSITION-FAILED",
       classification,
+      diagnosticCode,
       correlationCode,
     },
   };
+};
+
+const invalidReport = (operation: ReportFailureDiagnosticCode): never => {
+  throw new RepositoryError({
+    message: "Delivery report composition was invalid.",
+    operation,
+  });
+};
+
+const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCode => {
+  switch (error.operation) {
+    case "report-composition-timeout":
+    case "report-composition-empty":
+    case "report-composition-structure":
+    case "report-composition-sprint-identity":
+    case "report-composition-initiative-identity":
+    case "report-composition-citations-missing":
+    case "report-composition-citation-unknown":
+    case "report-composition-citation-placement":
+    case "report-composition-prohibited-prose":
+    case "report-composition-invalid":
+      return error.operation;
+    default:
+      return "report-provider";
+  }
 };
 
 const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
@@ -947,7 +977,7 @@ const composeWithModel = (
                       "## References",
                     ];
               if (!requiredHeadings.every((heading) => text.includes(heading)))
-                throw new Error("Composed delivery report lacks the required synthesis structure.");
+                invalidReport("report-composition-structure");
               const report = result.periodDeliveryReport;
               const review = report?.sprintReview;
               const sprintDateIsPresent = (value: string): boolean => {
@@ -963,7 +993,7 @@ const composeWithModel = (
                   }).format(parsed),
                 ].some((candidate) => text.includes(candidate));
               };
-              for (const [label, sprint] of [
+              for (const [, sprint] of [
                 ["previous", review?.previousSprint],
                 ["current", review?.currentSprint],
               ] as const) {
@@ -976,35 +1006,33 @@ const composeWithModel = (
                   !sprintDateIsPresent(sprint.startAt) ||
                   !sprintDateIsPresent(sprint.endAt)
                 )
-                  throw new Error(
-                    `Composed sprint report omits the ${label} sprint identity or dates.`,
-                  );
+                  invalidReport("report-composition-sprint-identity");
               }
               if (review?.initiatives.some(({ title }) => !text.includes(title)))
-                throw new Error("Composed sprint report omits a governed initiative identity.");
+                invalidReport("report-composition-initiative-identity");
               if (
                 /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
                   text,
                 ) ||
                 /\b(?:sir here is|please test|test done\?)\b/i.test(text)
               )
-                throw new Error("Composed delivery report contains prohibited report prose.");
+                invalidReport("report-composition-prohibited-prose");
               const referencesAt = text.indexOf("## References");
               const citedUrls = [...text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
                 match[1] === undefined ? [] : [match[1]],
               );
               if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
-                throw new Error("Composed delivery report contains an unknown inline citation.");
+                invalidReport("report-composition-citation-unknown");
               if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
-                throw new Error("Composed delivery report citations must remain in References.");
+                invalidReport("report-composition-citation-placement");
               if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
-                throw new Error("Composed delivery report lacks compact references.");
+                invalidReport("report-composition-citations-missing");
               if (
                 composed.citations.some(
                   ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
                 )
               )
-                throw new Error("Composed delivery report contains an unknown citation.");
+                invalidReport("report-composition-citation-unknown");
               return {
                 ...deterministic,
                 text,
@@ -1038,11 +1066,13 @@ const composeWithModel = (
               mentions: [],
             };
           },
-          catch: () =>
-            new RepositoryError({
-              message: "Delivery answer composition was invalid.",
-              operation: "delivery-answer-composition-validation",
-            }),
+          catch: (error) =>
+            error instanceof RepositoryError
+              ? error
+              : new RepositoryError({
+                  message: "Delivery answer composition was invalid.",
+                  operation: "report-composition-invalid",
+                }),
         }),
       ),
     );
@@ -1063,11 +1093,16 @@ const composeWithModel = (
         ? Effect.succeed(
             reportFailureDraft(
               plan,
-              error.operation === "delivery-answer-composition-validation"
-                ? "SARATHI-REPORT-COMPOSITION-INVALID"
+              error.operation?.startsWith("report-composition-")
+                ? error.operation === "report-composition-timeout"
+                  ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
+                  : "SARATHI-REPORT-COMPOSITION-INVALID"
                 : error.operation === "delivery-answer-composition"
                   ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
                   : "SARATHI-REPORT-PROVIDER-FAILED",
+              error.operation === "delivery-answer-composition"
+                ? "report-composition-timeout"
+                : reportDiagnosticCode(error),
             ),
           )
         : Effect.succeed(deterministic),
@@ -1627,6 +1662,9 @@ export const createDeliveryAssistant = (
                               remainingCompositionBudgetMs <= 0
                                 ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
                                 : "SARATHI-REPORT-PROVIDER-FAILED",
+                              remainingCompositionBudgetMs <= 0
+                                ? "report-composition-timeout"
+                                : "report-composer-unavailable",
                             )
                           : composeAnswer(request, plan, completed, responseMode),
                       )
@@ -1664,7 +1702,7 @@ export const createDeliveryAssistant = (
                       rendered.failure === undefined &&
                       (completed.periodDeliveryReport === undefined || !acceptance.passed);
                     const finalRendered = qualityFailed
-                      ? reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED")
+                      ? reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED", "report-quality")
                       : rendered;
                     return {
                       ...finalRendered,

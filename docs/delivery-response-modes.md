@@ -33,7 +33,7 @@ Deep-dive, comprehensive, investigation, root-cause, history, trend, and deliver
 - Format: the structure required by the question, with the requested features and capabilities first and references at the bottom.
 - Each bounded query operation may return up to 50 records. Exhaustive period-census retrieval is configured separately and cannot silently collapse into the fast format.
 
-Period-report products use model composition over the reconstructed change capsules plus retrieved project context. The deterministic renderer remains the fallback when composition is unavailable or invalid.
+Period-report products use model composition over the reconstructed change capsules plus retrieved project context. They are published only after the composed response passes the complete report-quality contract. Provider failure, timeout, malformed output, invalid citations, or failed quality validation produces only the short safe composition-failure notice; deterministic report content and partial envelopes are never published.
 
 ### Sub-30-day delivery reports
 
@@ -51,8 +51,8 @@ Questions such as “what did we deliver in the previous quarter?” are deep-di
 
 - The report is organized into numbered capability themes with descriptive feature bullets and a bottom references section.
 - Relevant initiatives are not reduced to a fixed top-three list. Rendering uses only the Microsoft Teams platform-size ceiling.
-- Incomplete census or unavailable-source conditions still make the result partial, but successful reports do not append diagnostic coverage prose.
-- A failed report states privacy-safe reasons and does not substitute unrelated generic evidence.
+- Incomplete census or required-source unavailability prevents report publication. The operation fails rather than emitting a partial report.
+- A failed report emits only the short safe notice and a privacy-safe correlation code. Detailed failure classification remains in operator diagnostics and never includes prompts, source bodies, credentials, or private identifiers.
 - Replay checksums, internal execution timing, and diagnostic census prose are excluded from the user-facing leadership narrative.
 
 ## Acceptance envelope
