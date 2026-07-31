@@ -56,6 +56,7 @@ const sourceLabel: Readonly<Record<DeliverySourceKind, string>> = {
   github: "GitHub",
   teams: "Teams",
   email: "Email",
+  strategy: "Strategy",
 };
 
 const intentLabel: Readonly<Record<DeliveryQuestionIntent, string>> = {
@@ -217,10 +218,11 @@ const uniqueRanked = (items: readonly DeliveryResultItem[]): readonly DeliveryRe
 
 const statusSourcePriority: Readonly<Record<DeliverySourceKind, number>> = {
   jira: 0,
-  vault: 1,
-  teams: 2,
-  github: 3,
-  email: 4,
+  strategy: 1,
+  vault: 2,
+  teams: 3,
+  github: 4,
+  email: 5,
 };
 
 const statusLifecyclePriority = {
@@ -303,6 +305,130 @@ const deliveredItemSummary = (item: DeliveryResultItem): string => {
     : `${safeText(owner)} — ${summary}`;
 };
 
+const alignmentStopWords = new Set([
+  "and",
+  "for",
+  "from",
+  "into",
+  "new",
+  "of",
+  "on",
+  "the",
+  "this",
+  "to",
+  "with",
+]);
+
+const alignmentTokens = (value: string): readonly string[] =>
+  value
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((token) => token.length > 2 && !alignmentStopWords.has(token));
+
+const alignmentScore = (initiative: DeliveryResultItem, activity: DeliveryResultItem): number => {
+  const initiativeValues = [
+    initiative.title,
+    initiative.summary,
+    ...(initiative.subjectAliases ?? []),
+  ];
+  const activityText = `${activity.title} ${activity.summary} ${(
+    activity.subjectAliases ?? []
+  ).join(" ")}`.toLocaleLowerCase("en");
+  let best = 0;
+  for (const value of initiativeValues) {
+    const normalized = value.toLocaleLowerCase("en").trim();
+    if (normalized.length >= 6 && activityText.includes(normalized)) best = Math.max(best, 100);
+    const tokens = alignmentTokens(value);
+    const matched = tokens.filter((token) => activityText.includes(token)).length;
+    if (tokens.length > 0 && matched === tokens.length) best = Math.max(best, 20 + tokens.length);
+    else if (matched >= 2) best = Math.max(best, matched);
+  }
+  return best;
+};
+
+const activitySourcePriority: Readonly<Record<DeliverySourceKind, number>> = {
+  jira: 0,
+  github: 1,
+  vault: 2,
+  email: 3,
+  teams: 4,
+  strategy: 5,
+};
+
+const initiativeAlignmentLines = (
+  items: readonly DeliveryResultItem[],
+  registerCitation: (item: DeliveryResultItem) => void,
+): readonly string[] => {
+  const initiatives = items
+    .filter((item) => item.source === "strategy")
+    .sort(
+      (left, right) =>
+        alignmentTokens(right.title).length - alignmentTokens(left.title).length ||
+        left.title.localeCompare(right.title),
+    );
+  const seenActivities = new Set<string>();
+  const activities = items
+    .filter((item) => item.source !== "strategy" && item.intent === "current_work")
+    .sort(
+      (left, right) =>
+        activitySourcePriority[left.source] - activitySourcePriority[right.source] ||
+        sortableTimestamp(right.observedAt) - sortableTimestamp(left.observedAt),
+    )
+    .filter((item) => {
+      const identity = safeText(item.title).toLocaleLowerCase("en");
+      if (seenActivities.has(identity)) return false;
+      seenActivities.add(identity);
+      return true;
+    });
+  const grouped = new Map<string, DeliveryResultItem[]>();
+  const unassigned: DeliveryResultItem[] = [];
+  for (const activity of activities) {
+    const scored = initiatives
+      .map((initiative) => ({
+        initiative,
+        score: alignmentScore(initiative, activity),
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          alignmentTokens(right.initiative.title).length -
+            alignmentTokens(left.initiative.title).length,
+      );
+    const match = scored[0];
+    if (match === undefined || match.score < 2) {
+      unassigned.push(activity);
+      continue;
+    }
+    grouped.set(match.initiative.id, [...(grouped.get(match.initiative.id) ?? []), activity]);
+  }
+  const lines: string[] = [];
+  const matchedInitiatives = initiatives.filter((initiative) => grouped.has(initiative.id));
+  if (matchedInitiatives.length > 0) {
+    lines.push("## Initiative alignment");
+    for (const goal of initiatives.filter((initiative) => initiative.intent === "goals"))
+      registerCitation(goal);
+    for (const initiative of matchedInitiatives) {
+      const activity = grouped.get(initiative.id) ?? [];
+      registerCitation(initiative);
+      for (const item of activity) registerCitation(item);
+      lines.push(
+        `- **${safeText(initiative.title)}** — ${activity
+          .map((item) => safeText(item.title))
+          .join("; ")}`,
+      );
+    }
+  }
+  if (unassigned.length > 0) {
+    lines.push("## Unassigned work");
+    for (const item of unassigned) {
+      registerCitation(item);
+      lines.push(`- ${safeText(item.title)}`);
+    }
+  }
+  return lines;
+};
+
 const subjectTokens = (value: string): readonly string[] =>
   value
     .toLowerCase()
@@ -362,7 +488,11 @@ const composeAnswer = (
   responseMode: DeliveryResponseMode,
 ): DeliveryAnswerDraft => {
   const responsePolicy = deliveryResponseModePolicies[responseMode];
-  const maximumDetailLines = responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY;
+  const isInitiativeAlignment =
+    plan.intents.includes("goals") && plan.intents.includes("current_work");
+  const maximumDetailLines = isInitiativeAlignment
+    ? Number.POSITIVE_INFINITY
+    : (responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY);
   const itemsPerIntent = 5;
   const citations: { label: string; url: string }[] = [];
   const citationLabels = new Map<string, string>();
@@ -416,6 +546,8 @@ const composeAnswer = (
       }
     }
     if (activityLines.length > 0) detailLines.push("## Activity", ...activityLines);
+  } else if (isInitiativeAlignment) {
+    detailLines.push(...initiativeAlignmentLines(items, registerCitation));
   } else {
     for (const intent of presentedIntents(plan)) {
       if (intent === "next_actions") continue;

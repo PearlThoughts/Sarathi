@@ -174,9 +174,9 @@
     {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
-      "command": "bunx vitest run tests/delivery-intelligence-application.test.ts",
+      "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Bounded planning, response-product and timeout propagation, pre-source finance authorization, workspace and sensitivity filtering, period-census coverage rendering, deduplication, compound briefs, active-over-terminal status ranking, conflicts, citations, and concise answer coverage."
+      "description": "Bounded planning, response-product and timeout propagation, pre-source finance authorization, workspace and sensitivity filtering, period-census coverage rendering, deduplication, initiative-first alignment, explicit unassigned work, compound briefs, active-over-terminal status ranking, conflicts, citations, and concise answer coverage."
     },
     {
       "id": "delivery-capability-matrix",
@@ -204,7 +204,14 @@
       "path": "tests/delivery-cli.test.ts",
       "command": "bunx vitest run tests/delivery-cli.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Durable status/query/evaluate/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild, and privacy-safe failures."
+      "description": "Durable status/query/evaluate/reconcile/rebuild routing, supported declared-initiative upload, bounded request parsing, non-destructive rebuild, and privacy-safe failures."
+    },
+    {
+      "id": "declared-initiative-import",
+      "path": "tests/declared-initiative-import.bun.test.ts",
+      "command": "bun test tests/declared-initiative-import.bun.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Generic quarterly-plan validation, stable Strategy Kernel persistence, idempotent replay, changed-row updates, removed-row archival, and workspace selection coverage."
     },
     {
       "id": "delivery-evaluation",

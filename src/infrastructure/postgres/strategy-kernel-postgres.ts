@@ -127,6 +127,41 @@ export const closeStrategyKernelPostgresDatabase = async (database: {
   await database.end();
 };
 
+export const ensureStrategyKernelWorkspace = async (
+  database: StrategyKernelPostgresDatabase,
+  input: {
+    readonly workspaceId: string;
+    readonly workspaceKey: string;
+    readonly createdAt: string;
+  },
+): Promise<void> => {
+  const existing = await database.query("select id from workspace where id = $1", [
+    input.workspaceId,
+  ]);
+  if (existing.rows.length > 0) return;
+  const organizationId = `organization:${input.workspaceId}`;
+  const client = await database.connect();
+  await execute(client, "begin");
+  try {
+    await execute(
+      client,
+      "insert into organization (id, name, created_at, updated_at) values ($1, $2, $3, $3) on conflict (id) do nothing",
+      [organizationId, input.workspaceKey, input.createdAt],
+    );
+    await execute(
+      client,
+      "insert into workspace (id, organization_id, key, name, kind, default_sensitivity, created_at, updated_at) values ($1, $2, $3, $3, 'project', 'internal', $4, $4) on conflict (id) do nothing",
+      [input.workspaceId, organizationId, input.workspaceKey, input.createdAt],
+    );
+    await execute(client, "commit");
+  } catch (error) {
+    await execute(client, "rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 export const applyStrategyKernelPostgresMigrations = async (
   database: StrategyKernelPostgresDatabase,
 ): Promise<readonly string[]> => {
@@ -224,6 +259,10 @@ export const createPostgresStrategyKernelRepository = (
       value,
       ["workspace_id", "source_system", "external_id"],
       [
+        "source_type",
+        "external_url",
+        "actor_id",
+        "occurred_at",
         "title",
         "body_excerpt",
         "content_hash",
@@ -259,13 +298,18 @@ export const createPostgresStrategyKernelRepository = (
       value,
       ["id"],
       [
+        "kind",
         "title",
         "body",
         "owner_actor_id",
         "state",
+        "horizon_start",
+        "horizon_end",
         "due_at",
         "success_signal",
         "sensitivity",
+        "origin_evidence_id",
+        "created_by",
         "updated_at",
       ],
     ),

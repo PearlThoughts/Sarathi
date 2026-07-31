@@ -752,6 +752,40 @@ describe("delivery intelligence live query sources", () => {
     expect(graphRequests).toBe(0);
   });
 
+  it("never promotes a Teams message into a declared goal", async () => {
+    const source = createTeamsDeliveryQuerySource({
+      tokenProvider: { getAccessToken: async () => "token" },
+      channels: [
+        {
+          teamId: "team-1",
+          channelId: "channel-1",
+          workspaceId: context.workspaceId,
+          sensitivity: "internal",
+          allowedActorIds: new Set([context.actorId]),
+        },
+      ],
+      fetcher: async () =>
+        Response.json({
+          value: [
+            {
+              id: "message-1",
+              messageType: "message",
+              createdDateTime: "2026-07-20T12:00:00.000Z",
+              body: { content: "Our goal is to launch the routing dashboard." },
+              webUrl: "https://teams.microsoft.com/l/message/message-1",
+            },
+          ],
+        }),
+    });
+    const question = "Are this week's planned deliverables aligned with this quarter's goals?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected initiative alignment plan");
+
+    const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(result.items.every((candidate) => candidate.intent !== "goals")).toBe(true);
+  });
+
   it("reads connected Teams messages while excluding direct assistant prompts", async () => {
     const source = createTeamsDeliveryQuerySource({
       tokenProvider: { getAccessToken: async () => "token" },

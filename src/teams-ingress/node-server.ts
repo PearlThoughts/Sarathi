@@ -42,12 +42,15 @@ import {
   knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../infrastructure/model/index.ts";
 import {
+  applyStrategyKernelPostgresMigrations,
+  closeStrategyKernelPostgresDatabase,
   createPostgresComplianceReminderAudit,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   createPostgresStrategyKernelRepository,
   createPostgresTeamsMentionAudit,
   createStrategyKernelDeliveryQuerySource,
+  ensureStrategyKernelWorkspace,
   openKnowledgePostgresDatabase,
   openStrategyKernelPostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
@@ -75,6 +78,10 @@ import {
   parseDeliveryEntityCatalog,
   validateCapabilityLedger,
 } from "../modules/delivery-intelligence/index.ts";
+import {
+  importDeclaredInitiativeSnapshot,
+  parseDeclaredInitiativeSnapshot,
+} from "../modules/strategy-kernel/index.ts";
 import {
   createAuthorizedContextAssembler,
   handleTeamsMention,
@@ -1174,6 +1181,97 @@ export const startTeamsIngress = (): void => {
         continuousSync: continuousSync.status(),
       },
     });
+  });
+  server.post("/internal/delivery/intent/import", async (request, response) => {
+    const expectedToken = process.env.SARATHI_ADMIN_TOKEN;
+    const authorization = request.header("authorization");
+    if (
+      expectedToken === undefined ||
+      expectedToken.trim() === "" ||
+      authorization !== `Bearer ${expectedToken}`
+    ) {
+      response.status(401).json({ ok: false });
+      return;
+    }
+    let snapshot: ReturnType<typeof parseDeclaredInitiativeSnapshot>;
+    try {
+      snapshot = parseDeclaredInitiativeSnapshot(request.body);
+    } catch {
+      response.status(400).json({ ok: false, error: "invalid_declared_initiative_snapshot" });
+      return;
+    }
+    let database: ReturnType<typeof openStrategyKernelPostgresDatabase> | undefined;
+    try {
+      const workspaceId = required(
+        "SARATHI_KNOWLEDGE_WORKSPACE_ID",
+        process.env.SARATHI_KNOWLEDGE_WORKSPACE_ID,
+      );
+      database = openStrategyKernelPostgresDatabase(
+        required("SARATHI_STRATEGY_DATABASE_URL", process.env.SARATHI_STRATEGY_DATABASE_URL),
+      );
+      await applyStrategyKernelPostgresMigrations(database);
+      await ensureStrategyKernelWorkspace(database, {
+        workspaceId,
+        workspaceKey: snapshot.workspaceKey,
+        createdAt: new Date().toISOString(),
+      });
+      const result = await importDeclaredInitiativeSnapshot({
+        repository: createPostgresStrategyKernelRepository(database),
+        workspaceId,
+        expectedWorkspaceKey: snapshot.workspaceKey,
+        snapshot,
+        importedAt: new Date().toISOString(),
+      });
+      response.json({ ok: true, result });
+    } catch {
+      response.status(503).json({ ok: false, error: "declared_initiative_import_unavailable" });
+    } finally {
+      if (database !== undefined) await closeStrategyKernelPostgresDatabase(database);
+    }
+  });
+  server.get("/internal/delivery/intent/status", async (request, response) => {
+    const expectedToken = process.env.SARATHI_ADMIN_TOKEN;
+    const authorization = request.header("authorization");
+    if (
+      expectedToken === undefined ||
+      expectedToken.trim() === "" ||
+      authorization !== `Bearer ${expectedToken}`
+    ) {
+      response.status(401).json({ ok: false });
+      return;
+    }
+    let database: ReturnType<typeof openStrategyKernelPostgresDatabase> | undefined;
+    try {
+      const workspaceId = required(
+        "SARATHI_KNOWLEDGE_WORKSPACE_ID",
+        process.env.SARATHI_KNOWLEDGE_WORKSPACE_ID,
+      );
+      database = openStrategyKernelPostgresDatabase(
+        required("SARATHI_STRATEGY_DATABASE_URL", process.env.SARATHI_STRATEGY_DATABASE_URL),
+      );
+      const prefix = `intent:declared:${workspaceId}:`;
+      const nodes = (
+        await createPostgresStrategyKernelRepository(database).listWorkspaceIntent(workspaceId)
+      ).filter((node) => node.id.startsWith(prefix));
+      response.json({
+        ok: true,
+        status: {
+          goals: nodes.filter((node) => node.kind === "goal" && node.state !== "archived").length,
+          initiatives: nodes.filter(
+            (node) => node.kind === "commitment" && node.state !== "archived",
+          ).length,
+          archived: nodes.filter((node) => node.state === "archived").length,
+          updatedAt: nodes
+            .map((node) => node.updatedAt)
+            .sort()
+            .at(-1),
+        },
+      });
+    } catch {
+      response.status(503).json({ ok: false, error: "declared_initiative_status_unavailable" });
+    } finally {
+      if (database !== undefined) await closeStrategyKernelPostgresDatabase(database);
+    }
   });
   server.post("/internal/finance/reminders/dry-run", async (request, response) => {
     const expectedToken = process.env.SARATHI_ADMIN_TOKEN;

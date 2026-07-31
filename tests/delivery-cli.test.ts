@@ -1,10 +1,70 @@
 import { describe, expect, it, vi } from "vitest";
+import { runDeclaredInitiativeCommand } from "../src/cli/commands/declared-initiative-runtime.ts";
 import { runDeliveryCommand } from "../src/cli/commands/delivery-runtime.ts";
 import { runReleaseCli } from "../src/cli/release.ts";
 import { RepositoryError } from "../src/domain/errors.ts";
 import { stableSha256 } from "../src/domain/hash.ts";
 
 describe("delivery CLI", () => {
+  it("imports a private snapshot through the hosted operator surface", async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toEqual({
+        authorization: "Bearer runtime-token",
+        "content-type": "application/json",
+      });
+      const body = JSON.parse(String(init?.body)) as {
+        workspaceKey: string;
+        items: readonly unknown[];
+      };
+      expect(body.workspaceKey).toBe("launchpad");
+      expect(body.items).toHaveLength(1);
+      return new Response(JSON.stringify({ ok: true, result: { goals: 1 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const result = await runDeclaredInitiativeCommand(
+      ["import", "--file", "/private/snapshot.yaml"],
+      {
+        SARATHI_ADMIN_TOKEN: "runtime-token",
+        SARATHI_PUBLIC_BASE_URL: "https://sarathi.example.test",
+      },
+      {
+        fetcher,
+        readFile: () => `
+version: 1
+workspaceKey: launchpad
+period:
+  key: quarter-3
+  title: Quarter 3
+  horizonStart: 2026-07-01T00:00:00.000Z
+  horizonEnd: 2026-10-01T00:00:00.000Z
+source:
+  system: spreadsheet
+  externalId: plan-sheet
+  url: https://docs.example.test/spreadsheets/plan
+  title: Quarterly plan
+  revision: revision-1
+  revisedAt: 2026-07-31T08:00:00.000Z
+items:
+  - key: growth
+    kind: goal
+    title: Growth
+    status: Active
+`,
+      },
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://sarathi.example.test/internal/delivery/intent/import",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result).toEqual({
+      exitCode: 0,
+      output: { ok: true, result: { goals: 1 } },
+    });
+  });
+
   it("exposes privacy-safe durable status", async () => {
     await expect(
       runDeliveryCommand(["status"], {}, { readStatus: async () => ({ deliveryTableCount: 8 }) }),

@@ -97,6 +97,9 @@
 - [ ] KLG-543 Preserve authorized actor, surrounding Teams thread, referenced entities, workspace cadence, and declared goal context during deterministic and model-assisted planning.
 - [ ] KLG-544 Extend the evaluation runner with theme recall, materially evidenced initiative recall, material-claim citation coverage, unsupported-outcome count, unlabelled-inference count, source-ablation comparison, and fingerprint-bound human usefulness.
 - [ ] KLG-545 Pass the private human-authored report reconstruction target, real Teams period-report acceptance, exact-branch CI/runtime smoke, source-change convergence, authorization/privacy gates, and production rollback; attach evidence to the existing Bead and convoy without creating a replacement graph.
+- [ ] KLG-546 Add an idempotent `DeclaredInitiativeSnapshot` import through the supported delivery CLI and hosted operator surface, backed by Strategy Kernel Postgres nodes, edges, origin records, stable reconciliation, and privacy-safe counts.
+- [ ] KLG-547 Make goal-and-current-work planning require declared strategy intent plus Jira execution, prevent Teams messages from posing as goals, and render initiative-first alignment with every admitted activity assigned or explicitly unassigned.
+- [ ] KLG-548 Import the private workspace's quarterly snapshot, verify the persisted register, and run the governed weekly-alignment question through the production Teams path.
 
 ## Dependency Order
 
