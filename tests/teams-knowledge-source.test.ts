@@ -229,10 +229,27 @@ describe("Teams knowledge source", () => {
         });
       return Response.json({
         value: [
+          message("chat-noise", "Recording has started. View the notes here.", {
+            createdDateTime: "2026-07-20T09:12:00.000Z",
+            lastModifiedDateTime: "2026-07-20T09:12:00.000Z",
+            from: { user: { id: "notetaker-1", displayName: "Meeting Notetaker" } },
+            webUrl: null,
+          }),
           message("chat-3", "We will update SAR-45 after the client confirms.", {
             createdDateTime: "2026-07-20T09:10:00.000Z",
             lastModifiedDateTime: "2026-07-20T09:10:00.000Z",
             webUrl: null,
+            attachments: [
+              {
+                id: "chat-1",
+                contentType: "messageReference",
+                content: JSON.stringify({
+                  messageId: "chat-1",
+                  messagePreview: "Please test the publishing cron today.",
+                  messageSender: { user: { displayName: "Delivery Lead" } },
+                }),
+              },
+            ],
           }),
           message("chat-2", "The team is waiting for QA approval.", {
             createdDateTime: "2026-07-20T09:05:00.000Z",
@@ -250,6 +267,7 @@ describe("Teams knowledge source", () => {
       tokenProvider: { getAccessToken: async () => "synthetic-token" },
       channels: [],
       chats: [chat()],
+      excludedAuthorIds: ["notetaker-1"],
       historySince: "2026-07-01T00:00:00.000Z",
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       fetcher,
@@ -288,5 +306,13 @@ describe("Teams knowledge source", () => {
     expect(document?.passages[0]?.body).toContain("Please test the publishing cron today.");
     expect(document?.passages[0]?.body).toContain("waiting for QA approval");
     expect(document?.passages[0]?.body).toContain("after the client confirms");
+    const referencedReply = snapshot.documents.find(({ externalId }) =>
+      externalId.endsWith("chat-3"),
+    );
+    expect(referencedReply?.provenance).toMatchObject({ parentId: "chat-1" });
+    expect(referencedReply?.passages[0]?.body).toContain(
+      "Replying to Delivery Lead: Please test the publishing cron today.",
+    );
+    expect(JSON.stringify(snapshot.documents)).not.toContain("Recording has started");
   });
 });
