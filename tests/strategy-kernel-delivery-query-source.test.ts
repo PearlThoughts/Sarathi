@@ -100,6 +100,29 @@ describe("Strategy Kernel delivery query source", () => {
     expect(result.items[0]?.summary).toContain("Success signal: Evaluation thresholds pass.");
   });
 
+  it("exposes private snapshot aliases without treating the plan prose as an alias", async () => {
+    const source = createStrategyKernelDeliveryQuerySource({
+      repository: repository(
+        [
+          intent({
+            body: "Quarter 3 initiative. Also known as: routing dashboard, lead router. Plan status: In Progress.",
+          }),
+        ],
+        [evidence()],
+      ),
+      workspaceId,
+      allowedActorIds: new Set(["actor-delivery-manager"]),
+    });
+    const result = await Effect.runPromise(source.execute(context(), plan()));
+
+    expect(result.items[0]?.subjectAliases).toEqual([
+      "intent-goal",
+      "Continuously current delivery intelligence",
+      "routing dashboard",
+      "lead router",
+    ]);
+  });
+
   it("excludes candidates, over-ceiling records, and intent without a resolvable origin", async () => {
     const source = createStrategyKernelDeliveryQuerySource({
       repository: repository(

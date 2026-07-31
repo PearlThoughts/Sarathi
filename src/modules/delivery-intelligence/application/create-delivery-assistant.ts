@@ -209,9 +209,14 @@ const uniqueRanked = (items: readonly DeliveryResultItem[]): readonly DeliveryRe
     .filter((item) => {
       const intentDedupeKey = `${item.intent}\u0000${item.dedupeKey.trim().toLowerCase()}`;
       const intentCitationUrl = `${item.intent}\u0000${item.citationUrl}`;
-      if (seenDedupe.has(intentDedupeKey) || seenUrls.has(intentCitationUrl)) return false;
+      const sharesDeclaredIntentSource = item.evidenceRole === "declared_intent";
+      if (
+        seenDedupe.has(intentDedupeKey) ||
+        (!sharesDeclaredIntentSource && seenUrls.has(intentCitationUrl))
+      )
+        return false;
       seenDedupe.add(intentDedupeKey);
-      seenUrls.add(intentCitationUrl);
+      if (!sharesDeclaredIntentSource) seenUrls.add(intentCitationUrl);
       return true;
     });
 };
@@ -327,11 +332,7 @@ const alignmentTokens = (value: string): readonly string[] =>
     .filter((token) => token.length > 2 && !alignmentStopWords.has(token));
 
 const alignmentScore = (initiative: DeliveryResultItem, activity: DeliveryResultItem): number => {
-  const initiativeValues = [
-    initiative.title,
-    initiative.summary,
-    ...(initiative.subjectAliases ?? []),
-  ];
+  const initiativeValues = [initiative.title, ...(initiative.subjectAliases ?? [])];
   const activityText = `${activity.title} ${activity.summary} ${(
     activity.subjectAliases ?? []
   ).join(" ")}`.toLocaleLowerCase("en");
