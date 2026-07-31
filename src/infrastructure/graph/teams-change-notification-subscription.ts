@@ -6,7 +6,11 @@ import type {
   SynchronizationSubscription,
 } from "../../modules/knowledge-layer/index.ts";
 import type { GraphAccessTokenProvider } from "./entra-token-provider.ts";
-import type { TeamsKnowledgeChannel } from "./teams-knowledge-source.ts";
+import type {
+  TeamsKnowledgeChannel,
+  TeamsKnowledgeChat,
+  TeamsKnowledgeConversation,
+} from "./teams-knowledge-source.ts";
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -41,19 +45,27 @@ const validatedHttpsUrl = (name: string, value: string): string => {
   return url.toString();
 };
 
-const subscriptionResource = (channel: TeamsKnowledgeChannel): string => {
+const subscriptionResource = (conversation: TeamsKnowledgeConversation): string => {
+  if ("chatId" in conversation) {
+    if (conversation.chatId.trim() === "" || conversation.chatId.includes("/"))
+      throw new Error("Teams subscription chat identity is invalid.");
+    return `chats/${conversation.chatId}/messages`;
+  }
   if (
-    channel.teamId.trim() === "" ||
-    channel.channelId.trim() === "" ||
-    channel.teamId.includes("/") ||
-    channel.channelId.includes("/")
+    conversation.teamId.trim() === "" ||
+    conversation.channelId.trim() === "" ||
+    conversation.teamId.includes("/") ||
+    conversation.channelId.includes("/")
   )
     throw new Error("Teams subscription channel identity is invalid.");
-  return `teams/${channel.teamId}/channels/${channel.channelId}/messages`;
+  return `teams/${conversation.teamId}/channels/${conversation.channelId}/messages`;
 };
 
 export const teamsSubscriptionResourceHash = (channel: TeamsKnowledgeChannel): string =>
   stableSha256(subscriptionResource(channel));
+
+export const teamsChatSubscriptionResourceHash = (chat: TeamsKnowledgeChat): string =>
+  stableSha256(subscriptionResource(chat));
 
 const expiration = (now: Date, lifetimeMinutes: number): string =>
   new Date(now.getTime() + lifetimeMinutes * 60_000).toISOString();
@@ -92,7 +104,7 @@ const asDomainSubscription = (
 
 export const ensureTeamsChangeNotificationSubscription = (
   configuration: TeamsNotificationSubscriptionConfiguration,
-  channel: TeamsKnowledgeChannel,
+  conversation: TeamsKnowledgeConversation,
   existing?: TeamsProviderSubscription | undefined,
 ): Effect.Effect<SynchronizationSubscription, RepositoryError> =>
   Effect.tryPromise({
@@ -117,7 +129,7 @@ export const ensureTeamsChangeNotificationSubscription = (
         renewalLeadMinutes >= lifetimeMinutes
       )
         throw new Error("Teams subscription lifetime and renewal lead are invalid.");
-      const resource = subscriptionResource(channel);
+      const resource = subscriptionResource(conversation);
       const now = configuration.now?.() ?? new Date();
       const dueAt = now.getTime() + renewalLeadMinutes * 60_000;
       if (existing !== undefined && Date.parse(existing.expiresAt) > dueAt) {
