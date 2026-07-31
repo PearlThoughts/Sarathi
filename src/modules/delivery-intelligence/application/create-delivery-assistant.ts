@@ -93,6 +93,50 @@ const invalidReport = (operation: ReportFailureDiagnosticCode): never => {
   });
 };
 
+const renderSprintIdentity = (
+  text: string,
+  review: NonNullable<PeriodDeliveryReport["sprintReview"]>,
+  timeZone: string,
+): string => {
+  const previous = review.previousSprint;
+  const current = review.currentSprint;
+  if (
+    previous?.startAt === undefined ||
+    previous.endAt === undefined ||
+    current?.startAt === undefined ||
+    current.endAt === undefined
+  )
+    return text;
+  const formatDate = (value: string): string =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(value));
+  const lines = text.split(/\r?\n/);
+  const overviewAt = lines.findIndex((line) => line.trim() === "## Sprint overview");
+  if (overviewAt < 0) return text;
+  const nextHeadingAt = lines.findIndex(
+    (line, index) => index > overviewAt && line.trim().startsWith("## "),
+  );
+  const overviewEnd = nextHeadingAt < 0 ? lines.length : nextHeadingAt;
+  const narrative = lines
+    .slice(overviewAt + 1, overviewEnd)
+    .filter((line) => !line.includes(previous.name) && !line.includes(current.name));
+  const identities = [
+    `- **Previous sprint — ${safeText(previous.name).replace(/[*_`[\]<>]/g, "")}:** ${formatDate(previous.startAt)} to ${formatDate(previous.endAt)}.`,
+    `- **Current sprint — ${safeText(current.name).replace(/[*_`[\]<>]/g, "")}:** ${formatDate(current.startAt)} to ${formatDate(current.endAt)}.`,
+  ];
+  return [
+    ...lines.slice(0, overviewAt + 1),
+    "",
+    ...identities,
+    ...narrative,
+    ...lines.slice(overviewEnd),
+  ].join("\n");
+};
+
 const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCode => {
   switch (error.operation) {
     case "report-composition-timeout":
@@ -990,7 +1034,11 @@ const composeWithModel = (
         Effect.try({
           try: () => {
             if (reportComposition) {
-              const text = composed.text.trim();
+              const review = result.periodDeliveryReport?.sprintReview;
+              const text =
+                review === undefined
+                  ? composed.text.trim()
+                  : renderSprintIdentity(composed.text.trim(), review, request.timeZone);
               const requiredHeadings =
                 result.periodDeliveryReport?.sprintReview === undefined
                   ? [
@@ -1011,8 +1059,6 @@ const composeWithModel = (
                     ];
               if (!requiredHeadings.every((heading) => text.includes(heading)))
                 invalidReport("report-composition-structure");
-              const report = result.periodDeliveryReport;
-              const review = report?.sprintReview;
               const sprintDateIsPresent = (value: string): boolean => {
                 const parsed = new Date(value);
                 if (Number.isNaN(parsed.getTime())) return false;

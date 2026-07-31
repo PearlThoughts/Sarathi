@@ -34,30 +34,6 @@ const reportComposer: DeliveryAnswerComposer = {
       ({ url }, index) => `- [Reference ${index + 1}](${url})`,
     );
     const review = report?.sprintReview;
-    const sprintLabel = (
-      sprint:
-        | {
-            readonly name: string;
-            readonly startAt?: string | undefined;
-            readonly endAt?: string | undefined;
-          }
-        | undefined,
-      fallback: string,
-    ): string =>
-      sprint === undefined
-        ? fallback
-        : `${sprint.name} (${[sprint.startAt, sprint.endAt]
-            .map((value) =>
-              value === undefined
-                ? "date unknown"
-                : new Intl.DateTimeFormat("en-GB", {
-                    timeZone: "Asia/Kolkata",
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  }).format(new Date(value)),
-            )
-            .join(" to ")})`;
     return Effect.succeed({
       text:
         review === undefined
@@ -75,7 +51,7 @@ const reportComposer: DeliveryAnswerComposer = {
             ].join("\n")
           : [
               "## Sprint overview",
-              `- ${sprintLabel(review.previousSprint, "Previous sprint")} was reviewed against ${sprintLabel(review.currentSprint, "the current sprint")}.`,
+              "- Delivery health and the main management concern were reviewed.",
               "## Previous sprint",
               "- Completed and rollover work was consolidated by capability.",
               "## Current sprint",
@@ -311,6 +287,14 @@ describe("AI Delivery Assistant capability matrix", () => {
     );
     expect(answer.text).not.toContain("Coverage");
     expect(answer.text).not.toContain("Evidence");
+    if (row.question.includes("last sprint")) {
+      expect(answer.text).toContain(
+        "**Previous sprint — Delivery Sprint 8:** 1 Jul 2026 to 14 Jul 2026.",
+      );
+      expect(answer.text).toContain(
+        "**Current sprint — Delivery Sprint 9:** 15 Jul 2026 to 28 Jul 2026.",
+      );
+    }
     if (row.intents.includes("next_actions")) expect(answer.text).toContain("## Next");
     else expect(answer.text).not.toContain("Recommended next step");
     expect(answer.citations.length).toBeGreaterThan(0);
