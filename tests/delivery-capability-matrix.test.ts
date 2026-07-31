@@ -16,7 +16,7 @@ const capabilityQuestions: readonly {
   { question: "What is the project scope?", intents: ["scope"] },
   { question: "What are the requirements?", intents: ["requirements"] },
   {
-    question: "What is the current status of Modern Website Builder?",
+    question: "What is the current status of Atlas Site Composer?",
     intents: ["status"],
   },
   { question: "Who owns each module?", intents: ["ownership"] },
@@ -122,8 +122,8 @@ describe("AI Delivery Assistant capability matrix", () => {
   )("answers $question through reusable query operations", async (row) => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [genericSource] }).answer({
-        workspaceId: "workspace-1851",
-        actorId: "actor-1851",
+        workspaceId: "workspace-atlas",
+        actorId: "actor-atlas",
         maximumSensitivity: "internal",
         financeAccess: false,
         requestedAt: "2026-07-20T13:09:00.000Z",
@@ -159,8 +159,8 @@ describe("AI Delivery Assistant capability matrix", () => {
 
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [genericSource, optionalLiveSource] }).answer({
-        workspaceId: "workspace-1851",
-        actorId: "actor-1851",
+        workspaceId: "workspace-atlas",
+        actorId: "actor-atlas",
         maximumSensitivity: "internal",
         financeAccess: false,
         requestedAt: "2026-07-20T13:09:00.000Z",

@@ -40,7 +40,7 @@
 - [ ] KLG-402 Rotate the exposed OpenRouter key without printing it; confirm OpenRouter is the sole model and embedding provider.
 - [ ] KLG-403 Confirm production backup/restore and rollback, apply the non-destructive migration, verify pgvector/journal/audit tables, and deploy the merged revision.
 - [ ] KLG-404 Run bounded connected Jira/Vault ingestion and record only counts, checksums, checkpoints, source scope identifiers, and timing.
-- [ ] KLG-405 Verify the Modern Website Builder status question, delivery risks/next-action question, and one GitHub-required implementation question with concise resolvable citations.
+- [ ] KLG-405 Verify the Atlas Site Composer status question, delivery risks/next-action question, and one GitHub-required implementation question with concise resolvable citations.
 - [ ] KLG-406 Prove duplicate suppression, pre-model permission filtering, restricted/cross-workspace exclusion, source edit/deletion reconciliation, privacy-safe logs, application rollback, and database recovery evidence.
 - [ ] KLG-407 Update and close the private capability task only with merged PR/SHA, exact test evidence, live answer evidence, deployment/migration/rollback evidence; commit Dolt state and run `gt ready` after each completed task.
 

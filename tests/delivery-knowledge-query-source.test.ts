@@ -33,15 +33,15 @@ describe("delivery knowledge query source", () => {
     if (plan === undefined) throw new Error("Expected a generic delivery plan");
     const source = createDeliveryKnowledgeQuerySource({
       repository,
-      workspaceId: "workspace-1851",
-      allowedActorIds: new Set(["actor-1851"]),
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
     });
     const result = await Effect.runPromise(
       source.execute(
         {
-          workspaceId: "workspace-1851",
-          actorId: "actor-1851",
+          workspaceId: "workspace-atlas",
+          actorId: "actor-atlas",
           maximumSensitivity: "internal",
           financeAccess: false,
           requestedAt: "2026-07-20T10:00:00.000Z",
@@ -53,9 +53,9 @@ describe("delivery knowledge query source", () => {
       ),
     );
     expect(searchLexical.mock.calls[0]?.[0].audience).toEqual({
-      workspaceId: "workspace-1851",
-      actorId: "actor-1851",
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      actorId: "actor-atlas",
+      audienceIds: ["team-atlas"],
       maximumSensitivity: "internal",
     });
     expect(searchLexical.mock.calls[0]?.[0].question).toBe("What should I know before standup?");
@@ -99,7 +99,7 @@ describe("delivery knowledge query source", () => {
         },
       ]),
     );
-    const plan = planDeliveryQuestion("What is the current status of Modern Website Builder?");
+    const plan = planDeliveryQuestion("What is the current status of Atlas Site Composer?");
     if (plan === undefined) throw new Error("Expected a status plan");
     const source = createDeliveryKnowledgeQuerySource({
       repository: {
@@ -107,27 +107,27 @@ describe("delivery knowledge query source", () => {
         search: () => Effect.die("not used"),
         searchLexical,
       },
-      workspaceId: "workspace-1851",
-      allowedActorIds: new Set(["actor-1851"]),
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
     });
     const result = await Effect.runPromise(
       source.execute(
         {
-          workspaceId: "workspace-1851",
-          actorId: "actor-1851",
+          workspaceId: "workspace-atlas",
+          actorId: "actor-atlas",
           maximumSensitivity: "internal",
           financeAccess: false,
           requestedAt: "2026-07-20T10:00:00.000Z",
           timeZone: "Asia/Kolkata",
           deadlineAt: "2026-07-20T10:00:06.000Z",
-          question: "What is the current status of Modern Website Builder?",
+          question: "What is the current status of Atlas Site Composer?",
         },
         plan,
       ),
     );
     expect(searchLexical.mock.calls[0]?.[0].question).toBe(
-      "What is the current status of Modern Website Builder?",
+      "What is the current status of Atlas Site Composer?",
     );
     expect(result.items.map(({ title }) => title)).toEqual(["Builder delivery status"]);
   });
@@ -139,7 +139,7 @@ describe("delivery knowledge query source", () => {
           id: "master-context",
           source: "vault",
           sourceId: "master-context",
-          title: "Modern Website Builder product context",
+          title: "Atlas Site Composer product context",
           excerpt: "The product context explains the launch and customer outcome model.",
           citationUrl: "https://example.com/vault/master-context",
           sourceUpdatedAt: "2026-01-10T10:00:00.000Z",
@@ -159,16 +159,16 @@ describe("delivery knowledge query source", () => {
         search: () => Effect.die("not used"),
         searchLexical,
       },
-      workspaceId: "workspace-1851",
-      allowedActorIds: new Set(["actor-1851"]),
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
     });
 
     const result = await Effect.runPromise(
       source.execute(
         {
-          workspaceId: "workspace-1851",
-          actorId: "actor-1851",
+          workspaceId: "workspace-atlas",
+          actorId: "actor-atlas",
           maximumSensitivity: "internal",
           financeAccess: false,
           requestedAt: "2026-07-20T10:00:00.000Z",
@@ -200,14 +200,14 @@ describe("delivery knowledge query source", () => {
         search: () => Effect.die("not used"),
         searchLexical,
       },
-      workspaceId: "workspace-1851",
-      allowedActorIds: new Set(["actor-1851"]),
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
     });
     const result = await Effect.runPromise(
       source.execute(
         {
-          workspaceId: "workspace-1851",
+          workspaceId: "workspace-atlas",
           actorId: "other-actor",
           maximumSensitivity: "internal",
           financeAccess: false,
@@ -265,17 +265,17 @@ describe("delivery knowledge query source", () => {
         search: () => Effect.die("not used"),
         searchLexical,
       },
-      workspaceId: "workspace-1851",
-      allowedActorIds: new Set(["actor-1851"]),
-      audienceIds: ["team-1851"],
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
       allowedGitHubRepositories: ["PearlThoughts/1851-Vault"],
     });
 
     const result = await Effect.runPromise(
       source.execute(
         {
-          workspaceId: "workspace-1851",
-          actorId: "actor-1851",
+          workspaceId: "workspace-atlas",
+          actorId: "actor-atlas",
           maximumSensitivity: "internal",
           financeAccess: false,
           requestedAt: "2026-07-20T10:00:00.000Z",

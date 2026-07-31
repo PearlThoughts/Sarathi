@@ -194,7 +194,7 @@ describe("delivery intelligence application", () => {
             ? "## Delivery report\nFirst composition omitted the required synthesis structure."
             : [
                 "## What the team delivered",
-                "### Modern Website Builder",
+                "### Atlas Site Composer",
                 "- SEO publishing moved through implementation, while the Vault record preserves the product rationale.",
                 "## References",
                 "- [PR](https://example.com/github/publishing-pr)",
@@ -294,7 +294,7 @@ describe("delivery intelligence application", () => {
           capabilities: [
             {
               key: "modern-website-builder",
-              title: "Modern Website Builder",
+              title: "Atlas Site Composer",
               aliases: [{ value: "SEO publishing" }],
             },
           ],
@@ -310,7 +310,7 @@ describe("delivery intelligence application", () => {
     expect(execute.mock.calls[1]?.[0].question).toContain(
       "Project rationale, customer or business outcome",
     );
-    expect(execute.mock.calls[1]?.[0].question).toContain("Modern Website Builder");
+    expect(execute.mock.calls[1]?.[0].question).toContain("Atlas Site Composer");
     expect(compose.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
       responseMode: "deep_dive",
@@ -383,7 +383,7 @@ describe("delivery intelligence application", () => {
               ...item(
                 "github",
                 "github-pr",
-                "F1851-101 added SEO metadata publishing support",
+                "PROJ-101 added SEO metadata publishing support",
                 "delivered",
               ),
               selector: "period_census" as const,
@@ -396,7 +396,7 @@ describe("delivery intelligence application", () => {
               ...item(
                 "jira",
                 "jira-work",
-                "F1851-101 completed SEO metadata publishing",
+                "PROJ-101 completed SEO metadata publishing",
                 "delivered",
               ),
               selector: "period_census" as const,
@@ -473,7 +473,7 @@ describe("delivery intelligence application", () => {
         {
           key: "compliance-technology",
           title: "Compliance and technology updates",
-          aliases: [{ value: "CVE remediation" }, { value: "security" }],
+          aliases: [{ value: "dependency hardening" }, { value: "security" }],
         },
       ],
     };
@@ -502,11 +502,11 @@ describe("delivery intelligence application", () => {
               ...item(
                 "github",
                 `security-${index}`,
-                `F1851-${700 + index} builder CVE remediation ${index}`,
+                `PROJ-${700 + index} builder dependency hardening ${index}`,
                 "delivered",
               ),
               selector: "period_census" as const,
-              title: `PR #${index + 1}: F1851-${700 + index} builder CVE remediation ${index}`,
+              title: `PR #${index + 1}: PROJ-${700 + index} builder dependency hardening ${index}`,
               completionStage: "merged" as const,
               observedAt: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00.000Z`,
             })),
@@ -540,7 +540,7 @@ describe("delivery intelligence application", () => {
     expect(answer.periodDeliveryReport?.capabilitySections).toHaveLength(1);
     expect(answer.periodDeliveryReport?.capabilitySections[0]?.key).toBe("compliance-technology");
     expect(answer.text).not.toContain("**Website Builder enhancements**");
-    expect(answer.text.match(/- \*\*builder CVE remediation/g)).toHaveLength(5);
+    expect(answer.text.match(/- \*\*builder dependency hardening/g)).toHaveLength(5);
     expect(answer.text).not.toContain("additional changes");
     expect(answer.text).toContain("### 1. Compliance and technology updates");
     expect(answer.text).not.toContain("coverage");
@@ -780,7 +780,7 @@ describe("delivery intelligence application", () => {
               sourceId: "root-1",
               citationUrl: "https://teams.example.test/root-1",
               title: "Teams thread",
-              excerpt: "What is the current status of Modern Website Builder?",
+              excerpt: "What is the current status of Atlas Site Composer?",
               observedAt: "2026-07-20T12:00:00.000Z",
               contextRole: "conversation",
             },
@@ -800,7 +800,7 @@ describe("delivery intelligence application", () => {
 
     expect(execute).toHaveBeenCalledOnce();
     expect(execute.mock.calls[0]?.[1]).toMatchObject({
-      subject: { phrase: "Modern Website Builder" },
+      subject: { phrase: "Atlas Site Composer" },
       intents: ["ownership", "blockers", "next_actions"],
     });
   });
@@ -1417,7 +1417,7 @@ describe("delivery intelligence application", () => {
       ...item("teams", id, summary, "status"),
       selector: intent === "reviews" ? "observations" : "objects",
       intent,
-      subjectAliases: ["Admin Portal Migration"],
+      subjectAliases: ["Operations Console Migration"],
     });
     const source: DeliveryQuerySource = {
       source: "projection",
@@ -1439,7 +1439,7 @@ describe("delivery intelligence application", () => {
       createDeliveryAssistant({ sources: [source] }).answer({
         ...request,
         question:
-          "What is the current status of Admin Portal Migration? Summarize scope, progress, review queue, risks, and next action.",
+          "What is the current status of Operations Console Migration? Summarize scope, progress, review queue, risks, and next action.",
       }),
     );
 
@@ -1890,7 +1890,7 @@ describe("delivery intelligence application", () => {
       createDeliveryAssistant({ sources: [source] }).answer({
         ...request,
         question:
-          "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",
+          "Which GitHub PR or commits implement the Partner Intake Dashboard, and what changed?",
       }),
     );
     expect(answer.status).toBe("partial");
@@ -1905,7 +1905,7 @@ describe("delivery intelligence application", () => {
       selectors: ["objects", "knowledge"],
       execute: () =>
         Effect.succeed({
-          items: [item("jira", "other", "F1851-812 Modern lead form is In Progress", "status")],
+          items: [item("jira", "other", "PROJ-812 Modern lead form is In Progress", "status")],
           conflicts: [],
           unavailableSources: [],
           complete: true,
@@ -1914,7 +1914,7 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({ sources: [source] }).answer({
         ...request,
-        question: "What is the current status of Admin Portal Migration?",
+        question: "What is the current status of Operations Console Migration?",
       }),
     );
     expect(answer.status).toBe("partial");

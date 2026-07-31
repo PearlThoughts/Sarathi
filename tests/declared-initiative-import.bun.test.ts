@@ -41,7 +41,7 @@ const snapshot = (revision: string): DeclaredInitiativeSnapshot =>
         key: "lead-routing",
         kind: "initiative",
         parentKey: "growth",
-        title: "Lead routing dashboard",
+        title: "Partner intake dashboard",
         aliases: ["routing dashboard"],
         status: "In Progress",
         sourceRow: 12,
@@ -115,7 +115,7 @@ describe("declared initiative import", () => {
     expect(nodes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ title: "Sustainable growth", state: "active" }),
-        expect.objectContaining({ title: "Lead routing dashboard", state: "archived" }),
+        expect.objectContaining({ title: "Partner intake dashboard", state: "archived" }),
       ]),
     );
     database.close();

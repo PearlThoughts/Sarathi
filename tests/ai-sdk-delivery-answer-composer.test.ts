@@ -136,7 +136,7 @@ describe("AI SDK delivery answer composer", () => {
         capabilitySections: [
           {
             key: "modern-website-builder",
-            title: "Modern Website Builder",
+            title: "Atlas Site Composer",
             evidencedAliases: ["SEO publishing"],
             capsules: [
               {
@@ -189,7 +189,7 @@ describe("AI SDK delivery answer composer", () => {
       },
       capabilitySections: [
         {
-          title: "Modern Website Builder",
+          title: "Atlas Site Composer",
           changeCount: 1,
           evidencedInitiatives: ["SEO publishing"],
         },
@@ -201,7 +201,7 @@ describe("AI SDK delivery answer composer", () => {
       "teams",
     ]);
     expect(envelope?.evidence[0]).toMatchObject({
-      title: "Completed change — Modern Website Builder: SEO metadata publishing",
+      title: "Completed change — Atlas Site Composer: SEO metadata publishing",
       sourceUrl: "https://github.com/example/product/pull/101",
     });
     expect(envelope?.evidence).toHaveLength(37);

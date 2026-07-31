@@ -567,7 +567,7 @@ describe("GitHub knowledge source", () => {
             [
               {
                 number: 42,
-                title: "F1851-754 recent delivery",
+                title: "PROJ-754 recent delivery",
                 html_url: "https://github.com/example/sarathi/pull/42",
                 state: "closed",
                 created_at: "2026-07-18T08:00:00.000Z",
