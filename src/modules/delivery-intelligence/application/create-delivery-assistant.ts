@@ -102,6 +102,8 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-initiative-identity":
     case "report-composition-citations-missing":
     case "report-composition-citation-unknown":
+    case "report-composition-citation-url-unknown":
+    case "report-composition-reference-id-unknown":
     case "report-composition-citation-placement":
     case "report-composition-prohibited-prose":
     case "report-composition-invalid":

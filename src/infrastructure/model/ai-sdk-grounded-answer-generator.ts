@@ -193,7 +193,7 @@ const validateDeliveryReport = (
   const allowedUrls = new Set(evidence.map(({ sourceUrl }) => sourceUrl));
   const citations = markdownCitationUrls(answer);
   if (citations.some((url) => !allowedUrls.has(url)))
-    invalidModelReport("report-composition-citation-unknown");
+    invalidModelReport("report-composition-citation-url-unknown");
   const referencesAt = answer.indexOf("## References");
   if (markdownCitationUrls(answer.slice(0, referencesAt)).length > 0)
     invalidModelReport("report-composition-citation-placement");
@@ -201,7 +201,7 @@ const validateDeliveryReport = (
   if (reportReferenceIndexes(answer.slice(0, referencesAt)).length > 0)
     invalidModelReport("report-composition-citation-placement");
   if (referenceIndexes.some((index) => evidence[index] === undefined))
-    invalidModelReport("report-composition-citation-unknown");
+    invalidModelReport("report-composition-reference-id-unknown");
   if (evidence.length > 0 && citations.length === 0 && referenceIndexes.length === 0)
     invalidModelReport("report-composition-citations-missing");
   if (

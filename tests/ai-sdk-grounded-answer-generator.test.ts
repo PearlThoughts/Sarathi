@@ -232,13 +232,13 @@ describe("AI SDK OpenRouter answer generator", () => {
               : line,
           )
           .join("\n"),
-        operation: "report-composition-citation-unknown",
+        operation: "report-composition-citation-url-unknown",
       },
       {
         text: validSections
           .map((line) => (line.includes("jira.example.test") ? "- [R2]" : line))
           .join("\n"),
-        operation: "report-composition-citation-unknown",
+        operation: "report-composition-reference-id-unknown",
       },
       {
         text: validSections
