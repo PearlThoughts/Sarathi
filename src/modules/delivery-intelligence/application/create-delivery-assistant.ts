@@ -311,39 +311,69 @@ const deliveredItemSummary = (item: DeliveryResultItem): string => {
 };
 
 const alignmentStopWords = new Set([
+  "admin",
   "and",
+  "enhancements",
   "for",
   "from",
+  "has",
+  "improve",
   "into",
+  "mapping",
   "new",
+  "no",
   "of",
   "on",
+  "page",
+  "portal",
+  "product",
+  "refresh",
+  "security",
+  "system",
   "the",
   "this",
   "to",
+  "token",
+  "website",
+  "when",
   "with",
+  "you",
 ]);
 
-const alignmentTokens = (value: string): readonly string[] =>
+const normalizedAlignmentText = (value: string): string =>
   value
     .toLocaleLowerCase("en")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizedAlignmentToken = (value: string): string =>
+  value.length > 4 && value.endsWith("s") ? value.slice(0, -1) : value;
+
+const alignmentTokens = (value: string): readonly string[] =>
+  normalizedAlignmentText(value)
     .split(" ")
-    .filter((token) => token.length > 2 && !alignmentStopWords.has(token));
+    .map(normalizedAlignmentToken)
+    .filter((token) => token.length > 1 && !alignmentStopWords.has(token));
 
 const alignmentScore = (initiative: DeliveryResultItem, activity: DeliveryResultItem): number => {
   const initiativeValues = [initiative.title, ...(initiative.subjectAliases ?? [])];
-  const activityText = `${activity.title} ${activity.summary} ${(
-    activity.subjectAliases ?? []
-  ).join(" ")}`.toLocaleLowerCase("en");
+  const activityText = normalizedAlignmentText(
+    `${activity.title} ${activity.summary} ${(activity.subjectAliases ?? []).join(" ")}`,
+  );
+  const activityTokens = new Set(
+    activityText.split(" ").map(normalizedAlignmentToken).filter(Boolean),
+  );
   let best = 0;
   for (const value of initiativeValues) {
-    const normalized = value.toLocaleLowerCase("en").trim();
-    if (normalized.length >= 6 && activityText.includes(normalized)) best = Math.max(best, 100);
+    const normalized = normalizedAlignmentText(value);
+    if (normalized.length >= 6 && activityText.includes(normalized))
+      best = Math.max(best, 100 + alignmentTokens(value).length);
     const tokens = alignmentTokens(value);
-    const matched = tokens.filter((token) => activityText.includes(token)).length;
-    if (tokens.length > 0 && matched === tokens.length) best = Math.max(best, 20 + tokens.length);
-    else if (matched >= 2) best = Math.max(best, matched);
+    const matched = tokens.filter((token) => activityTokens.has(token)).length;
+    if (tokens.length >= 2 && matched === tokens.length) best = Math.max(best, 20 + tokens.length);
+    else if (tokens.length >= 3 && matched >= 2 && matched / tokens.length >= 2 / 3)
+      best = Math.max(best, 10 + matched);
   }
   return best;
 };
@@ -397,7 +427,7 @@ const initiativeAlignmentLines = (
             alignmentTokens(left.initiative.title).length,
       );
     const match = scored[0];
-    if (match === undefined || match.score < 2) {
+    if (match === undefined || match.score < 12) {
       unassigned.push(activity);
       continue;
     }
@@ -506,6 +536,7 @@ const composeAnswer = (
   };
   const references = (): readonly string[] => {
     if (citations.length === 0) return [];
+    const maximumPerSource = isInitiativeAlignment ? 6 : Number.POSITIVE_INFINITY;
     const grouped = new Map<string, { label: string; url: string }[]>();
     for (const value of citations) {
       const source = value.label.split(" ")[0] ?? "Source";
@@ -513,10 +544,13 @@ const composeAnswer = (
     }
     return [
       "### References",
-      ...[...grouped.entries()].map(
-        ([source, values]) =>
-          `- **${source}:** ${values.map(({ url }, index) => `[${index + 1}](${url})`).join(" · ")}`,
-      ),
+      ...[...grouped.entries()].map(([source, values]) => {
+        const shown = values.slice(0, maximumPerSource);
+        const omitted = values.length - shown.length;
+        return `- **${source}:** ${shown
+          .map(({ url }, index) => `[${index + 1}](${url})`)
+          .join(" · ")}${omitted > 0 ? ` · _+${omitted} more_` : ""}`;
+      }),
     ];
   };
   const detailLines: string[] = [];

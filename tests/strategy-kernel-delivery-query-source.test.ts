@@ -116,7 +116,6 @@ describe("Strategy Kernel delivery query source", () => {
     const result = await Effect.runPromise(source.execute(context(), plan()));
 
     expect(result.items[0]?.subjectAliases).toEqual([
-      "intent-goal",
       "Continuously current delivery intelligence",
       "routing dashboard",
       "lead router",
