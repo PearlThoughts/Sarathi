@@ -242,26 +242,45 @@ const baseItem = (
   idSuffix: string,
   summary: string,
   occurredAt = issue.fields?.updated ?? query.fromInclusive,
-): DeliveryResultItem | undefined =>
-  issue.key === undefined
-    ? undefined
-    : {
-        id: `jira:${issue.key}:${idSuffix}`,
-        source: "jira",
-        workspaceId: query.workspaceId,
-        selector: query.operation.select,
-        intent: query.operation.purpose,
-        title: issueTitle(issue),
-        summary,
-        citationUrl: issueUrl(configuration, issue.key),
-        observedAt: occurredAt,
-        lifecycleState: issueLifecycleState(issue),
-        subjectAliases: issueAliases(issue),
-        owner: issueOwnerReference(issue),
-        sensitivity: configuration.sensitivity ?? "internal",
-        authority: configuration.authority ?? 0.95,
-        dedupeKey: `jira:${issue.key}:${kind}:${idSuffix}`,
-      };
+): DeliveryResultItem | undefined => {
+  if (issue.key === undefined) return undefined;
+  const sprint = sprintValues(issue)
+    .toSorted(
+      (left, right) =>
+        Date.parse(right.endDate ?? right.completeDate ?? "") -
+        Date.parse(left.endDate ?? left.completeDate ?? ""),
+    )[0]
+    ?.name?.trim();
+  const labels = issue.fields?.labels?.map((label) => label.toLowerCase()) ?? [];
+  return {
+    id: `jira:${issue.key}:${idSuffix}`,
+    source: "jira",
+    workspaceId: query.workspaceId,
+    selector: query.operation.select,
+    intent: query.operation.purpose,
+    title: issueTitle(issue),
+    summary,
+    citationUrl: issueUrl(configuration, issue.key),
+    observedAt: occurredAt,
+    lifecycleState: issueLifecycleState(issue),
+    subjectAliases: issueAliases(issue),
+    owner: issueOwnerReference(issue),
+    planning: {
+      externalKey: issue.key,
+      status: issueStatus(issue),
+      ...(sprint === undefined || sprint === "" ? {} : { sprint }),
+      hasDependency: (issue.fields?.issuelinks ?? []).some((link) =>
+        /block|depend|require|wait/i.test(`${link.type?.inward ?? ""} ${link.type?.outward ?? ""}`),
+      ),
+      hasAcceptanceInformation:
+        issue.fields?.resolutiondate != null ||
+        labels.some((label) => /accept|approved|signed-off|qa-passed/.test(label)),
+    },
+    sensitivity: configuration.sensitivity ?? "internal",
+    authority: configuration.authority ?? 0.95,
+    dedupeKey: `jira:${issue.key}:${kind}:${idSuffix}`,
+  };
+};
 
 const transitionSummary = (history: JiraHistory | undefined): string | undefined => {
   const tracked = new Set(["status", "assignee", "resolution", "priority"]);

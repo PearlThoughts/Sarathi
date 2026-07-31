@@ -68,6 +68,15 @@ export type DeliveryResultItem = {
   readonly lifecycleState?: DeliveryLifecycleState | undefined;
   readonly dedupeKey: string;
   readonly actionTarget?: DeliveryActionTarget | undefined;
+  readonly planning?:
+    | {
+        readonly externalKey: string;
+        readonly status: string;
+        readonly sprint?: string | undefined;
+        readonly hasDependency: boolean;
+        readonly hasAcceptanceInformation: boolean;
+      }
+    | undefined;
   readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
   readonly completionStage?: DeliveryCompletionStage | undefined;
 };

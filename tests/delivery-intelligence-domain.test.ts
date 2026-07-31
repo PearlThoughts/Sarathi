@@ -21,31 +21,45 @@ describe("delivery intelligence domain", () => {
   it("parses arbitrary delivery-report periods into exhaustive census operations", () => {
     const plan = planDeliveryQuestion("Give me a delivery report for the last 37 days");
 
-    expect(plan?.intents).toEqual(["delivered"]);
-    expect(plan?.operations).toEqual([
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "objects",
-        time: { kind: "lookback", days: 37 },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "observations",
-        time: { kind: "lookback", days: 37 },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "period_census",
-        time: { kind: "lookback", days: 37 },
-        census: { pageSize: 200, maximumCandidates: 50_000 },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "knowledge",
-        time: { kind: "lookback", days: 37 },
-        limit: 20,
-      }),
+    expect(plan?.intents).toEqual([
+      "delivered",
+      "goals",
+      "commitments",
+      "current_work",
+      "dependencies",
+      "blockers",
     ]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "objects",
+          time: { kind: "lookback", days: 37 },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "observations",
+          time: { kind: "lookback", days: 37 },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "period_census",
+          time: { kind: "lookback", days: 37 },
+          census: { pageSize: 200, maximumCandidates: 50_000 },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "knowledge",
+          time: { kind: "lookback", days: 37 },
+          limit: 20,
+        }),
+        expect.objectContaining({ purpose: "goals", select: "objects" }),
+        expect.objectContaining({ purpose: "commitments", select: "objects" }),
+        expect.objectContaining({ purpose: "current_work", select: "objects" }),
+        expect.objectContaining({ purpose: "dependencies", select: "relations" }),
+        expect.objectContaining({ purpose: "blockers", select: "objects" }),
+      ]),
+    );
   });
 
   it("resolves calendar boundaries in workspace time with inclusive/exclusive DST semantics", () => {
@@ -217,7 +231,14 @@ describe("delivery intelligence domain", () => {
     const plan = planDeliveryQuestion(
       "What did the team deliver last sprint, and what are they doing this week?",
     );
-    expect(plan?.intents).toEqual(["delivered", "current_work"]);
+    expect(plan?.intents).toEqual([
+      "delivered",
+      "goals",
+      "commitments",
+      "dependencies",
+      "blockers",
+      "current_work",
+    ]);
     expect(plan?.operations[0]?.time).toEqual({
       kind: "jira_sprint",
       sprint: "previous",
@@ -240,7 +261,9 @@ describe("delivery intelligence domain", () => {
       select: "knowledge",
       time: { kind: "jira_sprint", sprint: "previous" },
     });
-    expect(plan?.operations[4]?.time).toEqual({ kind: "workspace_week" });
+    expect(
+      plan?.operations.find((operation) => operation.purpose === "current_work")?.time,
+    ).toEqual({ kind: "workspace_week" });
   });
 
   it("recognizes activity summaries regardless of phrase order and keeps activity primary", () => {
@@ -296,42 +319,49 @@ describe("delivery intelligence domain", () => {
       "period_delivery_brief",
     );
     expect(plan?.requiredSources).toEqual(["jira", "github"]);
-    expect(plan?.operations).toEqual([
-      expect.objectContaining({
-        purpose: "delivered",
-        predicates: [
-          {
-            field: "lifecycleState",
-            operator: "in",
-            value: ["done", "delivered", "merged", "released", "deployed"],
-          },
-        ],
-        time: { kind: "workspace_previous_week" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "observations",
-        predicates: [
-          { field: "source", operator: "equals", value: "github" },
-          {
-            field: "kind",
-            operator: "in",
-            value: ["pull_request", "commit", "deployment"],
-          },
-        ],
-        time: { kind: "workspace_previous_week" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "period_census",
-        time: { kind: "workspace_previous_week" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "knowledge",
-        time: { kind: "workspace_previous_week" },
-      }),
-    ]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "delivered",
+          predicates: [
+            {
+              field: "lifecycleState",
+              operator: "in",
+              value: ["done", "delivered", "merged", "released", "deployed"],
+            },
+          ],
+          time: { kind: "workspace_previous_week" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "observations",
+          predicates: [
+            { field: "source", operator: "equals", value: "github" },
+            {
+              field: "kind",
+              operator: "in",
+              value: ["pull_request", "commit", "deployment"],
+            },
+          ],
+          time: { kind: "workspace_previous_week" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "period_census",
+          time: { kind: "workspace_previous_week" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "knowledge",
+          time: { kind: "workspace_previous_week" },
+        }),
+        expect.objectContaining({ purpose: "goals", select: "objects" }),
+        expect.objectContaining({ purpose: "commitments", select: "objects" }),
+        expect.objectContaining({ purpose: "current_work", select: "objects" }),
+        expect.objectContaining({ purpose: "dependencies", select: "relations" }),
+        expect.objectContaining({ purpose: "blockers", select: "objects" }),
+      ]),
+    );
   });
 
   it("bounds delivered-this-week questions to the current workspace week", () => {
@@ -341,41 +371,55 @@ describe("delivery intelligence domain", () => {
       "period_delivery_brief",
     );
     expect(plan?.requiredSources).toEqual(["jira", "github"]);
-    expect(plan?.operations).toEqual([
-      expect.objectContaining({
-        purpose: "delivered",
-        time: { kind: "workspace_week" },
-        limit: 20,
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "observations",
-        time: { kind: "workspace_week" },
-        limit: 20,
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "period_census",
-        time: { kind: "workspace_week" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "knowledge",
-        time: { kind: "workspace_week" },
-        limit: 20,
-      }),
-    ]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "delivered",
+          time: { kind: "workspace_week" },
+          limit: 20,
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "observations",
+          time: { kind: "workspace_week" },
+          limit: 20,
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "period_census",
+          time: { kind: "workspace_week" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "knowledge",
+          time: { kind: "workspace_week" },
+          limit: 20,
+        }),
+        expect.objectContaining({ purpose: "goals", select: "objects" }),
+        expect.objectContaining({ purpose: "commitments", select: "objects" }),
+        expect.objectContaining({ purpose: "current_work", select: "objects" }),
+        expect.objectContaining({ purpose: "dependencies", select: "relations" }),
+        expect.objectContaining({ purpose: "blockers", select: "objects" }),
+      ]),
+    );
   });
 
   it("honors an explicit top limit for weekly delivery rollups", () => {
     const plan = planDeliveryQuestion("What are the top 3 items delivered this week?");
 
-    expect(plan?.operations).toEqual([
-      expect.objectContaining({ purpose: "delivered", limit: 3 }),
-      expect.objectContaining({ purpose: "delivered", select: "observations", limit: 3 }),
-      expect.objectContaining({ purpose: "delivered", select: "period_census" }),
-      expect.objectContaining({ purpose: "delivered", select: "knowledge", limit: 3 }),
-    ]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ purpose: "delivered", limit: 3 }),
+        expect.objectContaining({ purpose: "delivered", select: "observations", limit: 3 }),
+        expect.objectContaining({ purpose: "delivered", select: "period_census" }),
+        expect.objectContaining({ purpose: "delivered", select: "knowledge", limit: 3 }),
+        expect.objectContaining({ purpose: "goals", select: "objects" }),
+        expect.objectContaining({ purpose: "commitments", select: "objects" }),
+        expect.objectContaining({ purpose: "current_work", select: "objects" }),
+        expect.objectContaining({ purpose: "dependencies", select: "relations" }),
+        expect.objectContaining({ purpose: "blockers", select: "objects" }),
+      ]),
+    );
   });
 
   it("treats yesterday as its own closed workspace day and selects report synthesis", () => {
@@ -384,28 +428,35 @@ describe("delivery intelligence domain", () => {
     expect(selectDeliveryResponseProduct("What did the team deliver yesterday?")).toBe(
       "period_delivery_brief",
     );
-    expect(plan?.operations).toEqual([
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "objects",
-        time: { kind: "workspace_previous_day" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "observations",
-        time: { kind: "workspace_previous_day" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "period_census",
-        time: { kind: "workspace_previous_day" },
-      }),
-      expect.objectContaining({
-        purpose: "delivered",
-        select: "knowledge",
-        time: { kind: "workspace_previous_day" },
-      }),
-    ]);
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "objects",
+          time: { kind: "workspace_previous_day" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "observations",
+          time: { kind: "workspace_previous_day" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "period_census",
+          time: { kind: "workspace_previous_day" },
+        }),
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "knowledge",
+          time: { kind: "workspace_previous_day" },
+        }),
+        expect.objectContaining({ purpose: "goals", select: "objects" }),
+        expect.objectContaining({ purpose: "commitments", select: "objects" }),
+        expect.objectContaining({ purpose: "current_work", select: "objects" }),
+        expect.objectContaining({ purpose: "dependencies", select: "relations" }),
+        expect.objectContaining({ purpose: "blockers", select: "objects" }),
+      ]),
+    );
     expect(
       resolveDeliveryTimeConstraint(
         { kind: "workspace_previous_day" },

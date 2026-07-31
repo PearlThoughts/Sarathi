@@ -1,16 +1,51 @@
 import type { DeliverySourceKind } from "./delivery-model.ts";
 import type { DeliveryCompletionStage, PeriodCensus } from "./period-census.ts";
 
+type DeliveryEpisodeLifecycle =
+  | "scoped"
+  | "implementing"
+  | "development_ready"
+  | "qa"
+  | "production"
+  | "accepted";
+
+type DeliveryEpisodeAlignment =
+  | "governed_initiative"
+  | "operational_support"
+  | "emerging_requirement"
+  | "unaccounted_work";
+
 export type PeriodDeliveryEvidence = {
   readonly title: string;
   readonly summary: string;
   readonly citationUrl: string;
   readonly source: DeliverySourceKind;
   readonly selector: string;
+  readonly intent?: string | undefined;
   readonly subjectAliases?: readonly string[] | undefined;
   readonly dedupeKey: string;
   readonly observedAt?: string | undefined;
   readonly completionStage?: DeliveryCompletionStage | undefined;
+  readonly lifecycleState?:
+    | "planned"
+    | "active"
+    | "blocked"
+    | "done"
+    | "canceled"
+    | "unknown"
+    | undefined;
+  readonly evidenceRole?: "declared_intent" | "observed_evidence" | undefined;
+  readonly owner?: { readonly displayName: string } | undefined;
+  readonly actionTarget?: { readonly displayName: string } | undefined;
+  readonly planning?:
+    | {
+        readonly externalKey: string;
+        readonly status: string;
+        readonly sprint?: string | undefined;
+        readonly hasDependency: boolean;
+        readonly hasAcceptanceInformation: boolean;
+      }
+    | undefined;
 };
 
 export type CapabilityAlias = {
@@ -22,6 +57,7 @@ export type CapabilityDefinition = {
   readonly key: string;
   readonly title: string;
   readonly aliases: readonly CapabilityAlias[];
+  readonly alignment?: "governed_initiative" | "operational_support" | undefined;
 };
 
 export type CapabilityLedger = {
@@ -57,18 +93,49 @@ export type OutcomeAssertion =
       readonly citations: readonly [];
     };
 
+export type HumanDependency = {
+  readonly waiting: string;
+  readonly awaited: string;
+  readonly since?: string | undefined;
+  readonly requiredAction: string;
+  readonly episodeId: string;
+  readonly capabilityKey?: string | undefined;
+  readonly citations: readonly string[];
+};
+
+export type JiraHygieneAdvisory = {
+  readonly kind:
+    | "missing_jira_item"
+    | "contradictory_status"
+    | "missing_owner"
+    | "missing_sprint"
+    | "missing_dependency"
+    | "missing_acceptance"
+    | "review_for_closure";
+  readonly episodeId: string;
+  readonly message: string;
+  readonly citations: readonly string[];
+};
+
 export type ChangeCapsule = {
   readonly id: string;
   readonly title: string;
   readonly summary: string;
-  readonly completedAt: string;
-  readonly completionStage: DeliveryCompletionStage;
+  readonly latestActivityAt: string;
+  readonly completedAt?: string | undefined;
+  readonly completionStage?: DeliveryCompletionStage | undefined;
+  readonly lifecycleState: DeliveryEpisodeLifecycle;
+  readonly alignment: DeliveryEpisodeAlignment;
+  readonly initiativeTitle?: string | undefined;
   readonly capabilityKeys: readonly string[];
+  readonly owners: readonly string[];
   readonly sources: readonly DeliverySourceKind[];
   readonly citations: readonly {
     readonly source: DeliverySourceKind;
     readonly url: string;
   }[];
+  readonly dependencies: readonly HumanDependency[];
+  readonly jiraAdvisories: readonly JiraHygieneAdvisory[];
   readonly chain: readonly DeliveryChainStage[];
 };
 
@@ -76,6 +143,11 @@ export type PeriodDeliveryReport = {
   readonly version: 1;
   readonly census: PeriodCensus;
   readonly capsules: readonly ChangeCapsule[];
+  readonly deliveredEpisodes: readonly ChangeCapsule[];
+  readonly inProgressEpisodes: readonly ChangeCapsule[];
+  readonly dependencies: readonly HumanDependency[];
+  readonly decisionsNeeded: readonly string[];
+  readonly jiraAdvisories: readonly JiraHygieneAdvisory[];
   readonly capabilitySections: readonly {
     readonly key: string;
     readonly title: string;
@@ -84,6 +156,7 @@ export type PeriodDeliveryReport = {
     readonly outcomes: readonly OutcomeAssertion[];
   }[];
   readonly unmappedCapsules: readonly ChangeCapsule[];
+  readonly excludedImmaterialActivityCount: number;
   readonly incompleteChainCount: number;
 };
 
@@ -94,6 +167,9 @@ const normalized = (value: string): string =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+
+const evidenceText = (item: PeriodDeliveryEvidence): string =>
+  [item.title, item.summary, item.citationUrl, ...(item.subjectAliases ?? [])].join("\n");
 
 const workItemKey = (value: string): string | undefined =>
   value.match(/\b[A-Z][A-Z0-9]+-\d+\b/)?.[0];
@@ -106,18 +182,63 @@ const pullRequestKey = (value: string): string | undefined => {
 };
 
 const capsuleKey = (item: PeriodDeliveryEvidence): string => {
-  const text = `${item.title}\n${item.summary}\n${item.citationUrl}`;
+  const text = evidenceText(item);
   return workItemKey(text) ?? pullRequestKey(text) ?? item.dedupeKey;
 };
 
-const completionStage = (items: readonly PeriodDeliveryEvidence[]): DeliveryCompletionStage =>
+const completionStage = (
+  items: readonly PeriodDeliveryEvidence[],
+): DeliveryCompletionStage | undefined =>
   items.some((item) => item.completionStage === "accepted")
     ? "accepted"
     : items.some((item) => item.completionStage === "deployed")
       ? "deployed"
       : items.some((item) => item.completionStage === "released")
         ? "released"
-        : "merged";
+        : items.some((item) => item.completionStage === "merged")
+          ? "merged"
+          : undefined;
+
+const lifecycleRank: Readonly<Record<DeliveryEpisodeLifecycle, number>> = {
+  scoped: 0,
+  implementing: 1,
+  development_ready: 2,
+  qa: 3,
+  production: 4,
+  accepted: 5,
+};
+
+const lifecycleForItem = (item: PeriodDeliveryEvidence): DeliveryEpisodeLifecycle => {
+  const text = normalized(evidenceText(item));
+  const awaitingAcceptance = /\b(?:waiting|waits on|pending|needs?|requires?)\b/.test(text);
+  if (
+    item.completionStage === "accepted" ||
+    (!awaitingAcceptance && /\b(?:accepted|approved|sign off|signed off)\b/.test(text))
+  )
+    return "accepted";
+  if (
+    item.completionStage === "deployed" ||
+    item.completionStage === "released" ||
+    /\bproduction|deployed|released|went live|live environment\b/.test(text)
+  )
+    return "production";
+  if (/\bqa|quality assurance|uat|testing|test ready|in review\b/.test(text)) return "qa";
+  if (item.completionStage === "merged" || /\bmerged|development ready|dev ready\b/.test(text))
+    return "development_ready";
+  if (
+    item.lifecycleState === "active" ||
+    item.lifecycleState === "blocked" ||
+    item.intent === "current_work" ||
+    /\bimplementing|in progress|working on|underway\b/.test(text)
+  )
+    return "implementing";
+  return "scoped";
+};
+
+const lifecycleFor = (items: readonly PeriodDeliveryEvidence[]): DeliveryEpisodeLifecycle =>
+  items
+    .map(lifecycleForItem)
+    .toSorted((left, right) => lifecycleRank[right] - lifecycleRank[left])[0] ?? "scoped";
 
 const stageOrder = [
   "planned",
@@ -132,13 +253,21 @@ const stageOrder = [
 ] as const;
 
 const chainFor = (
-  stage: DeliveryCompletionStage,
+  stage: DeliveryEpisodeLifecycle,
   citations: readonly string[],
 ): readonly DeliveryChainStage[] => {
-  return stageOrder.map((candidate) => ({
+  const observedThrough: Readonly<Record<DeliveryEpisodeLifecycle, number>> = {
+    scoped: 0,
+    implementing: 1,
+    development_ready: 3,
+    qa: 4,
+    production: 6,
+    accepted: 7,
+  };
+  return stageOrder.map((candidate, index) => ({
     stage: candidate,
-    state: candidate === stage ? "observed" : "missing",
-    citations: candidate === stage ? citations : [],
+    state: index <= observedThrough[stage] ? "observed" : "missing",
+    citations: index <= observedThrough[stage] ? citations : [],
   }));
 };
 
@@ -150,16 +279,7 @@ const capabilityMatchFor = (
   readonly evidenceScore: number;
   readonly matchedAliasIndexes: readonly number[];
 } => {
-  const text = normalized(
-    items
-      .flatMap((item) => [
-        item.title,
-        item.summary,
-        item.citationUrl,
-        ...(item.subjectAliases ?? []),
-      ])
-      .join("\n"),
-  );
+  const text = normalized(items.map(evidenceText).join("\n"));
   const searchable = ` ${text} `;
   const matches = ledger.capabilities.flatMap((capability, capabilityIndex) => {
     const scores = capability.aliases.flatMap((alias, aliasIndex) => {
@@ -170,11 +290,13 @@ const capabilityMatchFor = (
         !searchable.includes(` ${value} `)
       )
         return [];
-      const specificity = value.split(" ").length * 1_000 + value.length;
       return [
         {
           aliasIndex,
-          score: specificity + (alias.source === undefined ? 0 : 100_000),
+          score:
+            value.split(" ").length * 1_000 +
+            value.length +
+            (alias.source === undefined ? 0 : 100_000),
         },
       ];
     });
@@ -225,8 +347,8 @@ const orderForAliasCoverage = (
       return (
         rightNewAliases - leftNewAliases ||
         (rightMatch?.evidenceScore ?? 0) - (leftMatch?.evidenceScore ?? 0) ||
-        right.citations.length - left.citations.length ||
-        Date.parse(right.completedAt) - Date.parse(left.completedAt) ||
+        lifecycleRank[right.lifecycleState] - lifecycleRank[left.lifecycleState] ||
+        Date.parse(right.latestActivityAt) - Date.parse(left.latestActivityAt) ||
         left.title.localeCompare(right.title)
       );
     });
@@ -239,6 +361,118 @@ const orderForAliasCoverage = (
   return ordered;
 };
 
+const negativeCoverage = (item: PeriodDeliveryEvidence): boolean =>
+  /(?:^|:)coverage:/.test(item.dedupeKey) ||
+  /^no (?:explicit|matching|blocked|connected)\b/i.test(item.summary.trim());
+
+const materialEvidence = (item: PeriodDeliveryEvidence, ledger: CapabilityLedger): boolean => {
+  if (item.evidenceRole === "declared_intent" || negativeCoverage(item)) return false;
+  if (item.selector === "period_census") {
+    if (item.completionStage === undefined) return false;
+    const text = evidenceText(item);
+    if (
+      /\b(?:unclassified|generic) (?:repository )?maintenance\b|\bmerge branch\b|\bdependency bump\b/i.test(
+        text,
+      ) &&
+      capabilityMatchFor([item], ledger).keys.length === 0
+    )
+      return false;
+    return true;
+  }
+  if (
+    ["current_work", "dependencies", "blockers", "decisions", "requirements"].includes(
+      item.intent ?? "",
+    )
+  )
+    return true;
+  if (
+    !(["knowledge", "observations", "objects", "relations"] as readonly string[]).includes(
+      item.selector,
+    )
+  )
+    return false;
+  const actionable =
+    /\bwait(?:ing|s)?|blocked|approved|decision|requirement|qa|testing|production|deployed|released|merged|implement(?:ing|ed)?\b/i.test(
+      evidenceText(item),
+    );
+  return actionable && capabilityMatchFor([item], ledger).keys.length > 0;
+};
+
+const dependencyFor = (
+  item: PeriodDeliveryEvidence,
+  episodeId: string,
+  capabilityKey?: string,
+): HumanDependency | undefined => {
+  const jira =
+    /\b[A-Z][A-Z0-9]+-\d+\s+\(([^)]+)\)\s+waits on\s+[A-Z][A-Z0-9]+-\d+\s+\(([^)]+)\)/i.exec(
+      item.summary,
+    );
+  const human = /\b(.{1,80}?)\s+(?:is\s+)?waiting for\s+(.{1,100}?)(?:[.;]|$)/i.exec(item.summary);
+  const waiting = jira?.[1]?.trim() ?? human?.[1]?.trim() ?? item.owner?.displayName;
+  const awaited = jira?.[2]?.trim() ?? item.actionTarget?.displayName ?? human?.[2]?.trim();
+  if (waiting === undefined || awaited === undefined) return undefined;
+  return {
+    waiting,
+    awaited,
+    since: item.observedAt,
+    requiredAction: item.summary.trim(),
+    episodeId,
+    ...(capabilityKey === undefined ? {} : { capabilityKey }),
+    citations: [item.citationUrl],
+  };
+};
+
+const jiraAdvisoriesFor = (
+  episodeId: string,
+  items: readonly PeriodDeliveryEvidence[],
+  lifecycle: DeliveryEpisodeLifecycle,
+): readonly JiraHygieneAdvisory[] => {
+  const citations = items.map(({ citationUrl }) => citationUrl);
+  const jira = items.find((item) => item.source === "jira");
+  if (jira === undefined)
+    return [
+      {
+        kind: "missing_jira_item",
+        episodeId,
+        message: "Material work has no linked Jira item.",
+        citations,
+      },
+    ];
+  const context = jira.planning;
+  const advisories: JiraHygieneAdvisory[] = [];
+  const add = (kind: JiraHygieneAdvisory["kind"], message: string): void => {
+    advisories.push({ kind, episodeId, message, citations: [jira.citationUrl] });
+  };
+  if (jira.owner === undefined)
+    add("missing_owner", `${context?.externalKey ?? jira.title} has no Jira owner.`);
+  if (context?.sprint === undefined)
+    add("missing_sprint", `${context?.externalKey ?? jira.title} has no Jira sprint.`);
+  if (
+    items.some((item) => item.intent === "dependencies" || item.intent === "blockers") &&
+    context?.hasDependency !== true
+  )
+    add(
+      "missing_dependency",
+      `${context?.externalKey ?? jira.title} has an observed wait that is not recorded as a Jira dependency.`,
+    );
+  if (context?.hasAcceptanceInformation !== true)
+    add(
+      "missing_acceptance",
+      `${context?.externalKey ?? jira.title} has no recorded acceptance signal.`,
+    );
+  if ((lifecycle === "production" || lifecycle === "accepted") && jira.lifecycleState !== "done")
+    add(
+      "contradictory_status",
+      `${context?.externalKey ?? jira.title} is ${context?.status ?? "not done"} in Jira while delivery evidence has reached ${lifecycle}.`,
+    );
+  if (lifecycle === "accepted" && jira.lifecycleState === "done")
+    add(
+      "review_for_closure",
+      `${context?.externalKey ?? jira.title} should be reviewed for closure or archive.`,
+    );
+  return advisories;
+};
+
 export const validateCapabilityLedger = (value: CapabilityLedger): CapabilityLedger => {
   if (value.version !== 1 || value.capabilities.length === 0)
     throw new Error("Capability ledger must contain version 1 capabilities.");
@@ -248,6 +482,11 @@ export const validateCapabilityLedger = (value: CapabilityLedger): CapabilityLed
       throw new Error("Capability ledger contains an invalid key.");
     if (capability.title.trim() === "" || capability.aliases.length === 0)
       throw new Error("Capability ledger capabilities require a title and aliases.");
+    if (
+      capability.alignment !== undefined &&
+      !["governed_initiative", "operational_support"].includes(capability.alignment)
+    )
+      throw new Error("Capability ledger contains an invalid alignment.");
     if (keys.has(capability.key)) throw new Error("Capability ledger keys must be unique.");
     keys.add(capability.key);
   }
@@ -259,11 +498,19 @@ export const buildPeriodDeliveryReport = (input: {
   readonly items: readonly PeriodDeliveryEvidence[];
   readonly capabilityLedger: CapabilityLedger;
 }): PeriodDeliveryReport => {
-  const acceptedItems = input.items.filter(
-    (item) => item.selector === "period_census" && item.completionStage !== undefined,
+  const declaredIntentByCapability = new Map<string, PeriodDeliveryEvidence>();
+  for (const item of input.items.filter(
+    (candidate) => candidate.evidenceRole === "declared_intent" || candidate.source === "strategy",
+  )) {
+    const capabilityKey = capabilityMatchFor([item], input.capabilityLedger).keys[0];
+    if (capabilityKey !== undefined && !declaredIntentByCapability.has(capabilityKey))
+      declaredIntentByCapability.set(capabilityKey, item);
+  }
+  const materialItems = input.items.filter((item) =>
+    materialEvidence(item, input.capabilityLedger),
   );
   const groups = new Map<string, PeriodDeliveryEvidence[]>();
-  for (const item of acceptedItems) {
+  for (const item of materialItems) {
     const key = capsuleKey(item);
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
@@ -271,19 +518,43 @@ export const buildPeriodDeliveryReport = (input: {
   const capsules = [...groups.entries()]
     .map(([id, items]): ChangeCapsule => {
       const stage = completionStage(items);
+      const lifecycle = lifecycleFor(items);
       const capabilityMatch = capabilityMatchFor(items, input.capabilityLedger);
       capabilityMatches.set(id, capabilityMatch);
+      const capability = input.capabilityLedger.capabilities.find(({ key }) =>
+        capabilityMatch.keys.includes(key),
+      );
+      const declaredIntent =
+        capabilityMatch.keys[0] === undefined
+          ? undefined
+          : declaredIntentByCapability.get(capabilityMatch.keys[0]);
       const citations = [
         ...new Map(
           items.map((item) => [item.citationUrl, { source: item.source, url: item.citationUrl }]),
         ).values(),
       ];
-      const latestCompletion = items
-        .flatMap((item) => (item.observedAt === undefined ? [] : [item.observedAt]))
-        .sort((left, right) => Date.parse(right) - Date.parse(left))[0];
-      const completedAt =
-        latestCompletion ??
+      const latestActivityAt =
+        items
+          .flatMap((item) => (item.observedAt === undefined ? [] : [item.observedAt]))
+          .toSorted((left, right) => Date.parse(right) - Date.parse(left))[0] ??
         (input.census.boundary.kind === "absolute" ? input.census.boundary.toExclusive : "");
+      const alignment: DeliveryEpisodeAlignment =
+        capability === undefined
+          ? items.some(
+              (item) =>
+                item.intent === "requirements" ||
+                item.intent === "decisions" ||
+                /\bemerging|new requirement|requested\b/i.test(evidenceText(item)),
+            )
+            ? "emerging_requirement"
+            : "unaccounted_work"
+          : (capability.alignment ?? "governed_initiative");
+      const dependencies = items.flatMap((item) => {
+        const dependency = dependencyFor(item, id, capabilityMatch.keys[0]);
+        return dependency === undefined ? [] : [dependency];
+      });
+      const jiraAdvisories = jiraAdvisoriesFor(id, items, lifecycle);
+      const completedAt = stage === undefined ? undefined : latestActivityAt;
       return {
         id,
         title: items[0]?.title ?? id,
@@ -294,20 +565,36 @@ export const buildPeriodDeliveryReport = (input: {
             .toSorted((left, right) => right.length - left.length)[0] ??
           items[0]?.title ??
           id,
-        completedAt,
-        completionStage: stage,
+        latestActivityAt,
+        ...(completedAt === undefined ? {} : { completedAt }),
+        ...(stage === undefined ? {} : { completionStage: stage }),
+        lifecycleState: lifecycle,
+        alignment,
+        ...(capability === undefined
+          ? {}
+          : { initiativeTitle: declaredIntent?.title ?? capability.title }),
         capabilityKeys: capabilityMatch.keys,
+        owners: [
+          ...new Set(
+            items.flatMap((item) =>
+              item.owner?.displayName === undefined ? [] : [item.owner.displayName],
+            ),
+          ),
+        ],
         sources: [...new Set(items.map(({ source }) => source))].sort(),
         citations,
+        dependencies,
+        jiraAdvisories,
         chain: chainFor(
-          stage,
+          lifecycle,
           citations.map(({ url }) => url),
         ),
       };
     })
-    .sort(
+    .toSorted(
       (left, right) =>
-        Date.parse(right.completedAt) - Date.parse(left.completedAt) ||
+        lifecycleRank[right.lifecycleState] - lifecycleRank[left.lifecycleState] ||
+        Date.parse(right.latestActivityAt) - Date.parse(left.latestActivityAt) ||
         left.title.localeCompare(right.title),
     );
   const capabilitySections = input.capabilityLedger.capabilities
@@ -325,26 +612,39 @@ export const buildPeriodDeliveryReport = (input: {
           evidencedAliasIndexes.has(index) ? [alias.value] : [],
         ),
         capsules: orderForAliasCoverage(matching, capabilityMatches),
-        outcomes: [
-          {
-            evidenceClass: "unknown" as const,
-            statement:
-              "No authorized outcome measurement was linked to these delivery changes in the requested period.",
-            citations: [] as const,
-          },
-        ],
+        outcomes: [] as readonly OutcomeAssertion[],
       };
     })
     .filter(({ capsules: matching }) => matching.length > 0);
-  const unmappedCapsules = capsules.filter(({ capabilityKeys }) => capabilityKeys.length === 0);
+  const deliveredEpisodes = capsules.filter(
+    ({ lifecycleState }) => lifecycleState === "production" || lifecycleState === "accepted",
+  );
+  const inProgressEpisodes = capsules.filter(
+    ({ lifecycleState }) => lifecycleRank[lifecycleState] < lifecycleRank.production,
+  );
+  const dependencies = capsules.flatMap(({ dependencies: values }) => values);
+  const jiraAdvisories = capsules.flatMap(({ jiraAdvisories: values }) => values);
+  const decisionsNeeded = [
+    ...capsules
+      .filter(({ alignment }) => alignment === "emerging_requirement")
+      .map(({ title }) => `Confirm scope and initiative placement for ${title}.`),
+    ...jiraAdvisories.map(({ message }) => message),
+  ];
+  const unmappedCapsules = capsules.filter(({ alignment }) => alignment === "unaccounted_work");
   return {
     version: 1,
     census: input.census,
     capsules,
+    deliveredEpisodes,
+    inProgressEpisodes,
+    dependencies,
+    decisionsNeeded: [...new Set(decisionsNeeded)],
+    jiraAdvisories,
     capabilitySections,
     unmappedCapsules,
-    incompleteChainCount: capsules.filter(({ chain }) =>
-      chain.some(({ state }) => state === "missing"),
+    excludedImmaterialActivityCount: input.items.length - materialItems.length,
+    incompleteChainCount: capsules.filter(
+      ({ lifecycleState }) => lifecycleRank[lifecycleState] < lifecycleRank.accepted,
     ).length,
   };
 };
