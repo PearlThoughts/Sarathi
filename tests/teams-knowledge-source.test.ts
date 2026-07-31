@@ -214,6 +214,8 @@ describe("Teams knowledge source", () => {
 
   it("paginates an explicitly mapped meeting chat and builds contextual conversation windows", async () => {
     const requests: string[] = [];
+    const retryDelays: number[] = [];
+    let throttled = false;
     const fetcher = vi.fn(async (input: string | URL | Request): Promise<Response> => {
       const url = String(input);
       requests.push(url);
@@ -227,6 +229,13 @@ describe("Teams knowledge source", () => {
             }),
           ],
         });
+      if (!throttled) {
+        throttled = true;
+        return Response.json(
+          { error: { code: "TooManyRequests" } },
+          { status: 429, headers: { "Retry-After": "0" } },
+        );
+      }
       return Response.json({
         value: [
           message("chat-noise", "Recording has started. View the notes here.", {
@@ -271,11 +280,16 @@ describe("Teams knowledge source", () => {
       historySince: "2026-07-01T00:00:00.000Z",
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       fetcher,
+      retryDelay: async (milliseconds) => {
+        retryDelays.push(milliseconds);
+      },
     });
 
     const snapshot = await Effect.runPromise(source.readSnapshot("example"));
 
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
+    expect(requests[0]).toBe(requests[1]);
+    expect(retryDelays).toEqual([0]);
     expect(requests[0]).toContain("/v1.0/chats/19%3Ameeting_example%40thread.v2/messages");
     expect(requests[0]).toContain("%24top=50");
     expect(requests[0]).toContain("%24orderby=lastModifiedDateTime+desc");
@@ -314,5 +328,30 @@ describe("Teams knowledge source", () => {
       "Replying to Delivery Lead: Please test the publishing cron today.",
     );
     expect(JSON.stringify(snapshot.documents)).not.toContain("Recording has started");
+  });
+
+  it("fails closed after the bounded Microsoft Graph throttle retries are exhausted", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json(
+        { error: { code: "TooManyRequests" } },
+        { status: 429, headers: { "Retry-After": "0" } },
+      ),
+    );
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [],
+      chats: [chat()],
+      historySince: "2026-07-01T00:00:00.000Z",
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      fetcher,
+      retryDelay: async () => undefined,
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured Teams knowledge synchronization failed",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(5);
   });
 });
