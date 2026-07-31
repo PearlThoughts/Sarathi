@@ -27,7 +27,7 @@ const capabilityQuestions: readonly {
   { question: "Is anybody stuck?", intents: ["blockers"] },
   {
     question: "What did the team deliver last sprint, and what are they doing this week?",
-    intents: ["delivered", "current_work"],
+    intents: ["delivered", "goals", "commitments", "dependencies", "blockers", "current_work"],
   },
   { question: "Post the top 5 risks.", intents: ["risks"] },
   { question: "What issue keeps recurring?", intents: ["recurring"] },
