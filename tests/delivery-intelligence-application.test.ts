@@ -320,11 +320,10 @@ describe("delivery intelligence application", () => {
   });
 
   it("composes a sub-30-day report from completed changes and cross-source context", async () => {
-    let compositionAttempt = 0;
-    const compose = vi.fn<DeliveryAnswerComposer["compose"]>((_input) =>
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>((input) =>
       Effect.succeed({
         text:
-          compositionAttempt++ === 0
+          input.compositionAttempt === "full"
             ? "## Delivery report\nFirst composition omitted the required synthesis structure."
             : [
                 "## Delivered",
@@ -339,7 +338,7 @@ describe("delivery intelligence application", () => {
                 "- [PR](https://example.com/github/publishing-pr)",
               ].join("\n"),
         citations:
-          compositionAttempt === 1
+          input.compositionAttempt === "full"
             ? []
             : [{ label: "PR", url: "https://example.com/github/publishing-pr" }],
       }),
@@ -454,6 +453,10 @@ describe("delivery intelligence application", () => {
     );
 
     expect(compose).toHaveBeenCalledTimes(2);
+    expect(compose.mock.calls.map(([input]) => input.compositionAttempt)).toEqual([
+      "full",
+      "reduced",
+    ]);
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls[1]?.[0].question).toContain("Latest delivery state");
     expect(execute.mock.calls[1]?.[0].question).toContain("Atlas Site Composer");

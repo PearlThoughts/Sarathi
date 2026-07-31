@@ -15,6 +15,7 @@ describe("AI SDK delivery answer composer", () => {
     );
     const composer = createAiSdkDeliveryAnswerComposer({ generate });
     const input: Parameters<DeliveryAnswerComposer["compose"]>[0] = {
+      compositionAttempt: "full",
       workspaceId: "workspace",
       question: "What did we deliver in the last 30 days?",
       requestedAt: "2026-07-30T10:00:00.000Z",
@@ -241,5 +242,12 @@ describe("AI SDK delivery answer composer", () => {
         .slice(1)
         .every(({ excerpt, title }) => excerpt.length <= 900 && title.length <= 320),
     ).toBe(true);
+
+    await Effect.runPromise(composer.compose({ ...input, compositionAttempt: "reduced" }));
+
+    const reducedEnvelope = generate.mock.calls[1]?.[0];
+    expect(reducedEnvelope?.evidence).toHaveLength(19);
+    expect(reducedEnvelope?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(450);
+    expect(reducedEnvelope?.presentation?.episodes).toHaveLength(1);
   });
 });

@@ -179,7 +179,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain('"maxOutputTokens":12000');
   });
 
-  it("rejects verbose, uncited, and invented-citation answers before delivery", async () => {
+  it("classifies malformed or invalidly cited model output separately from provider failure", async () => {
     for (const text of [
       "Uncited answer.\nStill uncited.",
       "Claim. [Unknown](https://evil.example.test/x)\nNext. [Unknown](https://evil.example.test/x)",
@@ -188,9 +188,12 @@ describe("AI SDK OpenRouter answer generator", () => {
       const generator = createGroundedAnswerGenerator(configuration, undefined, () =>
         successfulModel(text),
       );
-      await expect(Effect.runPromise(generator.generate(envelope))).rejects.toThrow(
-        "OpenRouter answer generation is unavailable",
-      );
+      await expect(
+        Effect.runPromise(generator.generate(envelope).pipe(Effect.either)),
+      ).resolves.toMatchObject({
+        _tag: "Left",
+        left: { operation: "delivery-answer-composition-validation" },
+      });
     }
   });
 

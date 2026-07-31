@@ -8,10 +8,9 @@ const reportCapsuleTitleCharacters = 320;
 const reportCapsuleExcerptCharacters = 700;
 const supplementalTitleCharacters = 320;
 const supplementalExcerptCharacters = 900;
-const maximumSupplementalEvidence = 36;
-
 const balancedSupplementalEvidence = <Evidence extends { readonly source: string }>(
   evidence: readonly Evidence[],
+  maximumEvidence: number,
 ): readonly Evidence[] => {
   const sourceOrder = ["strategy", "vault", "teams", "github", "jira", "email", "intent"];
   const buckets = new Map(
@@ -22,13 +21,12 @@ const balancedSupplementalEvidence = <Evidence extends { readonly source: string
   );
   const selected: Evidence[] = [];
   while (
-    selected.length < maximumSupplementalEvidence &&
+    selected.length < maximumEvidence &&
     [...buckets.values()].some((remaining) => remaining.length > 0)
   )
     for (const source of sourceOrder) {
       const candidate = buckets.get(source)?.shift();
-      if (candidate !== undefined && selected.length < maximumSupplementalEvidence)
-        selected.push(candidate);
+      if (candidate !== undefined && selected.length < maximumEvidence) selected.push(candidate);
     }
   return selected;
 };
@@ -39,7 +37,8 @@ const reportEvidence = (
 ) => {
   const report = input.periodDeliveryReport;
   if (report === undefined) return [];
-  const maximumCapsules = 160;
+  const reduced = input.compositionAttempt === "reduced";
+  const maximumCapsules = reduced ? 60 : 160;
   const sections = report.capabilitySections.map((section) => ({
     section,
     remaining: [...section.capsules],
@@ -85,7 +84,7 @@ const reportEvidence = (
         ),
         excerpt: boundedContext(
           `${capsule.summary} Lifecycle: ${capsule.lifecycleState}. Alignment: ${capsule.alignment}. Owners: ${capsule.owners.join(", ") || "not recorded"}. Dependencies: ${capsule.dependencies.map(({ waiting, awaited, requiredAction }) => `${waiting} waits for ${awaited}; ${requiredAction}`).join(" | ") || "none observed"}. Jira advisories: ${capsule.jiraAdvisories.map(({ message }) => message).join(" | ") || "none"}.`,
-          reportCapsuleExcerptCharacters,
+          reduced ? 450 : reportCapsuleExcerptCharacters,
         ),
         occurredAt: capsule.latestActivityAt,
         updatedAt: capsule.latestActivityAt,
@@ -137,8 +136,10 @@ export const createAiSdkDeliveryAnswerComposer = (
     const reportUrls = new Set(reportInformation.map(({ sourceUrl }) => sourceUrl));
     const supplementalInformation = balancedSupplementalEvidence(
       itemInformation.filter((item) => !reportUrls.has(item.sourceUrl)),
+      input.compositionAttempt === "reduced" ? 18 : 36,
     );
     const report = input.periodDeliveryReport;
+    const reportEpisodeIds = new Set(reportInformation.map(({ sourceId }) => sourceId));
     return generator.generate({
       workspaceId: input.workspaceId,
       question: input.question,
@@ -175,17 +176,23 @@ export const createAiSdkDeliveryAnswerComposer = (
                 changeCount: section.capsules.length,
                 evidencedInitiatives: section.evidencedAliases,
               })),
-              episodes: report.capsules.map((episode) => ({
-                id: episode.id,
-                capability:
-                  report.capabilitySections.find(({ key }) => episode.capabilityKeys.includes(key))
-                    ?.title ?? "Unaccounted work",
-                initiative: episode.initiativeTitle,
-                title: episode.title,
-                lifecycleState: episode.lifecycleState,
-                alignment: episode.alignment,
-                owners: episode.owners,
-              })),
+              episodes: report.capsules
+                .filter(
+                  (episode) =>
+                    input.compositionAttempt === "full" || reportEpisodeIds.has(episode.id),
+                )
+                .map((episode) => ({
+                  id: episode.id,
+                  capability:
+                    report.capabilitySections.find(({ key }) =>
+                      episode.capabilityKeys.includes(key),
+                    )?.title ?? "Unaccounted work",
+                  initiative: episode.initiativeTitle,
+                  title: episode.title,
+                  lifecycleState: episode.lifecycleState,
+                  alignment: episode.alignment,
+                  owners: episode.owners,
+                })),
               dependencies: report.dependencies.map((dependency) => ({
                 waiting: dependency.waiting,
                 awaited: dependency.awaited,
