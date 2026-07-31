@@ -183,6 +183,59 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain('"maxOutputTokens":12000');
   });
 
+  it("deduplicates repeated report references by authorized URL", async () => {
+    const originalEvidence = envelope.evidence[0];
+    if (originalEvidence === undefined) throw new Error("Expected report evidence fixture");
+    const model = successfulModel(
+      [
+        "## Delivered",
+        "- Publishing now carries SEO metadata through release.",
+        "## In progress",
+        "- No active work.",
+        "## Waiting or blocked",
+        "- No active waits.",
+        "## Decisions needed",
+        "- No decisions.",
+        "## References",
+        "- [R1]",
+        "- [R2]",
+      ].join("\n"),
+    );
+    const generator = createGroundedAnswerGenerator(configuration, undefined, () => model);
+    const result = await Effect.runPromise(
+      generator.generate({
+        ...envelope,
+        evidence: [...envelope.evidence, { ...originalEvidence, sourceId: "DEMO-754-duplicate" }],
+        presentation: {
+          kind: "delivery_report" as const,
+          period: {
+            kind: "absolute" as const,
+            fromInclusive: "2026-07-01T00:00:00.000Z",
+            toExclusive: "2026-07-31T00:00:00.000Z",
+            timeZone: "Asia/Kolkata",
+          },
+          coverage: {
+            complete: true,
+            examinedRecords: 2,
+            acceptedChanges: 1,
+            duplicateRecords: 1,
+            excludedRecords: 0,
+            unmappedChanges: 0,
+            unavailableSources: [],
+          },
+          capabilitySections: [],
+          episodes: [],
+          dependencies: [],
+          decisionsNeeded: [],
+          jiraAdvisories: [],
+        },
+      }),
+    );
+
+    expect(result.citations).toMatchObject([{ url: "https://jira.example.test/DEMO-754" }]);
+    expect(result.text.match(/https:\/\/jira\.example\.test\/DEMO-754/g)).toHaveLength(1);
+  });
+
   it("classifies malformed or invalidly cited model output separately from provider failure", async () => {
     for (const text of [
       "Uncited answer.\nStill uncited.",

@@ -111,6 +111,7 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-composer-citation-unknown":
     case "report-composition-citation-placement":
     case "report-composition-prohibited-prose":
+    case "report-composition-identifier-inventory":
     case "report-composition-invalid":
       return error.operation;
     default:
@@ -1056,6 +1057,17 @@ const composeWithModel = (
               )
                 invalidReport("report-composition-prohibited-prose");
               const referencesAt = text.indexOf("## References");
+              const reportBody = text.slice(0, referencesAt);
+              const inlineJiraIdentifiers = [
+                ...reportBody.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g),
+              ].flatMap((match) => (match[0] === undefined ? [] : [match[0]]));
+              if (
+                new Set(inlineJiraIdentifiers).size > 5 ||
+                reportBody
+                  .split(/\r?\n/)
+                  .some((line) => new Set(line.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []).size > 2)
+              )
+                invalidReport("report-composition-identifier-inventory");
               if (
                 composed.citations.some(
                   ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
