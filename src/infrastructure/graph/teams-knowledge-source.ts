@@ -52,6 +52,7 @@ export type TeamsKnowledgeSourceConfiguration = {
   readonly botApplicationId?: string | undefined;
   readonly now?: (() => Date) | undefined;
   readonly fetcher?: Fetcher | undefined;
+  readonly retryDelay?: ((milliseconds: number) => Promise<void>) | undefined;
 };
 
 type TeamsIdentity = {
@@ -232,6 +233,18 @@ const validGraphNextLink = (value: string): string => {
   return url.toString();
 };
 
+const retryAfterMilliseconds = (response: Response, now: Date): number => {
+  const value = response.headers.get("Retry-After");
+  if (value === null) return 1_000;
+  const seconds = Number(value);
+  const milliseconds = Number.isFinite(seconds)
+    ? seconds * 1_000
+    : Date.parse(value) - now.getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 60_000)
+    throw new Error("Teams throttling returned an invalid retry interval.");
+  return milliseconds;
+};
+
 const readPages = async (
   configuration: TeamsKnowledgeSourceConfiguration,
   accessToken: string,
@@ -242,13 +255,26 @@ const readPages = async (
   const values: TeamsMessage[] = [];
   let next: string | undefined = initialUrl;
   let pages = 0;
+  let throttleRetries = 0;
   while (next !== undefined) {
     if (pages >= maximumPages)
       throw new Error("Teams message pagination exceeded its safety bound.");
     const response = await (configuration.fetcher ?? fetch)(next, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
+    if (response.status === 429) {
+      if (throttleRetries >= 4)
+        throw new Error("Teams message pagination exceeded its throttle retry bound.");
+      const delay = retryAfterMilliseconds(response, configuration.now?.() ?? new Date());
+      await (
+        configuration.retryDelay ??
+        ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
+      )(delay);
+      throttleRetries += 1;
+      continue;
+    }
     if (!response.ok) throw new Error(`Teams knowledge read failed with HTTP ${response.status}.`);
+    throttleRetries = 0;
     const page = (await response.json()) as TeamsPage;
     const pageValues = page.value ?? [];
     values.push(...pageValues);
