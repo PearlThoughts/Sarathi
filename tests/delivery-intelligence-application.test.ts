@@ -2610,5 +2610,41 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("Raw deterministic capsule inventory");
     expect(answer.text).not.toContain("outside.example.test");
     expect(answer.acceptance.passed).toBe(false);
+
+    const identifierInventory = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: {
+          compose: () =>
+            Effect.succeed({
+              text: [
+                "## Delivered",
+                "- Release capability shipped across DEMO-1, DEMO-2, DEMO-3, DEMO-4, DEMO-5, and DEMO-6.",
+                "## In progress",
+                "- None.",
+                "## Waiting or blocked",
+                "- None.",
+                "## Decisions needed",
+                "- None.",
+                "## References",
+                "- [Jira](https://example.com/jira/DEMO-91)",
+              ].join("\n"),
+              citations: [{ label: "Jira", url: "https://example.com/jira/DEMO-91" }],
+            }),
+        },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [{ key: "release", title: "Release", aliases: [{ value: "DEMO-91" }] }],
+        },
+      }).answer({ ...request, question: "What was delivered last week?" }),
+    );
+
+    expect(identifierInventory.status).toBe("failed");
+    expect(identifierInventory.failure).toMatchObject({
+      classification: "SARATHI-REPORT-COMPOSITION-INVALID",
+      diagnosticCode: "report-composition-identifier-inventory",
+    });
+    expect(identifierInventory.text).not.toContain("DEMO-1");
+    expect(identifierInventory.acceptance.passed).toBe(false);
   });
 });

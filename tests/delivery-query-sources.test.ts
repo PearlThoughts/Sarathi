@@ -1379,18 +1379,7 @@ describe("delivery intelligence live query sources", () => {
           changelogRequests += 1;
           return Response.json({
             values: url.includes("DEMO-42")
-              ? [
-                  {
-                    created: "2026-07-13T09:00:00.000Z",
-                    items: [
-                      {
-                        field: "Sprint",
-                        fromString: null,
-                        toString: "Delivery Sprint 8",
-                      },
-                    ],
-                  },
-                ]
+              ? []
               : [
                   {
                     created: "2026-07-20T09:00:00.000Z",

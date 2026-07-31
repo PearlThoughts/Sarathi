@@ -228,6 +228,7 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-composer-citation-unknown"
           | "report-composition-citation-placement"
           | "report-composition-prohibited-prose"
+          | "report-composition-identifier-inventory"
           | "report-composition-invalid"
           | "report-quality"
           | undefined;

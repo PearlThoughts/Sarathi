@@ -415,17 +415,20 @@ const planningForSprint = (
   const plannedAtPreviousStart =
     previous !== undefined &&
     previous.startDate !== undefined &&
-    histories.some(
-      (history) =>
-        history.created !== undefined &&
-        Date.parse(history.created) <= Date.parse(previous.startDate ?? "") &&
-        (history.items ?? []).some(
-          (change) =>
-            change.field?.toLowerCase() === "sprint" &&
-            (change.toString ?? "").includes(previous.name ?? "") &&
-            !(change.fromString ?? "").includes(previous.name ?? ""),
-        ),
-    );
+    !addedDuringPrevious &&
+    ((issue.fields?.created !== undefined &&
+      Date.parse(issue.fields.created) <= Date.parse(previous.startDate)) ||
+      histories.some(
+        (history) =>
+          history.created !== undefined &&
+          Date.parse(history.created) <= Date.parse(previous.startDate ?? "") &&
+          (history.items ?? []).some(
+            (change) =>
+              change.field?.toLowerCase() === "sprint" &&
+              (change.toString ?? "").includes(previous.name ?? "") &&
+              !(change.fromString ?? "").includes(previous.name ?? ""),
+          ),
+      ));
   const rolledIntoCurrent =
     previous !== undefined &&
     current !== undefined &&
