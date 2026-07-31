@@ -1022,21 +1022,25 @@ const composeWithModel = (
               )
                 invalidReport("report-composition-prohibited-prose");
               const referencesAt = text.indexOf("## References");
-              const citedUrls = [...text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
-                match[1] === undefined ? [] : [match[1]],
-              );
-              if (citedUrls.some((url) => !allowedCitationUrls.has(url)))
-                invalidReport("report-composition-text-citation-unknown");
-              if ([...text.slice(0, referencesAt).matchAll(/\]\((https:\/\/[^)]+)\)/g)].length > 0)
-                invalidReport("report-composition-citation-placement");
-              if (allowedCitationUrls.size > 0 && citedUrls.length === 0)
-                invalidReport("report-composition-citations-missing");
               if (
                 composed.citations.some(
                   ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
                 )
               )
                 invalidReport("report-composition-composer-citation-unknown");
+              if (text.slice(0, referencesAt).includes("](https://"))
+                invalidReport("report-composition-citation-placement");
+              const referenceFooter = text.slice(referencesAt);
+              if (composed.citations.some(({ url }) => !referenceFooter.includes(`](${url})`)))
+                invalidReport("report-composition-text-citation-unknown");
+              const unmatchedReferenceFooter = composed.citations.reduce(
+                (footer, { url }) => footer.replaceAll(`](${url})`, "]"),
+                referenceFooter,
+              );
+              if (unmatchedReferenceFooter.includes("](https://"))
+                invalidReport("report-composition-text-citation-unknown");
+              if (allowedCitationUrls.size > 0 && composed.citations.length === 0)
+                invalidReport("report-composition-citations-missing");
               return {
                 ...deterministic,
                 text,
@@ -1188,9 +1192,11 @@ const responseAcceptance = (
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
   ]);
-  const linkedUrls = [...answer.text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
-    match[1] === undefined ? [] : [match[1]],
-  );
+  const linkedUrls = structuredReportProduct
+    ? answer.citations.flatMap(({ url }) => (answer.text.includes(`](${url})`) ? [url] : []))
+    : [...answer.text.matchAll(/\]\((https:\/\/[^)]+)\)/g)].flatMap((match) =>
+        match[1] === undefined ? [] : [match[1]],
+      );
   const evaluatedItems = result.items.filter((item) => answer.text.includes(item.citationUrl));
   const requestedAt = Date.parse(request.requestedAt);
   const freshEvidence = evaluatedItems.filter((item) => {

@@ -335,12 +335,12 @@ describe("delivery intelligence application", () => {
                 "## Decisions needed",
                 "- No decisions.",
                 "## References",
-                "- [PR](https://example.com/github/publishing-pr)",
+                "- [PR](https://example.com/github/publishing-pr(release))",
               ].join("\n"),
         citations:
           input.compositionAttempt === "full"
             ? []
-            : [{ label: "PR", url: "https://example.com/github/publishing-pr" }],
+            : [{ label: "PR", url: "https://example.com/github/publishing-pr(release)" }],
       }),
     );
     const execute = vi.fn<DeliveryQuerySource["execute"]>((context) =>
@@ -368,6 +368,7 @@ describe("delivery intelligence application", () => {
                 selector: "period_census",
                 completionStage: "merged",
                 subjectAliases: ["SEO publishing"],
+                citationUrl: "https://example.com/github/publishing-pr(release)",
               },
               {
                 ...item(
@@ -479,7 +480,9 @@ describe("delivery intelligence application", () => {
       mode: "deep_dive",
       product: "period_delivery_brief",
       formatPassed: true,
+      citationPassed: true,
       groundingPassed: true,
+      passed: true,
     });
   });
 
@@ -2528,7 +2531,7 @@ describe("delivery intelligence application", () => {
     expect(compose).toHaveBeenCalledTimes(2);
     expect(answer.status).toBe("failed");
     expect(answer.failure?.classification).toBe("SARATHI-REPORT-COMPOSITION-INVALID");
-    expect(answer.failure?.diagnosticCode).toBe("report-composition-text-citation-unknown");
+    expect(answer.failure?.diagnosticCode).toBe("report-composition-composer-citation-unknown");
     expect(answer.text).not.toContain("Raw deterministic capsule inventory");
     expect(answer.text).not.toContain("outside.example.test");
     expect(answer.acceptance.passed).toBe(false);
