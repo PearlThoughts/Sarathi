@@ -221,6 +221,8 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-citation-unknown"
           | "report-composition-citation-url-unknown"
           | "report-composition-reference-id-unknown"
+          | "report-composition-text-citation-unknown"
+          | "report-composition-composer-citation-unknown"
           | "report-composition-citation-placement"
           | "report-composition-prohibited-prose"
           | "report-composition-invalid"
