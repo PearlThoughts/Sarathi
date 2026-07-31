@@ -97,9 +97,18 @@ const capabilityReportComposer: DeliveryAnswerComposer = {
           "## Sprint overview",
           `- ${sprintLabel(review.previousSprint, "Previous sprint")} closed; ${sprintLabel(review.currentSprint, "Current sprint")} is active.`,
           "## Previous sprint",
-          ...review.completedDuringSprint.map(({ title }) => `- **Delivered:** ${title}`),
-          ...review.rolledIntoCurrent.map(({ title }) => `- **Rolled over:** ${title}`),
-          ...review.addedDuringSprint.map(({ title }) => `- **Added during sprint:** ${title}`),
+          ...(review.plannedAtStart.length === 0
+            ? ["- **Planned at start:** No committed work was observed."]
+            : review.plannedAtStart.map(({ title }) => `- **Planned at start:** ${title}`)),
+          ...(review.completedDuringSprint.length === 0
+            ? ["- **Delivered:** No completed work was observed."]
+            : review.completedDuringSprint.map(({ title }) => `- **Delivered:** ${title}`)),
+          ...(review.rolledIntoCurrent.length === 0
+            ? ["- **Rolled over:** No rollover was observed."]
+            : review.rolledIntoCurrent.map(({ title }) => `- **Rolled over:** ${title}`)),
+          ...(review.addedDuringSprint.length === 0
+            ? ["- **Added during sprint:** No material addition was observed."]
+            : review.addedDuringSprint.map(({ title }) => `- **Added during sprint:** ${title}`)),
           ...(review.dropped.length === 0
             ? ["- No dropped or superseded work was observed."]
             : review.dropped.map(({ title }) => `- **Dropped:** ${title}`)),
