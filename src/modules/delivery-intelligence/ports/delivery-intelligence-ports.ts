@@ -219,6 +219,8 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-initiative-identity"
           | "report-composition-citations-missing"
           | "report-composition-citation-unknown"
+          | "report-composition-citation-url-unknown"
+          | "report-composition-reference-id-unknown"
           | "report-composition-citation-placement"
           | "report-composition-prohibited-prose"
           | "report-composition-invalid"
