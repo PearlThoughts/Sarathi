@@ -80,17 +80,17 @@ const reportEvidence = (
         sourceId: capsule.id,
         sourceUrl: citation.url,
         title: boundedContext(
-          `Completed change — ${section.title}: ${capsule.title}`,
+          `Delivery episode — ${section.title}: ${capsule.title}`,
           reportCapsuleTitleCharacters,
         ),
         excerpt: boundedContext(
-          `${capsule.summary} Completion evidence: ${capsule.completionStage}. Contributing sources: ${capsule.sources.join(", ")}.`,
+          `${capsule.summary} Lifecycle: ${capsule.lifecycleState}. Alignment: ${capsule.alignment}. Owners: ${capsule.owners.join(", ") || "not recorded"}. Dependencies: ${capsule.dependencies.map(({ waiting, awaited, requiredAction }) => `${waiting} waits for ${awaited}; ${requiredAction}`).join(" | ") || "none observed"}. Jira advisories: ${capsule.jiraAdvisories.map(({ message }) => message).join(" | ") || "none"}.`,
           reportCapsuleExcerptCharacters,
         ),
-        occurredAt: capsule.completedAt,
-        updatedAt: capsule.completedAt,
+        occurredAt: capsule.latestActivityAt,
+        updatedAt: capsule.latestActivityAt,
         sensitivity: "internal" as const,
-        freshness: freshness(capsule.completedAt),
+        freshness: freshness(capsule.latestActivityAt),
       },
     ];
   });
@@ -174,6 +174,30 @@ export const createAiSdkDeliveryAnswerComposer = (
                 title: section.title,
                 changeCount: section.capsules.length,
                 evidencedInitiatives: section.evidencedAliases,
+              })),
+              episodes: report.capsules.map((episode) => ({
+                id: episode.id,
+                capability:
+                  report.capabilitySections.find(({ key }) => episode.capabilityKeys.includes(key))
+                    ?.title ?? "Unaccounted work",
+                initiative: episode.initiativeTitle,
+                title: episode.title,
+                lifecycleState: episode.lifecycleState,
+                alignment: episode.alignment,
+                owners: episode.owners,
+              })),
+              dependencies: report.dependencies.map((dependency) => ({
+                waiting: dependency.waiting,
+                awaited: dependency.awaited,
+                since: dependency.since,
+                requiredAction: dependency.requiredAction,
+                episodeId: dependency.episodeId,
+              })),
+              decisionsNeeded: report.decisionsNeeded,
+              jiraAdvisories: report.jiraAdvisories.map(({ kind, episodeId, message }) => ({
+                kind,
+                episodeId,
+                message,
               })),
             },
           }),

@@ -142,6 +142,12 @@ describe("delivery intelligence application", () => {
     const answer = await Effect.runPromise(
       createDeliveryAssistant({
         sources: [source],
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            { key: "delivery", title: "Delivery capability", aliases: [{ value: "delivery" }] },
+          ],
+        },
         now: () => new Date(request.requestedAt),
       }).answer({
         ...request,
@@ -168,7 +174,7 @@ describe("delivery intelligence application", () => {
       },
     });
     expect(answer.text).toContain("## Delivered");
-    expect(answer.text).toContain("### References");
+    expect(answer.text).toContain("## References");
     expect(answer.text).not.toContain("Coverage");
     expect(execute.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
@@ -193,9 +199,14 @@ describe("delivery intelligence application", () => {
           compositionAttempt++ === 0
             ? "## Delivery report\nFirst composition omitted the required synthesis structure."
             : [
-                "## What the team delivered",
-                "### Atlas Site Composer",
+                "## Delivered",
                 "- SEO publishing moved through implementation, while the Vault record preserves the product rationale.",
+                "## In progress",
+                "- No active work.",
+                "## Waiting or blocked",
+                "- No active waits.",
+                "## Decisions needed",
+                "- No decisions.",
                 "## References",
                 "- [PR](https://example.com/github/publishing-pr)",
               ].join("\n"),
@@ -206,7 +217,7 @@ describe("delivery intelligence application", () => {
       }),
     );
     const execute = vi.fn<DeliveryQuerySource["execute"]>((context) =>
-      context.question.startsWith("Project rationale")
+      context.question.startsWith("Latest delivery state")
         ? Effect.succeed({
             items: [
               {
@@ -307,9 +318,7 @@ describe("delivery intelligence application", () => {
 
     expect(compose).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute.mock.calls[1]?.[0].question).toContain(
-      "Project rationale, customer or business outcome",
-    );
+    expect(execute.mock.calls[1]?.[0].question).toContain("Latest delivery state");
     expect(execute.mock.calls[1]?.[0].question).toContain("Atlas Site Composer");
     expect(compose.mock.calls[0]?.[0]).toMatchObject({
       responseProduct: "period_delivery_brief",
@@ -322,7 +331,7 @@ describe("delivery intelligence application", () => {
       "teams",
       "vault",
     ]);
-    expect(answer.text).toContain("## What the team delivered");
+    expect(answer.text).toContain("## Delivered");
     expect(answer.text).toContain("Vault record preserves the product rationale");
     expect(answer.text.split(/\r?\n/).length).toBeGreaterThan(3);
     expect(answer.acceptance).toMatchObject({
@@ -449,16 +458,148 @@ describe("delivery intelligence application", () => {
         passed: true,
       },
     });
-    expect(answer.text).toContain("## What the team delivered");
+    expect(answer.text).toContain("## Delivered");
     expect(answer.text).toContain("**Period:** 1 Apr 2026 – 30 Jun 2026 (Asia/Kolkata)");
-    expect(answer.text).toContain("### 1. SEO improvements");
+    expect(answer.text).toContain("**SEO improvements**");
     expect(answer.text).toContain("## References");
     expect(answer.text).not.toContain("evidence");
     expect(answer.text).not.toContain("Business impact");
     expect(answer.text).not.toContain("Gaps and unknowns");
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");
-    expect(answer.text.match(/- \*\*SEO metadata publishing\*\*/g)).toHaveLength(1);
+    expect(answer.text.match(/- \*\*SEO improvements\*\*/g)).toHaveLength(1);
+  });
+
+  it("reconstructs a capability episode with lifecycle, dependency, and advisory Jira hygiene", async () => {
+    const periodCensus = compilePeriodCensus({
+      boundary: {
+        kind: "absolute",
+        fromInclusive: "2026-07-12T18:30:00.000Z",
+        toExclusive: "2026-07-19T18:30:00.000Z",
+      },
+      timeZone: "Asia/Kolkata",
+      candidates: [],
+      configuredSources: ["github", "jira"],
+      sourceCheckpoints: new Map([
+        ["github", "2026-07-19T17:00:00.000Z"],
+        ["jira", "2026-07-19T17:00:00.000Z"],
+      ]),
+      pageSize: 200,
+      pagesRead: 1,
+      paginationExhausted: true,
+      maximumCandidates: 50_000,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "relations", "observations", "period_census", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item(
+                "github",
+                "lead-routing-release",
+                "PROJ-101 deployed the lead-routing dashboard to production",
+                "delivered",
+              ),
+              selector: "period_census" as const,
+              completionStage: "deployed" as const,
+              dedupeKey: "github:lead-routing-release",
+            },
+            {
+              ...item(
+                "jira",
+                "PROJ-101-current",
+                "PROJ-101 In Progress: lead-routing dashboard",
+                "current_work",
+              ),
+              lifecycleState: "active" as const,
+              owner: { source: "jira" as const, displayName: "Pavithra" },
+              planning: {
+                externalKey: "PROJ-101",
+                status: "In Progress",
+                sprint: "Delivery Sprint 8",
+                hasDependency: true,
+                hasAcceptanceInformation: false,
+              },
+            },
+            {
+              ...item(
+                "strategy",
+                "q3-lead-response",
+                "Q3 faster lead response through the lead-routing dashboard",
+                "goals",
+              ),
+              evidenceRole: "declared_intent" as const,
+            },
+            {
+              ...item(
+                "jira",
+                "PROJ-101-dependency",
+                "PROJ-101 (Pavithra) waits on PROJ-102 (Arun): QA sign-off for the lead-routing dashboard",
+                "dependencies",
+              ),
+              owner: { source: "jira" as const, displayName: "Pavithra" },
+              planning: {
+                externalKey: "PROJ-101",
+                status: "In Progress",
+                sprint: "Delivery Sprint 8",
+                hasDependency: true,
+                hasAcceptanceInformation: false,
+              },
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+          periodCensus,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        capabilityLedger: {
+          version: 1,
+          capabilities: [
+            {
+              key: "lead-routing-dashboard",
+              title: "Lead-routing dashboard",
+              aliases: [{ value: "lead-routing dashboard" }],
+            },
+          ],
+        },
+      }).answer({
+        ...request,
+        question: "What did we deliver last week?",
+      }),
+    );
+
+    expect(answer.periodDeliveryReport).toMatchObject({
+      deliveredEpisodes: [
+        {
+          lifecycleState: "production",
+          alignment: "governed_initiative",
+          initiativeTitle: "Q3 faster lead response through the lead-routing dashboard",
+          capabilityKeys: ["lead-routing-dashboard"],
+        },
+      ],
+      dependencies: [expect.objectContaining({ waiting: "Pavithra", awaited: "Arun" })],
+      jiraAdvisories: expect.arrayContaining([
+        expect.objectContaining({ kind: "contradictory_status" }),
+        expect.objectContaining({ kind: "missing_acceptance" }),
+      ]),
+    });
+    for (const heading of [
+      "## Delivered",
+      "## In progress",
+      "## Waiting or blocked",
+      "## Decisions needed",
+      "## References",
+    ])
+      expect(answer.text).toContain(heading);
+    expect(answer.text).toContain("Pavithra is waiting for Arun");
+    expect(answer.text).not.toContain("coverage");
   });
 
   it("assigns an initiative to one primary capability without a fixed three-item cap", async () => {
@@ -540,9 +681,9 @@ describe("delivery intelligence application", () => {
     expect(answer.periodDeliveryReport?.capabilitySections).toHaveLength(1);
     expect(answer.periodDeliveryReport?.capabilitySections[0]?.key).toBe("compliance-technology");
     expect(answer.text).not.toContain("**Website Builder enhancements**");
-    expect(answer.text.match(/- \*\*builder dependency hardening/g)).toHaveLength(5);
+    expect(answer.text.match(/- \*\*Compliance and technology updates\*\*/g)).toHaveLength(5);
     expect(answer.text).not.toContain("additional changes");
-    expect(answer.text).toContain("### 1. Compliance and technology updates");
+    expect(answer.text).toContain("## In progress");
     expect(answer.text).not.toContain("coverage");
     expect(answer.citations).toHaveLength(5);
   });

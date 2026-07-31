@@ -109,12 +109,16 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 
-  it("produces an unconstrained delivery-manager synthesis for period reports", async () => {
+  it("produces a capability-first delivery-manager synthesis for period reports", async () => {
     const text = [
-      "## What the team delivered",
-      "### Atlas Site Composer",
+      "## Delivered",
       "- Publishing now carries SEO metadata through release.",
-      "",
+      "## In progress",
+      "- No active work.",
+      "## Waiting or blocked",
+      "- No active waits.",
+      "## Decisions needed",
+      "- No decisions.",
       "## References",
       "- [Jira](https://jira.example.test/DEMO-754)",
     ].join("\n");
@@ -146,6 +150,19 @@ describe("AI SDK OpenRouter answer generator", () => {
             evidencedInitiatives: ["SEO publishing"],
           },
         ],
+        episodes: [
+          {
+            id: "episode-1",
+            capability: "Atlas Site Composer",
+            title: "SEO publishing",
+            lifecycleState: "production" as const,
+            alignment: "governed_initiative" as const,
+            owners: [],
+          },
+        ],
+        dependencies: [],
+        decisionsNeeded: [],
+        jiraAdvisories: [],
       },
     };
 
@@ -157,7 +174,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain("experienced delivery manager");
     expect(request).toContain("acceptedChanges");
     expect(request).toContain("Atlas Site Composer");
-    expect(request).toContain("Do not impose a line-count");
+    expect(request).toContain("Synthesize the supplied multi-source delivery episodes");
     expect(request).not.toContain("Finish with exactly one numbered");
     expect(request).toContain('"maxOutputTokens":12000');
   });
