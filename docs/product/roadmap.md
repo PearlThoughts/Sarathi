@@ -2,13 +2,15 @@
 
 Sarathi is currently a work in progress. The roadmap is intentionally wedge-first.
 
-## Now: Docs And Skeleton
+## Now: Recent Delivery Understanding
 
-- Make the product idea public and reviewable.
-- Publish why/what/how docs.
-- Publish example workspace and policy artifacts.
-- Keep skeleton code honest about what exists.
-- Ask delivery managers and software teams for feedback.
+- Consolidate 24-hour, 7-day, and 30-day work signals into capability-level delivery episodes.
+- Use governed initiatives and product capabilities as the report hierarchy instead of source-system vocabulary.
+- Reconstruct delivery state across implementation, QA, production, and acceptance.
+- Track who is waiting for whom, the requested action, and the affected initiative.
+- Treat unaccounted work and Jira disagreement as reviewable operating signals.
+- Render compact Teams-native answers with links after the narrative rather than interleaved source listings.
+- Compare the result with delivery-manager-authored updates and use the gap to guide product work.
 
 ## Wedge: PM-Reviewed Delivery Review
 

@@ -5,9 +5,11 @@
   "architecture": {
     "overview": "docs/architecture/overview.md",
     "operatingThesis": "docs/product/operating-thesis.md",
+    "deliveryCoordination": "docs/product/delivery-coordination.md",
     "moduleBoundaries": "docs/architecture/module-boundaries.md",
     "identityBoundaries": "docs/architecture/identity-and-boundaries.md",
     "workspaceCapabilities": "docs/architecture/workspace-capability-model.md",
+    "deliverySynthesis": "docs/architecture/delivery-synthesis.md",
     "productionReadiness": "docs/standards/production-readiness.md",
     "workspaceOverlay": "docs/implementation/workspace-overlay.md"
   },

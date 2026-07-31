@@ -11,6 +11,7 @@ Sarathi documentation has two audiences:
 - [Why Sarathi](product/why.md) explains the delivery coordination problem.
 - [What Sarathi Is](product/what.md) defines the AI Delivery Assistant role and visible coordination surfaces.
 - [Strategic Execution Advisor](product/strategic-execution-advisor.md) defines the long-term intent/evidence/accountability control plane.
+- [Delivery Coordination](product/delivery-coordination.md) defines the capability-first 24-hour, 7-day, and 30-day product experience.
 - [How Sarathi Works](product/how.md) describes workspaces, policy repo, evidence plane, and learning.
 - [Roles And Boundaries](product/roles-and-boundaries.md) separates team-visible, PM/leadership, and agent scopes.
 - [Market Positioning](product/market-positioning.md) compares Sarathi with Claude Tag, enterprise AI assistants, AI SRE, delivery analytics, standup bots, and coding agents.
@@ -26,6 +27,7 @@ Sarathi documentation has two audiences:
 - [Identity And Boundaries](architecture/identity-and-boundaries.md) explains the Better Auth/Sarathi policy split.
 - [Workspace Operating Model](architecture/workspace-operating-model.md) defines single-tenant organization and multi-workspace boundaries.
 - [Intent And Evidence Graph](architecture/intent-evidence-graph.md) defines the core relational graph model.
+- [Delivery Synthesis Architecture](architecture/delivery-synthesis.md) defines source roles, delivery episodes, lifecycle reconstruction, dependency intelligence, and answer composition.
 - [Workspace Overlay](implementation/workspace-overlay.md) documents the Teams/Linear/GitHub model.
 - [Strategic Execution Loop](implementation/strategic-execution-loop.md) specifies observe, infer, ratify, publish, verify, chase, and review.
 - [Public And Private Boundary](implementation/public-private-boundary.md) defines what belongs in the open repo versus private workspace packs and vaults.
@@ -33,10 +35,16 @@ Sarathi documentation has two audiences:
 - [ADR 0005](adr/0005-single-runtime-private-overlays.md) records the single-runtime and private-overlay decision.
 - [Test Index](../tests/TEST-INDEX.md) lists verification commands and test scope.
 
-## Current Capabilities
+## Current Platform Capabilities
 
 - Compile a workspace model from observed source systems and explicit YAML overlays.
 - Keep identity membership separate from sensitivity and model-egress policy.
 - Expose a Hono API for health, foundation discovery, and workspace-model preview.
 - Declare the AI Delivery Assistant role, team maturity dials, policy artifacts, and storage split as public domain contracts.
 - Define strategic execution control-plane requirements, workspace packs, intent/evidence graph, and ratified accountability loops.
+- Synchronize Microsoft Teams standard channels and explicitly mapped meeting or group chats, including quoted-message context and bounded provider throttling.
+- Maintain workspace-scoped delivery objects, claims, relations, knowledge passages, and source checkpoints in PostgreSQL.
+
+## Product Direction
+
+The next product outcome is not broader source enumeration. It is capability-first delivery understanding: consolidate recent activity into delivery episodes, map it to governed initiatives, reconstruct current delivery state, identify human dependencies, and render concise 24-hour, 7-day, and 30-day operating updates.
