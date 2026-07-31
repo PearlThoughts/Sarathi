@@ -216,6 +216,8 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-empty"
           | "report-composition-structure"
           | "report-sprint-projection-missing"
+          | "report-sprint-previous-metadata-missing"
+          | "report-sprint-current-metadata-missing"
           | "report-composition-sprint-identity"
           | "report-composition-initiative-identity"
           | "report-composition-citations-missing"

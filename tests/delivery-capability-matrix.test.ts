@@ -46,7 +46,18 @@ const reportComposer: DeliveryAnswerComposer = {
     ): string =>
       sprint === undefined
         ? fallback
-        : `${sprint.name} (${sprint.startAt?.slice(0, 10) ?? "start unknown"} to ${sprint.endAt?.slice(0, 10) ?? "end unknown"})`;
+        : `${sprint.name} (${[sprint.startAt, sprint.endAt]
+            .map((value) =>
+              value === undefined
+                ? "date unknown"
+                : new Intl.DateTimeFormat("en-GB", {
+                    timeZone: "Asia/Kolkata",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  }).format(new Date(value)),
+            )
+            .join(" to ")})`;
     return Effect.succeed({
       text:
         review === undefined

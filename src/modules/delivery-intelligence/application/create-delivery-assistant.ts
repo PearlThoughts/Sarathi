@@ -99,6 +99,8 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-empty":
     case "report-composition-structure":
     case "report-sprint-projection-missing":
+    case "report-sprint-previous-metadata-missing":
+    case "report-sprint-current-metadata-missing":
     case "report-composition-sprint-identity":
     case "report-composition-initiative-identity":
     case "report-composition-citations-missing":
@@ -925,6 +927,22 @@ const composeWithModel = (
     return Effect.succeed(
       reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED", "report-sprint-projection-missing"),
     );
+  if (reportComposition && requiresSprintReview) {
+    const review = result.periodDeliveryReport?.sprintReview;
+    for (const [sprint, diagnosticCode] of [
+      [review?.previousSprint, "report-sprint-previous-metadata-missing"],
+      [review?.currentSprint, "report-sprint-current-metadata-missing"],
+    ] as const)
+      if (
+        sprint?.startAt === undefined ||
+        sprint.endAt === undefined ||
+        !Number.isFinite(Date.parse(sprint.startAt)) ||
+        !Number.isFinite(Date.parse(sprint.endAt))
+      )
+        return Effect.succeed(
+          reportFailureDraft(plan, "SARATHI-REPORT-QUALITY-FAILED", diagnosticCode),
+        );
+  }
   const deterministic = composeAnswer(request, plan, result, responseMode);
   if (responseMode !== "fast" && !reportComposition) return Effect.succeed(deterministic);
   const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");
@@ -997,14 +1015,20 @@ const composeWithModel = (
               const sprintDateIsPresent = (value: string): boolean => {
                 const parsed = new Date(value);
                 if (Number.isNaN(parsed.getTime())) return false;
+                const formats: readonly Intl.DateTimeFormatOptions[] = [
+                  { day: "numeric", month: "short", year: "numeric" },
+                  { day: "numeric", month: "long", year: "numeric" },
+                  { day: "numeric", month: "short" },
+                  { day: "numeric", month: "long" },
+                ];
                 return [
                   value.slice(0, 10),
-                  new Intl.DateTimeFormat("en-GB", {
-                    timeZone: request.timeZone,
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  }).format(parsed),
+                  ...formats.map((format) =>
+                    new Intl.DateTimeFormat("en-GB", {
+                      timeZone: request.timeZone,
+                      ...format,
+                    }).format(parsed),
+                  ),
                 ].some((candidate) => text.includes(candidate));
               };
               for (const [, sprint] of [
