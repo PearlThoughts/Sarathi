@@ -46,20 +46,12 @@ const intentsByKind: Readonly<Record<IntentNodeKind, readonly DeliveryQuestionIn
   policy: ["scope", "status", "general"],
 };
 
-const sourceKinds = new Set(["jira", "vault", "github", "teams", "email"] as const);
 const supportedSelectors = new Set<DeliveryQueryOperation["select"]>([
   "objects",
   "relations",
   "claims",
   "metrics",
 ]);
-type CitableSource = "jira" | "vault" | "github" | "teams" | "email";
-
-const citableSource = (evidence: EvidenceItem): CitableSource | undefined =>
-  sourceKinds.has(evidence.sourceSystem as CitableSource)
-    ? (evidence.sourceSystem as CitableSource)
-    : undefined;
-
 const resolvableCitation = (evidence: EvidenceItem): string | undefined => {
   const value = evidence.externalUrl;
   if (value === undefined) return undefined;
@@ -114,13 +106,12 @@ const resultFor = (
   operation: DeliveryQueryOperation,
   sensitivity: SensitivityTier,
 ): DeliveryResultItem | undefined => {
-  const source = citableSource(evidence);
   const citationUrl = resolvableCitation(evidence);
-  if (source === undefined || citationUrl === undefined) return undefined;
+  if (citationUrl === undefined) return undefined;
   return {
     id: node.id,
     workspaceId: node.workspaceId,
-    source,
+    source: "strategy",
     selector: operation.select,
     intent: operation.purpose,
     title: node.title,
@@ -164,6 +155,9 @@ export const createStrategyKernelDeliveryQuerySource = (
               if (
                 !acceptedStates.has(node.state) ||
                 !intentsByKind[node.kind].includes(operation.purpose) ||
+                (node.kind === "commitment" &&
+                  operation.purpose === "current_work" &&
+                  !plan.intents.includes("goals")) ||
                 !overlapsOperationTime(node, operation, context.requestedAt, context.timeZone)
               )
                 return [];

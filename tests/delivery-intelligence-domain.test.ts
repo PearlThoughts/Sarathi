@@ -475,9 +475,13 @@ describe("delivery intelligence domain", () => {
       expect.objectContaining({
         purpose: "current_work",
         select: "objects",
-        predicates: expect.arrayContaining([
-          { field: "source", operator: "equals", value: "github" },
-        ]),
+        predicates: [
+          {
+            field: "lifecycleState",
+            operator: "in",
+            value: ["in_progress", "active"],
+          },
+        ],
       }),
       expect.objectContaining({
         purpose: "goals",
@@ -485,7 +489,7 @@ describe("delivery intelligence domain", () => {
         relationKinds: ["supports", "contributes_to", "implements"],
       }),
     ]);
-    expect(plan?.requiredSources).toEqual(["jira", "vault"]);
+    expect(plan?.requiredSources).toEqual(["strategy", "jira"]);
     expect(plan?.answerMode).toBe("model_assisted");
   });
 

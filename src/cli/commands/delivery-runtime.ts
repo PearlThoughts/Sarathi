@@ -43,6 +43,7 @@ import {
   summarizeDeliveryEvaluation,
   validateCapabilityLedger,
 } from "../../modules/delivery-intelligence/index.ts";
+import { runDeclaredInitiativeCommand } from "./declared-initiative-runtime.ts";
 import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
 import { runKnowledgeCommand } from "./knowledge-runtime.ts";
@@ -59,6 +60,7 @@ type DeliveryCliDependencies = {
   readonly readStatus?: (() => Promise<unknown>) | undefined;
   readonly runKnowledge?: typeof runKnowledgeCommand | undefined;
   readonly runSync?: typeof runDeliverySyncCommand | undefined;
+  readonly runIntent?: typeof runDeclaredInitiativeCommand | undefined;
 };
 
 type JiraProjection = { readonly projectKey: string };
@@ -380,6 +382,8 @@ export const runDeliveryCommand = async (
   dependencies: DeliveryCliDependencies = {},
 ): Promise<DeliveryCliResult> => {
   try {
+    if (args[0] === "intent")
+      return (dependencies.runIntent ?? runDeclaredInitiativeCommand)(args.slice(1), environment);
     if (args[0] === "sync")
       return (dependencies.runSync ?? runDeliverySyncCommand)(args.slice(1), environment);
     if (args[0] === "status")
@@ -495,7 +499,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone>, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
+          "Use delivery status, intent import|status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone>, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
       },
     };
   } catch (error) {

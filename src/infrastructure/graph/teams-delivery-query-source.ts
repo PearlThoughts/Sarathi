@@ -133,6 +133,8 @@ const actionTargetFrom = (
 
 const matchesOperation = (content: string, operation: DeliveryQueryOperation): boolean => {
   switch (operation.purpose) {
+    case "goals":
+      return false;
     case "ownership":
       return /\b(?:owner|owns|assigned to|working on)\b/i.test(content);
     case "reviews":

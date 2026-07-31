@@ -63,6 +63,25 @@ A workspace-scoped, private-configurable catalog of business and platform capabi
 
 The ledger must support a many-to-many mapping: one change may enable several capabilities, and one capability may span several repositories, modules, Jira components, Vault topics, and Teams channels.
 
+### `DeclaredInitiativeSnapshot`
+
+A workspace-scoped, period-bounded import of the operating owner's accepted plan.
+The snapshot preserves the source revision, source URL, original row identity,
+module/initiative hierarchy, plan status, horizon, and optional notes. Import is
+idempotent by workspace, period, and stable row key.
+
+The Strategy Kernel stores the accepted hierarchy as one period goal, module goals,
+and initiative commitments connected by `part_of` edges. A later snapshot updates
+the same nodes and archives removed rows instead of creating duplicates. The private
+workspace overlay owns real snapshot content; the public runtime owns validation,
+reconciliation, persistence, and query behavior.
+
+For an alignment question, connected Jira, GitHub, Vault, and Teams results are
+classified against these declared initiatives. An exact declared mapping wins.
+Otherwise deterministic title and alias matching may assign one best initiative.
+Items that cannot be classified remain explicitly unassigned; raw channel messages
+must never be rendered as goals merely because the question asks about goals.
+
 ### `DeliveryChain`
 
 Delivery is represented as ordered, independently cited stages:
@@ -183,6 +202,12 @@ Given an already synchronized project and a fixed 30-day interval, reconstruct a
 - receive a human usefulness score of at least 4 out of 5.
 
 This milestone proves product value without claiming the final historical-bootstrap or continuous-convergence acceptance is complete.
+
+For the first private-workspace milestone, an authorized quarterly planning snapshot
+is the declared-intent source. A supported operator command imports it into production
+Postgres through the hosted Sarathi surface. The weekly alignment answer uses the
+persisted plan as its setpoint, groups planned and observed work by named initiative,
+and puts source links after the feature summary.
 
 ## Exit Criteria
 

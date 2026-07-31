@@ -1,7 +1,7 @@
 import { stableSha256 } from "../../../domain/hash.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
 
-export type DeliverySourceKind = "jira" | "vault" | "github" | "teams" | "email";
+export type DeliverySourceKind = "jira" | "vault" | "github" | "teams" | "email" | "strategy";
 
 export type DeliveryObjectKind =
   | "project"

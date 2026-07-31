@@ -289,7 +289,7 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
     plan.requiredSources !== undefined &&
     (!Array.isArray(plan.requiredSources) ||
       !plan.requiredSources.every((source) =>
-        ["jira", "vault", "github", "teams", "email"].includes(source),
+        ["jira", "vault", "github", "teams", "email", "strategy"].includes(source),
       ))
   )
     throw new DeliveryQueryPlanValidationError("Delivery required sources are invalid.");
@@ -755,7 +755,6 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       select: "objects",
       objectKinds: ["work_item", "deliverable"],
       predicates: [
-        { field: "source", operator: "equals", value: "github" },
         {
           field: "lifecycleState",
           operator: "in",
@@ -801,7 +800,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       ...(intents.includes("capacity") ? (["teams"] as const) : []),
       ...(intents.includes("status") && subject === undefined ? (["jira", "vault"] as const) : []),
       ...(intents.includes("goals") && intents.includes("current_work")
-        ? (["jira", "vault"] as const)
+        ? (["strategy", "jira"] as const)
         : []),
     ]),
   ];

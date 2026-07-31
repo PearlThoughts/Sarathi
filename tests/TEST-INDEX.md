@@ -183,9 +183,9 @@
 
 ## delivery-intelligence-application
 
-- Command: `bunx vitest run tests/delivery-intelligence-application.test.ts`
-- Location: `tests/delivery-intelligence-application.test.ts`
-- Scope: Bounded planning, explicit response-product and fast/structured/deep-dive mode selection, product-specific transport and source-budget propagation, independent completeness/citation/grounding/freshness/format/latency acceptance, finance authorization before source calls, workspace and sensitivity filtering before model composition, deterministic period-census coverage rendering, deduplication, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback, and partial-source behavior.
+- Command: `bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts`
+- Location: `tests/delivery-intelligence-application.test.ts`, `tests/delivery-initiative-alignment.test.ts`
+- Scope: Bounded planning, explicit response-product and fast/structured/deep-dive mode selection, product-specific transport and source-budget propagation, independent completeness/citation/grounding/freshness/format/latency acceptance, finance authorization before source calls, workspace and sensitivity filtering before model composition, deterministic period-census coverage rendering, deduplication, initiative-first alignment against declared goals, explicit unassigned work, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback, and partial-source behavior.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-live-sources
@@ -213,7 +213,14 @@
 
 - Command: `bunx vitest run tests/delivery-cli.test.ts`
 - Location: `tests/delivery-cli.test.ts`
-- Scope: Durable status/query/evaluate/reconcile/rebuild routing, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Scope: Durable status/query/evaluate/reconcile/rebuild routing, supported declared-initiative snapshot upload, bounded request parsing, non-destructive rebuild semantics, result metadata, and privacy-safe failures.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## declared-initiative-import
+
+- Command: `bun test tests/declared-initiative-import.bun.test.ts`
+- Location: `tests/declared-initiative-import.bun.test.ts`
+- Scope: Generic quarterly-plan validation, stable Strategy Kernel hierarchy persistence, idempotent replay, changed-row updates, removed-row archival, and selected-workspace enforcement.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-evaluation

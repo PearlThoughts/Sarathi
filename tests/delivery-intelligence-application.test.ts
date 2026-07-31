@@ -26,7 +26,7 @@ const request = {
 } as const;
 
 const item = (
-  source: "github" | "jira" | "teams" | "vault",
+  source: "github" | "jira" | "teams" | "vault" | "strategy",
   id: string,
   summary: string,
   intent:
@@ -1078,19 +1078,16 @@ describe("delivery intelligence application", () => {
     });
   });
 
-  it("formats quarterly alignment as separate goals and current-work sections", async () => {
+  it("formats quarterly alignment as an initiative-first feature list", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects", "relations", "knowledge"],
       execute: () =>
         Effect.succeed({
           items: [
-            item("vault", "goal-1", "Grow qualified delivery outcomes", "goals"),
+            item("strategy", "goal-1", "Grow qualified delivery outcomes", "goals"),
+            item("strategy", "initiative-1", "Delivery slice publishing", "current_work"),
             item("jira", "work-1", "Publish the current delivery slice", "current_work"),
-            {
-              ...item("vault", "relation-1", "Current slice supports the goal", "goals"),
-              selector: "relations" as const,
-            },
           ],
           conflicts: [],
           unavailableSources: [],
@@ -1106,9 +1103,11 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toContain("## Goals and alignment");
-    expect(answer.text).toContain("## Planned this week");
-    expect(answer.text).toContain("Current slice supports the goal");
+    expect(answer.text).toContain("## Initiative alignment");
+    expect(answer.text).toContain(
+      "**Delivery slice publishing** — Publish the current delivery slice",
+    );
+    expect(answer.text).not.toContain("## Unassigned work");
     expect(answer.text).not.toContain("source-backed");
     expect(answer.text).not.toContain("completion percentage");
     expect(answer.acceptance).toMatchObject({

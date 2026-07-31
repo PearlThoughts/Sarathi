@@ -3,6 +3,7 @@ import {
   applyStrategyKernelPostgresMigrations,
   closeStrategyKernelPostgresDatabase,
   createPostgresStrategyKernelRepository,
+  ensureStrategyKernelWorkspace,
   openStrategyKernelPostgresDatabase,
   type StrategyKernelPostgresDatabase,
 } from "../src/infrastructure/postgres/index.ts";
@@ -59,6 +60,34 @@ describe("Postgres strategy kernel repository", () => {
     expect(
       statements.some((statement) => statement.includes("create table if not exists workspace")),
     ).toBe(true);
+  });
+
+  it("creates the selected workspace only when it is not already present", async () => {
+    const statements: Array<{ readonly text: string; readonly values: readonly unknown[] }> = [];
+    const query = async (text: string, values: readonly unknown[] = []) => {
+      statements.push({ text, values });
+      return { rows: [] };
+    };
+    const database = {
+      query,
+      connect: async () =>
+        ({ query, release: () => undefined }) as unknown as import("pg").PoolClient,
+    } satisfies StrategyKernelPostgresDatabase;
+
+    await ensureStrategyKernelWorkspace(database, {
+      workspaceId: workspace.id,
+      workspaceKey: workspace.key,
+      createdAt: now,
+    });
+
+    expect(statements.map(({ text }) => text)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("insert into organization"),
+        expect.stringContaining("insert into workspace"),
+        "begin",
+        "commit",
+      ]),
+    );
   });
 
   it("uses natural-key upserts and returns null-free typed evidence", async () => {

@@ -12,7 +12,7 @@ import type {
   StrategyKernelRepository,
 } from "../src/modules/strategy-kernel/index.ts";
 
-const workspaceId = "workspace-1851";
+const workspaceId = "workspace-launchpad";
 const requestedAt = "2026-07-24T12:00:00.000Z";
 
 const context = (overrides: Partial<DeliveryQueryContext> = {}): DeliveryQueryContext => ({
@@ -89,7 +89,7 @@ describe("Strategy Kernel delivery query source", () => {
     expect(result.items).toEqual([
       expect.objectContaining({
         id: "intent-goal",
-        source: "teams",
+        source: "strategy",
         intent: "goals",
         evidenceRole: "declared_intent",
         citationUrl: "https://teams.microsoft.com/l/message/message-1",
@@ -146,6 +146,23 @@ describe("Strategy Kernel delivery query source", () => {
     expect(listWorkspaceEvidence).not.toHaveBeenCalled();
   });
 
+  it("does not present quarterly commitments as weekly current work without goal alignment", async () => {
+    const source = createStrategyKernelDeliveryQuerySource({
+      repository: repository(
+        [intent({ id: "intent-initiative", kind: "commitment" })],
+        [evidence()],
+      ),
+      workspaceId,
+      allowedActorIds: new Set(["actor-delivery-manager"]),
+    });
+    const weeklyPlan = planDeliveryQuestion("What is planned this week?");
+    if (weeklyPlan === undefined) throw new Error("Expected a weekly current-work plan.");
+
+    const result = await Effect.runPromise(source.execute(context(), weeklyPlan));
+
+    expect(result.items).toEqual([]);
+  });
+
   it("labels the setpoint as declared intent in a deterministic delivery answer", async () => {
     const source = createStrategyKernelDeliveryQuerySource({
       repository: repository([intent()], [evidence()]),
@@ -171,7 +188,7 @@ describe("Strategy Kernel delivery query source", () => {
     expect(answer.text).not.toContain("Declared intent");
     expect(answer.citations).toEqual([
       {
-        label: "Teams 1",
+        label: "Strategy 1",
         url: "https://teams.microsoft.com/l/message/message-1",
       },
     ]);

@@ -13,7 +13,7 @@ const maximumSupplementalEvidence = 36;
 const balancedSupplementalEvidence = <Evidence extends { readonly source: string }>(
   evidence: readonly Evidence[],
 ): readonly Evidence[] => {
-  const sourceOrder = ["vault", "teams", "github", "jira", "email", "intent"];
+  const sourceOrder = ["strategy", "vault", "teams", "github", "jira", "email", "intent"];
   const buckets = new Map(
     sourceOrder.map((source) => [
       source,
