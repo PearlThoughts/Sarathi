@@ -112,7 +112,7 @@ describe("AI SDK OpenRouter answer generator", () => {
   it("produces an unconstrained delivery-manager synthesis for period reports", async () => {
     const text = [
       "## What the team delivered",
-      "### Modern Website Builder",
+      "### Atlas Site Composer",
       "- Publishing now carries SEO metadata through release.",
       "",
       "## References",
@@ -141,7 +141,7 @@ describe("AI SDK OpenRouter answer generator", () => {
         },
         capabilitySections: [
           {
-            title: "Modern Website Builder",
+            title: "Atlas Site Composer",
             changeCount: 7,
             evidencedInitiatives: ["SEO publishing"],
           },
@@ -156,7 +156,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     const request = JSON.stringify(model.doGenerateCalls);
     expect(request).toContain("experienced delivery manager");
     expect(request).toContain("acceptedChanges");
-    expect(request).toContain("Modern Website Builder");
+    expect(request).toContain("Atlas Site Composer");
     expect(request).toContain("Do not impose a line-count");
     expect(request).not.toContain("Finish with exactly one numbered");
     expect(request).toContain('"maxOutputTokens":12000');

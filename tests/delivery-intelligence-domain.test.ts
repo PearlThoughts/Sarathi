@@ -274,9 +274,9 @@ describe("delivery intelligence domain", () => {
   });
 
   it("carries the named subject for a standalone ownership question", () => {
-    const plan = planDeliveryQuestion("Who owns Modern Website Builder?");
+    const plan = planDeliveryQuestion("Who owns Atlas Site Composer?");
 
-    expect(plan?.subject).toEqual({ phrase: "Modern Website Builder" });
+    expect(plan?.subject).toEqual({ phrase: "Atlas Site Composer" });
     expect(plan?.operations).toEqual([
       expect.objectContaining({
         purpose: "ownership",
@@ -522,9 +522,9 @@ describe("delivery intelligence domain", () => {
 
   it("queries indexed GitHub delivery evidence before live implementation verification", () => {
     const plan = planDeliveryQuestion(
-      "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?",
+      "Which GitHub PR or commits implement the Partner Intake Dashboard, and what changed?",
     );
-    expect(plan?.subject).toEqual({ phrase: "Lead Routing Dashboard" });
+    expect(plan?.subject).toEqual({ phrase: "Partner Intake Dashboard" });
     expect(plan?.requiredSources).toEqual(["github"]);
     expect(plan?.operations).toEqual([
       expect.objectContaining({
@@ -536,7 +536,7 @@ describe("delivery intelligence domain", () => {
           {
             field: "title",
             operator: "contains",
-            value: "Lead Routing Dashboard",
+            value: "Partner Intake Dashboard",
           },
         ],
       }),
@@ -553,7 +553,7 @@ describe("delivery intelligence domain", () => {
           {
             field: "title",
             operator: "contains",
-            value: "Lead Routing Dashboard",
+            value: "Partner Intake Dashboard",
           },
         ],
         time: { kind: "lookback", days: 30 },
@@ -587,10 +587,10 @@ describe("delivery intelligence domain", () => {
   });
 
   it("targets named status questions instead of returning unrelated recent work", () => {
-    const named = planDeliveryQuestion("What is the current status of Modern Website Builder?");
+    const named = planDeliveryQuestion("What is the current status of Atlas Site Composer?");
     expect(named?.requiredSources).toBeUndefined();
     expect(named?.operations[0]?.predicates).toEqual([
-      { field: "title", operator: "contains", value: "Modern Website Builder" },
+      { field: "title", operator: "contains", value: "Atlas Site Composer" },
     ]);
     expect(named?.operations.map(({ select }) => select)).toEqual([
       "objects",
@@ -598,10 +598,10 @@ describe("delivery intelligence domain", () => {
       "knowledge",
     ]);
 
-    const keyed = planDeliveryQuestion("What is the status of F1851-754?");
+    const keyed = planDeliveryQuestion("What is the status of PROJ-754?");
     expect(keyed?.requiredSources).toBeUndefined();
     expect(keyed?.operations[0]?.predicates).toEqual([
-      { field: "externalKey", operator: "equals", value: "F1851-754" },
+      { field: "externalKey", operator: "equals", value: "PROJ-754" },
     ]);
   });
 
@@ -806,7 +806,7 @@ describe("delivery intelligence domain", () => {
           title: "Product Builder",
           aliases: [
             { value: "Puck", source: "github" },
-            { value: "Modern Website Builder", source: "jira" },
+            { value: "Atlas Site Composer", source: "jira" },
             { value: "Builder" },
           ],
         },
@@ -823,7 +823,7 @@ describe("delivery intelligence domain", () => {
     const jira = resolveDeliveryEntity(catalog, "jira", {
       kind: "module",
       externalKey: "component-42",
-      title: "Modern Website Builder",
+      title: "Atlas Site Composer",
       attributes: {},
       sensitivity: "internal",
     });

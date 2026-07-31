@@ -9,7 +9,7 @@ describe("period observation completion stages", () => {
         observationKind: "state",
         subjectObjectKind: "work_item",
         subjectLifecycleState: "done",
-        summary: "F1851-123 changed from In Progress to Done",
+        summary: "PROJ-123 changed from In Progress to Done",
       }),
     ).toBe("accepted");
   });
@@ -21,7 +21,7 @@ describe("period observation completion stages", () => {
         observationKind: "state",
         subjectObjectKind: "work_item",
         subjectLifecycleState: "done",
-        summary: "F1851-123 is Done",
+        summary: "PROJ-123 is Done",
       }),
     ).toBeUndefined();
   });

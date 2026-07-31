@@ -9,7 +9,7 @@ Hosting delay threatens launch and affects DEMO-7.
 In progress.
 
 ## Scope
-Modern Website Builder and Admin Portal are in scope.
+Atlas Site Composer and Admin Portal are in scope.
 
 ## Requirements
 Responsive templates must pass QA.
@@ -124,7 +124,7 @@ describe("Vault knowledge source", () => {
         }),
         expect.objectContaining({
           kind: "module",
-          title: "Modern Website Builder and Admin Portal are in scope.",
+          title: "Atlas Site Composer and Admin Portal are in scope.",
         }),
         expect.objectContaining({
           kind: "requirement",

@@ -305,7 +305,7 @@ describe("delivery intelligence live query sources", () => {
       },
     });
     const question =
-      "Which GitHub PR or commits implement the Lead Routing Dashboard, and what changed?";
+      "Which GitHub PR or commits implement the Partner Intake Dashboard, and what changed?";
     const plan = planDeliveryQuestion(question);
     if (plan === undefined) throw new Error("Expected deterministic implementation plan");
 
@@ -314,7 +314,7 @@ describe("delivery intelligence live query sources", () => {
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
       const query = new URL(request).searchParams.get("q") ?? "";
-      expect(query).toContain("Lead Routing Dashboard");
+      expect(query).toContain("Partner Intake Dashboard");
       expect(query).not.toContain("Which GitHub PR");
     }
   });
@@ -380,7 +380,7 @@ describe("delivery intelligence live query sources", () => {
 
   it("targets a subject-specific status query before reading Jira issues", async () => {
     let observedJql = "";
-    const question = "What is the current status of Modern Website Builder?";
+    const question = "What is the current status of Atlas Site Composer?";
     const plan = planDeliveryQuestion(question);
     if (plan === undefined) throw new Error("Expected deterministic status plan");
     const source = createJiraDeliveryQuerySource({
@@ -397,13 +397,13 @@ describe("delivery intelligence live query sources", () => {
       },
     });
     await Effect.runPromise(source.execute({ ...context, question }, plan));
-    expect(observedJql).toContain('summary ~ "\\"Modern Website Builder\\""');
+    expect(observedJql).toContain('summary ~ "\\"Atlas Site Composer\\""');
     expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
   });
 
   it("returns named Jira assignees as practical ownership evidence", async () => {
     let observedJql = "";
-    const question = "Who owns Modern Website Builder?";
+    const question = "Who owns Atlas Site Composer?";
     const plan = planDeliveryQuestion(question);
     if (plan === undefined) throw new Error("Expected deterministic ownership plan");
     const source = createJiraDeliveryQuerySource({
@@ -428,7 +428,7 @@ describe("delivery intelligence live query sources", () => {
                   statusCategory: { key: "indeterminate" },
                 },
                 assignee: { displayName: "Delivery Builder" },
-                components: [{ name: "Modern Website Builder" }],
+                components: [{ name: "Atlas Site Composer" }],
               },
             },
           ],
@@ -439,7 +439,7 @@ describe("delivery intelligence live query sources", () => {
     const result = await Effect.runPromise(source.execute({ ...context, question }, plan));
 
     expect(observedJql).toContain(
-      'component = "Modern Website Builder" OR summary ~ "\\"Modern Website Builder\\""',
+      'component = "Atlas Site Composer" OR summary ~ "\\"Atlas Site Composer\\""',
     );
     expect(result.items).toMatchObject([
       {
@@ -448,7 +448,7 @@ describe("delivery intelligence live query sources", () => {
         summary:
           "Practical ownership signal — Delivery Builder is assigned to DEMO-12: Complete production readiness",
         citationUrl: "https://jira.example.test/browse/DEMO-12",
-        subjectAliases: ["Modern Website Builder"],
+        subjectAliases: ["Atlas Site Composer"],
       },
     ]);
   });
@@ -486,7 +486,7 @@ describe("delivery intelligence live query sources", () => {
                   accountId: "jira-person-21",
                   displayName: "Delivery Builder",
                 },
-                components: [{ name: "Modern Website Builder" }],
+                components: [{ name: "Atlas Site Composer" }],
               },
             },
           ],
@@ -505,13 +505,13 @@ describe("delivery intelligence live query sources", () => {
           externalId: "jira-person-21",
           displayName: "Delivery Builder",
         },
-        subjectAliases: ["Modern Website Builder"],
+        subjectAliases: ["Atlas Site Composer"],
       },
     ]);
   });
 
   it("normalizes Jira lifecycle state and returns active status ahead of terminal history", async () => {
-    const question = "What is the current status of Modern Website Builder?";
+    const question = "What is the current status of Atlas Site Composer?";
     const plan = planDeliveryQuestion(question);
     if (plan === undefined) throw new Error("Expected deterministic status plan");
     const source = createJiraDeliveryQuerySource({
@@ -527,7 +527,7 @@ describe("delivery intelligence live query sources", () => {
             {
               key: "DEMO-1",
               fields: {
-                summary: "Modern Website Builder legacy parity",
+                summary: "Atlas Site Composer legacy parity",
                 updated: "2026-07-22T09:00:00.000Z",
                 status: { name: "Canceled", statusCategory: { key: "done" } },
               },
@@ -535,7 +535,7 @@ describe("delivery intelligence live query sources", () => {
             {
               key: "DEMO-2",
               fields: {
-                summary: "Modern Website Builder production readiness",
+                summary: "Atlas Site Composer production readiness",
                 updated: "2026-07-21T09:00:00.000Z",
                 status: {
                   name: "In Progress",
@@ -931,7 +931,7 @@ describe("delivery intelligence live query sources", () => {
               id: "review",
               messageType: "message",
               createdDateTime: "2026-07-20T12:00:00.000Z",
-              body: { content: "F1851-809 needs review from Manikandan." },
+              body: { content: "PROJ-809 needs review from Manikandan." },
               webUrl: "https://teams.microsoft.com/l/message/review",
             },
             {
@@ -1095,7 +1095,7 @@ describe("delivery intelligence live query sources", () => {
           workspaceId: context.workspaceId,
           sensitivity: "internal",
           allowedActorIds: new Set([context.actorId]),
-          label: "Admin Portal Migration",
+          label: "Operations Console Migration",
           topics: ["status", "reviews", "risks", "next_actions"],
         },
         {
@@ -1124,7 +1124,7 @@ describe("delivery intelligence live query sources", () => {
       },
     });
     const plan = planDeliveryQuestion(
-      "What is the current status of Admin Portal Migration? Summarize review queue and risks.",
+      "What is the current status of Operations Console Migration? Summarize review queue and risks.",
     );
     if (plan === undefined) throw new Error("Expected Admin Portal plan");
 
@@ -1137,7 +1137,7 @@ describe("delivery intelligence live query sources", () => {
         expect.objectContaining({
           source: "teams",
           intent: "reviews",
-          title: "Admin Portal Migration",
+          title: "Operations Console Migration",
         }),
       ]),
     );
@@ -1146,7 +1146,7 @@ describe("delivery intelligence live query sources", () => {
 
   it("treats project progress fields as compound delivery facts rather than generic activity", () => {
     const plan = planDeliveryQuestion(
-      "What is the current status of Admin Portal Migration? Summarize scope, progress, review queue, risks, and next action.",
+      "What is the current status of Operations Console Migration? Summarize scope, progress, review queue, risks, and next action.",
     );
 
     expect(plan?.intents).toEqual(["scope", "reviews", "risks", "next_actions", "status"]);

@@ -1460,7 +1460,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           title: "Product Builder",
           aliases: [
             { source: "github", value: "Puck" },
-            { source: "jira", value: "Modern Website Builder" },
+            { source: "jira", value: "Atlas Site Composer" },
             { value: "Product Builder" },
           ],
         },
@@ -1559,7 +1559,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           "jira",
           "jira-canonical-alias",
           "MWB",
-          "Modern Website Builder",
+          "Atlas Site Composer",
           "blocked",
           "2026-02-03T09:00:00.000Z",
           "2026-07-22T09:00:00.000Z",
@@ -1602,7 +1602,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       new Set(["module:product-builder"]),
     );
     expect(aliases.map(({ alias }) => alias)).toEqual(
-      expect.arrayContaining(["Puck", "Modern Website Builder", "Product Builder"]),
+      expect.arrayContaining(["Puck", "Atlas Site Composer", "Product Builder"]),
     );
 
     const conflictPlan: DeliveryQueryPlan = {
@@ -1952,7 +1952,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
             title: "Product Builder",
             aliases: [
               { source: "github", value: "Puck" },
-              { source: "jira", value: "Modern Website Builder" },
+              { source: "jira", value: "Atlas Site Composer" },
             ],
           },
         ],
@@ -2059,7 +2059,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
             {
               field: "title",
               operator: "contains",
-              value: "Modern Website Builder",
+              value: "Atlas Site Composer",
             },
           ],
           limit: 2,
@@ -2078,7 +2078,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       requestedAt: "2026-07-26T14:00:00.000Z",
       timeZone: "Asia/Kolkata",
       deadlineAt: "2026-07-26T14:00:08.000Z",
-      question: "How is Modern Website Builder implemented?",
+      question: "How is Atlas Site Composer implemented?",
     };
     const source = createPostgresDeliveryQuerySource(opened.database);
     const withoutAudience = await Effect.runPromise(source.execute(context, plan));
@@ -2096,7 +2096,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
           item.title === "Product Builder" &&
           item.indexedAt?.includes("2025-01-01") === false &&
           item.subjectAliases?.includes("Puck") === true &&
-          item.subjectAliases.includes("Modern Website Builder"),
+          item.subjectAliases.includes("Atlas Site Composer"),
       ),
     ).toBe(true);
     expect(new Set(result.items.map(({ dedupeKey }) => dedupeKey))).toHaveLength(2);
@@ -2217,16 +2217,16 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         {
           kind: "module",
           canonicalKey: "modern-website-builder",
-          title: "Modern Website Builder",
+          title: "Atlas Site Composer",
           aliases: [
-            { value: "Modern Website Builder" },
+            { value: "Atlas Site Composer" },
             { source: "github", value: "example/product-builder" },
           ],
         },
       ],
     };
     const question =
-      "Which repositories, pull requests, commits, or code implement Modern Website Builder, and what changed in the last 30 days?";
+      "Which repositories, pull requests, commits, or code implement Atlas Site Composer, and what changed in the last 30 days?";
     const source = createPostgresDeliveryQuerySource(opened.database, { entityCatalog });
     const plan = planDeliveryQuestion(question);
     if (plan === undefined) throw new Error("Expected an implementation plan");
@@ -2249,10 +2249,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       expect.objectContaining({
         source: "github",
         selector: "observations",
-        subjectAliases: expect.arrayContaining([
-          "Modern Website Builder",
-          "example/product-builder",
-        ]),
+        subjectAliases: expect.arrayContaining(["Atlas Site Composer", "example/product-builder"]),
       }),
     ]);
 
