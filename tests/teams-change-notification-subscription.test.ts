@@ -5,7 +5,10 @@ import {
   type TeamsNotificationSubscriptionConfiguration,
   type TeamsProviderSubscription,
 } from "../src/infrastructure/graph/teams-change-notification-subscription.ts";
-import type { TeamsKnowledgeChannel } from "../src/infrastructure/graph/teams-knowledge-source.ts";
+import type {
+  TeamsKnowledgeChannel,
+  TeamsKnowledgeChat,
+} from "../src/infrastructure/graph/teams-knowledge-source.ts";
 import type {
   SynchronizationControlRepository,
   SynchronizationSubscription,
@@ -125,6 +128,61 @@ describe("Teams change-notification subscription", () => {
 
     expect(fetcher).not.toHaveBeenCalled();
     expect(subscription.id).toBe("subscription-current");
+    expect(saved).toEqual([subscription]);
+  });
+
+  it("subscribes to an explicitly mapped chat conversation", async () => {
+    const saved: SynchronizationSubscription[] = [];
+    const repository: SynchronizationControlRepository = {
+      registerEvent: () => Effect.die("not used"),
+      saveSubscription: (subscription) =>
+        Effect.sync(() => saved.push(subscription)).pipe(Effect.asVoid),
+      readSubscriptions: () => Effect.succeed([]),
+      acquireLease: () => Effect.die("not used"),
+      heartbeatLease: () => Effect.die("not used"),
+      releaseLease: () => Effect.die("not used"),
+      startRun: () => Effect.die("not used"),
+      completeRun: () => Effect.die("not used"),
+      updateEvent: () => Effect.die("not used"),
+      readStatus: () => Effect.die("not used"),
+    };
+    const requests: RequestInit[] = [];
+    const chat: TeamsKnowledgeChat = {
+      chatId: "19:meeting_example@thread.v2",
+      chatType: "meeting",
+      label: "Delivery Standup",
+      canonicalUrl: "https://teams.microsoft.com/l/chat/19:meeting_example@thread.v2/conversations",
+      sensitivity: "internal",
+      acl: [{ effect: "allow", subjectType: "workspace", subjectId: "example" }],
+    };
+    const subscription = await Effect.runPromise(
+      ensureTeamsChangeNotificationSubscription(
+        {
+          workspaceId: "example",
+          sourceId: "teams-example",
+          tokenProvider: { getAccessToken: async () => "synthetic-token" },
+          controlRepository: repository,
+          notificationUrl: "https://sarathi.example/graph/notifications",
+          lifecycleNotificationUrl: "https://sarathi.example/graph/lifecycle",
+          clientState: "synthetic-protected-client-state",
+          now: () => new Date("2026-07-22T11:00:00.000Z"),
+          fetcher: async (_input, init) => {
+            requests.push(init ?? {});
+            return Response.json({
+              id: "chat-subscription",
+              expirationDateTime: "2026-07-22T12:00:00.000Z",
+            });
+          },
+        },
+        chat,
+      ),
+    );
+
+    expect(JSON.parse(String(requests[0]?.body))).toMatchObject({
+      resource: "chats/19:meeting_example@thread.v2/messages",
+      changeType: "created,updated,deleted",
+    });
+    expect(subscription.id).toBe("chat-subscription");
     expect(saved).toEqual([subscription]);
   });
 });

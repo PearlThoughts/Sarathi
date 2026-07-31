@@ -11,6 +11,8 @@ import {
   createTeamsKnowledgeSource,
   ensureTeamsChangeNotificationSubscription,
   type TeamsKnowledgeChannel,
+  type TeamsKnowledgeChat,
+  teamsChatSubscriptionResourceHash,
   teamsSubscriptionResourceHash,
 } from "../../infrastructure/graph/index.ts";
 import { createJiraKnowledgeSource } from "../../infrastructure/jira/index.ts";
@@ -69,6 +71,7 @@ type GitHubProjection = {
 type TeamsProjection = {
   readonly sourceId: string;
   readonly channels: readonly TeamsKnowledgeChannel[];
+  readonly chats?: readonly TeamsKnowledgeChat[] | undefined;
   readonly historySince?: string | undefined;
   readonly assistantName?: string | undefined;
 };
@@ -286,6 +289,7 @@ const configuredSource = (
     sourceId: teams.sourceId,
     reader: createTeamsKnowledgeSource({
       ...teams,
+      chats: teams.chats ?? [],
       workspaceId,
       tokenProvider: createEntraClientCredentialsTokenProvider({
         tenantId: required("MICROSOFT_APP_TENANT_ID", environment.MICROSOFT_APP_TENANT_ID),
@@ -347,8 +351,17 @@ export const runDeliverySyncCommand = async (
           clientSecret: required("MICROSOFT_APP_PASSWORD", environment.MICROSOFT_APP_PASSWORD),
         });
         const subscriptions = [];
-        for (const channel of teams.channels) {
-          const resourceHash = teamsSubscriptionResourceHash(channel);
+        const conversations = [
+          ...teams.channels.map((conversation) => ({
+            conversation,
+            resourceHash: teamsSubscriptionResourceHash(conversation),
+          })),
+          ...(teams.chats ?? []).map((conversation) => ({
+            conversation,
+            resourceHash: teamsChatSubscriptionResourceHash(conversation),
+          })),
+        ];
+        for (const { conversation, resourceHash } of conversations) {
           const current = existing.find(
             (subscription) =>
               subscription.provider === "microsoft-graph" &&
@@ -380,7 +393,7 @@ export const runDeliverySyncCommand = async (
                     environment.SARATHI_TEAMS_NOTIFICATION_CLIENT_STATE,
                   ),
                 },
-                channel,
+                conversation,
                 providerSubscription,
               ),
             ),

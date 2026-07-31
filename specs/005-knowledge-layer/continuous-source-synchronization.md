@@ -5,7 +5,7 @@
 Extend the existing knowledge and delivery-intelligence capabilities from bounded
 manual synchronization and request-time source reads into a continuously current,
 rebuildable project knowledge projection. Jira, version-controlled knowledge
-roots, source-code repositories, and configured collaboration channels use one
+roots, source-code repositories, and configured collaboration conversations use one
 canonical ingestion lifecycle while retaining source-specific normalization.
 
 This sub-spec extends the existing feature. It does not create another product,
@@ -66,9 +66,11 @@ datastore, graph database, vector service, scheduler service, or agent runtime.
 
 ### Collaboration Messages
 
-- Bootstrap a configurable historical window from every configured channel that
-  the workspace policy authorizes.
-- Preserve team, channel, thread, parent/reply identity, author, mentions,
+- Bootstrap a configurable historical window from every explicitly configured
+  Team channel or meeting/group chat that the workspace policy authorizes. Do not
+  discover or ingest tenant-wide chats.
+- Preserve team/channel or chat identity, conversation/thread identity,
+  parent/reply identity, author, mentions,
   created/edited/deleted timestamps, native permalink, and attachment metadata.
 - Version edited messages and tombstone deleted messages; do not silently retain a
   deleted version as active evidence.
@@ -78,7 +80,7 @@ datastore, graph database, vector service, scheduler service, or agent runtime.
   commitment, question, decision, risk, or observation only when supported by the
   normalized message role and content.
 - Exclude assistant prompts, bot replies, tests, finance-classified content, and
-  unmapped channels before passage materialization and embedding.
+  unmapped conversations before passage materialization and embedding.
 - Consume supported source change notifications and renew their subscriptions;
   hourly reconciliation repairs notification gaps and pagination drift.
 

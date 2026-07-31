@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createTeamsKnowledgeSource,
   type TeamsKnowledgeChannel,
+  type TeamsKnowledgeChat,
   type TeamsKnowledgeSourceConfiguration,
 } from "../src/infrastructure/graph/teams-knowledge-source.ts";
 
@@ -10,6 +11,15 @@ const channel = (): TeamsKnowledgeChannel => ({
   teamId: "team-1",
   channelId: "19:delivery@thread.tacv2",
   label: "Delivery",
+  sensitivity: "internal",
+  acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
+});
+
+const chat = (): TeamsKnowledgeChat => ({
+  chatId: "19:meeting_example@thread.v2",
+  chatType: "meeting",
+  label: "Delivery Standup",
+  canonicalUrl: "https://teams.microsoft.com/l/chat/19:meeting_example@thread.v2/conversations",
   sensitivity: "internal",
   acl: [{ effect: "allow", subjectType: "audience", subjectId: "delivery" }],
 });
@@ -200,5 +210,83 @@ describe("Teams knowledge source", () => {
     await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
       "Configured Teams knowledge synchronization failed",
     );
+  });
+
+  it("paginates an explicitly mapped meeting chat and builds contextual conversation windows", async () => {
+    const requests: string[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("page=2"))
+        return Response.json({
+          value: [
+            message("chat-1", "Please test the publishing cron today.", {
+              createdDateTime: "2026-07-20T09:00:00.000Z",
+              lastModifiedDateTime: "2026-07-20T09:00:00.000Z",
+              webUrl: null,
+            }),
+          ],
+        });
+      return Response.json({
+        value: [
+          message("chat-3", "We will update SAR-45 after the client confirms.", {
+            createdDateTime: "2026-07-20T09:10:00.000Z",
+            lastModifiedDateTime: "2026-07-20T09:10:00.000Z",
+            webUrl: null,
+          }),
+          message("chat-2", "The team is waiting for QA approval.", {
+            createdDateTime: "2026-07-20T09:05:00.000Z",
+            lastModifiedDateTime: "2026-07-20T09:05:00.000Z",
+            webUrl: null,
+          }),
+        ],
+        "@odata.nextLink":
+          "https://graph.microsoft.com/v1.0/chats/19%3Ameeting_example%40thread.v2/messages?page=2",
+      });
+    });
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [],
+      chats: [chat()],
+      historySince: "2026-07-01T00:00:00.000Z",
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      fetcher,
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toContain("/v1.0/chats/19%3Ameeting_example%40thread.v2/messages");
+    expect(requests[0]).toContain("%24top=50");
+    expect(requests[0]).toContain("%24orderby=lastModifiedDateTime+desc");
+    expect(requests[0]).toContain("%24filter=lastModifiedDateTime+gt+2026-07-01T00%3A00%3A00.000Z");
+    expect(snapshot.documents.map(({ externalId }) => externalId)).toEqual([
+      "chat:19:meeting_example@thread.v2:chat-1",
+      "chat:19:meeting_example@thread.v2:chat-2",
+      "chat:19:meeting_example@thread.v2:chat-3",
+    ]);
+    const document = snapshot.documents.find(({ externalId }) => externalId.endsWith("chat-2"));
+    expect(document).toMatchObject({
+      sourceType: "chat_message",
+      canonicalUrl: "https://teams.microsoft.com/l/chat/19:meeting_example@thread.v2/conversations",
+      provenance: {
+        chatId: "19:meeting_example@thread.v2",
+        chatType: "meeting",
+        messageId: "chat-2",
+      },
+      deliveryProjection: {
+        objects: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "team",
+            externalKey: "teams:chat:19:meeting_example@thread.v2",
+          }),
+        ]),
+      },
+    });
+    expect(document?.passages[0]?.body).toContain("Please test the publishing cron today.");
+    expect(document?.passages[0]?.body).toContain("waiting for QA approval");
+    expect(document?.passages[0]?.body).toContain("after the client confirms");
   });
 });

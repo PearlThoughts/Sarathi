@@ -28,11 +28,24 @@ export type TeamsKnowledgeChannel = {
   readonly authority?: number | undefined;
 };
 
+export type TeamsKnowledgeChat = {
+  readonly chatId: string;
+  readonly chatType: "oneOnOne" | "group" | "meeting";
+  readonly label: string;
+  readonly canonicalUrl: string;
+  readonly sensitivity: SensitivityTier;
+  readonly acl: readonly KnowledgeAclRule[];
+  readonly authority?: number | undefined;
+};
+
+export type TeamsKnowledgeConversation = TeamsKnowledgeChannel | TeamsKnowledgeChat;
+
 export type TeamsKnowledgeSourceConfiguration = {
   readonly sourceId: string;
   readonly workspaceId: string;
   readonly tokenProvider: GraphAccessTokenProvider;
   readonly channels: readonly TeamsKnowledgeChannel[];
+  readonly chats?: readonly TeamsKnowledgeChat[] | undefined;
   readonly historySince?: string | undefined;
   readonly assistantName?: string | undefined;
   readonly botApplicationId?: string | undefined;
@@ -87,6 +100,7 @@ type TeamsCursor = {
   readonly version: 1;
   readonly scopeHash: string;
   readonly channels: Readonly<Record<string, ChannelCursor>>;
+  readonly chats?: Readonly<Record<string, ChannelCursor>> | undefined;
 };
 
 type NormalizedMessage = {
@@ -126,8 +140,17 @@ const parseCursor = (value: string): TeamsCursor | undefined => {
 const channelIdentity = (channel: TeamsKnowledgeChannel): string =>
   `${channel.teamId}:${channel.channelId}`;
 
-const externalId = (channel: TeamsKnowledgeChannel, messageId: string): string =>
-  `${channel.teamId}:${channel.channelId}:${messageId}`;
+const isKnowledgeChat = (
+  conversation: TeamsKnowledgeConversation,
+): conversation is TeamsKnowledgeChat => "chatId" in conversation;
+
+const conversationIdentity = (conversation: TeamsKnowledgeConversation): string =>
+  isKnowledgeChat(conversation) ? `chat:${conversation.chatId}` : channelIdentity(conversation);
+
+const externalId = (conversation: TeamsKnowledgeConversation, messageId: string): string =>
+  isKnowledgeChat(conversation)
+    ? `chat:${conversation.chatId}:${messageId}`
+    : `${conversation.teamId}:${conversation.channelId}:${messageId}`;
 
 const graphPath = (channel: TeamsKnowledgeChannel): string =>
   `/v1.0/teams/${encodeURIComponent(channel.teamId)}/channels/${encodeURIComponent(channel.channelId)}/messages`;
@@ -205,16 +228,18 @@ const readPages = async (
 
 const normalizeMessage = (
   configuration: TeamsKnowledgeSourceConfiguration,
-  channel: TeamsKnowledgeChannel,
+  conversation: TeamsKnowledgeConversation,
   message: TeamsMessage,
   rootId: string,
 ): NormalizedMessage | undefined => {
+  const webUrl =
+    message.webUrl ?? (isKnowledgeChat(conversation) ? conversation.canonicalUrl : null);
   if (
     message.id === undefined ||
     message.createdDateTime === undefined ||
     message.messageType !== "message" ||
-    message.webUrl == null ||
-    !message.webUrl.startsWith("https://teams.microsoft.com/")
+    webUrl == null ||
+    !webUrl.startsWith("https://teams.microsoft.com/")
   )
     return undefined;
   const content = textContent(message.body?.content);
@@ -259,13 +284,13 @@ const normalizeMessage = (
     createdAt: message.createdDateTime,
     modifiedAt,
     ...(deletedAt === undefined ? {} : { deletedAt }),
-    title: message.subject?.trim() || channel.label,
+    title: message.subject?.trim() || conversation.label,
     content,
     authorId: message.from?.user?.id,
     authorName: message.from?.user?.displayName,
     mentions,
     attachments,
-    webUrl: message.webUrl,
+    webUrl,
     version,
   };
 };
@@ -335,6 +360,47 @@ const readChannelMessages = async (
     );
 };
 
+const readChatMessages = async (
+  configuration: TeamsKnowledgeSourceConfiguration,
+  chat: TeamsKnowledgeChat,
+  accessToken: string,
+  historySince: string,
+): Promise<readonly NormalizedMessage[]> => {
+  if (
+    chat.chatId.trim() === "" ||
+    chat.chatId.includes("/") ||
+    chat.label.trim() === "" ||
+    chat.acl.length === 0 ||
+    !chat.canonicalUrl.startsWith("https://teams.microsoft.com/")
+  )
+    throw new Error(
+      "Teams knowledge chats require a stable identity, label, Teams URL, and explicit ACL.",
+    );
+  const url = new URL(
+    `https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(chat.chatId)}/messages`,
+  );
+  url.searchParams.set("$top", "50");
+  url.searchParams.set("$orderby", "lastModifiedDateTime desc");
+  url.searchParams.set("$filter", `lastModifiedDateTime gt ${historySince}`);
+  const messages = await readPages(configuration, accessToken, url.toString());
+  return messages
+    .flatMap((message) => {
+      const rootId = message.replyToId ?? message.id;
+      if (rootId === undefined) return [];
+      const normalized = normalizeMessage(configuration, chat, message, rootId);
+      return normalized === undefined ? [] : [normalized];
+    })
+    .filter((message) =>
+      [message.createdAt, message.modifiedAt, message.deletedAt]
+        .filter((value) => value !== undefined)
+        .some((value) => Date.parse(value) >= Date.parse(historySince)),
+    )
+    .sort(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+    );
+};
+
 const messageRole = (
   content: string,
 ): "commitment" | "decision" | "risk" | "question" | "status" => {
@@ -357,12 +423,15 @@ const workItemKeys = (content: string): readonly string[] => [
 ];
 
 const projection = (
-  channel: TeamsKnowledgeChannel,
+  conversation: TeamsKnowledgeConversation,
   message: NormalizedMessage,
 ): DeliveryProjection => {
+  const conversationKey = isKnowledgeChat(conversation)
+    ? `teams:chat:${conversation.chatId}`
+    : `teams:${conversation.teamId}:${conversation.channelId}`;
   const channelRef: DeliveryObjectRef = {
     kind: "team",
-    externalKey: `teams:${channel.teamId}:${channel.channelId}`,
+    externalKey: conversationKey,
   };
   const authorRef: DeliveryObjectRef | undefined =
     message.authorId === undefined
@@ -372,10 +441,12 @@ const projection = (
   const objects: DeliveryObjectDraft[] = [
     {
       ...channelRef,
-      title: channel.label,
+      title: conversation.label,
       lifecycleState: "active",
-      attributes: { teamId: channel.teamId, channelId: channel.channelId },
-      sensitivity: channel.sensitivity,
+      attributes: isKnowledgeChat(conversation)
+        ? { chatId: conversation.chatId, chatType: conversation.chatType }
+        : { teamId: conversation.teamId, channelId: conversation.channelId },
+      sensitivity: conversation.sensitivity,
     },
     ...(authorRef === undefined
       ? []
@@ -385,7 +456,7 @@ const projection = (
             title: message.authorName ?? message.authorId ?? "Teams member",
             lifecycleState: "active",
             attributes: { provider: "entra" },
-            sensitivity: channel.sensitivity,
+            sensitivity: conversation.sensitivity,
           } satisfies DeliveryObjectDraft,
         ]),
   ];
@@ -396,7 +467,7 @@ const projection = (
       from: authorRef,
       to: channelRef,
       attributes: { messageId: message.id },
-      sensitivity: channel.sensitivity,
+      sensitivity: conversation.sensitivity,
     });
   for (const key of workItemKeys(message.content)) {
     const workItem: DeliveryObjectRef = { kind: "work_item", externalKey: key };
@@ -404,14 +475,14 @@ const projection = (
       ...workItem,
       title: key,
       attributes: { referencedBy: message.webUrl },
-      sensitivity: channel.sensitivity,
+      sensitivity: conversation.sensitivity,
     });
     relations.push({
       kind: role === "commitment" ? "contributes_to" : "relates_to",
       from: channelRef,
       to: workItem,
       attributes: { messageId: message.id },
-      sensitivity: channel.sensitivity,
+      sensitivity: conversation.sensitivity,
     });
   }
   const observationKind: DeliveryObservationKind = role === "decision" ? "decision" : "message";
@@ -425,11 +496,11 @@ const projection = (
         subject: channelRef,
         actorExternalKey: authorRef?.externalKey,
         summary: message.content.slice(0, 500),
-        dedupeKey: `teams:${channel.teamId}:${channel.channelId}:${message.id}`,
+        dedupeKey: `${conversationKey}:${message.id}`,
         occurredAt: message.createdAt,
         citationUrl: message.webUrl,
-        sensitivity: channel.sensitivity,
-        authority: channel.authority ?? 0.82,
+        sensitivity: conversation.sensitivity,
+        authority: conversation.authority ?? 0.82,
       },
     ],
     metrics: [],
@@ -443,11 +514,11 @@ const projection = (
               predicate: `teams.${role}`,
               value: message.content,
               assertedBy: authorRef?.externalKey,
-              externalAssertionId: `teams:${channel.teamId}:${channel.channelId}:${message.id}`,
+              externalAssertionId: `${conversationKey}:${message.id}`,
               assertedAt: message.createdAt,
               citationUrl: message.webUrl,
-              sensitivity: channel.sensitivity,
-              authority: channel.authority ?? 0.82,
+              sensitivity: conversation.sensitivity,
+              authority: conversation.authority ?? 0.82,
             },
           ],
   };
@@ -456,11 +527,28 @@ const projection = (
 const contextualPassages = (
   target: NormalizedMessage,
   thread: readonly NormalizedMessage[],
+  conversation: TeamsKnowledgeConversation,
 ): readonly KnowledgePassageDraft[] => {
   const active = thread.filter(
     (message) => message.deletedAt === undefined && !acknowledgement(message.content),
   );
   if (target.deletedAt !== undefined || acknowledgement(target.content)) return [];
+  if (isKnowledgeChat(conversation)) {
+    const targetIndex = active.findIndex((message) => message.id === target.id);
+    if (targetIndex < 0) return [];
+    const start = Math.max(0, Math.min(targetIndex - 2, active.length - 5));
+    const span = active.slice(start, start + 5);
+    const passage = createTypedPassage(
+      "chat-window",
+      `#message-${encodeURIComponent(target.id)}`,
+      0,
+      target.title,
+      span
+        .map((message) => `${message.authorName ?? "Team member"}: ${message.content}`)
+        .join("\n"),
+    );
+    return passage === undefined ? [] : [passage];
+  }
   const root = active.find((message) => message.id === target.rootId);
   if (target.id !== target.rootId) {
     const body = [
@@ -497,20 +585,22 @@ const contextualPassages = (
 
 const asDocument = (
   configuration: TeamsKnowledgeSourceConfiguration,
-  channel: TeamsKnowledgeChannel,
+  conversation: TeamsKnowledgeConversation,
   message: NormalizedMessage,
   thread: readonly NormalizedMessage[],
 ): KnowledgeSourceDocument | undefined => {
-  const passages = contextualPassages(message, thread);
+  const passages = contextualPassages(message, thread, conversation);
   if (passages.length === 0) return undefined;
-  const contextVersion =
-    message.id === message.rootId
+  const contextVersion = isKnowledgeChat(conversation)
+    ? stableSha256(`${message.version}\n${passages.map(({ body }) => body).join("\n")}`)
+    : message.id === message.rootId
       ? stableSha256(thread.map(({ id, version }) => `${id}:${version}`).join("\n"))
       : stableSha256(
           `${message.version}\n${thread.find(({ id }) => id === message.rootId)?.version ?? "missing-root"}`,
         );
-  const sourceUpdatedAt =
-    message.id === message.rootId
+  const sourceUpdatedAt = isKnowledgeChat(conversation)
+    ? message.modifiedAt
+    : message.id === message.rootId
       ? thread.reduce(
           (latest, candidate) => (candidate.modifiedAt > latest ? candidate.modifiedAt : latest),
           message.modifiedAt,
@@ -520,18 +610,23 @@ const asDocument = (
     source: "teams",
     sourceId: configuration.sourceId,
     workspaceId: configuration.workspaceId,
-    externalId: externalId(channel, message.id),
-    sourceType: message.id === message.rootId ? "thread" : "thread_reply",
+    externalId: externalId(conversation, message.id),
+    sourceType: isKnowledgeChat(conversation)
+      ? "chat_message"
+      : message.id === message.rootId
+        ? "thread"
+        : "thread_reply",
     sourceVersion: contextVersion,
     canonicalUrl: message.webUrl,
     title: message.title,
     sourceCreatedAt: message.createdAt,
     sourceUpdatedAt,
-    sensitivity: channel.sensitivity,
-    authority: channel.authority ?? 0.82,
+    sensitivity: conversation.sensitivity,
+    authority: conversation.authority ?? 0.82,
     provenance: {
-      teamId: channel.teamId,
-      channelId: channel.channelId,
+      ...(isKnowledgeChat(conversation)
+        ? { chatId: conversation.chatId, chatType: conversation.chatType }
+        : { teamId: conversation.teamId, channelId: conversation.channelId }),
       threadId: message.rootId,
       messageId: message.id,
       ...(message.parentId === undefined ? {} : { parentId: message.parentId }),
@@ -544,15 +639,15 @@ const asDocument = (
       modifiedAt: message.modifiedAt,
       attachments: JSON.stringify(message.attachments),
     },
-    acl: channel.acl,
+    acl: conversation.acl,
     passages,
-    deliveryProjection: projection(channel, message),
+    deliveryProjection: projection(conversation, message),
   };
 };
 
-const readChannel = async (
+const readConversation = async (
   configuration: TeamsKnowledgeSourceConfiguration,
-  channel: TeamsKnowledgeChannel,
+  conversation: TeamsKnowledgeConversation,
   accessToken: string,
   historySince: string,
   previous?: ChannelCursor,
@@ -561,7 +656,9 @@ const readChannel = async (
   readonly retiredExternalIds: readonly string[];
   readonly cursor: ChannelCursor;
 }> => {
-  const messages = await readChannelMessages(configuration, channel, accessToken, historySince);
+  const messages = isKnowledgeChat(conversation)
+    ? await readChatMessages(configuration, conversation, accessToken, historySince)
+    : await readChannelMessages(configuration, conversation, accessToken, historySince);
   const threads = new Map<string, NormalizedMessage[]>();
   for (const message of messages) {
     const thread = threads.get(message.rootId) ?? [];
@@ -571,13 +668,18 @@ const readChannel = async (
   const versions: Record<string, string> = {};
   const retiredExternalIds = new Set<string>();
   const documents = messages.flatMap((message) => {
-    const id = externalId(channel, message.id);
+    const id = externalId(conversation, message.id);
     if (message.deletedAt !== undefined) {
       versions[id] = `deleted:${message.version}`;
       if (previous?.messages[id]?.startsWith("deleted:") !== true) retiredExternalIds.add(id);
       return [];
     }
-    const document = asDocument(configuration, channel, message, threads.get(message.rootId) ?? []);
+    const document = asDocument(
+      configuration,
+      conversation,
+      message,
+      isKnowledgeChat(conversation) ? messages : (threads.get(message.rootId) ?? []),
+    );
     if (document === undefined) {
       if (previous?.messages[id] !== undefined) retiredExternalIds.add(id);
       return [];
@@ -608,11 +710,15 @@ export const createTeamsKnowledgeSource = (
       try: async () => {
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Teams knowledge source was requested for another workspace.");
-        if (configuration.channels.length === 0 || configuration.channels.length > 32)
-          throw new Error("Teams knowledge synchronization requires 1 to 32 configured channels.");
+        const configuredChats = configuration.chats ?? [];
+        const conversationCount = configuration.channels.length + configuredChats.length;
+        if (conversationCount === 0 || conversationCount > 64)
+          throw new Error(
+            "Teams knowledge synchronization requires 1 to 64 configured channels or chats.",
+          );
         const scopeHash = stableSha256(
-          JSON.stringify(
-            configuration.channels.map(
+          JSON.stringify({
+            channels: configuration.channels.map(
               ({ teamId, channelId, label, sensitivity, acl, authority }) => ({
                 teamId,
                 channelId,
@@ -622,7 +728,18 @@ export const createTeamsKnowledgeSource = (
                 authority,
               }),
             ),
-          ),
+            chats: configuredChats.map(
+              ({ chatId, chatType, label, canonicalUrl, sensitivity, acl, authority }) => ({
+                chatId,
+                chatType,
+                label,
+                canonicalUrl,
+                sensitivity,
+                acl,
+                authority,
+              }),
+            ),
+          }),
         );
         const decoded = previousCursor === undefined ? undefined : parseCursor(previousCursor);
         const previous = decoded?.scopeHash === scopeHash ? decoded : undefined;
@@ -635,18 +752,24 @@ export const createTeamsKnowledgeSource = (
         if (!Number.isFinite(Date.parse(historySince)) || Date.parse(historySince) > now.getTime())
           throw new Error("Teams collaboration history start is invalid.");
         const accessToken = await configuration.tokenProvider.getAccessToken();
-        const reads: Awaited<ReturnType<typeof readChannel>>[] = [];
-        for (let offset = 0; offset < configuration.channels.length; offset += 4) {
-          const batch = configuration.channels.slice(offset, offset + 4);
+        const conversations: readonly TeamsKnowledgeConversation[] = [
+          ...configuration.channels,
+          ...configuredChats,
+        ];
+        const reads: Awaited<ReturnType<typeof readConversation>>[] = [];
+        for (let offset = 0; offset < conversations.length; offset += 4) {
+          const batch = conversations.slice(offset, offset + 4);
           reads.push(
             ...(await Promise.all(
-              batch.map((channel) =>
-                readChannel(
+              batch.map((conversation) =>
+                readConversation(
                   configuration,
-                  channel,
+                  conversation,
                   accessToken,
                   historySince,
-                  previous?.channels[channelIdentity(channel)],
+                  isKnowledgeChat(conversation)
+                    ? previous?.chats?.[conversationIdentity(conversation)]
+                    : previous?.channels[conversationIdentity(conversation)],
                 ),
               ),
             )),
@@ -658,11 +781,17 @@ export const createTeamsKnowledgeSource = (
             reads[index]?.cursor,
           ]),
         ) as Readonly<Record<string, ChannelCursor>>;
+        const chats = Object.fromEntries(
+          configuredChats.map((chat, index) => [
+            conversationIdentity(chat),
+            reads[configuration.channels.length + index]?.cursor,
+          ]),
+        ) as Readonly<Record<string, ChannelCursor>>;
         return {
           sourceId: configuration.sourceId,
           source: "teams",
           workspaceId,
-          cursor: encodeCursor({ version: 1, scopeHash, channels }),
+          cursor: encodeCursor({ version: 1, scopeHash, channels, chats }),
           scopeHash,
           mode: previous === undefined ? "full" : "delta",
           retiredExternalIds: reads.flatMap((read) => read.retiredExternalIds),
