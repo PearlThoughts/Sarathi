@@ -219,6 +219,7 @@ export type DeliveryAssistantAnswer = {
           | "report-sprint-previous-metadata-missing"
           | "report-sprint-current-metadata-missing"
           | "report-composition-sprint-identity"
+          | "report-composition-sprint-classification"
           | "report-composition-initiative-identity"
           | "report-composition-citations-missing"
           | "report-composition-citation-unknown"

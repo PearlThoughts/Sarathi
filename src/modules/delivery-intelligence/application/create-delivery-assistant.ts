@@ -146,6 +146,7 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-sprint-previous-metadata-missing":
     case "report-sprint-current-metadata-missing":
     case "report-composition-sprint-identity":
+    case "report-composition-sprint-classification":
     case "report-composition-initiative-identity":
     case "report-composition-citations-missing":
     case "report-composition-citation-unknown":
@@ -1092,6 +1093,21 @@ const composeWithModel = (
                   !sprintDateIsPresent(sprint.endAt)
                 )
                   invalidReport("report-composition-sprint-identity");
+              }
+              if (review !== undefined) {
+                const previousAt = text.indexOf("## Previous sprint");
+                const currentAt = text.indexOf("## Current sprint");
+                const previousSection = text.slice(previousAt, currentAt);
+                if (
+                  ![
+                    /planned at start/i,
+                    /delivered/i,
+                    /rolled over/i,
+                    /added during sprint/i,
+                    /dropped|superseded/i,
+                  ].every((classification) => classification.test(previousSection))
+                )
+                  invalidReport("report-composition-sprint-classification");
               }
               if (review?.initiatives.some(({ title }) => !text.includes(title)))
                 invalidReport("report-composition-initiative-identity");
