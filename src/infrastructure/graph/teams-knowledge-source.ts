@@ -46,6 +46,7 @@ export type TeamsKnowledgeSourceConfiguration = {
   readonly tokenProvider: GraphAccessTokenProvider;
   readonly channels: readonly TeamsKnowledgeChannel[];
   readonly chats?: readonly TeamsKnowledgeChat[] | undefined;
+  readonly excludedAuthorIds?: readonly string[] | undefined;
   readonly historySince?: string | undefined;
   readonly assistantName?: string | undefined;
   readonly botApplicationId?: string | undefined;
@@ -82,6 +83,7 @@ type TeamsMessage = {
     readonly name?: string | null;
     readonly contentUrl?: string | null;
     readonly teamsAppId?: string | null;
+    readonly content?: string | null;
   }[];
   readonly webUrl?: string | null;
 };
@@ -121,6 +123,13 @@ type NormalizedMessage = {
     readonly name: string;
     readonly contentUrl?: string | undefined;
     readonly teamsAppId?: string | undefined;
+    readonly messageReference?:
+      | {
+          readonly messageId: string;
+          readonly preview: string;
+          readonly authorName?: string | undefined;
+        }
+      | undefined;
   }[];
   readonly webUrl: string;
   readonly version: string;
@@ -167,6 +176,33 @@ const textContent = (value: string | undefined): string =>
     .replace(/&quot;/gi, '"')
     .replace(/\s+/g, " ")
     .trim();
+
+const messageReference = (
+  attachment: NonNullable<TeamsMessage["attachments"]>[number],
+): NormalizedMessage["attachments"][number]["messageReference"] => {
+  if (attachment.contentType !== "messageReference" || attachment.content == null) return undefined;
+  try {
+    const parsed = JSON.parse(attachment.content) as {
+      readonly messageId?: unknown;
+      readonly messagePreview?: unknown;
+      readonly messageSender?: {
+        readonly user?: { readonly displayName?: unknown } | null;
+      };
+    };
+    const preview =
+      typeof parsed.messagePreview === "string" ? textContent(parsed.messagePreview) : "";
+    if (typeof parsed.messageId !== "string" || parsed.messageId.trim() === "" || preview === "")
+      return undefined;
+    const authorName = parsed.messageSender?.user?.displayName;
+    return {
+      messageId: parsed.messageId,
+      preview,
+      ...(typeof authorName === "string" && authorName.trim() !== "" ? { authorName } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 const assistantPrompt = (content: string, assistantName: string): boolean => {
   const escaped = assistantName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -244,6 +280,7 @@ const normalizeMessage = (
     return undefined;
   const content = textContent(message.body?.content);
   const deletedAt = message.deletedDateTime ?? undefined;
+  const authorId = message.from?.user?.id;
   const authorApplicationId = message.from?.application?.id;
   const excluded =
     deletedAt === undefined &&
@@ -251,6 +288,7 @@ const normalizeMessage = (
       financeContent(content) ||
       testContent(content) ||
       assistantPrompt(content, configuration.assistantName ?? "Sarathi") ||
+      (authorId !== undefined && configuration.excludedAuthorIds?.includes(authorId) === true) ||
       authorApplicationId !== undefined ||
       (configuration.botApplicationId !== undefined &&
         authorApplicationId === configuration.botApplicationId));
@@ -260,13 +298,20 @@ const normalizeMessage = (
     const identity = mentioned?.user;
     return identity?.id === undefined && identity?.displayName === undefined ? [] : [identity];
   });
-  const attachments = (message.attachments ?? []).map((attachment, index) => ({
-    id: attachment.id ?? String(index),
-    contentType: attachment.contentType ?? "unknown",
-    name: attachment.name ?? "attachment",
-    ...(attachment.contentUrl == null ? {} : { contentUrl: attachment.contentUrl }),
-    ...(attachment.teamsAppId == null ? {} : { teamsAppId: attachment.teamsAppId }),
-  }));
+  const attachments = (message.attachments ?? []).map((attachment, index) => {
+    const reference = messageReference(attachment);
+    return {
+      id: attachment.id ?? String(index),
+      contentType: attachment.contentType ?? "unknown",
+      name: attachment.name ?? "attachment",
+      ...(attachment.contentUrl == null ? {} : { contentUrl: attachment.contentUrl }),
+      ...(attachment.teamsAppId == null ? {} : { teamsAppId: attachment.teamsAppId }),
+      ...(reference === undefined ? {} : { messageReference: reference }),
+    };
+  });
+  const referencedMessageId = attachments.find(
+    ({ messageReference: reference }) => reference !== undefined,
+  )?.messageReference?.messageId;
   const version = stableSha256(
     JSON.stringify({
       modifiedAt,
@@ -280,13 +325,15 @@ const normalizeMessage = (
   return {
     id: message.id,
     rootId,
-    ...(message.replyToId == null ? {} : { parentId: message.replyToId }),
+    ...(message.replyToId == null && referencedMessageId === undefined
+      ? {}
+      : { parentId: message.replyToId ?? referencedMessageId }),
     createdAt: message.createdDateTime,
     modifiedAt,
     ...(deletedAt === undefined ? {} : { deletedAt }),
     title: message.subject?.trim() || conversation.label,
     content,
-    authorId: message.from?.user?.id,
+    authorId,
     authorName: message.from?.user?.displayName,
     mentions,
     attachments,
@@ -538,14 +585,23 @@ const contextualPassages = (
     if (targetIndex < 0) return [];
     const start = Math.max(0, Math.min(targetIndex - 2, active.length - 5));
     const span = active.slice(start, start + 5);
+    const chatLine = (message: NormalizedMessage): string => {
+      const reference = message.attachments.find(
+        ({ messageReference: candidate }) => candidate !== undefined,
+      )?.messageReference;
+      return [
+        ...(reference === undefined
+          ? []
+          : [`Replying to ${reference.authorName ?? "team member"}: ${reference.preview}`]),
+        `${message.authorName ?? "Team member"}: ${message.content}`,
+      ].join("\n");
+    };
     const passage = createTypedPassage(
       "chat-window",
       `#message-${encodeURIComponent(target.id)}`,
       0,
       target.title,
-      span
-        .map((message) => `${message.authorName ?? "Team member"}: ${message.content}`)
-        .join("\n"),
+      span.map(chatLine).join("\n"),
     );
     return passage === undefined ? [] : [passage];
   }
@@ -711,6 +767,9 @@ export const createTeamsKnowledgeSource = (
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Teams knowledge source was requested for another workspace.");
         const configuredChats = configuration.chats ?? [];
+        const excludedAuthorIds = configuration.excludedAuthorIds ?? [];
+        if (excludedAuthorIds.some((id) => id.trim() === ""))
+          throw new Error("Teams excluded author identities must be non-empty.");
         const conversationCount = configuration.channels.length + configuredChats.length;
         if (conversationCount === 0 || conversationCount > 64)
           throw new Error(
@@ -739,6 +798,7 @@ export const createTeamsKnowledgeSource = (
                 authority,
               }),
             ),
+            excludedAuthorIds: [...new Set(excludedAuthorIds)].sort(),
           }),
         );
         const decoded = previousCursor === undefined ? undefined : parseCursor(previousCursor);

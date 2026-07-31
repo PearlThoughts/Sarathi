@@ -72,6 +72,7 @@ type TeamsProjection = {
   readonly sourceId: string;
   readonly channels: readonly TeamsKnowledgeChannel[];
   readonly chats?: readonly TeamsKnowledgeChat[] | undefined;
+  readonly excludedAuthorIds?: readonly string[] | undefined;
   readonly historySince?: string | undefined;
   readonly assistantName?: string | undefined;
 };
