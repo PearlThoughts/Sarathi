@@ -439,6 +439,7 @@ items:
           failure: {
             code: "SARATHI-REPORT-COMPOSITION-FAILED",
             classification: "SARATHI-REPORT-PROVIDER-FAILED",
+            diagnosticCode: "report-provider",
             correlationCode: "SAR-1234ABCD",
           },
         }),
@@ -452,6 +453,7 @@ items:
         operation: "delivery-query",
         errorCode: "SARATHI-REPORT-COMPOSITION-FAILED",
         failureClassification: "SARATHI-REPORT-PROVIDER-FAILED",
+        failureDiagnosticCode: "report-provider",
         correlationCode: "SAR-1234ABCD",
         answer: { status: "failed", citations: [], acceptance: { passed: false } },
       },

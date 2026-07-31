@@ -209,6 +209,21 @@ export type DeliveryAssistantAnswer = {
           | "SARATHI-REPORT-COMPOSITION-TIMEOUT"
           | "SARATHI-REPORT-COMPOSITION-INVALID"
           | "SARATHI-REPORT-QUALITY-FAILED";
+        readonly diagnosticCode?:
+          | "report-provider"
+          | "report-composer-unavailable"
+          | "report-composition-timeout"
+          | "report-composition-empty"
+          | "report-composition-structure"
+          | "report-composition-sprint-identity"
+          | "report-composition-initiative-identity"
+          | "report-composition-citations-missing"
+          | "report-composition-citation-unknown"
+          | "report-composition-citation-placement"
+          | "report-composition-prohibited-prose"
+          | "report-composition-invalid"
+          | "report-quality"
+          | undefined;
         readonly correlationCode: string;
       }
     | undefined;

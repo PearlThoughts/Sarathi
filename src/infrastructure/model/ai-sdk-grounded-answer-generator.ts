@@ -79,6 +79,13 @@ const markdownCitationUrls = (text: string): readonly string[] =>
     match[1] === undefined ? [] : [match[1]],
   );
 
+const invalidModelReport = (operation: string): never => {
+  throw new RepositoryError({
+    message: "Model output failed answer composition validation.",
+    operation,
+  });
+};
+
 const validateConciseCitedAnswer = (
   text: string,
   evidence: readonly { readonly title: string; readonly sourceUrl: string }[],
@@ -112,7 +119,7 @@ const validateDeliveryReport = (
   sprintReview: boolean,
 ): { readonly text: string; readonly citationUrls: readonly string[] } => {
   const answer = text.trim();
-  if (answer === "") throw new Error("Delivery report is empty.");
+  if (answer === "") invalidModelReport("report-composition-empty");
   const requiredHeadings = sprintReview
     ? [
         "## Sprint overview",
@@ -131,22 +138,22 @@ const validateDeliveryReport = (
         "## References",
       ];
   if (!requiredHeadings.every((heading) => answer.includes(heading)))
-    throw new Error("Delivery report is missing its synthesis structure.");
+    invalidModelReport("report-composition-structure");
   const allowedUrls = new Set(evidence.map(({ sourceUrl }) => sourceUrl));
   const citations = markdownCitationUrls(answer);
   if (evidence.length > 0 && citations.length === 0)
-    throw new Error("Delivery report has no source citations.");
+    invalidModelReport("report-composition-citations-missing");
   if (citations.some((url) => !allowedUrls.has(url)))
-    throw new Error("Delivery report contains a citation outside supplied information.");
+    invalidModelReport("report-composition-citation-unknown");
   const referencesAt = answer.indexOf("## References");
   if (markdownCitationUrls(answer.slice(0, referencesAt)).length > 0)
-    throw new Error("Delivery report citations must remain in the compact reference footer.");
+    invalidModelReport("report-composition-citation-placement");
   if (
     /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
       answer,
     )
   )
-    throw new Error("Delivery report contains prohibited evaluator or evidence prose.");
+    invalidModelReport("report-composition-prohibited-prose");
   return { text: answer, citationUrls: [...new Set(citations)] };
 };
 
@@ -210,11 +217,9 @@ export const createGroundedAnswerGenerator = (
                     envelope.presentation?.sprintReview !== undefined,
                   )
                 : validateConciseCitedAnswer(result.text, envelope.evidence);
-            } catch {
-              throw new RepositoryError({
-                message: "Model output failed answer composition validation.",
-                operation: "delivery-answer-composition-validation",
-              });
+            } catch (error) {
+              if (error instanceof RepositoryError) throw error;
+              return invalidModelReport("report-composition-invalid");
             }
           })();
           diagnostics({

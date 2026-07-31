@@ -1185,6 +1185,7 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.status).toBe("failed");
+    expect(answer.failure?.diagnosticCode).toBe("report-composer-unavailable");
     expect(answer.text).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
     expect(answer.text).not.toContain("DEMO-20 Done");
     expect(answer.acceptance.completenessPassed).toBe(false);
@@ -2448,6 +2449,7 @@ describe("delivery intelligence application", () => {
     expect(answer.failure).toMatchObject({
       code: "SARATHI-REPORT-COMPOSITION-FAILED",
       classification: "SARATHI-REPORT-PROVIDER-FAILED",
+      diagnosticCode: "report-provider",
     });
     expect(answer.text).toMatch(/^Response composition failed\./);
     expect(answer.text).not.toContain("RAW-CAPSULE");
@@ -2526,6 +2528,7 @@ describe("delivery intelligence application", () => {
     expect(compose).toHaveBeenCalledTimes(2);
     expect(answer.status).toBe("failed");
     expect(answer.failure?.classification).toBe("SARATHI-REPORT-COMPOSITION-INVALID");
+    expect(answer.failure?.diagnosticCode).toBe("report-composition-citation-unknown");
     expect(answer.text).not.toContain("Raw deterministic capsule inventory");
     expect(answer.text).not.toContain("outside.example.test");
     expect(answer.acceptance.passed).toBe(false);

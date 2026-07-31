@@ -192,7 +192,99 @@ describe("AI SDK OpenRouter answer generator", () => {
         Effect.runPromise(generator.generate(envelope).pipe(Effect.either)),
       ).resolves.toMatchObject({
         _tag: "Left",
-        left: { operation: "delivery-answer-composition-validation" },
+        left: { operation: "report-composition-invalid" },
+      });
+    }
+  });
+
+  it("retains privacy-safe report validation diagnostics", async () => {
+    const validSections = [
+      "## Delivered",
+      "- Delivery is current.",
+      "## In progress",
+      "- No active work.",
+      "## Waiting or blocked",
+      "- No active waits.",
+      "## Decisions needed",
+      "- No decisions.",
+      "## References",
+      "- [Jira](https://jira.example.test/DEMO-754)",
+    ];
+    const cases = [
+      { text: "", operation: "report-composition-empty" },
+      {
+        text: validSections.filter((line) => line !== "## Decisions needed").join("\n"),
+        operation: "report-composition-structure",
+      },
+      {
+        text: validSections.slice(0, -1).join("\n"),
+        operation: "report-composition-citations-missing",
+      },
+      {
+        text: validSections
+          .map((line) =>
+            line.includes("jira.example.test")
+              ? "- [Unknown](https://unknown.example.test/item)"
+              : line,
+          )
+          .join("\n"),
+        operation: "report-composition-citation-unknown",
+      },
+      {
+        text: validSections
+          .map((line) =>
+            line === "- Delivery is current."
+              ? "- Delivery is current. [Jira](https://jira.example.test/DEMO-754)"
+              : line,
+          )
+          .join("\n"),
+        operation: "report-composition-citation-placement",
+      },
+      {
+        text: validSections
+          .map((line) =>
+            line === "- Delivery is current." ? "- Evidence-backed delivery is current." : line,
+          )
+          .join("\n"),
+        operation: "report-composition-prohibited-prose",
+      },
+    ];
+    const reportEnvelope = {
+      ...envelope,
+      presentation: {
+        kind: "delivery_report" as const,
+        period: {
+          kind: "absolute" as const,
+          fromInclusive: "2026-07-01T00:00:00.000Z",
+          toExclusive: "2026-07-31T00:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+        },
+        coverage: {
+          complete: true,
+          examinedRecords: 1,
+          acceptedChanges: 1,
+          duplicateRecords: 0,
+          excludedRecords: 0,
+          unmappedChanges: 0,
+          unavailableSources: [],
+        },
+        capabilitySections: [],
+        episodes: [],
+        dependencies: [],
+        decisionsNeeded: [],
+        jiraAdvisories: [],
+      },
+    };
+
+    for (const testCase of cases) {
+      const generator = createGroundedAnswerGenerator(configuration, undefined, () =>
+        successfulModel(testCase.text),
+      );
+      await expect(
+        Effect.runPromise(generator.generate(reportEnvelope).pipe(Effect.either)),
+      ).resolves.toMatchObject({
+        _tag: "Left",
+        left: { operation: testCase.operation },
       });
     }
   });

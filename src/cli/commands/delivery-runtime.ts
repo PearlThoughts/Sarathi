@@ -483,6 +483,7 @@ export const runDeliveryCommand = async (
             operation: "delivery-query",
             errorCode: answer.failure?.code ?? "SARATHI-REPORT-COMPOSITION-FAILED",
             failureClassification: answer.failure?.classification,
+            failureDiagnosticCode: answer.failure?.diagnosticCode,
             correlationCode: answer.failure?.correlationCode,
             answer: {
               text: answer.text,
