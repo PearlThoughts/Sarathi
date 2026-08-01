@@ -21,6 +21,12 @@ const chatConversation = {
   chatId: "19:meeting_synthetic@thread.v2",
 } as const;
 
+const privateChannelConversation = {
+  ...conversation,
+  kind: "private_team_channel",
+  channelId: "private-channel-synthetic",
+} as const;
+
 const tokenProvider = {
   getAccessToken: vi.fn(async () => "synthetic-token"),
 };
@@ -108,11 +114,41 @@ describe("Teams Graph membership resolver", () => {
     expect(requests[0]?.searchParams.has("$select")).toBe(false);
   });
 
-  it("keeps team and chat roster caches isolated", async () => {
+  it("resolves private-channel membership from the channel-specific allMembers roster", async () => {
+    const requests: URL[] = [];
+    const resolver = createTeamsGraphMembershipResolver({
+      tokenProvider,
+      fetcher: vi.fn(async (input) => {
+        requests.push(new URL(input.toString()));
+        return Response.json({ value: [{ userId: "member-synthetic" }] });
+      }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        resolver.resolveMembership({
+          conversation: privateChannelConversation,
+          entraObjectId: "MEMBER-SYNTHETIC",
+        }),
+      ),
+    ).resolves.toMatchObject({ member: true, source: "microsoft_graph_roster" });
+    expect(requests[0]?.pathname).toBe(
+      "/v1.0/teams/graph-team-synthetic/channels/private-channel-synthetic/allMembers",
+    );
+    expect(requests[0]?.searchParams.has("$select")).toBe(false);
+  });
+
+  it("keeps team, private-channel, and chat roster caches isolated", async () => {
     const fetcher = vi.fn(async () => Response.json({ value: [{ userId: "member-synthetic" }] }));
     const resolver = createTeamsGraphMembershipResolver({ tokenProvider, fetcher });
 
     await Effect.runPromise(resolver.resolveMembership(request));
+    await Effect.runPromise(
+      resolver.resolveMembership({
+        conversation: privateChannelConversation,
+        entraObjectId: request.entraObjectId,
+      }),
+    );
     await Effect.runPromise(
       resolver.resolveMembership({
         conversation: chatConversation,
@@ -120,7 +156,7 @@ describe("Teams Graph membership resolver", () => {
       }),
     );
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it.each([403, 404, 429] as const)("fails closed for Graph HTTP %s", async (status) => {
@@ -163,7 +199,6 @@ describe("Teams Graph membership resolver", () => {
   });
 
   it.each([
-    "private_team_channel",
     "shared_team_channel",
     "personal_chat",
   ] as const)("denies unsupported %s before token acquisition or Graph access", async (kind) => {

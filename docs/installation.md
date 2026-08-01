@@ -108,7 +108,7 @@ Validate the package:
 bun run teams:manifest:validate
 ```
 
-Package the manifest and icons, upload the package through the Teams admin-approved process, and install or update Sarathi only in explicitly admitted teams and chats. Verify the consented permission set on each installed-app resource before enabling its runtime projection. Do not infer group/meeting-chat installation from team installation.
+Package the manifest and icons, upload the package through the Teams admin-approved process, and install or update Sarathi only in explicitly admitted teams, chats, and private channels. For private channels, add the app to the parent Team and then to the specific channel; prove `ChannelMessage.Read.Group` and `ChannelMember.Read.Group` on that resource and read the current channel roster before enabling its projection. Private-channel material must use a distinct channel audience and reconciliation-only notification mode. Verify the consented permission set on each installed-app resource before enabling its runtime projection. Do not infer chat or private-channel installation from team installation, and do not admit shared channels merely because the package declares tier-one channel capability.
 
 A valid manifest proves only that Teams accepts the declared package capability. It does not prove source ingestion, inbound conversation resolution, actor authorization, same-conversation reply delivery, or live acceptance.
 

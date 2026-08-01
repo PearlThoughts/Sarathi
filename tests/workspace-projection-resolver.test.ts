@@ -96,6 +96,30 @@ const chatProjection: WorkspaceProjection = {
   ],
 };
 
+const privateChannelProjection: WorkspaceProjection = {
+  version: 2,
+  conversations: [
+    {
+      kind: "private_team_channel",
+      tenantId: "tenant-synthetic",
+      teamId: "team-synthetic",
+      graphTeamId: "graph-team-synthetic",
+      channelId: "private-channel-synthetic",
+      workspaceId: "workspace-synthetic",
+      audienceId: "private-channel-audience-synthetic",
+      sensitivity: "confidential",
+      membership: {
+        kind: "channel_membership",
+        historyAccess: "current_roster",
+        actorId: "private-channel-member-synthetic",
+        trustTier: "trusted",
+      },
+      permittedAudienceIds: ["private-channel-audience-synthetic"],
+      permittedSourceScopes: ["jira", "vault", "github", "teams", "strategy"],
+    },
+  ],
+};
+
 const chatCommand = {
   ...command,
   conversation: {
@@ -241,6 +265,65 @@ describe("workspace projection resolver", () => {
     ]);
   });
 
+  it("resolves only a current member of an explicitly admitted private channel", async () => {
+    const resolveMembership = vi.fn(() =>
+      Effect.succeed({
+        member: true,
+        source: "microsoft_graph_roster" as const,
+        resolvedAt: "2026-08-01T08:00:00.000Z",
+        expiresAt: "2026-08-01T08:02:00.000Z",
+      }),
+    );
+    const resolver = createWorkspaceProjectionResolver(privateChannelProjection, {
+      resolveMembership,
+    });
+    const privateCommand = {
+      ...command,
+      conversation: { ...command.conversation, channelId: "private-channel-synthetic" },
+    } as const;
+
+    await expect(Effect.runPromise(resolver.resolve(privateCommand))).resolves.toMatchObject({
+      conversation: { kind: "private_team_channel", channelId: "private-channel-synthetic" },
+      replyTarget: { kind: "channel_thread", rootActivityId: "root-synthetic" },
+      callerId: "private-channel-member-synthetic",
+      callerTrustTier: "trusted",
+      authorization: {
+        effectiveAudience: {
+          id: "private-channel-audience-synthetic",
+          kind: "channel",
+          historyAccess: "current_roster",
+          membership: { member: true, source: "microsoft_graph_roster" },
+        },
+        permittedAudienceIds: ["private-channel-audience-synthetic"],
+        permittedSourceScopes: ["jira", "vault", "github", "teams", "strategy"],
+      },
+    });
+    expect(resolveMembership).toHaveBeenCalledWith({
+      conversation: {
+        ...privateCommand.conversation,
+        kind: "private_team_channel",
+      },
+      entraObjectId: "entra-synthetic",
+    });
+
+    resolveMembership.mockReturnValueOnce(
+      Effect.succeed({
+        member: false,
+        source: "microsoft_graph_roster" as const,
+        resolvedAt: "2026-08-01T08:00:01.000Z",
+        expiresAt: "2026-08-01T08:02:01.000Z",
+      }),
+    );
+    await expect(
+      Effect.runPromise(
+        resolver.resolve({
+          ...privateCommand,
+          caller: { ...privateCommand.caller, entraObjectId: "parent-team-only-member" },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("denies an unmapped, mismatched, or cross-chat reply target before membership access", async () => {
     const resolveMembership = vi.fn(() =>
       Effect.succeed({
@@ -315,6 +398,21 @@ describe("workspace projection resolver", () => {
       workspaceProjectionAuthorizedActorIds(membershipProjection, "workspace-synthetic"),
     ).toEqual(["team-member-synthetic"]);
     expect(workspaceProjectionDeliveryChannels(chatProjection, "workspace-synthetic")).toEqual([]);
+    expect(
+      workspaceProjectionDeliveryChannels(
+        privateChannelProjection,
+        "workspace-synthetic",
+        "private-channel-member-synthetic",
+      ),
+    ).toEqual([
+      {
+        graphTeamId: "graph-team-synthetic",
+        channelId: "private-channel-synthetic",
+        workspaceId: "workspace-synthetic",
+        sensitivity: "confidential",
+        scope: "private",
+      },
+    ]);
     expect(workspaceProjectionAuthorizedActorIds(chatProjection, "workspace-synthetic")).toEqual([
       "chat-participant-synthetic",
     ]);
@@ -338,7 +436,29 @@ describe("workspace projection resolver", () => {
       { ...base, permittedSourceScopes: [] },
       { ...base, permittedSourceScopes: ["tenant-wide"] },
       { ...base, membership: { ...base.membership, actorId: "" } },
-      { ...base, kind: "private_team_channel" },
+      { ...base, kind: "private_team_channel", membership: { ...base.membership } },
+    ]) {
+      expect(() =>
+        workspaceProjectionFromEnvironment({
+          SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
+            version: 2,
+            conversations: [invalid],
+          }),
+        }),
+      ).toThrow("invalid conversation mapping");
+    }
+    const privateChannel =
+      "conversations" in privateChannelProjection
+        ? privateChannelProjection.conversations[0]
+        : undefined;
+    if (privateChannel === undefined) throw new Error("Synthetic private channel is missing.");
+    for (const invalid of [
+      { ...privateChannel, membership: { ...privateChannel.membership, kind: "team_membership" } },
+      {
+        ...privateChannel,
+        membership: { ...privateChannel.membership, historyAccess: "message_time" },
+      },
+      { ...privateChannel, kind: "shared_team_channel" },
     ]) {
       expect(() =>
         workspaceProjectionFromEnvironment({

@@ -16,6 +16,7 @@ type TeamsManifest = {
     };
   };
   readonly supportsChannelFeatures?: unknown;
+  readonly supportedChannelTypes?: unknown;
 };
 
 const readManifest = async (): Promise<TeamsManifest> =>
@@ -28,15 +29,17 @@ describe("Teams app manifest", () => {
     const manifest = await readManifest();
     const resourceSpecific = manifest.authorization?.permissions?.resourceSpecific ?? [];
 
-    expect(manifest.manifestVersion).toBe("1.22");
-    expect(manifest.version).toBe("1.0.5");
+    expect(manifest.manifestVersion).toBe("1.25");
+    expect(manifest.version).toBe("1.0.6");
     expect(manifest.bots).toEqual([expect.objectContaining({ scopes: ["team", "groupChat"] })]);
     expect(resourceSpecific).toEqual([
       { name: "ChannelMessage.Read.Group", type: "Application" },
       { name: "TeamMember.Read.Group", type: "Application" },
+      { name: "ChannelMember.Read.Group", type: "Application" },
       { name: "ChatMessage.Read.Chat", type: "Application" },
       { name: "ChatMember.Read.Chat", type: "Application" },
     ]);
-    expect(manifest.supportsChannelFeatures).toBeUndefined();
+    expect(manifest.supportsChannelFeatures).toBe("tier1");
+    expect(manifest.supportedChannelTypes).toBeUndefined();
   });
 });

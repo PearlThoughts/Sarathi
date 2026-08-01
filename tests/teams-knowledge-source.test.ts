@@ -365,6 +365,48 @@ describe("Teams knowledge source", () => {
     expect(delays).toEqual([1_100, 1_100, 1_100, 1_100]);
   });
 
+  it("requires explicit reconciliation-only synchronization for private channels", async () => {
+    const getAccessToken = vi.fn(async () => "must-not-be-used");
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken },
+      channels: [{ ...channel(), kind: "private_team_channel" }],
+      historySince: "2026-07-01T00:00:00.000Z",
+      minimumRequestIntervalMilliseconds: 0,
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured Teams knowledge synchronization failed",
+    );
+    expect(getAccessToken).not.toHaveBeenCalled();
+
+    const requests: string[] = [];
+    const accepted = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [
+        {
+          ...channel(),
+          kind: "private_team_channel",
+          notificationSubscription: "reconciliation_only",
+        },
+      ],
+      historySince: "2026-07-01T00:00:00.000Z",
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return Response.json({ value: [] });
+      },
+      minimumRequestIntervalMilliseconds: 0,
+    });
+    await expect(Effect.runPromise(accepted.readSnapshot("example"))).resolves.toMatchObject({
+      source: "teams",
+      documents: [],
+    });
+    expect(requests[0]).toContain("/teams/team-1/channels/19%3Adelivery%40thread.tacv2/messages");
+  });
+
   it("uses bounded exponential floors when Graph returns unusable retry intervals", async () => {
     const delays: number[] = [];
     let attempts = 0;
