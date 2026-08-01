@@ -102,8 +102,6 @@ const membersUrl = (conversation: TeamsConversation): URL => {
   const url = new URL(
     `https://graph.microsoft.com/v1.0/${resource}/${conversation.kind === "private_team_channel" ? "allMembers" : "members"}`,
   );
-  // Microsoft Graph rejects OData query parameters for chat-member listing.
-  if (conversation.kind === "standard_team_channel") url.searchParams.set("$select", "userId");
   return url;
 };
 

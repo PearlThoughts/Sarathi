@@ -59,7 +59,7 @@ describe("Teams Graph membership resolver", () => {
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.pathname).toBe("/v1.0/teams/graph-team-synthetic/members");
-    expect(requests[0]?.searchParams.get("$select")).toBe("userId");
+    expect(requests[0]?.searchParams.has("$select")).toBe(false);
   });
 
   it("shares one short-lived roster read across callers and refreshes after expiry", async () => {
