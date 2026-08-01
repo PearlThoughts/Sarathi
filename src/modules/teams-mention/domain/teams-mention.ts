@@ -36,6 +36,18 @@ export type TeamsReplyTarget =
       readonly conversationId: string;
     };
 
+export type TeamsMembershipRequest = {
+  readonly conversation: TeamsConversation;
+  readonly entraObjectId: string;
+};
+
+export type TeamsMembershipEvidence = {
+  readonly member: boolean;
+  readonly source: "microsoft_graph_roster";
+  readonly resolvedAt: string;
+  readonly expiresAt: string;
+};
+
 export type TeamsMentionCommand = {
   readonly activityId: string;
   readonly conversation: InboundTeamsConversation;

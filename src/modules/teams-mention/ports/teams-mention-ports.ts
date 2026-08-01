@@ -4,10 +4,18 @@ import type {
   AuthorizedContextEnvelope,
   GroundedAnswer,
   ResolvedTeamsMention,
+  TeamsMembershipEvidence,
+  TeamsMembershipRequest,
   TeamsMentionCommand,
   TeamsMentionLease,
   TeamsMentionProcessingState,
 } from "../domain/teams-mention.ts";
+
+export type TeamsMembershipResolver = {
+  readonly resolveMembership: (
+    request: TeamsMembershipRequest,
+  ) => Effect.Effect<TeamsMembershipEvidence, RepositoryError>;
+};
 
 export type TeamsMentionContextAuthorization = {
   readonly allowed: boolean;
