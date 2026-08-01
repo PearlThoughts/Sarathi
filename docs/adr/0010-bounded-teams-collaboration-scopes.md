@@ -4,7 +4,7 @@
 
 Accepted for incremental implementation.
 
-Current implementation note: the legacy standard-channel resolver remains the production answering path and requires explicit channel and actor mappings. Meeting/group-chat source ingestion exists, but inbound answering from those chats is not implemented through that resolver. Private- and shared-channel answering is not production-ready. The decision and acceptance criteria below remain the target contract for incremental rollout.
+Current implementation note: projection v2 admits standard channels through current team membership and can admit an explicitly mapped group or meeting chat through current chat membership. Legacy explicit-actor standard-channel mappings remain available during migration. Private-, shared-channel, and personal-chat answering is not production-ready.
 
 ## Context
 
@@ -21,6 +21,8 @@ Model the originating collaboration scope once as a domain-level discriminated u
 Authorization produces an immutable resolved request context containing workspace, conversation, authenticated actor, effective audience, maximum sensitivity, model-egress policy, permitted corpus scopes, and reply target. It completes before any retrieval or model composition.
 
 Treat admission and membership separately. Private deployment configuration explicitly admits each collaboration scope. An authoritative resource-specific Graph roster then proves current membership with bounded freshness. A failure or expired result denies access; tenant-wide permissions and stale membership are not fallbacks.
+
+For admitted group and meeting chats, the audience policy is `current_roster`: a current participant receives the configured chat audience, including authorized indexed history for that audience. This is a deliberate current-membership policy rather than a claim that message-time participation has been reconstructed. Roster evidence is cached for no more than two minutes; removal blocks newly resolved requests after that bound. Private channels require a different channel-roster policy and are not admitted by this decision slice.
 
 Use channel-thread reply targets for team channels and flat-chat reply targets for chats. Preserve the persistent activity lease across both surfaces.
 

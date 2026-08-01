@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RepositoryError } from "../src/domain/errors.ts";
 import {
   createWorkspaceProjectionResolver,
@@ -72,6 +72,39 @@ const membershipProjection: WorkspaceProjection = {
     },
   ],
 };
+
+const chatProjection: WorkspaceProjection = {
+  version: 2,
+  conversations: [
+    {
+      kind: "meeting_chat",
+      tenantId: "tenant-synthetic",
+      chatId: "chat-synthetic",
+      workspaceId: "workspace-synthetic",
+      audienceId: "chat-audience-synthetic",
+      sensitivity: "confidential",
+      modelEgress: "allow",
+      membership: {
+        kind: "chat_membership",
+        historyAccess: "current_roster",
+        actorId: "chat-participant-synthetic",
+        trustTier: "trusted",
+      },
+      permittedAudienceIds: ["chat-audience-synthetic"],
+      permittedSourceScopes: ["jira", "vault", "github", "teams", "strategy"],
+    },
+  ],
+};
+
+const chatCommand = {
+  ...command,
+  conversation: {
+    kind: "meeting_chat",
+    tenantId: "tenant-synthetic",
+    chatId: "chat-synthetic",
+  },
+  replyTarget: { kind: "chat", conversationId: "chat-synthetic" },
+} as const;
 
 describe("workspace projection resolver", () => {
   it("requires a private JSON projection rather than falling back to an open scope", () => {
@@ -167,6 +200,84 @@ describe("workspace projection resolver", () => {
     ]);
   });
 
+  it("resolves an explicitly admitted current meeting-chat participant", async () => {
+    const membershipCalls: unknown[] = [];
+    const resolver = createWorkspaceProjectionResolver(chatProjection, {
+      resolveMembership: (request) => {
+        membershipCalls.push(request);
+        return Effect.succeed({
+          member: true,
+          source: "microsoft_graph_roster",
+          resolvedAt: "2026-08-01T08:00:00.000Z",
+          expiresAt: "2026-08-01T08:02:00.000Z",
+        });
+      },
+    });
+
+    await expect(Effect.runPromise(resolver.resolve(chatCommand))).resolves.toMatchObject({
+      workspaceId: "workspace-synthetic",
+      conversation: { kind: "meeting_chat", chatId: "chat-synthetic" },
+      replyTarget: { kind: "chat", conversationId: "chat-synthetic" },
+      callerId: "chat-participant-synthetic",
+      callerTrustTier: "trusted",
+      channelSensitivity: "confidential",
+      boundary: { modelEgress: "allow" },
+      authorization: {
+        effectiveAudience: {
+          id: "chat-audience-synthetic",
+          kind: "chat",
+          historyAccess: "current_roster",
+          membership: { member: true, source: "microsoft_graph_roster" },
+        },
+        permittedAudienceIds: ["chat-audience-synthetic"],
+        permittedSourceScopes: ["jira", "vault", "github", "teams", "strategy"],
+      },
+    });
+    expect(membershipCalls).toEqual([
+      {
+        conversation: chatCommand.conversation,
+        entraObjectId: "entra-synthetic",
+      },
+    ]);
+  });
+
+  it("denies an unmapped, mismatched, or cross-chat reply target before membership access", async () => {
+    const resolveMembership = vi.fn(() =>
+      Effect.succeed({
+        member: true,
+        source: "microsoft_graph_roster" as const,
+        resolvedAt: "2026-08-01T08:00:00.000Z",
+        expiresAt: "2026-08-01T08:02:00.000Z",
+      }),
+    );
+    const resolver = createWorkspaceProjectionResolver(chatProjection, { resolveMembership });
+    for (const denied of [
+      { ...chatCommand, conversation: { ...chatCommand.conversation, chatId: "unmapped" } },
+      {
+        ...chatCommand,
+        conversation: { ...chatCommand.conversation, kind: "group_chat" as const },
+      },
+      { ...chatCommand, replyTarget: { kind: "chat" as const, conversationId: "different-chat" } },
+    ]) {
+      await expect(Effect.runPromise(resolver.resolve(denied))).resolves.toBeUndefined();
+    }
+    expect(resolveMembership).not.toHaveBeenCalled();
+  });
+
+  it("denies a mapped meeting chat when the caller is not a current participant", async () => {
+    const resolver = createWorkspaceProjectionResolver(chatProjection, {
+      resolveMembership: () =>
+        Effect.succeed({
+          member: false,
+          source: "microsoft_graph_roster",
+          resolvedAt: "2026-08-01T08:00:00.000Z",
+          expiresAt: "2026-08-01T08:02:00.000Z",
+        }),
+    });
+
+    await expect(Effect.runPromise(resolver.resolve(chatCommand))).resolves.toBeUndefined();
+  });
+
   it("denies a non-member and fails closed when membership resolution is unavailable", async () => {
     const nonMemberResolver = createWorkspaceProjectionResolver(membershipProjection, {
       resolveMembership: () =>
@@ -203,6 +314,10 @@ describe("workspace projection resolver", () => {
     expect(
       workspaceProjectionAuthorizedActorIds(membershipProjection, "workspace-synthetic"),
     ).toEqual(["team-member-synthetic"]);
+    expect(workspaceProjectionDeliveryChannels(chatProjection, "workspace-synthetic")).toEqual([]);
+    expect(workspaceProjectionAuthorizedActorIds(chatProjection, "workspace-synthetic")).toEqual([
+      "chat-participant-synthetic",
+    ]);
     expect(
       workspaceProjectionDeliveryChannels(
         membershipProjection,
@@ -224,6 +339,23 @@ describe("workspace projection resolver", () => {
       { ...base, permittedSourceScopes: ["tenant-wide"] },
       { ...base, membership: { ...base.membership, actorId: "" } },
       { ...base, kind: "private_team_channel" },
+    ]) {
+      expect(() =>
+        workspaceProjectionFromEnvironment({
+          SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
+            version: 2,
+            conversations: [invalid],
+          }),
+        }),
+      ).toThrow("invalid conversation mapping");
+    }
+    const chat = "conversations" in chatProjection ? chatProjection.conversations[0] : undefined;
+    if (chat === undefined) throw new Error("Synthetic chat projection is missing.");
+    for (const invalid of [
+      { ...chat, membership: { ...chat.membership, historyAccess: "message_time" } },
+      { ...chat, membership: { ...chat.membership, kind: "team_membership" } },
+      { ...chat, kind: "personal_chat" },
+      { ...chat, kind: "shared_team_channel" },
     ]) {
       expect(() =>
         workspaceProjectionFromEnvironment({
@@ -287,7 +419,7 @@ describe("workspace projection resolver", () => {
     "group_chat",
     "meeting_chat",
     "personal_chat",
-  ] as const)("denies unsupported %s mappings", async (kind) => {
+  ] as const)("denies unmapped %s conversations", async (kind) => {
     const resolver = createWorkspaceProjectionResolver(projection);
     await expect(
       Effect.runPromise(
@@ -306,6 +438,19 @@ describe("workspace projection resolver", () => {
     expect(() =>
       createWorkspaceProjectionResolver({
         channels: [...projection.channels, firstChannel],
+      }),
+    ).toThrow(RepositoryError);
+  });
+
+  it("rejects ambiguous chat mappings before handling activities", () => {
+    if (!("conversations" in chatProjection))
+      throw new Error("Synthetic chat projection is not version 2.");
+    const firstChat = chatProjection.conversations[0];
+    if (firstChat === undefined) throw new Error("Synthetic projection is missing its chat.");
+    expect(() =>
+      createWorkspaceProjectionResolver({
+        version: 2,
+        conversations: [...chatProjection.conversations, firstChat],
       }),
     ).toThrow(RepositoryError);
   });

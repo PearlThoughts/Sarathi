@@ -71,7 +71,7 @@ Jira-like systems provide work-item identity, intended ownership, workflow state
 
 Teams standard channels, explicitly mapped meeting or group chats, and bounded email provide decisions, clarifications, requirements, approvals, handoffs, and waiting states.
 
-Source participation is not an answering-capability claim. The runtime can index an explicitly mapped meeting or group chat while still denying inbound questions from that chat. Current inbound Teams answering uses the standard-channel resolver with explicit channel and actor mappings; private/shared-channel and chat answering require separate resolution, authorization, delivery, and acceptance evidence.
+Source participation is not an answering-capability claim. Inbound answering requires its own explicit conversation admission, authoritative roster membership, audience and corpus grant, and reply target. Projection v2 supports standard-team membership and explicitly mapped meeting/group-chat membership; private and shared channels remain denied until their separate installation, roster, and isolation contracts are implemented and proved.
 
 Conversation ingestion should preserve:
 

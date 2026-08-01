@@ -15,6 +15,12 @@ const request = {
   entraObjectId: "MEMBER-SYNTHETIC",
 } as const;
 
+const chatConversation = {
+  kind: "meeting_chat",
+  tenantId: "tenant-synthetic",
+  chatId: "19:meeting_synthetic@thread.v2",
+} as const;
+
 const tokenProvider = {
   getAccessToken: vi.fn(async () => "synthetic-token"),
 };
@@ -75,6 +81,48 @@ describe("Teams Graph membership resolver", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    "group_chat",
+    "meeting_chat",
+  ] as const)("resolves a current %s participant from the chat roster", async (kind) => {
+    const requests: URL[] = [];
+    const resolver = createTeamsGraphMembershipResolver({
+      tokenProvider,
+      now: () => Date.parse("2026-08-01T08:00:00.000Z"),
+      cacheTtlMs: 60_000,
+      fetcher: vi.fn(async (input) => {
+        requests.push(new URL(input.toString()));
+        return Response.json({ value: [{ userId: "member-synthetic" }] });
+      }),
+    });
+
+    await expect(
+      Effect.runPromise(
+        resolver.resolveMembership({
+          conversation: { ...chatConversation, kind },
+          entraObjectId: "MEMBER-SYNTHETIC",
+        }),
+      ),
+    ).resolves.toMatchObject({ member: true, source: "microsoft_graph_roster" });
+    expect(requests[0]?.pathname).toBe("/v1.0/chats/19%3Ameeting_synthetic%40thread.v2/members");
+    expect(requests[0]?.searchParams.has("$select")).toBe(false);
+  });
+
+  it("keeps team and chat roster caches isolated", async () => {
+    const fetcher = vi.fn(async () => Response.json({ value: [{ userId: "member-synthetic" }] }));
+    const resolver = createTeamsGraphMembershipResolver({ tokenProvider, fetcher });
+
+    await Effect.runPromise(resolver.resolveMembership(request));
+    await Effect.runPromise(
+      resolver.resolveMembership({
+        conversation: chatConversation,
+        entraObjectId: request.entraObjectId,
+      }),
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it.each([403, 404, 429] as const)("fails closed for Graph HTTP %s", async (status) => {
     const resolver = createTeamsGraphMembershipResolver({
       tokenProvider,
@@ -117,6 +165,7 @@ describe("Teams Graph membership resolver", () => {
   it.each([
     "private_team_channel",
     "shared_team_channel",
+    "personal_chat",
   ] as const)("denies unsupported %s before token acquisition or Graph access", async (kind) => {
     const getAccessToken = vi.fn(async () => "must-not-be-used");
     const fetcher = vi.fn(async () => Response.json({ value: [] }));
@@ -129,7 +178,8 @@ describe("Teams Graph membership resolver", () => {
       Effect.runPromise(
         resolver.resolveMembership({
           ...request,
-          conversation: { ...conversation, kind },
+          conversation:
+            kind === "personal_chat" ? { ...chatConversation, kind } : { ...conversation, kind },
         }),
       ),
     ).rejects.toThrow("does not support this conversation kind");
