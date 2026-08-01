@@ -109,6 +109,41 @@ describe("delivery evaluation", () => {
     ).toThrow("exact failure operation");
   });
 
+  it("accepts every governed delivery citation source, including strategy", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: { minimumPassRate: 1 },
+      cases: [
+        {
+          id: "strategy-alignment",
+          question: "How does delivery align with strategy?",
+          expected: {
+            outcome: "answer",
+            citationSources: ["jira", "strategy", "teams", "vault", "github"],
+          },
+        },
+      ],
+    });
+
+    const strategyCase = evaluationSet.cases[0];
+    if (strategyCase === undefined) throw new Error("Expected one strategy evaluation case.");
+    expect(strategyCase.expected.citationSources).toContain("strategy");
+    expect(() =>
+      parseDeliveryEvaluationSet({
+        ...evaluationSet,
+        cases: [
+          {
+            ...strategyCase,
+            expected: {
+              ...strategyCase.expected,
+              citationSources: ["unclassified"],
+            },
+          },
+        ],
+      }),
+    ).toThrow("citation sources are invalid");
+  });
+
   it("scores answer and denial cases without returning question or answer bodies", () => {
     const evaluationSet = parseDeliveryEvaluationSet({
       version: 1,

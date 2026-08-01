@@ -100,7 +100,14 @@ export type DeliveryEvaluationReport = {
 
 const responseModes = new Set<DeliveryResponseMode>(["fast", "structured", "deep_dive"]);
 const statuses = new Set<DeliveryAssistantAnswer["status"]>(["ok", "partial", "empty"]);
-const sourceKinds = new Set<DeliverySourceKind>(["jira", "vault", "github", "teams", "email"]);
+const sourceKinds = new Set<DeliverySourceKind>([
+  "jira",
+  "vault",
+  "github",
+  "teams",
+  "email",
+  "strategy",
+]);
 const intents = new Set<DeliveryQuestionIntent>([
   "general",
   "status",
