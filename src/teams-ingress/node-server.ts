@@ -144,6 +144,7 @@ const unavailableDependencies = (message: string): TeamsMentionDependencies => (
   delivery: { reply: () => Effect.void },
   audit: {
     acquireLease: () => Effect.succeed({ kind: "acquired", attempt: 1 }),
+    renewLease: () => Effect.succeed(true),
     markDelivered: () => Effect.void,
     markFailed: () => Effect.void,
   },
