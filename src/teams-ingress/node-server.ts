@@ -76,7 +76,10 @@ import {
 } from "../modules/compliance-reminders/index.ts";
 import {
   type CapabilityLedger,
+  createBoundedDeliveryAssistant,
   createDeliveryAssistant,
+  defaultDeliveryMaxConcurrency,
+  defaultDeliveryMaxQueueDepth,
   deliveryResponseBudget,
   parseDeliveryEntityCatalog,
   validateCapabilityLedger,
@@ -109,6 +112,19 @@ const required = (name: string, value: string | undefined): string => {
     throw new Error(`[TEAMS INGRESS CONFIGURATION FAILED]: ${name} is required.`);
   }
   return value;
+};
+
+const configuredInteger = (
+  name: string,
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+): number => {
+  const parsed = value === undefined ? fallback : Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new Error(`[TEAMS INGRESS CONFIGURATION FAILED]: ${name} must be at least ${minimum}.`);
+  }
+  return parsed;
 };
 
 export const teamsIngressConfigurationFromEnvironment = (
@@ -633,7 +649,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                   readonly routingTerms?: readonly string[] | undefined;
                   readonly participantAddresses?: readonly string[] | undefined;
                 }[]);
-          return createDeliveryAssistant({
+          const assistant = createDeliveryAssistant({
             sources: [
               ...(knowledgeDatabase === undefined
                 ? []
@@ -716,6 +732,20 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             ),
             capabilityLedger,
             ...deliveryResponseBudget,
+          });
+          return createBoundedDeliveryAssistant(assistant, {
+            maxConcurrency: configuredInteger(
+              "SARATHI_DELIVERY_MAX_CONCURRENCY",
+              environment.SARATHI_DELIVERY_MAX_CONCURRENCY,
+              defaultDeliveryMaxConcurrency,
+              1,
+            ),
+            maxQueueDepth: configuredInteger(
+              "SARATHI_DELIVERY_MAX_QUEUE_DEPTH",
+              environment.SARATHI_DELIVERY_MAX_QUEUE_DEPTH,
+              defaultDeliveryMaxQueueDepth,
+              0,
+            ),
           });
         })()
       : undefined;
