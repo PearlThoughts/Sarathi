@@ -17,7 +17,7 @@ type InboundTeamsChannelConversation = {
   readonly channelId: string;
 };
 
-type TeamsChatConversation = {
+export type TeamsChatConversation = {
   readonly kind: "group_chat" | "meeting_chat" | "personal_chat";
   readonly tenantId: string;
   readonly chatId: string;
@@ -53,6 +53,7 @@ export type ResolvedCollaborationAuthorization = {
   readonly effectiveAudience: {
     readonly id: string;
     readonly kind: "team" | "channel" | "chat";
+    readonly historyAccess?: "current_roster" | undefined;
     readonly membership:
       | TeamsMembershipEvidence
       | {

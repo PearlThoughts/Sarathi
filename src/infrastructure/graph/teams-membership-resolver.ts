@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import type {
-  TeamsChannelConversation,
+  TeamsConversation,
   TeamsMembershipEvidence,
   TeamsMembershipRequest,
   TeamsMembershipResolver,
@@ -46,8 +46,12 @@ const positiveInteger = (name: string, value: number): number => {
   return value;
 };
 
-const standardTeamConversation = (request: TeamsMembershipRequest): TeamsChannelConversation => {
-  if (request.conversation.kind !== "standard_team_channel") {
+const supportedConversation = (request: TeamsMembershipRequest): TeamsConversation => {
+  if (
+    request.conversation.kind !== "standard_team_channel" &&
+    request.conversation.kind !== "group_chat" &&
+    request.conversation.kind !== "meeting_chat"
+  ) {
     throw new RepositoryError({
       message: "Teams membership lookup does not support this conversation kind.",
       operation: "teams-membership-unsupported-scope",
@@ -55,7 +59,9 @@ const standardTeamConversation = (request: TeamsMembershipRequest): TeamsChannel
   }
   if (
     request.conversation.tenantId.trim() === "" ||
-    request.conversation.graphTeamId.trim() === "" ||
+    ("graphTeamId" in request.conversation
+      ? request.conversation.graphTeamId.trim() === ""
+      : request.conversation.chatId.trim() === "") ||
     request.entraObjectId.trim() === ""
   ) {
     throw new RepositoryError({
@@ -66,14 +72,19 @@ const standardTeamConversation = (request: TeamsMembershipRequest): TeamsChannel
   return request.conversation;
 };
 
-const rosterKey = (conversation: TeamsChannelConversation): string =>
-  `${conversation.tenantId}:${conversation.graphTeamId}`;
+const rosterKey = (conversation: TeamsConversation): string =>
+  "graphTeamId" in conversation
+    ? `team:${conversation.tenantId}:${conversation.graphTeamId}`
+    : `chat:${conversation.tenantId}:${conversation.chatId}`;
 
-const membersUrl = (conversation: TeamsChannelConversation): URL => {
-  const url = new URL(
-    `https://graph.microsoft.com/v1.0/teams/${encodeURIComponent(conversation.graphTeamId)}/members`,
-  );
-  url.searchParams.set("$select", "userId");
+const membersUrl = (conversation: TeamsConversation): URL => {
+  const resource =
+    "graphTeamId" in conversation
+      ? `teams/${encodeURIComponent(conversation.graphTeamId)}`
+      : `chats/${encodeURIComponent(conversation.chatId)}`;
+  const url = new URL(`https://graph.microsoft.com/v1.0/${resource}/members`);
+  // Microsoft Graph rejects OData query parameters for chat-member listing.
+  if ("graphTeamId" in conversation) url.searchParams.set("$select", "userId");
   return url;
 };
 
@@ -132,7 +143,7 @@ export const createTeamsGraphMembershipResolver = (
   const rosters = new Map<string, CachedRoster>();
   const inFlight = new Map<string, Promise<CachedRoster>>();
 
-  const readRoster = async (conversation: TeamsChannelConversation): Promise<CachedRoster> => {
+  const readRoster = async (conversation: TeamsConversation): Promise<CachedRoster> => {
     const key = rosterKey(conversation);
     const cached = rosters.get(key);
     if (cached !== undefined && cached.expiresAt > now()) return cached;
@@ -183,7 +194,7 @@ export const createTeamsGraphMembershipResolver = (
     resolveMembership: (request): Effect.Effect<TeamsMembershipEvidence, RepositoryError> =>
       Effect.tryPromise({
         try: async () => {
-          const conversation = standardTeamConversation(request);
+          const conversation = supportedConversation(request);
           const roster = await readRoster(conversation);
           return {
             member: roster.memberIds.has(request.entraObjectId.toLowerCase()),

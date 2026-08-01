@@ -32,7 +32,7 @@ Document before activation:
 - whether model processing is allowed for that workspace;
 - retention, correction, disable, and rollback expectations.
 
-The current inbound resolver supports only explicitly mapped standard channels and known actors. Do not describe meeting/group-chat, direct-message, private-channel, or shared-channel answering as enabled. Each requires its own resolver, authorization, reply-path, consent, and live-acceptance evidence; private/shared-channel answering is not production-ready.
+Projection v2 supports explicitly mapped standard channels through team membership and explicitly mapped group/meeting chats through current chat membership. Each admitted resource still requires its own installation, resource-specific consent, audience/corpus grant, and live acceptance evidence. Do not describe personal-chat, private-channel, or shared-channel answering as enabled; private/shared-channel answering is not production-ready.
 
 ## 3. Prepare The Public Runtime And Private Overlay
 
@@ -171,7 +171,7 @@ OpenRouter provider name and outcome; prompts, answers, identifiers, and
 credentials are excluded. SDK-internal retries remain disabled so the runtime
 stays inside the Teams response budget.
 
-The current inbound workspace projection must map only configured standard channels and known actors. Meeting or group chats may be configured separately as ingestion sources, but those mappings do not create an inbound question-answering route. The repository fails closed when required mappings or credentials are unavailable.
+The inbound workspace projection must explicitly map every admitted standard channel or group/meeting chat. Standard channels use a team-membership policy; chats use current chat-roster membership and a distinct chat audience. A knowledge-source chat mapping alone does not create an inbound answering route. The repository fails closed when admission, roster evidence, audience grants, required installation, or credentials are unavailable.
 
 Additional reminder configuration is needed only when that capability is part of the pilot. Keep it disabled otherwise.
 
