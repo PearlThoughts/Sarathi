@@ -1,13 +1,45 @@
 import type { PolicyBoundary, SensitivityTier, TrustTier } from "../../../domain/policy.ts";
 
-export type TeamsMentionCommand = {
-  readonly activityId: string;
+export type TeamsChannelConversation = {
+  readonly kind: "standard_team_channel" | "private_team_channel" | "shared_team_channel";
   readonly tenantId: string;
   readonly teamId: string;
   readonly graphTeamId: string;
   readonly channelId: string;
-  readonly conversationId: string;
-  readonly rootActivityId: string;
+};
+
+type InboundTeamsChannelConversation = {
+  readonly kind: "team_channel";
+  readonly tenantId: string;
+  readonly teamId: string;
+  readonly graphTeamId: string;
+  readonly channelId: string;
+};
+
+type TeamsChatConversation = {
+  readonly kind: "group_chat" | "meeting_chat" | "personal_chat";
+  readonly tenantId: string;
+  readonly chatId: string;
+};
+
+export type TeamsConversation = TeamsChannelConversation | TeamsChatConversation;
+export type InboundTeamsConversation = InboundTeamsChannelConversation | TeamsChatConversation;
+
+export type TeamsReplyTarget =
+  | {
+      readonly kind: "channel_thread";
+      readonly conversationId: string;
+      readonly rootActivityId: string;
+    }
+  | {
+      readonly kind: "chat";
+      readonly conversationId: string;
+    };
+
+export type TeamsMentionCommand = {
+  readonly activityId: string;
+  readonly conversation: InboundTeamsConversation;
+  readonly replyTarget: TeamsReplyTarget;
   readonly serviceUrl: string;
   readonly caller: {
     readonly entraObjectId: string;
@@ -19,11 +51,21 @@ export type TeamsMentionCommand = {
 
 export type ResolvedTeamsMention = {
   readonly workspaceId: string;
+  readonly conversation: TeamsConversation;
+  readonly replyTarget: TeamsReplyTarget;
   readonly callerId: string;
   readonly callerTrustTier: TrustTier;
   readonly channelSensitivity: SensitivityTier;
   readonly boundary: PolicyBoundary;
 };
+
+export const teamsConversationScopeId = (conversation: InboundTeamsConversation): string =>
+  "channelId" in conversation ? conversation.channelId : conversation.chatId;
+
+export const teamsConversationRootActivityId = (command: TeamsMentionCommand): string =>
+  command.replyTarget.kind === "channel_thread"
+    ? command.replyTarget.rootActivityId
+    : command.activityId;
 
 export type ContextEvidence = {
   readonly source: "teams" | "jira" | "github" | "vault" | "email" | "intent" | "strategy";

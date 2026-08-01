@@ -6,7 +6,12 @@ import {
   planDeliveryQuestion,
   selectDeliveryResponseProduct,
 } from "../../delivery-intelligence/index.ts";
-import type { TeamsMentionCommand, TeamsMentionOutcome } from "../domain/teams-mention.ts";
+import {
+  type TeamsMentionCommand,
+  type TeamsMentionOutcome,
+  teamsConversationRootActivityId,
+  teamsConversationScopeId,
+} from "../domain/teams-mention.ts";
 import type {
   GroundedAnswerGenerator,
   TeamsMentionAudit,
@@ -146,7 +151,8 @@ export const handleTeamsMention = (
     }
 
     const topLevelDeliveryQuestion =
-      deliveryQuestionPlan !== undefined && command.rootActivityId === command.activityId;
+      deliveryQuestionPlan !== undefined &&
+      teamsConversationRootActivityId(command) === command.activityId;
     const envelopeResult = yield* Effect.either(
       topLevelDeliveryQuestion
         ? Effect.succeed({
@@ -181,9 +187,9 @@ export const handleTeamsMention = (
             plan: deliveryQuestionPlan,
             responseProduct,
             questionContext: {
-              channelId: command.channelId,
-              conversationId: command.conversationId,
-              rootMessageId: command.rootActivityId,
+              channelId: teamsConversationScopeId(command.conversation),
+              conversationId: command.replyTarget.conversationId,
+              rootMessageId: teamsConversationRootActivityId(command),
               currentMessageId: command.activityId,
               evidence: envelope.evidence
                 .filter((record) => record.contextRole === "conversation")
