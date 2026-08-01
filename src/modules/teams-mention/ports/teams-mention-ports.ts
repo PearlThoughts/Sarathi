@@ -56,13 +56,19 @@ export type TeamsMentionDelivery = {
 
 export type TeamsMentionAudit = {
   readonly acquireLease: (activityId: string) => Effect.Effect<TeamsMentionLease, RepositoryError>;
+  readonly renewLease: (
+    activityId: string,
+    attempt: number,
+  ) => Effect.Effect<boolean, RepositoryError>;
   readonly markDelivered: (
     activityId: string,
     workspaceId: string,
+    attempt: number,
   ) => Effect.Effect<void, RepositoryError>;
   readonly markFailed: (
     activityId: string,
     state: Extract<TeamsMentionProcessingState, "failed-retryable" | "failed-terminal">,
+    attempt: number,
     workspaceId?: string | undefined,
   ) => Effect.Effect<void, RepositoryError>;
 };

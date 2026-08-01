@@ -108,6 +108,7 @@ const dependencies = (
             states.push(auditState);
             return { kind: "acquired", attempt: 1 } as const;
           }),
+        renewLease: () => Effect.succeed(auditState === "processing"),
         markDelivered: () =>
           Effect.sync(() => {
             auditState = "delivered";
@@ -162,6 +163,25 @@ describe("teams mention", () => {
     });
     expect(fixture.calls.delivered()).toBe(1);
     expect(fixture.state()).toBe("delivered");
+  });
+
+  it("does not deliver after losing the activity lease during composition", async () => {
+    const fixture = dependencies();
+    let renewals = 0;
+    const lostLeaseDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      audit: {
+        ...fixture.dependencies.audit,
+        renewLease: () => Effect.succeed(++renewals === 1),
+      },
+    };
+
+    await expect(
+      Effect.runPromise(handleTeamsMention(command, lostLeaseDependencies)),
+    ).resolves.toEqual({ kind: "ignored", reason: "duplicate" });
+    expect(renewals).toBe(2);
+    expect(fixture.calls.delivered()).toBe(0);
+    expect(fixture.state()).toBe("processing");
   });
 
   it.each([
@@ -543,9 +563,10 @@ describe("teams mention", () => {
     expect(reporterCalls).toBe(1);
   });
 
-  it("posts only the safe report failure notice and records the Teams operation as failed", async () => {
+  it("posts the safe report failure notice once and records the external delivery", async () => {
     const fixture = dependencies();
     let postedText = "";
+    let postedReplies = 0;
     const deliveryDependencies: TeamsMentionDependencies = {
       ...fixture.dependencies,
       deliveryTimeZone: "Asia/Kolkata",
@@ -553,6 +574,7 @@ describe("teams mention", () => {
         reply: (_command, answer) =>
           Effect.sync(() => {
             postedText = answer.text;
+            postedReplies += 1;
           }),
       },
       deliveryAssistant: {
@@ -624,11 +646,24 @@ describe("teams mention", () => {
       kind: "answered",
       answer: { status: "failed", citations: [] },
     });
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention(
+          {
+            ...command,
+            replyTarget: { ...command.replyTarget, rootActivityId: command.activityId },
+            question: "What was delivered last week?",
+          },
+          deliveryDependencies,
+        ),
+      ),
+    ).resolves.toEqual({ kind: "ignored", reason: "duplicate" });
     expect(postedText).toContain("SARATHI-REPORT-COMPOSITION-FAILED");
     expect(postedText).not.toContain("## Delivered");
-    expect(fixture.state()).toBe("failed-retryable");
+    expect(postedReplies).toBe(1);
+    expect(fixture.state()).toBe("delivered");
     expect(fixture.calls.delivered()).toBe(0);
-    expect(fixture.calls.failed()).toBe(1);
+    expect(fixture.calls.failed()).toBe(0);
   });
 
   it("denies a delivery question before context retrieval when the boundary disallows it", async () => {
