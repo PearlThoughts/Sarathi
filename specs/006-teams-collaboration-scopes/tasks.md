@@ -3,8 +3,10 @@
 - [x] Normalize all declared conversation kinds and reply targets.
 - [x] Deny unsupported chat scopes before external reads.
 - [x] Preserve legacy standard-channel explicit-actor behavior during migration.
-- [ ] Add projection v2 with admission, audience, corpus, and membership policies.
+- [x] Add projection v2 with admission, audience, corpus, and membership policies.
 - [x] Add the bounded standard-team Graph roster adapter and v2 membership admission contract.
+- [x] Enforce v2 audience and source grants before context reads, indexed retrieval, live retrieval, and composition.
+- [ ] Migrate the admitted standard channels through the private overlay after source ACL verification.
 - [ ] Implement resource-scoped Graph installation and membership resolvers.
 - [ ] Prove standard-channel multi-user authorization and duplicate suppression.
 - [ ] Prove mapped meeting/group-chat authorization and flat-chat delivery.

@@ -1,3 +1,4 @@
+import type { CollaborationSourceScope } from "../../../domain/collaboration-source-scope.ts";
 import type { PolicyBoundary, SensitivityTier, TrustTier } from "../../../domain/policy.ts";
 
 export type TeamsChannelConversation = {
@@ -61,7 +62,7 @@ export type ResolvedCollaborationAuthorization = {
         };
   };
   readonly permittedAudienceIds: readonly string[];
-  readonly permittedSourceScopes: readonly string[];
+  readonly permittedSourceScopes: readonly (CollaborationSourceScope | "legacy_workspace")[];
 };
 
 export type TeamsMentionCommand = {

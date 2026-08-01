@@ -68,7 +68,7 @@ const membershipProjection: WorkspaceProjection = {
         trustTier: "member",
       },
       permittedAudienceIds: ["audience-synthetic"],
-      permittedSourceScopes: ["jira", "teams:standard"],
+      permittedSourceScopes: ["jira", "teams"],
     },
   ],
 };
@@ -144,7 +144,7 @@ describe("workspace projection resolver", () => {
           membership: { member: true, source: "microsoft_graph_roster" },
         },
         permittedAudienceIds: ["audience-synthetic"],
-        permittedSourceScopes: ["jira", "teams:standard"],
+        permittedSourceScopes: ["jira", "teams"],
       },
     });
     expect(resolved?.authenticatedActorId).not.toContain(command.caller.entraObjectId);
@@ -213,12 +213,15 @@ describe("workspace projection resolver", () => {
   });
 
   it("rejects v2 mappings with missing audience, corpus, role actor, or unsupported scope", () => {
+    if (!("conversations" in membershipProjection))
+      throw new Error("Synthetic membership projection is not version 2.");
     const base = membershipProjection.conversations[0];
     if (base === undefined) throw new Error("Synthetic membership projection is missing.");
     for (const invalid of [
       { ...base, audienceId: "" },
       { ...base, permittedAudienceIds: ["different-audience"] },
       { ...base, permittedSourceScopes: [] },
+      { ...base, permittedSourceScopes: ["tenant-wide"] },
       { ...base, membership: { ...base.membership, actorId: "" } },
       { ...base, kind: "private_team_channel" },
     ]) {

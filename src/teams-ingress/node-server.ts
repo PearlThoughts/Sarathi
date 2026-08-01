@@ -475,6 +475,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       createTeamsGraphMembershipResolver({ tokenProvider: graphTokenProvider }),
     );
     const teamsThreadContextSource = {
+      sourceScope: "teams" as const,
       contextRole: "conversation" as const,
       reader: createTeamsGraphThreadReader({
         tokenProvider: graphTokenProvider,
@@ -504,6 +505,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
           return [
             teamsThreadContextSource,
             {
+              sourceScope: "jira" as const,
               reader: createJiraEvidenceReader({
                 baseUrl: required("JIRA_BASE_URL", environment.JIRA_BASE_URL),
                 email: required("JIRA_EMAIL", environment.JIRA_EMAIL),
@@ -512,6 +514,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               sourceKey: () => sourceKeys.jira,
             },
             {
+              sourceScope: "github" as const,
               reader: createGitHubEvidenceReader({
                 token: githubToken,
                 allowedRepositories: new Set(allowedRepositories),
@@ -519,6 +522,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               sourceKey: () => sourceKeys.github,
             },
             {
+              sourceScope: "vault" as const,
               reader: createGitHubVaultAllowlistReader({
                 token: githubToken,
                 allowlist: vaultAllowlistFromEnvironment(environment),

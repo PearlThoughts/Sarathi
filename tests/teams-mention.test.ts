@@ -77,7 +77,7 @@ const dependencies = (
                 },
               },
               permittedAudienceIds: ["audience-1"],
-              permittedSourceScopes: ["workspace"],
+              permittedSourceScopes: ["legacy_workspace"],
             },
           }),
       },
@@ -407,6 +407,62 @@ describe("teams mention", () => {
     expect(modelCalls).toBe(0);
     expect(genericAuthorizationCalls).toBe(1);
     expect(fixture.calls.delivered()).toBe(1);
+  });
+
+  it("forwards membership-scoped audience and corpus grants into delivery retrieval", async () => {
+    const fixture = dependencies();
+    const legacyResolved = await Effect.runPromise(fixture.dependencies.resolver.resolve(command));
+    if (legacyResolved === undefined) throw new Error("Expected the synthetic mention to resolve.");
+    const requests: unknown[] = [];
+    const scopedDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      resolver: {
+        resolve: () =>
+          Effect.succeed({
+            ...legacyResolved,
+            authorization: {
+              effectiveAudience: {
+                id: "team-audience",
+                kind: "team" as const,
+                membership: {
+                  member: true as const,
+                  source: "microsoft_graph_roster" as const,
+                  resolvedAt: command.receivedAt,
+                  expiresAt: "2026-07-11T00:02:00.000Z",
+                },
+              },
+              permittedAudienceIds: ["team-audience"],
+              permittedSourceScopes: ["jira", "teams"] as const,
+            },
+          }),
+      },
+      deliveryTimeZone: "Asia/Kolkata",
+      deliveryAssistant: {
+        answer: (request) => {
+          requests.push(request);
+          return Effect.fail(new RepositoryError({ message: "stop after authorization proof" }));
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(
+        handleTeamsMention(
+          {
+            ...command,
+            replyTarget: { ...command.replyTarget, rootActivityId: command.activityId },
+            question: "What is the current delivery status?",
+          },
+          scopedDependencies,
+        ),
+      ),
+    ).resolves.toMatchObject({ kind: "denied" });
+    expect(requests).toEqual([
+      expect.objectContaining({
+        audienceIds: ["team-audience"],
+        permittedSourceScopes: ["jira", "teams"],
+      }),
+    ]);
   });
 
   it("answers a top-level delivery question without redundant context assembly", async () => {

@@ -2656,4 +2656,25 @@ describe("delivery intelligence application", () => {
     expect(identifierInventory.text).not.toContain("DEMO-1");
     expect(identifierInventory.acceptance.passed).toBe(false);
   });
+
+  it("does not invoke a delivery adapter outside the resolved source grant", async () => {
+    const execute = vi.fn<DeliveryQuerySource["execute"]>(() =>
+      Effect.succeed({ items: [], conflicts: [], unavailableSources: [], complete: true }),
+    );
+    const jiraSource: DeliveryQuerySource = {
+      source: "jira",
+      selectors: ["objects", "observations"],
+      execute,
+    };
+
+    await Effect.runPromise(
+      createDeliveryAssistant({ sources: [jiraSource] }).answer({
+        ...request,
+        question: "What is the current delivery status?",
+        permittedSourceScopes: ["teams"],
+      }),
+    );
+
+    expect(execute).not.toHaveBeenCalled();
+  });
 });

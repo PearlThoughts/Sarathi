@@ -261,6 +261,17 @@ const presentedIntents = (plan: DeliveryQueryPlan): readonly DeliveryQuestionInt
     (left, right) => intentPresentationOrder.indexOf(left) - intentPresentationOrder.indexOf(right),
   );
 
+const sourcePermitted = (
+  source: DeliveryQuerySource,
+  permittedSourceScopes: DeliveryAssistantRequest["permittedSourceScopes"],
+): boolean => {
+  if (permittedSourceScopes === undefined) return true;
+  if (source.source === "intent") return permittedSourceScopes.includes("strategy");
+  if (source.source === "projection" || source.source === "knowledge")
+    return permittedSourceScopes.some((scope) => scope !== "strategy");
+  return permittedSourceScopes.includes(source.source);
+};
+
 const safeText = (value: string): string =>
   value
     .replace(/[\r\n]+/g, " ")
@@ -1617,13 +1628,16 @@ export const createDeliveryAssistant = (
           totalBudgetMs,
         } as const;
         const selectors = new Set(plan.operations.map((operation) => operation.select));
-        const sources = configuration.sources.filter((source) =>
-          source.selectors.some((selector) => selectors.has(selector)),
+        const sources = configuration.sources.filter(
+          (source) =>
+            source.selectors.some((selector) => selectors.has(selector)) &&
+            sourcePermitted(source, request.permittedSourceScopes),
         );
         const context = {
           workspaceId: request.workspaceId,
           actorId: request.actorId,
           audienceIds: request.audienceIds,
+          permittedSourceScopes: request.permittedSourceScopes,
           maximumSensitivity: request.maximumSensitivity,
           financeAccess: request.financeAccess,
           requestedAt: request.requestedAt,
@@ -1674,6 +1688,8 @@ export const createDeliveryAssistant = (
               .filter(
                 (item) =>
                   item.workspaceId === request.workspaceId &&
+                  (request.permittedSourceScopes === undefined ||
+                    request.permittedSourceScopes.includes(item.source)) &&
                   isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity) &&
                   itemMatchesPlan(item, plan),
               );
