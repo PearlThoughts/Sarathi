@@ -53,6 +53,7 @@ export type TeamsKnowledgeSourceConfiguration = {
   readonly now?: (() => Date) | undefined;
   readonly fetcher?: Fetcher | undefined;
   readonly retryDelay?: ((milliseconds: number) => Promise<void>) | undefined;
+  readonly minimumRequestIntervalMilliseconds?: number | undefined;
 };
 
 type TeamsIdentity = {
@@ -245,10 +246,41 @@ const retryAfterMilliseconds = (response: Response, now: Date): number => {
   return milliseconds;
 };
 
+const delay = (
+  configuration: TeamsKnowledgeSourceConfiguration,
+  milliseconds: number,
+): Promise<void> =>
+  (
+    configuration.retryDelay ??
+    ((duration) => new Promise((resolve) => setTimeout(resolve, duration)))
+  )(milliseconds);
+
+const createConversationRequestGate = (
+  configuration: TeamsKnowledgeSourceConfiguration,
+): (() => Promise<void>) => {
+  const minimumInterval = configuration.minimumRequestIntervalMilliseconds ?? 1_100;
+  if (!Number.isFinite(minimumInterval) || minimumInterval < 0 || minimumInterval > 60_000)
+    throw new Error("Teams request pacing interval is invalid.");
+  const now = (): number => (configuration.now?.() ?? new Date()).getTime();
+  let lastStartedAt: number | undefined;
+  let queue = Promise.resolve();
+  return async () => {
+    const turn = queue.then(async () => {
+      const wait =
+        lastStartedAt === undefined ? 0 : Math.max(0, lastStartedAt + minimumInterval - now());
+      if (wait > 0) await delay(configuration, wait);
+      lastStartedAt = now();
+    });
+    queue = turn.catch(() => undefined);
+    await turn;
+  };
+};
+
 const readPages = async (
   configuration: TeamsKnowledgeSourceConfiguration,
   accessToken: string,
   initialUrl: string,
+  beforeRequest: () => Promise<void>,
   maximumPages = 100,
   stopAfterPage?: ((messages: readonly TeamsMessage[]) => boolean) | undefined,
 ): Promise<readonly TeamsMessage[]> => {
@@ -259,17 +291,16 @@ const readPages = async (
   while (next !== undefined) {
     if (pages >= maximumPages)
       throw new Error("Teams message pagination exceeded its safety bound.");
+    await beforeRequest();
     const response = await (configuration.fetcher ?? fetch)(next, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
     if (response.status === 429) {
-      if (throttleRetries >= 4)
+      if (throttleRetries >= 8)
         throw new Error("Teams message pagination exceeded its throttle retry bound.");
-      const delay = retryAfterMilliseconds(response, configuration.now?.() ?? new Date());
-      await (
-        configuration.retryDelay ??
-        ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
-      )(delay);
+      const providerDelay = retryAfterMilliseconds(response, configuration.now?.() ?? new Date());
+      const exponentialFloor = Math.min(60_000, 1_000 * 2 ** throttleRetries);
+      await delay(configuration, Math.max(providerDelay, exponentialFloor));
       throttleRetries += 1;
       continue;
     }
@@ -373,6 +404,7 @@ const readChannelMessages = async (
   channel: TeamsKnowledgeChannel,
   accessToken: string,
   historySince: string,
+  beforeRequest: () => Promise<void>,
 ): Promise<readonly NormalizedMessage[]> => {
   if (
     channel.teamId.trim() === "" ||
@@ -388,6 +420,7 @@ const readChannelMessages = async (
     configuration,
     accessToken,
     `${baseUrl}?%24top=50`,
+    beforeRequest,
     100,
     (page) =>
       page.length > 0 &&
@@ -407,6 +440,7 @@ const readChannelMessages = async (
           configuration,
           accessToken,
           `${baseUrl}/${encodeURIComponent(rootId)}/replies?%24top=50`,
+          beforeRequest,
         );
         return [root, ...replies].flatMap((message) => {
           const normalized = normalizeMessage(configuration, channel, message, rootId);
@@ -438,6 +472,7 @@ const readChatMessages = async (
   chat: TeamsKnowledgeChat,
   accessToken: string,
   historySince: string,
+  beforeRequest: () => Promise<void>,
 ): Promise<readonly NormalizedMessage[]> => {
   if (
     chat.chatId.trim() === "" ||
@@ -455,7 +490,7 @@ const readChatMessages = async (
   url.searchParams.set("$top", "50");
   url.searchParams.set("$orderby", "lastModifiedDateTime desc");
   url.searchParams.set("$filter", `lastModifiedDateTime gt ${historySince}`);
-  const messages = await readPages(configuration, accessToken, url.toString());
+  const messages = await readPages(configuration, accessToken, url.toString(), beforeRequest);
   return messages
     .flatMap((message) => {
       const rootId = message.replyToId ?? message.id;
@@ -738,9 +773,16 @@ const readConversation = async (
   readonly retiredExternalIds: readonly string[];
   readonly cursor: ChannelCursor;
 }> => {
+  const beforeRequest = createConversationRequestGate(configuration);
   const messages = isKnowledgeChat(conversation)
-    ? await readChatMessages(configuration, conversation, accessToken, historySince)
-    : await readChannelMessages(configuration, conversation, accessToken, historySince);
+    ? await readChatMessages(configuration, conversation, accessToken, historySince, beforeRequest)
+    : await readChannelMessages(
+        configuration,
+        conversation,
+        accessToken,
+        historySince,
+        beforeRequest,
+      );
   const threads = new Map<string, NormalizedMessage[]>();
   for (const message of messages) {
     const thread = threads.get(message.rootId) ?? [];

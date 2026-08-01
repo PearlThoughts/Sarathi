@@ -90,6 +90,7 @@ describe("Teams knowledge source", () => {
       historySince: "2026-01-20T00:00:00.000Z",
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       fetcher,
+      minimumRequestIntervalMilliseconds: 0,
     };
 
     const snapshot = await Effect.runPromise(
@@ -176,6 +177,7 @@ describe("Teams knowledge source", () => {
       channels: [channel()],
       historySince: "2026-01-20T00:00:00.000Z",
       fetcher,
+      minimumRequestIntervalMilliseconds: 0,
     });
 
     const first = await Effect.runPromise(source.readSnapshot("example"));
@@ -205,6 +207,7 @@ describe("Teams knowledge source", () => {
       channels: [channel()],
       fetcher: async () =>
         Response.json({ value: [], "@odata.nextLink": "https://attacker.example/messages" }),
+      minimumRequestIntervalMilliseconds: 0,
     });
 
     await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
@@ -280,6 +283,7 @@ describe("Teams knowledge source", () => {
       historySince: "2026-07-01T00:00:00.000Z",
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       fetcher,
+      minimumRequestIntervalMilliseconds: 0,
       retryDelay: async (milliseconds) => {
         retryDelays.push(milliseconds);
       },
@@ -289,7 +293,7 @@ describe("Teams knowledge source", () => {
 
     expect(requests).toHaveLength(3);
     expect(requests[0]).toBe(requests[1]);
-    expect(retryDelays).toEqual([0]);
+    expect(retryDelays).toEqual([1_000]);
     expect(requests[0]).toContain("/v1.0/chats/19%3Ameeting_example%40thread.v2/messages");
     expect(requests[0]).toContain("%24top=50");
     expect(requests[0]).toContain("%24orderby=lastModifiedDateTime+desc");
@@ -330,6 +334,69 @@ describe("Teams knowledge source", () => {
     expect(JSON.stringify(snapshot.documents)).not.toContain("Recording has started");
   });
 
+  it("paces requests to one Teams conversation at the documented per-resource limit", async () => {
+    let currentTime = Date.parse("2026-07-22T00:00:00.000Z");
+    const delays: number[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request) =>
+      Response.json({
+        value: String(input).includes("/replies")
+          ? []
+          : [1, 2, 3, 4].map((index) => message(`root-${index}`, `Delivery status ${index}`)),
+      }),
+    );
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      historySince: "2026-07-01T00:00:00.000Z",
+      now: () => new Date(currentTime),
+      fetcher,
+      minimumRequestIntervalMilliseconds: 1_100,
+      retryDelay: async (milliseconds) => {
+        delays.push(milliseconds);
+        currentTime += milliseconds;
+      },
+    });
+
+    await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(delays).toEqual([1_100, 1_100, 1_100, 1_100]);
+  });
+
+  it("uses bounded exponential floors when Graph returns unusable retry intervals", async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+    const fetcher = vi.fn(async () => {
+      attempts += 1;
+      return attempts <= 5
+        ? Response.json(
+            { error: { code: "TooManyRequests" } },
+            { status: 429, headers: { "Retry-After": "0" } },
+          )
+        : Response.json({ value: [] });
+    });
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [],
+      chats: [chat()],
+      historySince: "2026-07-01T00:00:00.000Z",
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      retryDelay: async (milliseconds) => {
+        delays.push(milliseconds);
+      },
+    });
+
+    await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(fetcher).toHaveBeenCalledTimes(6);
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000]);
+  });
+
   it("fails closed after the bounded Microsoft Graph throttle retries are exhausted", async () => {
     const fetcher = vi.fn(async () =>
       Response.json(
@@ -346,12 +413,13 @@ describe("Teams knowledge source", () => {
       historySince: "2026-07-01T00:00:00.000Z",
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       fetcher,
+      minimumRequestIntervalMilliseconds: 0,
       retryDelay: async () => undefined,
     });
 
     await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
       "Configured Teams knowledge synchronization failed",
     );
-    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(fetcher).toHaveBeenCalledTimes(9);
   });
 });
