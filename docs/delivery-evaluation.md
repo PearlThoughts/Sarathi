@@ -20,3 +20,11 @@ Output deliberately excludes questions, answer text, citation URLs, required/for
 When `minimumHumanUsefulnessAverage` is declared, every answered case must carry a 1–5 human rating bound to the SHA-256 fingerprint of the exact reviewed answer, and the average must meet the threshold. The first run exposes the fingerprint without the answer body. A reviewer inspects that answer through the normal Teams or single-query surface, records its fingerprint and rating in the private set, and reruns the evaluation. An unrated or changed answer therefore blocks acceptance instead of inheriting a stale usefulness score.
 
 The command exits zero only when the declared case pass rate and human-usefulness threshold pass. A nonzero result is production evidence of an unmet acceptance gate, not a reason to weaken the set.
+
+Evaluation evidence is reported at three distinct levels:
+
+- **Case pass:** one exact governed question passed its declared automated checks on a named runtime revision.
+- **Suite pass:** every case and aggregate threshold in the versioned set passed together on the intended revision.
+- **Human acceptance:** the required usefulness ratings were recorded against the exact answer fingerprints and the human threshold passed.
+
+A set of individually successful production cases is not automatically an accepted governed evaluation. Deployment liveness/readiness, automated evaluation, and human acceptance must be recorded separately. Deployment-specific questions, terms, ratings, fingerprints, and current pass status remain in the private overlay or live evidence system, never in this public repository.

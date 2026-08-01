@@ -22,6 +22,8 @@ Readiness is capability-specific. A deployment with multiple capabilities must e
 
 Readiness responses must not expose identifiers, credentials, source content, or sensitive diagnostic details.
 
+For Teams capabilities, evaluate manifest declaration, source ingestion, inbound activity resolution, actor/audience authorization, reply delivery, and live acceptance independently. A manifest may advertise a surface that runtime policy still denies. An indexed channel or chat may enrich answers without being an allowed inbound question surface. Passing in one mapped standard channel does not establish support for every user, channel, chat, or workspace.
+
 ## Promotion Modes
 
 Any proactive or externally visible capability uses explicit promotion modes:
@@ -63,6 +65,8 @@ Synthetic tests are necessary but insufficient. Production acceptance includes:
 - logs free of secrets and private content;
 - an explicit human acceptance or correction;
 - a tested rollback or disable path.
+
+Automated evaluation has its own evidence ladder. An individual governed case can pass without the complete governed set being accepted. Suite acceptance requires every declared case and threshold to pass on the intended revision, and every human-usefulness rating must name the SHA-256 fingerprint of the exact answer reviewed. Deployment health, automated gate success, and human acceptance remain separate states.
 
 ## Claim Review
 

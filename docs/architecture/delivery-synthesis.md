@@ -38,6 +38,8 @@ The pipeline preserves two distinct products:
 
 Internal provenance must not leak into repetitive user-visible boilerplate.
 
+This is the current report path for weekly, sprint, recent-period, and leadership products. Structured delivery selection establishes the authorized population and completeness boundary. Report prose is model-composed from that accepted envelope. Recent-period composition commonly occupies roughly 40–60 seconds; this is an operating expectation, not a universal latency SLA.
+
 ## Workspace Ontology
 
 A workspace pack should declare or synchronize:
@@ -68,6 +70,8 @@ Jira-like systems provide work-item identity, intended ownership, workflow state
 ### Conversation sources
 
 Teams standard channels, explicitly mapped meeting or group chats, and bounded email provide decisions, clarifications, requirements, approvals, handoffs, and waiting states.
+
+Source participation is not an answering-capability claim. The runtime can index an explicitly mapped meeting or group chat while still denying inbound questions from that chat. Current inbound Teams answering uses the standard-channel resolver with explicit channel and actor mappings; private/shared-channel and chat answering require separate resolution, authorization, delivery, and acceptance evidence.
 
 Conversation ingestion should preserve:
 
@@ -218,4 +222,4 @@ Reusable tests should verify:
 - private workspace identifiers cannot enter public fixtures or docs;
 - the same query grammar supports 24-hour, 7-day, and 30-day products.
 
-These are implementation targets where corresponding code does not yet exist; documentation must not be read as a claim that every target is already composed in production.
+These are durable fitness expectations. The current implementation includes structured cross-source reporting and strict composed-or-safe-failure publication, while channel-specific availability and live acceptance must still be established independently through the readiness model.

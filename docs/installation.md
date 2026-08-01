@@ -32,7 +32,7 @@ Document before activation:
 - whether model processing is allowed for that workspace;
 - retention, correction, disable, and rollback expectations.
 
-Do not enable private or shared Teams channels until their access behavior has its own acceptance test.
+The current inbound resolver supports only explicitly mapped standard channels and known actors. Do not describe meeting/group-chat, direct-message, private-channel, or shared-channel answering as enabled. Each requires its own resolver, authorization, reply-path, consent, and live-acceptance evidence; private/shared-channel answering is not production-ready.
 
 ## 3. Prepare The Public Runtime And Private Overlay
 
@@ -110,6 +110,8 @@ bun run teams:manifest:validate
 
 Package the manifest and icons, upload the package through the Teams admin-approved process, and install or update Sarathi only in explicitly admitted teams and chats. Verify the consented permission set on each installed-app resource before enabling its runtime projection. Do not infer group/meeting-chat installation from team installation.
 
+A valid manifest proves only that Teams accepts the declared package capability. It does not prove source ingestion, inbound conversation resolution, actor authorization, same-conversation reply delivery, or live acceptance.
+
 ## 7. Connect Work Systems
 
 Store secret values in the hosting platform. The current hosted Teams composition uses these configuration groups:
@@ -169,7 +171,7 @@ OpenRouter provider name and outcome; prompts, answers, identifiers, and
 credentials are excluded. SDK-internal retries remain disabled so the runtime
 stays inside the Teams response budget.
 
-The workspace projection must map only configured standard channels and known actors. The repository fails closed when required mappings or credentials are unavailable.
+The current inbound workspace projection must map only configured standard channels and known actors. Meeting or group chats may be configured separately as ingestion sources, but those mappings do not create an inbound question-answering route. The repository fails closed when required mappings or credentials are unavailable.
 
 Additional reminder configuration is needed only when that capability is part of the pilot. Keep it disabled otherwise.
 
@@ -220,6 +222,8 @@ For a Teams delivery-assistant pilot, acceptance should include:
 - restricted and cross-workspace verification remain excluded;
 - the pilot sponsor accepts or corrects the result.
 
+Test each response product on its own contract. Fast operational answers use their declared fast budget. Weekly, sprint, recent-period, and leadership reports are model-composed and may take roughly 40–60 seconds; they must not be judged against an obsolete universal ten-second or line-count target. If composition or report validation fails, the only user-visible result is the short safe failure notice, never deterministic or partial report content.
+
 For a reminder pilot, first approve a dry-run preview, then perform one controlled delivery and verify idempotency, audit, retry, disable, and rollback behavior.
 
 ## 11. Expand Deliberately
@@ -234,4 +238,4 @@ After the first pilot proves value:
 
 ## Current Limitation
 
-Sarathi provides production-shaped components, not a turnkey enterprise installer. Tenant registration, private configuration, consent, hosting, observability, and real acceptance remain operator responsibilities. Do not describe a deployment as production-ready solely because the service is reachable.
+Sarathi provides production-shaped components, not a turnkey enterprise installer. Tenant registration, private configuration, consent, hosting, observability, and real acceptance remain operator responsibilities. The current inbound Teams resolver is limited to explicitly mapped standard channels and actors; broader ingestion or manifest declarations do not expand that answering surface. Do not describe a deployment or channel capability as production-ready solely because the service is reachable.

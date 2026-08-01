@@ -35,6 +35,8 @@ Deep-dive, comprehensive, investigation, root-cause, history, trend, and deliver
 
 Period-report products use model composition over the reconstructed change capsules plus retrieved project context. They are published only after the composed response passes the complete report-quality contract. Provider failure, timeout, malformed output, invalid citations, or failed quality validation produces only the short safe composition-failure notice; deterministic report content and partial envelopes are never published.
 
+Weekly, sprint, recent-period, and leadership reports all use this composed-or-safe-failure path. Recent-period reports may commonly take roughly 40–60 seconds, within the larger safety budgets below; that operating range is not an acceptance promise for every request.
+
 Report composition uses opaque reference IDs instead of asking the model to reproduce source URLs. Sarathi validates every selected ID, removes the internal markers from composed prose, resolves them to authorized URLs, and builds the compact reference footer before the final quality gate. Unknown IDs and inline URLs fail composition.
 
 ### Sub-30-day delivery reports
@@ -69,4 +71,4 @@ Every delivery answer returns aggregate, privacy-safe acceptance metadata. It co
 - Latency is measured against the selected mode’s caller-facing target when that mode declares one. Deep-dive latency is governed by safety deadlines, not by an artificial quality acceptance target.
 - Overall acceptance passes only when completeness, citation, grounding, freshness, formatting, and latency all pass.
 
-An answer may still be useful while its acceptance is false. For example, a cited partial answer remains visible, while the failed completeness or freshness measurement prevents evaluation from counting it as a pass.
+An eligible non-report operational answer may still be useful while its acceptance is false. For example, a cited operational answer may remain visible while a failed completeness or freshness measurement prevents evaluation from counting it as a pass. Report products never publish that partial content: they publish a fully validated composition or only the short safe failure notice.

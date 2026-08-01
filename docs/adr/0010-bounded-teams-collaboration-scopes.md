@@ -4,6 +4,8 @@
 
 Accepted for incremental implementation.
 
+Current implementation note: the legacy standard-channel resolver remains the production answering path and requires explicit channel and actor mappings. Meeting/group-chat source ingestion exists, but inbound answering from those chats is not implemented through that resolver. Private- and shared-channel answering is not production-ready. The decision and acceptance criteria below remain the target contract for incremental rollout.
+
 ## Context
 
 Teams knowledge synchronization already models configured channels and chats, while inbound mention resolution assumes a standard channel identified by tenant, team, and channel and repeats explicit actors under every mapping. That mismatch prevents safe multi-user chat and private-channel interaction. It also risks treating team membership, chat participation, and private-channel membership as interchangeable audiences.
