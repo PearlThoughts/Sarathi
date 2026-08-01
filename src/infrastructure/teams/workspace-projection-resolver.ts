@@ -7,7 +7,7 @@ import {
   type TrustTier,
 } from "../../domain/policy.ts";
 import type {
-  TeamsMentionCommand,
+  TeamsChannelConversation,
   TeamsMentionResolver,
 } from "../../modules/teams-mention/index.ts";
 
@@ -125,8 +125,8 @@ export const workspaceProjectionFromEnvironment = (
 };
 
 const channelKey = (
-  command: Pick<TeamsMentionCommand, "tenantId" | "teamId" | "channelId">,
-): string => `${command.tenantId}:${command.teamId}:${command.channelId}`;
+  conversation: Pick<TeamsChannelConversation, "tenantId" | "teamId" | "channelId">,
+): string => `${conversation.tenantId}:${conversation.teamId}:${conversation.channelId}`;
 
 export const createWorkspaceProjectionResolver = (
   projection: WorkspaceProjection,
@@ -159,7 +159,8 @@ export const createWorkspaceProjectionResolver = (
   return {
     resolve: (command) =>
       Effect.sync(() => {
-        const channel = channels.get(channelKey(command));
+        if (command.conversation.kind !== "team_channel") return undefined;
+        const channel = channels.get(channelKey(command.conversation));
         const actor = channel?.actors.find(
           (candidate) => candidate.entraObjectId === command.caller.entraObjectId,
         );
@@ -167,6 +168,8 @@ export const createWorkspaceProjectionResolver = (
         const defaultBoundary = defaultBoundaryForSensitivity(channel.sensitivity);
         return {
           workspaceId: channel.workspaceId,
+          conversation: { ...command.conversation, kind: "standard_team_channel" },
+          replyTarget: command.replyTarget,
           callerId: actor.actorId,
           callerTrustTier: actor.trustTier,
           channelSensitivity: channel.sensitivity,

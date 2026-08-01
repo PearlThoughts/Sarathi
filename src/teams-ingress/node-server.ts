@@ -477,13 +477,15 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         ),
       }),
       sourceKey: (command: TeamsMentionCommand) =>
-        command.rootActivityId === command.activityId
-          ? undefined
-          : teamsThreadSourceKey({
-              teamId: command.graphTeamId,
-              channelId: command.channelId,
-              rootId: command.rootActivityId,
-            }),
+        command.conversation.kind === "team_channel" &&
+        command.replyTarget.kind === "channel_thread" &&
+        command.replyTarget.rootActivityId !== command.activityId
+          ? teamsThreadSourceKey({
+              teamId: command.conversation.graphTeamId,
+              channelId: command.conversation.channelId,
+              rootId: command.replyTarget.rootActivityId,
+            })
+          : undefined,
     } as const;
     const contextSources = knowledgeEnabled
       ? [teamsThreadContextSource]
@@ -765,34 +767,36 @@ const failClosedDependencies = unavailableDependencies(
   "Hosted Teams dependencies are unavailable; Sarathi will not process this mention.",
 );
 
-const hasCompleteCommand = (command: {
-  readonly activityId: string;
-  readonly tenantId: string;
-  readonly teamId: string;
-  readonly graphTeamId: string;
-  readonly channelId: string;
-  readonly conversationId: string;
-  readonly rootActivityId: string;
-  readonly serviceUrl: string;
-  readonly caller: {
-    readonly entraObjectId: string;
-    readonly displayName: string;
-  };
-  readonly question: string;
-}): boolean =>
-  [
+const hasCompleteCommand = (command: TeamsMentionCommand): boolean => {
+  const conversationFields: readonly string[] = (() => {
+    switch (command.conversation.kind) {
+      case "team_channel":
+        return [
+          command.conversation.tenantId,
+          command.conversation.teamId,
+          command.conversation.graphTeamId,
+          command.conversation.channelId,
+        ];
+      case "group_chat":
+      case "meeting_chat":
+      case "personal_chat":
+        return [command.conversation.tenantId, command.conversation.chatId];
+    }
+  })();
+  const replyFields =
+    command.replyTarget.kind === "channel_thread"
+      ? [command.replyTarget.conversationId, command.replyTarget.rootActivityId]
+      : [command.replyTarget.conversationId];
+  return [
     command.activityId,
-    command.tenantId,
-    command.teamId,
-    command.graphTeamId,
-    command.channelId,
-    command.conversationId,
-    command.rootActivityId,
+    ...conversationFields,
+    ...replyFields,
     command.serviceUrl,
     command.caller.entraObjectId,
     command.caller.displayName,
     command.question,
   ].every((value) => value.trim() !== "");
+};
 
 type MentionActivity = {
   readonly id?: string | undefined;
@@ -885,22 +889,60 @@ const directTeamsMentionGate = (activity: MentionActivity): DirectTeamsMentionGa
     : { kind: "accepted", question };
 };
 
-export const teamsMentionCommandFromActivity = (activity: Activity, question: string) => {
+export const teamsMentionCommandFromActivity = (
+  activity: Activity,
+  question: string,
+): TeamsMentionCommand => {
   const channelData = activity.channelData as
     | {
         readonly team?: { readonly id?: string; readonly aadGroupId?: string };
         readonly channel?: { readonly id?: string };
         readonly tenant?: { readonly id?: string };
+        readonly meeting?: { readonly id?: string };
       }
     | undefined;
+  const activityConversation = activity.conversation as
+    | {
+        readonly id?: string;
+        readonly conversationType?: string;
+        readonly isGroup?: boolean;
+      }
+    | undefined;
+  const tenantId = channelData?.tenant?.id ?? "";
+  const conversationId = activityConversation?.id ?? "";
+  const hasTeamChannel =
+    channelData?.team?.id !== undefined || channelData?.channel?.id !== undefined;
+  const conversationType = activityConversation?.conversationType?.toLowerCase();
+  const chatKind =
+    channelData?.meeting?.id !== undefined || conversationType === "meeting"
+      ? ("meeting_chat" as const)
+      : conversationType === "personal" || activityConversation?.isGroup === false
+        ? ("personal_chat" as const)
+        : ("group_chat" as const);
+  const conversation = hasTeamChannel
+    ? {
+        kind: "team_channel" as const,
+        tenantId,
+        teamId: channelData?.team?.id ?? "",
+        graphTeamId: channelData?.team?.aadGroupId ?? "",
+        channelId: channelData?.channel?.id ?? "",
+      }
+    : {
+        kind: chatKind,
+        tenantId,
+        chatId: conversationId,
+      };
+  const replyTarget = hasTeamChannel
+    ? {
+        kind: "channel_thread" as const,
+        conversationId,
+        rootActivityId: activity.replyToId ?? activity.id ?? "",
+      }
+    : { kind: "chat" as const, conversationId };
   return {
     activityId: activity.id ?? "",
-    tenantId: channelData?.tenant?.id ?? "",
-    teamId: channelData?.team?.id ?? "",
-    graphTeamId: channelData?.team?.aadGroupId ?? "",
-    channelId: channelData?.channel?.id ?? "",
-    conversationId: activity.conversation?.id ?? "",
-    rootActivityId: activity.replyToId ?? activity.id ?? "",
+    conversation,
+    replyTarget,
     serviceUrl: activity.serviceUrl ?? "",
     caller: {
       entraObjectId: activity.from?.aadObjectId ?? "",
@@ -946,12 +988,18 @@ export const createTeamsIngressApplication = (
         if (value.trim() === "") missingFields.push(name);
       };
       recordMissing("activityId", command.activityId);
-      recordMissing("tenantId", command.tenantId);
-      recordMissing("teamId", command.teamId);
-      recordMissing("graphTeamId", command.graphTeamId);
-      recordMissing("channelId", command.channelId);
-      recordMissing("conversationId", command.conversationId);
-      recordMissing("rootActivityId", command.rootActivityId);
+      recordMissing("tenantId", command.conversation.tenantId);
+      if ("channelId" in command.conversation) {
+        recordMissing("teamId", command.conversation.teamId);
+        recordMissing("graphTeamId", command.conversation.graphTeamId);
+        recordMissing("channelId", command.conversation.channelId);
+      } else {
+        recordMissing("chatId", command.conversation.chatId);
+      }
+      recordMissing("conversationId", command.replyTarget.conversationId);
+      if (command.replyTarget.kind === "channel_thread") {
+        recordMissing("rootActivityId", command.replyTarget.rootActivityId);
+      }
       recordMissing("serviceUrl", command.serviceUrl);
       recordMissing("callerEntraObjectId", command.caller.entraObjectId);
       recordMissing("callerDisplayName", command.caller.displayName);
@@ -979,7 +1027,13 @@ export const createTeamsIngressApplication = (
           Effect.tryPromise({
             try: async () => {
               await context.sendActivity(
-                sameThreadReplyActivity(command.rootActivityId, answer.text, answer.mentions),
+                command.replyTarget.kind === "channel_thread"
+                  ? sameThreadReplyActivity(
+                      command.replyTarget.rootActivityId,
+                      answer.text,
+                      answer.mentions,
+                    )
+                  : sameChatReplyActivity(answer.text, answer.mentions),
               );
             },
             catch: () => new RepositoryError({ message: "Teams delivery failed" }),
@@ -1021,7 +1075,11 @@ export const createTeamsIngressApplication = (
         ...(typeof acceptance?.passed === "boolean" ? { acceptancePassed: acceptance.passed } : {}),
       });
       if (outcome.kind === "denied") {
-        await context.sendActivity(sameThreadReplyActivity(command.rootActivityId, outcome.reason));
+        await context.sendActivity(
+          command.replyTarget.kind === "channel_thread"
+            ? sameThreadReplyActivity(command.replyTarget.rootActivityId, outcome.reason)
+            : sameChatReplyActivity(outcome.reason),
+        );
       }
     } catch (error) {
       diagnostics({
@@ -1049,6 +1107,26 @@ export const sameThreadReplyActivity = (
   Activity.fromObject({
     type: ActivityTypes.Message,
     replyToId,
+    text,
+    entities: mentions
+      .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
+      .map(({ externalId, displayName }) => ({
+        type: "mention",
+        mentioned: { id: externalId, name: displayName },
+        text: `<at>${displayName}</at>`,
+      })),
+  });
+
+export const sameChatReplyActivity = (
+  text: string,
+  mentions: readonly {
+    readonly source: "teams";
+    readonly externalId: string;
+    readonly displayName: string;
+  }[] = [],
+): Activity =>
+  Activity.fromObject({
+    type: ActivityTypes.Message,
     text,
     entities: mentions
       .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))

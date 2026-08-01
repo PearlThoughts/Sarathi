@@ -4,12 +4,18 @@ import { createAuthorizedContextAssembler } from "../src/modules/teams-mention/i
 
 const command = {
   activityId: "activity",
-  tenantId: "tenant",
-  teamId: "team",
-  graphTeamId: "graph-team",
-  channelId: "channel",
-  conversationId: "conversation",
-  rootActivityId: "root",
+  conversation: {
+    kind: "team_channel",
+    tenantId: "tenant",
+    teamId: "team",
+    graphTeamId: "graph-team",
+    channelId: "channel",
+  },
+  replyTarget: {
+    kind: "channel_thread",
+    conversationId: "conversation",
+    rootActivityId: "root",
+  },
   serviceUrl: "https://service.example.test",
   caller: { entraObjectId: "caller", displayName: "Caller" },
   question: "What changed?",
@@ -18,6 +24,8 @@ const command = {
 
 const resolved = {
   workspaceId: "workspace",
+  conversation: { ...command.conversation, kind: "standard_team_channel" as const },
+  replyTarget: command.replyTarget,
   callerId: "actor",
   callerTrustTier: "member" as const,
   channelSensitivity: "internal" as const,

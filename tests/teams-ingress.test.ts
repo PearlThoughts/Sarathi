@@ -9,6 +9,7 @@ import {
   financeReminderKindFromBody,
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
+  sameChatReplyActivity,
   sameThreadReplyActivity,
   stringListFromEnvironment,
   teamsIngressAuthConfiguration,
@@ -95,12 +96,18 @@ describe("Teams ingress configuration", () => {
       Effect.runPromise(
         composition.dependencies.resolver.resolve({
           activityId: "activity",
-          tenantId: "tenant",
-          teamId: "team",
-          graphTeamId: "graph-team",
-          channelId: "channel",
-          conversationId: "conversation",
-          rootActivityId: "root",
+          conversation: {
+            kind: "team_channel",
+            tenantId: "tenant",
+            teamId: "team",
+            graphTeamId: "graph-team",
+            channelId: "channel",
+          },
+          replyTarget: {
+            kind: "channel_thread",
+            conversationId: "conversation",
+            rootActivityId: "root",
+          },
           serviceUrl: "https://service.example.test",
           caller: { entraObjectId: "entra", displayName: "Caller" },
           question: "What changed?",
@@ -117,12 +124,18 @@ describe("Teams ingress configuration", () => {
       Effect.runPromise(
         composition.dependencies.resolver.resolve({
           activityId: "activity",
-          tenantId: "tenant",
-          teamId: "team",
-          graphTeamId: "graph-team",
-          channelId: "channel",
-          conversationId: "conversation",
-          rootActivityId: "root",
+          conversation: {
+            kind: "team_channel",
+            tenantId: "tenant",
+            teamId: "team",
+            graphTeamId: "graph-team",
+            channelId: "channel",
+          },
+          replyTarget: {
+            kind: "channel_thread",
+            conversationId: "conversation",
+            rootActivityId: "root",
+          },
           serviceUrl: "https://service.example.test",
           caller: { entraObjectId: "entra", displayName: "Caller" },
           question: "What changed?",
@@ -158,12 +171,18 @@ describe("Teams ingress configuration", () => {
       Effect.runPromise(
         composition.dependencies.resolver.resolve({
           activityId: "activity",
-          tenantId: "tenant",
-          teamId: "team",
-          graphTeamId: "graph-team",
-          channelId: "channel",
-          conversationId: "conversation",
-          rootActivityId: "root",
+          conversation: {
+            kind: "team_channel",
+            tenantId: "tenant",
+            teamId: "team",
+            graphTeamId: "graph-team",
+            channelId: "channel",
+          },
+          replyTarget: {
+            kind: "channel_thread",
+            conversationId: "conversation",
+            rootActivityId: "root",
+          },
           serviceUrl: "https://service.example.test",
           caller: { entraObjectId: "entra", displayName: "Caller" },
           question: "hello",
@@ -220,10 +239,65 @@ describe("Teams ingress configuration", () => {
     );
 
     expect(command).toMatchObject({
-      teamId: "19:bot-framework-team@thread.skype",
-      graphTeamId: "graph-team-guid",
-      channelId: "19:channel@thread.tacv2",
-      rootActivityId: "root",
+      conversation: {
+        kind: "team_channel",
+        teamId: "19:bot-framework-team@thread.skype",
+        graphTeamId: "graph-team-guid",
+        channelId: "19:channel@thread.tacv2",
+      },
+      replyTarget: { kind: "channel_thread", rootActivityId: "root" },
+    });
+  });
+
+  it.each([
+    "standard",
+    "private",
+    "shared",
+  ] as const)("does not infer %s channel authorization from an SDK channel-type hint", (membershipType) => {
+    const command = teamsMentionCommandFromActivity(
+      Activity.fromObject({
+        type: "message",
+        id: "activity",
+        serviceUrl: "https://service.example.test",
+        conversation: { id: "conversation" },
+        from: { aadObjectId: "caller", name: "Caller" },
+        channelData: {
+          tenant: { id: "tenant" },
+          team: { id: "team", aadGroupId: "graph-team" },
+          channel: { id: "channel", membershipType },
+        },
+      }),
+      "What changed?",
+    );
+
+    expect(command.conversation.kind).toBe("team_channel");
+    expect(command.replyTarget.kind).toBe("channel_thread");
+  });
+
+  it.each([
+    [{ conversationType: "groupChat", isGroup: true }, {}, "group_chat"],
+    [
+      { conversationType: "groupChat", isGroup: true },
+      { meeting: { id: "meeting" } },
+      "meeting_chat",
+    ],
+    [{ conversationType: "personal", isGroup: false }, {}, "personal_chat"],
+  ] as const)("normalizes chat activity as %s", (conversation, extraChannelData, expectedKind) => {
+    const command = teamsMentionCommandFromActivity(
+      Activity.fromObject({
+        type: "message",
+        id: "activity",
+        serviceUrl: "https://service.example.test",
+        conversation: { id: "chat", ...conversation },
+        from: { aadObjectId: "caller", name: "Caller" },
+        channelData: { tenant: { id: "tenant" }, ...extraChannelData },
+      }),
+      "What changed?",
+    );
+
+    expect(command).toMatchObject({
+      conversation: { kind: expectedKind, tenantId: "tenant", chatId: "chat" },
+      replyTarget: { kind: "chat", conversationId: "chat" },
     });
   });
 
@@ -293,6 +367,14 @@ describe("Teams ingress configuration", () => {
       replyToId: "root-activity",
       text: "Hello from Sarathi.",
     });
+  });
+
+  it("builds a flat chat reply without inventing a channel thread", () => {
+    expect(sameChatReplyActivity("Hello from Sarathi.")).toMatchObject({
+      type: "message",
+      text: "Hello from Sarathi.",
+    });
+    expect(sameChatReplyActivity("Hello from Sarathi.").replyToId).toBeUndefined();
   });
 
   it("renders only resolved action targets as real Teams mention entities", () => {

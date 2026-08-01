@@ -9,12 +9,18 @@ import {
 
 const command = {
   activityId: "activity-1",
-  tenantId: "tenant-1",
-  teamId: "team-1",
-  graphTeamId: "graph-team-1",
-  channelId: "channel-1",
-  conversationId: "conversation-1",
-  rootActivityId: "root-1",
+  conversation: {
+    kind: "team_channel",
+    tenantId: "tenant-1",
+    teamId: "team-1",
+    graphTeamId: "graph-team-1",
+    channelId: "channel-1",
+  },
+  replyTarget: {
+    kind: "channel_thread",
+    conversationId: "conversation-1",
+    rootActivityId: "root-1",
+  },
   serviceUrl: "https://service.example.test",
   caller: { entraObjectId: "caller-1", displayName: "Delivery Member" },
   question: "What is the goal?",
@@ -45,6 +51,8 @@ const dependencies = (
         resolve: () =>
           Effect.succeed({
             workspaceId: "workspace-1",
+            conversation: { ...command.conversation, kind: "standard_team_channel" },
+            replyTarget: command.replyTarget,
             callerId: "actor-1",
             callerTrustTier: "trusted",
             channelSensitivity: "internal",
@@ -140,6 +148,54 @@ describe("teams mention", () => {
     });
     expect(fixture.calls.delivered()).toBe(1);
     expect(fixture.state()).toBe("delivered");
+  });
+
+  it.each([
+    "group_chat",
+    "personal_chat",
+  ] as const)("denies unsupported %s before authorization, retrieval, or model composition", async (kind) => {
+    const fixture = dependencies();
+    let authorizationCalls = 0;
+    let contextCalls = 0;
+    let modelCalls = 0;
+    const unsupportedCommand = {
+      ...command,
+      conversation: { kind, tenantId: "tenant-1", chatId: "chat-1" },
+      replyTarget: { kind: "chat" as const, conversationId: "chat-1" },
+    };
+    const failClosedDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      resolver: { resolve: () => Effect.succeed(undefined) },
+      authorizer: {
+        authorizeContext: () => {
+          authorizationCalls += 1;
+          return Effect.succeed({ allowed: true });
+        },
+      },
+      contextAssembler: {
+        assemble: () => {
+          contextCalls += 1;
+          return Effect.succeed({ workspaceId: "workspace-1", question: "", evidence: [] });
+        },
+      },
+      answerGenerator: {
+        generate: () => {
+          modelCalls += 1;
+          return Effect.succeed({ text: "unsafe", citations: [], unavailableSources: [] });
+        },
+      },
+    };
+
+    await expect(
+      Effect.runPromise(handleTeamsMention(unsupportedCommand, failClosedDependencies)),
+    ).resolves.toEqual({
+      kind: "denied",
+      reason: "Sarathi is not available for this caller or channel.",
+    });
+    expect(authorizationCalls).toBe(0);
+    expect(contextCalls).toBe(0);
+    expect(modelCalls).toBe(0);
+    expect(fixture.calls.delivered()).toBe(0);
   });
 
   it("answers the authorized hello diagnostic without retrieving evidence or calling a model", async () => {
@@ -345,7 +401,7 @@ describe("teams mention", () => {
     let reporterCalls = 0;
     const topLevelCommand = {
       ...command,
-      rootActivityId: command.activityId,
+      replyTarget: { ...command.replyTarget, rootActivityId: command.activityId },
       question: "What is planned this week?",
     };
     const deliveryDependencies: TeamsMentionDependencies = {
@@ -488,7 +544,7 @@ describe("teams mention", () => {
         handleTeamsMention(
           {
             ...command,
-            rootActivityId: command.activityId,
+            replyTarget: { ...command.replyTarget, rootActivityId: command.activityId },
             question: "What was delivered last week?",
           },
           deliveryDependencies,

@@ -30,12 +30,18 @@ const projection: WorkspaceProjection = {
 
 const command = {
   activityId: "activity-synthetic",
-  tenantId: "tenant-synthetic",
-  teamId: "team-synthetic",
-  graphTeamId: "graph-team-synthetic",
-  channelId: "channel-synthetic",
-  conversationId: "conversation-synthetic",
-  rootActivityId: "root-synthetic",
+  conversation: {
+    kind: "team_channel",
+    tenantId: "tenant-synthetic",
+    teamId: "team-synthetic",
+    graphTeamId: "graph-team-synthetic",
+    channelId: "channel-synthetic",
+  },
+  replyTarget: {
+    kind: "channel_thread",
+    conversationId: "conversation-synthetic",
+    rootActivityId: "root-synthetic",
+  },
   serviceUrl: "https://service.example.test",
   caller: { entraObjectId: "entra-synthetic", displayName: "Synthetic Member" },
   question: "What is the current goal?",
@@ -56,6 +62,8 @@ describe("workspace projection resolver", () => {
     const resolver = createWorkspaceProjectionResolver(projection);
     await expect(Effect.runPromise(resolver.resolve(command))).resolves.toMatchObject({
       workspaceId: "workspace-synthetic",
+      conversation: { kind: "standard_team_channel", channelId: "channel-synthetic" },
+      replyTarget: { kind: "channel_thread", rootActivityId: "root-synthetic" },
       callerId: "actor-synthetic",
       channelSensitivity: "internal",
       boundary: { modelEgress: "redact" },
@@ -100,7 +108,29 @@ describe("workspace projection resolver", () => {
       ),
     ).resolves.toBeUndefined();
     await expect(
-      Effect.runPromise(resolver.resolve({ ...command, channelId: "unknown" })),
+      Effect.runPromise(
+        resolver.resolve({
+          ...command,
+          conversation: { ...command.conversation, channelId: "unknown" },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    "group_chat",
+    "meeting_chat",
+    "personal_chat",
+  ] as const)("denies unsupported %s mappings", async (kind) => {
+    const resolver = createWorkspaceProjectionResolver(projection);
+    await expect(
+      Effect.runPromise(
+        resolver.resolve({
+          ...command,
+          conversation: { kind, tenantId: "tenant-synthetic", chatId: "chat-synthetic" },
+          replyTarget: { kind: "chat", conversationId: "chat-synthetic" },
+        }),
+      ),
     ).resolves.toBeUndefined();
   });
 
