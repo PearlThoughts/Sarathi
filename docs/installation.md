@@ -86,7 +86,12 @@ In the organization's Microsoft tenant:
 5. Record the tenant ID, application ID, and client credential in the secret manager.
 6. Review the requested team-scoped permission with the Teams administrator.
 
-The initial Teams package requests `ChannelMessage.Read.Group` resource-specific consent so Sarathi can read the configured team's channel context. Grant only the permissions required for the selected pilot.
+The Teams package requests message and roster resource-specific consent for each admitted collaboration resource:
+
+- `ChannelMessage.Read.Group` and `TeamMember.Read.Group` for an explicitly admitted team;
+- `ChatMessage.Read.Chat` and `ChatMember.Read.Chat` for an explicitly admitted group or meeting chat.
+
+Install or update the package and review consent separately in every admitted team and chat. Tenant-wide Graph application roles do not replace resource installation or resource-specific consent. Grant only the permissions required for the selected rollout.
 
 ## 6. Prepare And Validate The Teams Package
 
@@ -103,7 +108,7 @@ Validate the package:
 bun run teams:manifest:validate
 ```
 
-Package the manifest and icons, upload the package through the Teams admin-approved process, grant the requested resource-specific consent, and install Sarathi only in the selected pilot team.
+Package the manifest and icons, upload the package through the Teams admin-approved process, and install or update Sarathi only in explicitly admitted teams and chats. Verify the consented permission set on each installed-app resource before enabling its runtime projection. Do not infer group/meeting-chat installation from team installation.
 
 ## 7. Connect Work Systems
 
