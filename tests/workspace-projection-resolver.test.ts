@@ -4,6 +4,8 @@ import { RepositoryError } from "../src/domain/errors.ts";
 import {
   createWorkspaceProjectionResolver,
   type WorkspaceProjection,
+  workspaceProjectionAuthorizedActorIds,
+  workspaceProjectionDeliveryChannels,
   workspaceProjectionFromEnvironment,
 } from "../src/infrastructure/teams/index.ts";
 
@@ -48,6 +50,29 @@ const command = {
   receivedAt: "2026-07-11T10:00:00.000Z",
 } as const;
 
+const membershipProjection: WorkspaceProjection = {
+  version: 2,
+  conversations: [
+    {
+      kind: "standard_team_channel",
+      tenantId: "tenant-synthetic",
+      teamId: "team-synthetic",
+      graphTeamId: "graph-team-synthetic",
+      channelId: "channel-synthetic",
+      workspaceId: "workspace-synthetic",
+      audienceId: "audience-synthetic",
+      sensitivity: "internal",
+      membership: {
+        kind: "team_membership",
+        actorId: "team-member-synthetic",
+        trustTier: "member",
+      },
+      permittedAudienceIds: ["audience-synthetic"],
+      permittedSourceScopes: ["jira", "teams:standard"],
+    },
+  ],
+};
+
 describe("workspace projection resolver", () => {
   it("requires a private JSON projection rather than falling back to an open scope", () => {
     expect(() => workspaceProjectionFromEnvironment({})).toThrow(RepositoryError);
@@ -56,6 +81,11 @@ describe("workspace projection resolver", () => {
         SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: "{}",
       }),
     ).toThrow(RepositoryError);
+    expect(() =>
+      workspaceProjectionFromEnvironment({
+        SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({ version: 3, channels: [] }),
+      }),
+    ).toThrow("version is unsupported");
   });
 
   it("resolves an explicit standard-channel actor mapping", async () => {
@@ -64,10 +94,143 @@ describe("workspace projection resolver", () => {
       workspaceId: "workspace-synthetic",
       conversation: { kind: "standard_team_channel", channelId: "channel-synthetic" },
       replyTarget: { kind: "channel_thread", rootActivityId: "root-synthetic" },
+      authenticatedActorId: expect.stringMatching(/^entra:sha256-/),
       callerId: "actor-synthetic",
       channelSensitivity: "internal",
       boundary: { modelEgress: "redact" },
+      authorization: {
+        effectiveAudience: {
+          kind: "team",
+          membership: { member: true, source: "explicit_actor_mapping" },
+        },
+        permittedSourceScopes: ["legacy_workspace"],
+      },
     });
+  });
+
+  it("parses v2 membership admission without a copied actor list", () => {
+    expect(
+      workspaceProjectionFromEnvironment({
+        SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify(membershipProjection),
+      }),
+    ).toEqual(membershipProjection);
+  });
+
+  it("resolves a current member with the configured audience and corpus grants", async () => {
+    const membershipCalls: unknown[] = [];
+    const resolver = createWorkspaceProjectionResolver(membershipProjection, {
+      resolveMembership: (request) => {
+        membershipCalls.push(request);
+        return Effect.succeed({
+          member: true,
+          source: "microsoft_graph_roster",
+          resolvedAt: "2026-08-01T08:00:00.000Z",
+          expiresAt: "2026-08-01T08:02:00.000Z",
+        });
+      },
+    });
+
+    const resolved = await Effect.runPromise(resolver.resolve(command));
+
+    expect(resolved).toMatchObject({
+      workspaceId: "workspace-synthetic",
+      callerId: "team-member-synthetic",
+      authenticatedActorId: expect.stringMatching(/^entra:sha256-/),
+      callerTrustTier: "member",
+      authorization: {
+        effectiveAudience: {
+          id: "audience-synthetic",
+          kind: "team",
+          membership: { member: true, source: "microsoft_graph_roster" },
+        },
+        permittedAudienceIds: ["audience-synthetic"],
+        permittedSourceScopes: ["jira", "teams:standard"],
+      },
+    });
+    expect(resolved?.authenticatedActorId).not.toContain(command.caller.entraObjectId);
+    const differentlyCased = await Effect.runPromise(
+      resolver.resolve({
+        ...command,
+        caller: { ...command.caller, entraObjectId: command.caller.entraObjectId.toUpperCase() },
+      }),
+    );
+    expect(differentlyCased?.authenticatedActorId).toBe(resolved?.authenticatedActorId);
+    expect(membershipCalls).toEqual([
+      {
+        conversation: { ...command.conversation, kind: "standard_team_channel" },
+        entraObjectId: "entra-synthetic",
+      },
+      {
+        conversation: { ...command.conversation, kind: "standard_team_channel" },
+        entraObjectId: "ENTRA-SYNTHETIC",
+      },
+    ]);
+  });
+
+  it("denies a non-member and fails closed when membership resolution is unavailable", async () => {
+    const nonMemberResolver = createWorkspaceProjectionResolver(membershipProjection, {
+      resolveMembership: () =>
+        Effect.succeed({
+          member: false,
+          source: "microsoft_graph_roster",
+          resolvedAt: "2026-08-01T08:00:00.000Z",
+          expiresAt: "2026-08-01T08:02:00.000Z",
+        }),
+    });
+    await expect(Effect.runPromise(nonMemberResolver.resolve(command))).resolves.toBeUndefined();
+
+    await expect(
+      Effect.runPromise(createWorkspaceProjectionResolver(membershipProjection).resolve(command)),
+    ).rejects.toThrow("membership authorization is unavailable");
+  });
+
+  it("projects v2 delivery channels and role actors without expanding the admitted scope", () => {
+    expect(
+      workspaceProjectionDeliveryChannels(
+        membershipProjection,
+        "workspace-synthetic",
+        "team-member-synthetic",
+      ),
+    ).toEqual([
+      {
+        graphTeamId: "graph-team-synthetic",
+        channelId: "channel-synthetic",
+        workspaceId: "workspace-synthetic",
+        sensitivity: "internal",
+        scope: "standard",
+      },
+    ]);
+    expect(
+      workspaceProjectionAuthorizedActorIds(membershipProjection, "workspace-synthetic"),
+    ).toEqual(["team-member-synthetic"]);
+    expect(
+      workspaceProjectionDeliveryChannels(
+        membershipProjection,
+        "workspace-synthetic",
+        "unmapped-role",
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects v2 mappings with missing audience, corpus, role actor, or unsupported scope", () => {
+    const base = membershipProjection.conversations[0];
+    if (base === undefined) throw new Error("Synthetic membership projection is missing.");
+    for (const invalid of [
+      { ...base, audienceId: "" },
+      { ...base, permittedAudienceIds: ["different-audience"] },
+      { ...base, permittedSourceScopes: [] },
+      { ...base, membership: { ...base.membership, actorId: "" } },
+      { ...base, kind: "private_team_channel" },
+    ]) {
+      expect(() =>
+        workspaceProjectionFromEnvironment({
+          SARATHI_TEAMS_WORKSPACE_PROJECTION_JSON: JSON.stringify({
+            version: 2,
+            conversations: [invalid],
+          }),
+        }),
+      ).toThrow("invalid conversation mapping");
+    }
   });
 
   it("projects an explicit approved model-egress decision without lowering sensitivity", async () => {

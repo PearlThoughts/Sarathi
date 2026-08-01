@@ -25,6 +25,7 @@ import {
   createEmailDeliveryQuerySource,
   createEntraClientCredentialsTokenProvider,
   createTeamsDeliveryQuerySource,
+  createTeamsGraphMembershipResolver,
   createTeamsGraphThreadReader,
   createTeamsProactiveReminderDelivery,
   teamsThreadSourceKey,
@@ -58,6 +59,8 @@ import {
   createKnowledgeTeamsContextSearch,
   createWorkspaceProjectionResolver,
   deliveryChannelProjectionFromEnvironment,
+  workspaceProjectionAuthorizedActorIds,
+  workspaceProjectionDeliveryChannels,
   workspaceProjectionFromEnvironment,
 } from "../infrastructure/teams/index.ts";
 import {
@@ -467,13 +470,18 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
       environment.SARATHI_STRATEGY_DATABASE_URL,
     );
     const projection = workspaceProjectionFromEnvironment(environment);
-    const resolver = createWorkspaceProjectionResolver(projection);
+    const resolver = createWorkspaceProjectionResolver(
+      projection,
+      createTeamsGraphMembershipResolver({ tokenProvider: graphTokenProvider }),
+    );
     const teamsThreadContextSource = {
       contextRole: "conversation" as const,
       reader: createTeamsGraphThreadReader({
         tokenProvider: graphTokenProvider,
         allowedStandardChannels: new Set(
-          projection.channels.map((channel) => `${channel.graphTeamId}:${channel.channelId}`),
+          workspaceProjectionDeliveryChannels(projection).map(
+            (channel) => `${channel.graphTeamId}:${channel.channelId}`,
+          ),
         ),
       }),
       sourceKey: (command: TeamsMentionCommand) =>
@@ -597,9 +605,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             "SARATHI_KNOWLEDGE_JIRA_CONFIG_JSON.projectKey",
             jiraProjection.projectKey,
           );
-          const workspaceChannels = projection.channels.filter(
-            (channel) => channel.workspaceId === workspaceId,
-          );
+          const workspaceChannels = workspaceProjectionDeliveryChannels(projection, workspaceId);
           const deliveryChannels = deliveryChannelProjectionFromEnvironment(
             environment,
             workspaceChannels.map((channel) => ({
@@ -611,7 +617,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             })),
           ).filter((channel) => channel.workspaceId === workspaceId);
           const allowedActorIds = new Set(
-            workspaceChannels.flatMap((channel) => channel.actors.map((actor) => actor.actorId)),
+            workspaceProjectionAuthorizedActorIds(projection, workspaceId),
           );
           const mailScopes =
             environment.SARATHI_PROJECT_MAIL_SCOPES_JSON === undefined

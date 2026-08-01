@@ -26,6 +26,7 @@ const resolved = {
   workspaceId: "workspace",
   conversation: { ...command.conversation, kind: "standard_team_channel" as const },
   replyTarget: command.replyTarget,
+  authenticatedActorId: "entra:synthetic",
   callerId: "actor",
   callerTrustTier: "member" as const,
   channelSensitivity: "internal" as const,
@@ -37,6 +38,19 @@ const resolved = {
     requiresHumanApproval: false,
     requiresPreRetrievalAuthorization: true,
     requiresToolAuthorization: true,
+  },
+  authorization: {
+    effectiveAudience: {
+      id: "audience",
+      kind: "team" as const,
+      membership: {
+        member: true as const,
+        source: "explicit_actor_mapping" as const,
+        resolvedAt: "2026-07-11T00:00:00.000Z",
+      },
+    },
+    permittedAudienceIds: ["audience"],
+    permittedSourceScopes: ["workspace"],
   },
 };
 

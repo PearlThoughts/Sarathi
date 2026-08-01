@@ -48,6 +48,22 @@ export type TeamsMembershipEvidence = {
   readonly expiresAt: string;
 };
 
+export type ResolvedCollaborationAuthorization = {
+  readonly effectiveAudience: {
+    readonly id: string;
+    readonly kind: "team" | "channel" | "chat";
+    readonly membership:
+      | TeamsMembershipEvidence
+      | {
+          readonly member: true;
+          readonly source: "explicit_actor_mapping";
+          readonly resolvedAt: string;
+        };
+  };
+  readonly permittedAudienceIds: readonly string[];
+  readonly permittedSourceScopes: readonly string[];
+};
+
 export type TeamsMentionCommand = {
   readonly activityId: string;
   readonly conversation: InboundTeamsConversation;
@@ -65,10 +81,12 @@ export type ResolvedTeamsMention = {
   readonly workspaceId: string;
   readonly conversation: TeamsConversation;
   readonly replyTarget: TeamsReplyTarget;
+  readonly authenticatedActorId: string;
   readonly callerId: string;
   readonly callerTrustTier: TrustTier;
   readonly channelSensitivity: SensitivityTier;
   readonly boundary: PolicyBoundary;
+  readonly authorization: ResolvedCollaborationAuthorization;
 };
 
 export const teamsConversationScopeId = (conversation: InboundTeamsConversation): string =>

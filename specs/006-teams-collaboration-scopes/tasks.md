@@ -4,6 +4,7 @@
 - [x] Deny unsupported chat scopes before external reads.
 - [x] Preserve legacy standard-channel explicit-actor behavior during migration.
 - [ ] Add projection v2 with admission, audience, corpus, and membership policies.
+- [x] Add the bounded standard-team Graph roster adapter and v2 membership admission contract.
 - [ ] Implement resource-scoped Graph installation and membership resolvers.
 - [ ] Prove standard-channel multi-user authorization and duplicate suppression.
 - [ ] Prove mapped meeting/group-chat authorization and flat-chat delivery.

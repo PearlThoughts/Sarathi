@@ -53,6 +53,7 @@ const dependencies = (
             workspaceId: "workspace-1",
             conversation: { ...command.conversation, kind: "standard_team_channel" },
             replyTarget: command.replyTarget,
+            authenticatedActorId: "entra:synthetic",
             callerId: "actor-1",
             callerTrustTier: "trusted",
             channelSensitivity: "internal",
@@ -64,6 +65,19 @@ const dependencies = (
               requiresHumanApproval: false,
               requiresPreRetrievalAuthorization: true,
               requiresToolAuthorization: true,
+            },
+            authorization: {
+              effectiveAudience: {
+                id: "audience-1",
+                kind: "team",
+                membership: {
+                  member: true,
+                  source: "explicit_actor_mapping",
+                  resolvedAt: command.receivedAt,
+                },
+              },
+              permittedAudienceIds: ["audience-1"],
+              permittedSourceScopes: ["workspace"],
             },
           }),
       },
