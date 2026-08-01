@@ -174,6 +174,15 @@ export const handleTeamsMention = (
 
     if (deliveryQuestionPlan !== undefined && deliveryConfiguration !== undefined) {
       const envelope = envelopeResult.right;
+      const boundedCorpus =
+        resolved.authorization.effectiveAudience.membership.source === "microsoft_graph_roster"
+          ? {
+              audienceIds: resolved.authorization.permittedAudienceIds,
+              permittedSourceScopes: resolved.authorization.permittedSourceScopes.filter(
+                (scope) => scope !== "legacy_workspace",
+              ),
+            }
+          : {};
       const reportResult = yield* Effect.either(
         deliveryConfiguration.assistant
           .answer({
@@ -184,6 +193,7 @@ export const handleTeamsMention = (
             requestedAt: command.receivedAt,
             timeZone: deliveryConfiguration.timeZone,
             question: command.question,
+            ...boundedCorpus,
             plan: deliveryQuestionPlan,
             responseProduct,
             questionContext: {

@@ -72,12 +72,23 @@ const sensitivityOrder: readonly SensitivityTier[] = [
 const sourceKind = (value: string): DeliverySourceKind =>
   sourceKinds.has(value as DeliverySourceKind) ? (value as DeliverySourceKind) : "vault";
 
+const sourceScopeConditions = (
+  column: AnyPgColumn,
+  context: DeliveryQueryContext,
+): readonly SQL[] => {
+  if (context.permittedSourceScopes === undefined) return [];
+  const permitted = context.permittedSourceScopes.filter(
+    (scope): scope is DeliverySourceKind => scope !== "strategy",
+  );
+  return [inArray(column, permitted)];
+};
+
 const sensitivity = (value: string): SensitivityTier =>
   sensitivityOrder.includes(value as SensitivityTier) ? (value as SensitivityTier) : "restricted";
 
 const sourceVerificationTimes = async (
   database: KnowledgePostgresDatabase,
-  workspaceId: string,
+  context: DeliveryQueryContext,
 ): Promise<ReadonlyMap<DeliverySourceKind, string>> => {
   const rows = await database
     .select({
@@ -94,9 +105,10 @@ const sourceVerificationTimes = async (
     )
     .where(
       and(
-        eq(knowledgeSourceTable.workspaceId, workspaceId),
+        eq(knowledgeSourceTable.workspaceId, context.workspaceId),
         eq(knowledgeSourceTable.active, true),
         eq(knowledgeSyncCheckpointTable.status, "succeeded"),
+        ...sourceScopeConditions(knowledgeSourceTable.kind, context),
       ),
     );
   const verifiedAt = new Map<DeliverySourceKind, string>();
@@ -113,13 +125,17 @@ const sourceVerificationTimes = async (
 
 const configuredSourceKinds = async (
   database: KnowledgePostgresDatabase,
-  workspaceId: string,
+  context: DeliveryQueryContext,
 ): Promise<readonly DeliverySourceKind[]> => {
   const rows = await database
     .select({ sourceKind: knowledgeSourceTable.kind })
     .from(knowledgeSourceTable)
     .where(
-      and(eq(knowledgeSourceTable.workspaceId, workspaceId), eq(knowledgeSourceTable.active, true)),
+      and(
+        eq(knowledgeSourceTable.workspaceId, context.workspaceId),
+        eq(knowledgeSourceTable.active, true),
+        ...sourceScopeConditions(knowledgeSourceTable.kind, context),
+      ),
     );
   return [
     ...new Set(
@@ -451,6 +467,7 @@ const queryPeriodCensus = async (
             eq(deliveryObjectTable.workspaceId, context.workspaceId),
             eq(knowledgeItemTable.workspaceId, context.workspaceId),
             authorizationCondition(database, context, "object", deliveryObjectTable.id),
+            ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
             inArray(
               deliveryObjectTable.sensitivity,
               allowedSensitivities(context.maximumSensitivity),
@@ -550,6 +567,7 @@ const queryPeriodCensus = async (
             eq(deliveryObservationTable.workspaceId, context.workspaceId),
             eq(knowledgeItemTable.workspaceId, context.workspaceId),
             authorizationCondition(database, context, "observation", deliveryObservationTable.id),
+            ...sourceScopeConditions(deliveryObservationTable.sourceKind, context),
             inArray(
               deliveryObservationTable.sensitivity,
               allowedSensitivities(context.maximumSensitivity),
@@ -652,9 +670,15 @@ const queryObjects = async (
           await database
             .select({ sourceObjectId: deliveryEntityAliasTable.sourceObjectId })
             .from(deliveryEntityAliasTable)
+            .innerJoin(
+              deliveryObjectTable,
+              eq(deliveryObjectTable.id, deliveryEntityAliasTable.sourceObjectId),
+            )
             .where(
               and(
                 eq(deliveryEntityAliasTable.workspaceId, context.workspaceId),
+                eq(deliveryObjectTable.workspaceId, context.workspaceId),
+                ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
                 authorizationCondition(
                   database,
                   context,
@@ -705,6 +729,7 @@ const queryObjects = async (
         eq(deliveryObjectTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
         authorizationCondition(database, context, "object", deliveryObjectTable.id),
+        ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
         inArray(deliveryObjectTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
         eq(deliveryObjectTable.active, true),
         isNull(deliveryObjectTable.deletedAt),
@@ -828,6 +853,7 @@ const queryRelations = async (
         eq(deliveryRelationTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
         authorizationCondition(database, context, "relation", deliveryRelationTable.id),
+        ...sourceScopeConditions(deliveryRelationTable.sourceKind, context),
         authorizationCondition(database, context, "object", deliveryRelationTable.fromObjectId),
         authorizationCondition(database, context, "object", deliveryRelationTable.toObjectId),
         inArray(
@@ -861,6 +887,7 @@ const queryRelations = async (
             and(
               eq(deliveryObjectTable.workspaceId, context.workspaceId),
               inArray(deliveryObjectTable.id, objectIds),
+              ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
               inArray(
                 deliveryObjectTable.sensitivity,
                 allowedSensitivities(context.maximumSensitivity),
@@ -965,6 +992,7 @@ const queryObservations = async (
       and(
         eq(deliveryObservationTable.workspaceId, context.workspaceId),
         authorizationCondition(database, context, "observation", deliveryObservationTable.id),
+        ...sourceScopeConditions(deliveryObservationTable.sourceKind, context),
         inArray(
           deliveryObservationTable.sensitivity,
           allowedSensitivities(context.maximumSensitivity),
@@ -1019,6 +1047,7 @@ const queryObservations = async (
               eq(deliveryObjectTable.workspaceId, context.workspaceId),
               inArray(deliveryObjectTable.id, subjectObjectIds),
               authorizationCondition(database, context, "object", deliveryObjectTable.id),
+              ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
               inArray(
                 deliveryObjectTable.sensitivity,
                 allowedSensitivities(context.maximumSensitivity),
@@ -1129,6 +1158,7 @@ const queryObservations = async (
               eq(deliveryObjectTable.objectKind, "person"),
               inArray(deliveryObjectTable.externalKey, actorExternalKeys),
               authorizationCondition(database, context, "object", deliveryObjectTable.id),
+              ...sourceScopeConditions(deliveryObjectTable.sourceKind, context),
               inArray(
                 deliveryObjectTable.sensitivity,
                 allowedSensitivities(context.maximumSensitivity),
@@ -1261,6 +1291,7 @@ const queryClaims = async (
         and(
           eq(deliveryClaimTable.workspaceId, context.workspaceId),
           authorizationCondition(database, context, "claim", deliveryClaimTable.id),
+          ...sourceScopeConditions(deliveryClaimTable.sourceKind, context),
           inArray(deliveryClaimTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
           eq(deliveryClaimTable.active, true),
           isNull(deliveryClaimTable.deletedAt),
@@ -1292,6 +1323,7 @@ const queryClaims = async (
         and(
           eq(deliveryClaimTable.workspaceId, context.workspaceId),
           authorizationCondition(database, context, "claim", deliveryClaimTable.id),
+          ...sourceScopeConditions(deliveryClaimTable.sourceKind, context),
           eq(deliveryClaimTable.active, true),
           isNull(deliveryClaimTable.deletedAt),
           or(
@@ -1395,6 +1427,7 @@ const queryMetrics = async (
             "finance_metric",
             deliveryFinanceMetricTable.id,
           ),
+          ...sourceScopeConditions(deliveryFinanceMetricTable.sourceKind, context),
           inArray(
             deliveryFinanceMetricTable.sensitivity,
             allowedSensitivities(context.maximumSensitivity),
@@ -1451,6 +1484,7 @@ const queryMetrics = async (
         eq(deliveryMetricTable.workspaceId, context.workspaceId),
         eq(knowledgeItemTable.workspaceId, context.workspaceId),
         authorizationCondition(database, context, "metric", deliveryMetricTable.id),
+        ...sourceScopeConditions(deliveryMetricTable.sourceKind, context),
         inArray(deliveryMetricTable.sensitivity, allowedSensitivities(context.maximumSensitivity)),
         eq(deliveryMetricTable.active, true),
         isNull(deliveryMetricTable.deletedAt),
@@ -1508,8 +1542,8 @@ export const createPostgresDeliveryQuerySource = (
   execute: (context, plan) =>
     Effect.tryPromise({
       try: async () => {
-        const verifiedAt = await sourceVerificationTimes(database, context.workspaceId);
-        const configuredSources = await configuredSourceKinds(database, context.workspaceId);
+        const verifiedAt = await sourceVerificationTimes(database, context);
+        const configuredSources = await configuredSourceKinds(database, context);
         const results: DeliveryQueryResult[] = [];
         for (const operation of plan.operations) {
           if (operation.select === "objects")

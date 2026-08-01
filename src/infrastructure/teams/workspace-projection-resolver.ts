@@ -1,4 +1,8 @@
 import { Effect } from "effect";
+import {
+  type CollaborationSourceScope,
+  isCollaborationSourceScope,
+} from "../../domain/collaboration-source-scope.ts";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import {
@@ -41,7 +45,7 @@ type MembershipChannelProjection = ChannelIdentity & {
     readonly trustTier: TrustTier;
   };
   readonly permittedAudienceIds: readonly string[];
-  readonly permittedSourceScopes: readonly string[];
+  readonly permittedSourceScopes: readonly CollaborationSourceScope[];
 };
 
 export type WorkspaceProjection =
@@ -72,6 +76,11 @@ const stringList = (value: unknown): readonly string[] | undefined => {
   if (!Array.isArray(value) || value.length === 0 || !value.every(nonEmptyString)) return undefined;
   const items = value as string[];
   return new Set(items).size === items.length ? items : undefined;
+};
+
+const sourceScopeList = (value: unknown): readonly CollaborationSourceScope[] | undefined => {
+  const items = stringList(value);
+  return items?.every(isCollaborationSourceScope) ? items : undefined;
 };
 
 const channelIdentity = (candidate: Record<string, unknown>): ChannelIdentity => {
@@ -143,7 +152,7 @@ const parseMembershipProjection = (parsed: Record<string, unknown>): WorkspacePr
     const conversation = candidate as Record<string, unknown>;
     const membership = conversation.membership as Record<string, unknown> | undefined;
     const permittedAudienceIds = stringList(conversation.permittedAudienceIds);
-    const permittedSourceScopes = stringList(conversation.permittedSourceScopes);
+    const permittedSourceScopes = sourceScopeList(conversation.permittedSourceScopes);
     if (
       conversation.kind !== "standard_team_channel" ||
       !nonEmptyString(conversation.audienceId) ||

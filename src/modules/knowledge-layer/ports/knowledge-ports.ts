@@ -59,6 +59,7 @@ export type KnowledgeEmbeddingPort = {
 export type KnowledgeQuery = {
   readonly question: string;
   readonly audience: KnowledgeAudience;
+  readonly sources?: readonly KnowledgeSourceKind[] | undefined;
   readonly topK: number;
 };
 

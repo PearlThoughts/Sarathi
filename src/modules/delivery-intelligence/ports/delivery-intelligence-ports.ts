@@ -1,4 +1,5 @@
 import type { Effect } from "effect";
+import type { CollaborationSourceScope } from "../../../domain/collaboration-source-scope.ts";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
@@ -18,6 +19,7 @@ export type DeliveryQueryContext = {
   readonly workspaceId: string;
   readonly actorId: string;
   readonly audienceIds?: readonly string[] | undefined;
+  readonly permittedSourceScopes?: readonly CollaborationSourceScope[] | undefined;
   readonly maximumSensitivity: SensitivityTier;
   readonly financeAccess: boolean;
   readonly requestedAt: string;

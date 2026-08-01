@@ -4,6 +4,7 @@ import {
   type KnowledgeEmbeddingPort,
   type KnowledgeLiveSearch,
   type KnowledgeRepository,
+  type KnowledgeSourceKind,
   queryKnowledgeAcrossSources,
   type TeamsThreadContext,
 } from "../../modules/knowledge-layer/index.ts";
@@ -38,8 +39,20 @@ const freshness = (score: number): ContextEvidence["freshness"] =>
 export const createKnowledgeTeamsContextSearch = (
   configuration: KnowledgeTeamsContextConfiguration,
 ): TeamsMentionSupplementalContext => ({
-  search: (command, resolved, threadEvidence) =>
-    queryKnowledgeAcrossSources(
+  search: (command, resolved, threadEvidence) => {
+    const legacy =
+      resolved.authorization.effectiveAudience.membership.source === "explicit_actor_mapping";
+    const audienceIds = legacy
+      ? configuration.audienceIds
+      : configuration.audienceIds.filter((audienceId) =>
+          resolved.authorization.permittedAudienceIds.includes(audienceId),
+        );
+    const sources = legacy
+      ? undefined
+      : resolved.authorization.permittedSourceScopes.filter(
+          (scope): scope is KnowledgeSourceKind => scope !== "strategy",
+        );
+    return queryKnowledgeAcrossSources(
       configuration.repository,
       configuration.embeddings,
       configuration.liveSearches,
@@ -48,9 +61,10 @@ export const createKnowledgeTeamsContextSearch = (
         audience: {
           workspaceId: resolved.workspaceId,
           actorId: resolved.callerId,
-          audienceIds: configuration.audienceIds,
+          audienceIds,
           maximumSensitivity: resolved.channelSensitivity as SensitivityTier,
         },
+        ...(sources === undefined ? {} : { sources }),
         topK: configuration.topK,
       },
       teamsThreadContext(threadEvidence),
@@ -70,5 +84,6 @@ export const createKnowledgeTeamsContextSearch = (
           }),
         ),
       ),
-    ),
+    );
+  },
 });

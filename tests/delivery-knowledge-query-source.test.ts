@@ -35,13 +35,15 @@ describe("delivery knowledge query source", () => {
       repository,
       workspaceId: "workspace-atlas",
       allowedActorIds: new Set(["actor-atlas"]),
-      audienceIds: ["team-atlas"],
+      audienceIds: ["team-atlas", "private-not-permitted"],
     });
     const result = await Effect.runPromise(
       source.execute(
         {
           workspaceId: "workspace-atlas",
           actorId: "actor-atlas",
+          audienceIds: ["team-atlas", "meeting-atlas"],
+          permittedSourceScopes: ["jira", "vault"],
           maximumSensitivity: "internal",
           financeAccess: false,
           requestedAt: "2026-07-20T10:00:00.000Z",
@@ -58,6 +60,7 @@ describe("delivery knowledge query source", () => {
       audienceIds: ["team-atlas"],
       maximumSensitivity: "internal",
     });
+    expect(searchLexical.mock.calls[0]?.[0].sources).toEqual(["jira", "vault"]);
     expect(searchLexical.mock.calls[0]?.[0].question).toBe("What should I know before standup?");
     expect(result.items[0]).toMatchObject({
       source: "vault",

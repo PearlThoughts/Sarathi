@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { CollaborationSourceScope } from "../../../domain/collaboration-source-scope.ts";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type { NormalizedEvidenceRecord } from "../../evidence-import/domain/evidence-import.ts";
@@ -13,12 +14,24 @@ import type { TeamsMentionContextAssembler } from "../ports/teams-mention-ports.
 
 type AuthorizedContextSource = {
   readonly reader: EvidenceSourceReader;
+  readonly sourceScope?: CollaborationSourceScope | undefined;
   readonly sourceKey: (
     command: TeamsMentionCommand,
     resolved: ResolvedTeamsMention,
   ) => string | undefined;
   readonly contextRole?: "conversation" | "retrieved" | undefined;
 };
+
+const sourcePermitted = (
+  resolved: ResolvedTeamsMention,
+  sourceScope: CollaborationSourceScope | undefined,
+): boolean =>
+  resolved.authorization.effectiveAudience.membership.source === "explicit_actor_mapping" ||
+  (sourceScope !== undefined && resolved.authorization.permittedSourceScopes.includes(sourceScope));
+
+const permitsSupplementalRetrieval = (resolved: ResolvedTeamsMention): boolean =>
+  resolved.authorization.effectiveAudience.membership.source === "explicit_actor_mapping" ||
+  resolved.authorization.permittedSourceScopes.some((scope) => scope !== "legacy_workspace");
 
 export type TeamsMentionSupplementalContext = {
   readonly search: (
@@ -84,6 +97,7 @@ export const createAuthorizedContextAssembler = (
     Effect.tryPromise({
       try: async (): Promise<AuthorizedContextEnvelope> => {
         const selectedSources = sources.flatMap((source) => {
+          if (!sourcePermitted(resolved, source.sourceScope)) return [];
           const sourceKey = source.sourceKey(command, resolved);
           return sourceKey === undefined ? [] : [{ source, sourceKey }];
         });
@@ -104,7 +118,7 @@ export const createAuthorizedContextAssembler = (
           )
           .filter((record): record is ContextEvidence => record !== undefined);
         const supplementalEvidence =
-          supplementalContext === undefined
+          supplementalContext === undefined || !permitsSupplementalRetrieval(resolved)
             ? []
             : await Effect.runPromise(
                 supplementalContext.search(command, resolved, sourceEvidence),

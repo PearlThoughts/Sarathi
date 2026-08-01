@@ -50,7 +50,7 @@ const resolved = {
       },
     },
     permittedAudienceIds: ["audience"],
-    permittedSourceScopes: ["workspace"],
+    permittedSourceScopes: ["legacy_workspace"] as const,
   },
 };
 
@@ -161,5 +161,51 @@ describe("authorized context assembler", () => {
       evidence: [],
     });
     expect(readEvidence).not.toHaveBeenCalled();
+  });
+
+  it("does not call a source excluded by a membership-scoped corpus grant", async () => {
+    const jiraRead = vi.fn();
+    const unclassifiedRead = vi.fn();
+    const teamsRead = vi.fn(async () => ({ records: [] }));
+    const assembler = createAuthorizedContextAssembler([
+      {
+        sourceScope: "jira",
+        sourceKey: () => "jira:workspace",
+        reader: { readEvidence: jiraRead },
+      },
+      {
+        sourceScope: "teams",
+        sourceKey: () => "teams:team:channel:root",
+        reader: { readEvidence: teamsRead },
+      },
+      {
+        sourceKey: () => "unclassified:workspace",
+        reader: { readEvidence: unclassifiedRead },
+      },
+    ]);
+    const membershipResolved = {
+      ...resolved,
+      authorization: {
+        effectiveAudience: {
+          id: "audience",
+          kind: "team" as const,
+          membership: {
+            member: true as const,
+            source: "microsoft_graph_roster" as const,
+            resolvedAt: "2026-07-11T00:00:00.000Z",
+            expiresAt: "2026-07-11T00:02:00.000Z",
+          },
+        },
+        permittedAudienceIds: ["audience"],
+        permittedSourceScopes: ["teams"] as const,
+      },
+    };
+
+    await expect(
+      Effect.runPromise(assembler.assemble(command, membershipResolved)),
+    ).resolves.toMatchObject({ evidence: [] });
+    expect(jiraRead).not.toHaveBeenCalled();
+    expect(unclassifiedRead).not.toHaveBeenCalled();
+    expect(teamsRead).toHaveBeenCalledTimes(1);
   });
 });

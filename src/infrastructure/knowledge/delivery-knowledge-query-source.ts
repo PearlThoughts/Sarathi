@@ -68,20 +68,29 @@ export const createDeliveryKnowledgeQuerySource = (
             unavailableSources: [],
             complete: true,
           };
+        const audienceIds =
+          context.audienceIds === undefined
+            ? configuration.audienceIds
+            : configuration.audienceIds.filter((audienceId) =>
+                context.audienceIds?.includes(audienceId),
+              );
+        const sources = context.permittedSourceScopes?.filter((scope) => scope !== "strategy");
         const results = yield* queryKnowledgeLexically(configuration.repository, {
           question: context.question,
           audience: {
             workspaceId: context.workspaceId,
             actorId: context.actorId,
-            audienceIds: configuration.audienceIds,
+            audienceIds,
             maximumSensitivity: context.maximumSensitivity,
           },
+          ...(sources === undefined ? {} : { sources }),
           topK: operation.limit,
         });
         return {
           items: results
             .filter(
               (result) =>
+                (sources === undefined || sources.includes(result.source)) &&
                 isSensitivityAtOrBelow(result.sensitivity, context.maximumSensitivity) &&
                 allowedKnowledgeCitation(result.source, result.citationUrl, allowedRepositories) &&
                 !operationalMetadata(result.title, result.citationUrl),

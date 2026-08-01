@@ -41,7 +41,7 @@ describe("Teams knowledge context search", () => {
       repository,
       embeddings,
       liveSearches: [],
-      audienceIds: ["delivery"],
+      audienceIds: ["delivery", "private-not-permitted"],
       topK: 10,
     });
     const results = await Effect.runPromise(
@@ -51,6 +51,13 @@ describe("Teams knowledge context search", () => {
           workspaceId: "workspace-example",
           callerId: "actor-1",
           channelSensitivity: "internal",
+          authorization: {
+            effectiveAudience: {
+              membership: { source: "microsoft_graph_roster" },
+            },
+            permittedAudienceIds: ["delivery"],
+            permittedSourceScopes: ["jira", "teams"],
+          },
         } as never,
         [],
       ),
@@ -63,6 +70,7 @@ describe("Teams knowledge context search", () => {
           audienceIds: ["delivery"],
           maximumSensitivity: "internal",
         },
+        sources: ["jira", "teams"],
       }),
     ]);
     expect(results).toEqual([

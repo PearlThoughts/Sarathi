@@ -330,11 +330,25 @@ const valuesFromResult = (result: unknown): readonly SearchRow[] => {
   return (result as { readonly rows: readonly SearchRow[] }).rows;
 };
 
+const permittedKnowledgeSourceCondition = (
+  sources: KnowledgeQuery["sources"],
+  sourceColumn: ReturnType<typeof sql> = sql`${knowledgeSourceTable.kind}`,
+): ReturnType<typeof sql> =>
+  sources === undefined
+    ? sql`true`
+    : sources.length === 0
+      ? sql`false`
+      : sql`${sourceColumn} in (${sql.join(
+          sources.map((source) => sql`${source}`),
+          sql`, `,
+        )})`;
+
 const authorizedPassages = (
   workspaceId: string,
   maximumSensitivity: SensitivityTier,
   audienceIds: readonly string[],
   actorId: string | undefined,
+  sources: KnowledgeQuery["sources"],
   candidateIds?: ReturnType<typeof sql>,
 ) => {
   const maximumSensitivityRank = {
@@ -382,6 +396,7 @@ const authorizedPassages = (
       and v.tombstone = false
       and i.deleted_at is null
       and s.active = true
+      and ${permittedKnowledgeSourceCondition(sources, sql`s.kind`)}
       and ${candidateIds === undefined ? sql`true` : sql`p.id in (${candidateIds})`}
       and case p.sensitivity
         when 'public' then 0
@@ -427,6 +442,7 @@ const readLexicalSearchLists = async (
       query.audience.maximumSensitivity,
       query.audience.audienceIds,
       query.audience.actorId,
+      query.sources,
       sql`select id from candidates`,
     );
   const [exactResult, keywordResult] = await Promise.all([
@@ -437,8 +453,10 @@ const readLexicalSearchLists = async (
             select passage.id
             from ${knowledgeItemTable} item
             join ${knowledgePassageTable} passage on passage.item_id = item.id
+            join ${knowledgeSourceTable} on ${knowledgeSourceTable.id} = item.source_id
             where item.workspace_id = ${query.audience.workspaceId}
               and passage.workspace_id = ${query.audience.workspaceId}
+              and ${permittedKnowledgeSourceCondition(query.sources)}
               and passage.active = true
               and upper(item.external_id) = upper(${externalId})
             order by passage.ordinal
@@ -455,8 +473,11 @@ const readLexicalSearchLists = async (
         select passage.id,
                ts_rank_cd(to_tsvector('english', passage.title || ' ' || passage.body), query.value) as rank
         from ${knowledgePassageTable} passage
+        join ${knowledgeItemTable} on ${knowledgeItemTable.id} = passage.item_id
+        join ${knowledgeSourceTable} on ${knowledgeSourceTable.id} = ${knowledgeItemTable.sourceId}
         cross join query
         where passage.workspace_id = ${query.audience.workspaceId}
+          and ${permittedKnowledgeSourceCondition(query.sources)}
           and passage.active = true
           and to_tsvector('english', passage.title || ' ' || passage.body) @@ query.value
         order by rank desc, passage.source_updated_at desc
@@ -1731,6 +1752,7 @@ export const createPostgresKnowledgeRepository = (
           query.audience.maximumSensitivity,
           query.audience.audienceIds,
           query.audience.actorId,
+          query.sources,
         );
         const limit = Math.max(1, Math.min(query.topK, 50));
         const [lexical, vectorResult] = await Promise.all([

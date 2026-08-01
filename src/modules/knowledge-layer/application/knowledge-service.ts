@@ -162,22 +162,31 @@ export const queryKnowledgeAcrossSources = (
   liveSearches: readonly KnowledgeLiveSearch[],
   query: KnowledgeQuery,
   teamsThreadContext: readonly TeamsThreadContext[] = [],
-): Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError> =>
-  Effect.all(
+): Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError> => {
+  const permittedLiveSearches =
+    query.sources === undefined
+      ? liveSearches
+      : liveSearches.filter((backend) => query.sources?.includes(backend.source) === true);
+  const permittedThreadContext =
+    query.sources === undefined || query.sources.includes("teams") ? teamsThreadContext : [];
+  return Effect.all(
     [
       queryKnowledge(repository, embeddings, query),
-      ...liveSearches.map((backend) => backend.search(query)),
+      ...permittedLiveSearches.map((backend) => backend.search(query)),
     ],
     { concurrency: "unbounded" },
   ).pipe(
     Effect.map(([indexed = [], ...live]) => {
       const rankedLists: Record<string, readonly KnowledgeSearchResult[]> = {
         indexed,
-        teams: teamsThreadContext.map(asThreadResult),
+        teams: permittedThreadContext.map(asThreadResult),
       };
-      liveSearches.forEach((backend, index) => {
+      permittedLiveSearches.forEach((backend, index) => {
         rankedLists[`live:${backend.source}:${index}`] = live[index] ?? [];
       });
-      return fuseKnowledgeResults(rankedLists, query.topK);
+      return fuseKnowledgeResults(rankedLists, query.topK).filter(
+        (result) => query.sources === undefined || query.sources.includes(result.source),
+      );
     }),
   );
+};
