@@ -13,6 +13,7 @@ import {
   type TeamsKnowledgeChannel,
   type TeamsKnowledgeChat,
   teamsChatSubscriptionResourceHash,
+  teamsConversationUsesChangeNotifications,
   teamsSubscriptionResourceHash,
 } from "../../infrastructure/graph/index.ts";
 import { createJiraKnowledgeSource } from "../../infrastructure/jira/index.ts";
@@ -361,7 +362,7 @@ export const runDeliverySyncCommand = async (
             conversation,
             resourceHash: teamsChatSubscriptionResourceHash(conversation),
           })),
-        ];
+        ].filter(({ conversation }) => teamsConversationUsesChangeNotifications(conversation));
         for (const { conversation, resourceHash } of conversations) {
           const current = existing.find(
             (subscription) =>

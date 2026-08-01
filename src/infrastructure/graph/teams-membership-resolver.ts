@@ -49,6 +49,7 @@ const positiveInteger = (name: string, value: number): number => {
 const supportedConversation = (request: TeamsMembershipRequest): TeamsConversation => {
   if (
     request.conversation.kind !== "standard_team_channel" &&
+    request.conversation.kind !== "private_team_channel" &&
     request.conversation.kind !== "group_chat" &&
     request.conversation.kind !== "meeting_chat"
   ) {
@@ -62,6 +63,8 @@ const supportedConversation = (request: TeamsMembershipRequest): TeamsConversati
     ("graphTeamId" in request.conversation
       ? request.conversation.graphTeamId.trim() === ""
       : request.conversation.chatId.trim() === "") ||
+    (request.conversation.kind === "private_team_channel" &&
+      request.conversation.channelId.trim() === "") ||
     request.entraObjectId.trim() === ""
   ) {
     throw new RepositoryError({
@@ -72,19 +75,35 @@ const supportedConversation = (request: TeamsMembershipRequest): TeamsConversati
   return request.conversation;
 };
 
-const rosterKey = (conversation: TeamsConversation): string =>
-  "graphTeamId" in conversation
-    ? `team:${conversation.tenantId}:${conversation.graphTeamId}`
-    : `chat:${conversation.tenantId}:${conversation.chatId}`;
+const rosterKey = (conversation: TeamsConversation): string => {
+  if (conversation.kind === "standard_team_channel")
+    return `team:${conversation.tenantId}:${conversation.graphTeamId}`;
+  if (conversation.kind === "private_team_channel")
+    return `channel:${conversation.tenantId}:${conversation.graphTeamId}:${conversation.channelId}`;
+  if ("chatId" in conversation) return `chat:${conversation.tenantId}:${conversation.chatId}`;
+  throw new RepositoryError({
+    message: "Teams membership lookup does not support this conversation kind.",
+    operation: "teams-membership-unsupported-scope",
+  });
+};
 
 const membersUrl = (conversation: TeamsConversation): URL => {
-  const resource =
-    "graphTeamId" in conversation
-      ? `teams/${encodeURIComponent(conversation.graphTeamId)}`
-      : `chats/${encodeURIComponent(conversation.chatId)}`;
-  const url = new URL(`https://graph.microsoft.com/v1.0/${resource}/members`);
+  const resource = (() => {
+    if (conversation.kind === "standard_team_channel")
+      return `teams/${encodeURIComponent(conversation.graphTeamId)}`;
+    if (conversation.kind === "private_team_channel")
+      return `teams/${encodeURIComponent(conversation.graphTeamId)}/channels/${encodeURIComponent(conversation.channelId)}`;
+    if ("chatId" in conversation) return `chats/${encodeURIComponent(conversation.chatId)}`;
+    throw new RepositoryError({
+      message: "Teams membership lookup does not support this conversation kind.",
+      operation: "teams-membership-unsupported-scope",
+    });
+  })();
+  const url = new URL(
+    `https://graph.microsoft.com/v1.0/${resource}/${conversation.kind === "private_team_channel" ? "allMembers" : "members"}`,
+  );
   // Microsoft Graph rejects OData query parameters for chat-member listing.
-  if ("graphTeamId" in conversation) url.searchParams.set("$select", "userId");
+  if (conversation.kind === "standard_team_channel") url.searchParams.set("$select", "userId");
   return url;
 };
 

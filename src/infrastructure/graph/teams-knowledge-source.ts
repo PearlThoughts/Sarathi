@@ -20,12 +20,14 @@ import type { GraphAccessTokenProvider } from "./entra-token-provider.ts";
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type TeamsKnowledgeChannel = {
+  readonly kind?: "standard_team_channel" | "private_team_channel" | undefined;
   readonly teamId: string;
   readonly channelId: string;
   readonly label: string;
   readonly sensitivity: SensitivityTier;
   readonly acl: readonly KnowledgeAclRule[];
   readonly authority?: number | undefined;
+  readonly notificationSubscription?: "enabled" | "reconciliation_only" | undefined;
 };
 
 export type TeamsKnowledgeChat = {
@@ -838,6 +840,14 @@ export const createTeamsKnowledgeSource = (
         const excludedAuthorIds = configuration.excludedAuthorIds ?? [];
         if (excludedAuthorIds.some((id) => id.trim() === ""))
           throw new Error("Teams excluded author identities must be non-empty.");
+        if (
+          configuration.channels.some(
+            (channel) =>
+              channel.kind === "private_team_channel" &&
+              channel.notificationSubscription !== "reconciliation_only",
+          )
+        )
+          throw new Error("Private Teams channels must use reconciliation-only synchronization.");
         const conversationCount = configuration.channels.length + configuredChats.length;
         if (conversationCount === 0 || conversationCount > 64)
           throw new Error(
@@ -846,13 +856,24 @@ export const createTeamsKnowledgeSource = (
         const scopeHash = stableSha256(
           JSON.stringify({
             channels: configuration.channels.map(
-              ({ teamId, channelId, label, sensitivity, acl, authority }) => ({
+              ({
+                kind,
                 teamId,
                 channelId,
                 label,
                 sensitivity,
                 acl,
                 authority,
+                notificationSubscription,
+              }) => ({
+                kind,
+                teamId,
+                channelId,
+                label,
+                sensitivity,
+                acl,
+                authority,
+                notificationSubscription,
               }),
             ),
             chats: configuredChats.map(

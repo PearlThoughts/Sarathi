@@ -4,7 +4,7 @@
 
 Accepted for incremental implementation.
 
-Current implementation note: projection v2 admits standard channels through current team membership and can admit an explicitly mapped group or meeting chat through current chat membership. Legacy explicit-actor standard-channel mappings remain available during migration. Private-, shared-channel, and personal-chat answering is not production-ready.
+Current implementation note: projection v2 admits standard channels through current team membership, an explicitly mapped group or meeting chat through current chat membership, and an explicitly mapped private channel through current channel membership. Private-channel code and package declarations still require channel-specific tenant installation, RSC, ingestion, isolation, and live acceptance before production admission. Legacy explicit-actor standard-channel mappings remain available during migration. Shared-channel and personal-chat answering remain disabled.
 
 ## Context
 
@@ -22,11 +22,13 @@ Authorization produces an immutable resolved request context containing workspac
 
 Treat admission and membership separately. Private deployment configuration explicitly admits each collaboration scope. An authoritative resource-specific Graph roster then proves current membership with bounded freshness. A failure or expired result denies access; tenant-wide permissions and stale membership are not fallbacks.
 
-For admitted group and meeting chats, the audience policy is `current_roster`: a current participant receives the configured chat audience, including authorized indexed history for that audience. This is a deliberate current-membership policy rather than a claim that message-time participation has been reconstructed. Roster evidence is cached for no more than two minutes; removal blocks newly resolved requests after that bound. Private channels require a different channel-roster policy and are not admitted by this decision slice.
+For admitted group and meeting chats, the audience policy is `current_roster`: a current participant receives the configured chat audience, including authorized indexed history for that audience. Private channels use a separate current channel roster and a distinct channel audience; parent-team membership is never substituted. These are deliberate current-membership policies rather than claims that message-time participation has been reconstructed. Roster evidence is cached for no more than two minutes; removal blocks newly resolved requests after that bound.
 
 Use channel-thread reply targets for team channels and flat-chat reply targets for chats. Preserve the persistent activity lease across both surfaces.
 
 Keep shared channels and personal chats as explicit denied union members until separate authorization contracts are approved. Because Teams manifest channel-feature declarations may expose private and shared capability together, runtime shared-channel denial must precede any manifest upgrade.
+
+Private-channel message synchronization is authoritative reconciliation-only when Microsoft Graph RSC change-notification subscriptions are unavailable for that channel type. A private mapping must declare that mode explicitly so an expected subscription 403 cannot disrupt standard-channel or chat subscription renewal.
 
 Keep structured delivery intelligence primary. Retrieval enriches authorized delivery episodes and never owns period population or completeness. Composition and validation continue to fail closed with only a privacy-safe notice.
 

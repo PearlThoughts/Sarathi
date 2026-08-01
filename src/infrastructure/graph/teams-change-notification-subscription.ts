@@ -61,6 +61,22 @@ const subscriptionResource = (conversation: TeamsKnowledgeConversation): string 
   return `teams/${conversation.teamId}/channels/${conversation.channelId}/messages`;
 };
 
+export const teamsConversationUsesChangeNotifications = (
+  conversation: TeamsKnowledgeConversation,
+): boolean => {
+  if ("chatId" in conversation) return true;
+  if (
+    conversation.kind === "private_team_channel" &&
+    conversation.notificationSubscription !== "reconciliation_only"
+  ) {
+    throw new RepositoryError({
+      message: "Private Teams channels must use reconciliation-only synchronization.",
+      operation: "teams-subscription-configuration",
+    });
+  }
+  return conversation.notificationSubscription !== "reconciliation_only";
+};
+
 export const teamsSubscriptionResourceHash = (channel: TeamsKnowledgeChannel): string =>
   stableSha256(subscriptionResource(channel));
 
@@ -111,6 +127,10 @@ export const ensureTeamsChangeNotificationSubscription = (
     try: async () => {
       if (configuration.workspaceId.trim() === "" || configuration.sourceId.trim() === "")
         throw new Error("Teams subscription workspace and source identities are required.");
+      if (!teamsConversationUsesChangeNotifications(conversation))
+        throw new Error(
+          "Teams conversation is configured for reconciliation-only synchronization.",
+        );
       if (configuration.clientState.trim().length < 16)
         throw new Error("Teams subscription client state must be an unguessable protected value.");
       const notificationUrl = validatedHttpsUrl("notificationUrl", configuration.notificationUrl);

@@ -53,7 +53,7 @@ type MembershipGrant = {
   readonly permittedSourceScopes: readonly CollaborationSourceScope[];
 };
 
-type MembershipChannelProjection = ChannelIdentity &
+type StandardMembershipChannelProjection = ChannelIdentity &
   MembershipGrant & {
     readonly kind: "standard_team_channel";
     readonly membership: {
@@ -62,6 +62,21 @@ type MembershipChannelProjection = ChannelIdentity &
       readonly trustTier: TrustTier;
     };
   };
+
+type PrivateMembershipChannelProjection = ChannelIdentity &
+  MembershipGrant & {
+    readonly kind: "private_team_channel";
+    readonly membership: {
+      readonly kind: "channel_membership";
+      readonly historyAccess: "current_roster";
+      readonly actorId: string;
+      readonly trustTier: TrustTier;
+    };
+  };
+
+type MembershipChannelProjection =
+  | StandardMembershipChannelProjection
+  | PrivateMembershipChannelProjection;
 
 type MembershipChatProjection = ChatIdentity &
   MembershipGrant & {
@@ -229,6 +244,23 @@ const parseMembershipProjection = (parsed: Record<string, unknown>): WorkspacePr
       };
     }
     if (
+      conversation.kind === "private_team_channel" &&
+      membership.kind === "channel_membership" &&
+      membership.historyAccess === "current_roster"
+    ) {
+      return {
+        ...channelIdentity(conversation),
+        ...grant,
+        kind: "private_team_channel" as const,
+        membership: {
+          kind: "channel_membership" as const,
+          historyAccess: "current_roster" as const,
+          actorId: membership.actorId,
+          trustTier: membership.trustTier as TrustTier,
+        },
+      };
+    }
+    if (
       (conversation.kind === "group_chat" || conversation.kind === "meeting_chat") &&
       membership.kind === "chat_membership" &&
       membership.historyAccess === "current_roster"
@@ -287,7 +319,7 @@ export const workspaceProjectionDeliveryChannels = (
   workspaceId?: string,
   actorId?: string,
 ): readonly (Pick<ChannelIdentity, "graphTeamId" | "channelId" | "workspaceId" | "sensitivity"> & {
-  readonly scope: "standard";
+  readonly scope: "standard" | "private";
 })[] => {
   const mappings = "channels" in projection ? projection.channels : projection.conversations;
   return mappings.flatMap((channel) => {
@@ -306,7 +338,10 @@ export const workspaceProjectionDeliveryChannels = (
         channelId: channel.channelId,
         workspaceId: channel.workspaceId,
         sensitivity: channel.sensitivity,
-        scope: "standard" as const,
+        scope:
+          "kind" in channel && channel.kind === "private_team_channel"
+            ? ("private" as const)
+            : ("standard" as const),
       },
     ];
   });
@@ -391,6 +426,7 @@ export const createWorkspaceProjectionResolver = (
       });
       if (!membership.member) return undefined;
       const isChat = "chatId" in mapping;
+      const isPrivateChannel = "channelId" in mapping && mapping.kind === "private_team_channel";
       return {
         workspaceId: mapping.workspaceId,
         conversation,
@@ -406,8 +442,12 @@ export const createWorkspaceProjectionResolver = (
         authorization: {
           effectiveAudience: {
             id: mapping.audienceId,
-            kind: isChat ? ("chat" as const) : ("team" as const),
-            ...(isChat && "historyAccess" in mapping.membership
+            kind: isChat
+              ? ("chat" as const)
+              : isPrivateChannel
+                ? ("channel" as const)
+                : ("team" as const),
+            ...("historyAccess" in mapping.membership
               ? { historyAccess: mapping.membership.historyAccess }
               : {}),
             membership,
@@ -425,8 +465,11 @@ export const createWorkspaceProjectionResolver = (
           if (command.replyTarget.kind !== "channel_thread") return undefined;
           const channel = channels.get(channelKey(command.conversation));
           if (channel === undefined) return undefined;
-          const conversation = { ...command.conversation, kind: "standard_team_channel" as const };
           if ("actors" in channel) {
+            const conversation = {
+              ...command.conversation,
+              kind: "standard_team_channel" as const,
+            };
             const actor = channel.actors.find(
               (candidate) => candidate.entraObjectId === command.caller.entraObjectId,
             );
@@ -459,6 +502,7 @@ export const createWorkspaceProjectionResolver = (
               },
             };
           }
+          const conversation = { ...command.conversation, kind: channel.kind };
           return yield* resolveMembershipMapping(command, channel, conversation);
         }
         if (command.conversation.kind === "personal_chat") return undefined;

@@ -4,6 +4,7 @@ import {
   ensureTeamsChangeNotificationSubscription,
   type TeamsNotificationSubscriptionConfiguration,
   type TeamsProviderSubscription,
+  teamsConversationUsesChangeNotifications,
 } from "../src/infrastructure/graph/teams-change-notification-subscription.ts";
 import type {
   TeamsKnowledgeChannel,
@@ -23,6 +24,36 @@ const channel: TeamsKnowledgeChannel = {
 };
 
 describe("Teams change-notification subscription", () => {
+  it("keeps explicitly reconciliation-only channels out of the notification path", () => {
+    expect(teamsConversationUsesChangeNotifications(channel)).toBe(true);
+    expect(
+      teamsConversationUsesChangeNotifications({
+        ...channel,
+        kind: "private_team_channel",
+        channelId: "private-channel",
+        notificationSubscription: "reconciliation_only",
+      }),
+    ).toBe(false);
+    expect(
+      teamsConversationUsesChangeNotifications({
+        chatId: "19:meeting_example@thread.v2",
+        chatType: "meeting",
+        label: "Delivery Standup",
+        canonicalUrl:
+          "https://teams.microsoft.com/l/chat/19:meeting_example@thread.v2/conversations",
+        sensitivity: "internal",
+        acl: [{ effect: "allow", subjectType: "workspace", subjectId: "example" }],
+      }),
+    ).toBe(true);
+    expect(() =>
+      teamsConversationUsesChangeNotifications({
+        ...channel,
+        kind: "private_team_channel",
+        channelId: "misconfigured-private-channel",
+      }),
+    ).toThrow("must use reconciliation-only synchronization");
+  });
+
   it("recreates an expired provider subscription and stores only privacy-safe control metadata", async () => {
     const saved: SynchronizationSubscription[] = [];
     const repository: SynchronizationControlRepository = {
