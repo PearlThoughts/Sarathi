@@ -1,8 +1,8 @@
 # Tasks: Bounded Teams Collaboration Scopes
 
-- [ ] Normalize all declared conversation kinds and reply targets.
-- [ ] Deny unsupported shared and personal scopes before external reads.
-- [ ] Preserve legacy standard-channel explicit-actor behavior during migration.
+- [x] Normalize all declared conversation kinds and reply targets.
+- [x] Deny unsupported chat scopes before external reads.
+- [x] Preserve legacy standard-channel explicit-actor behavior during migration.
 - [ ] Add projection v2 with admission, audience, corpus, and membership policies.
 - [ ] Implement resource-scoped Graph installation and membership resolvers.
 - [ ] Prove standard-channel multi-user authorization and duplicate suppression.
