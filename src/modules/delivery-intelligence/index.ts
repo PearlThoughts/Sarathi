@@ -1,3 +1,12 @@
+export type {
+  BoundedDeliveryAssistant,
+  BoundedDeliveryAssistantConfiguration,
+} from "./application/create-bounded-delivery-assistant.ts";
+export {
+  createBoundedDeliveryAssistant,
+  defaultDeliveryMaxConcurrency,
+  defaultDeliveryMaxQueueDepth,
+} from "./application/create-bounded-delivery-assistant.ts";
 export type { DeliveryAssistantConfiguration } from "./application/create-delivery-assistant.ts";
 export {
   createDeliveryAssistant,
