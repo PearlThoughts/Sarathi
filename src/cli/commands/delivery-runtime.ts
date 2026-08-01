@@ -22,6 +22,7 @@ import {
 } from "../../infrastructure/postgres/index.ts";
 import {
   deliveryChannelProjectionFromEnvironment,
+  workspaceProjectionDeliveryChannels,
   workspaceProjectionFromEnvironment,
 } from "../../infrastructure/teams/index.ts";
 import {
@@ -245,11 +246,7 @@ const liveSources = (
   )
     return sources;
   const projection = workspaceProjectionFromEnvironment(environment);
-  const ingressChannels = projection.channels.filter(
-    (channel) =>
-      channel.workspaceId === workspaceId &&
-      channel.actors.some((actor) => actor.actorId === actorId),
-  );
+  const ingressChannels = workspaceProjectionDeliveryChannels(projection, workspaceId, actorId);
   const channels = deliveryChannelProjectionFromEnvironment(
     environment,
     ingressChannels.map((channel) => ({
