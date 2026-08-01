@@ -4,6 +4,8 @@
 
 Accepted for implementation.
 
+Current implementation note: the ten-second target below applies only to the original fast operational-answer product. It is not a universal answer target. Structured and report products now use explicit larger budgets; recent-period reports may take roughly 40–60 seconds and have no artificial line-count target.
+
 ## Context
 
 The existing knowledge layer synchronizes configured Jira and knowledge-root
@@ -84,4 +86,3 @@ cleanly.
 - [Continuous Synchronization Sub-Spec](../../specs/005-knowledge-layer/continuous-source-synchronization.md)
 - [ADR 0006](./0006-postgres-knowledge-retrieval-stack.md)
 - [Delivery Intelligence Redesign](../../specs/005-knowledge-layer/delivery-intelligence.md)
-

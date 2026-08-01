@@ -32,7 +32,10 @@ Sarathi documentation has two audiences:
 - [Strategic Execution Loop](implementation/strategic-execution-loop.md) specifies observe, infer, ratify, publish, verify, chase, and review.
 - [Public And Private Boundary](implementation/public-private-boundary.md) defines what belongs in the open repo versus private workspace packs and vaults.
 - [Production Readiness Standard](standards/production-readiness.md) defines implemented, composed, configured, deployed, healthy, ready, and accepted states.
+- [Delivery Response Modes](delivery-response-modes.md) defines fast, structured, and deep-dive budgets plus the composed-or-safe-failure report contract.
+- [Delivery Evaluation](delivery-evaluation.md) defines governed case, suite, fingerprint-bound human review, and acceptance semantics.
 - [ADR 0005](adr/0005-single-runtime-private-overlays.md) records the single-runtime and private-overlay decision.
+- [ADR 0010](adr/0010-bounded-teams-collaboration-scopes.md) records the target Teams collaboration-scope model and its incremental rollout boundary.
 - [Test Index](../tests/TEST-INDEX.md) lists verification commands and test scope.
 
 ## Current Platform Capabilities
@@ -44,7 +47,11 @@ Sarathi documentation has two audiences:
 - Define strategic execution control-plane requirements, workspace packs, intent/evidence graph, and ratified accountability loops.
 - Synchronize Microsoft Teams standard channels and explicitly mapped meeting or group chats, including quoted-message context and bounded provider throttling.
 - Maintain workspace-scoped delivery objects, claims, relations, knowledge passages, and source checkpoints in PostgreSQL.
+- Consolidate Jira, Teams, Vault, strategy, and code observations into structured cross-source delivery episodes.
+- Compose weekly, sprint, recent-period, and leadership reports from accepted structured projections, with retrieval as enrichment and no report-content fallback.
+
+Current inbound Teams answering resolves explicitly mapped standard channels and actors. Broader chat ingestion does not imply inbound chat support; private/shared channels and meeting/group-chat answering remain outside the production-ready resolver. See [Roles And Boundaries](product/roles-and-boundaries.md) and [Production Readiness](standards/production-readiness.md).
 
 ## Product Direction
 
-The next product outcome is not broader source enumeration. It is capability-first delivery understanding: consolidate recent activity into delivery episodes, map it to governed initiatives, reconstruct current delivery state, identify human dependencies, and render concise 24-hour, 7-day, and 30-day operating updates.
+The current delivery-reporting core is capability-first. The next product work is broader authorized collaboration-scope resolution and complete governed acceptance without weakening workspace, audience, source, or model-egress boundaries.

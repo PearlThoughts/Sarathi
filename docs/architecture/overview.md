@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This document explains Sarathi's first implementation slice: a policy-bounded AI Delivery Assistant platform that compiles team context before any agent sees or acts on work data.
+This document explains Sarathi's current policy-bounded AI Delivery Assistant architecture: one runtime that constructs structured delivery intelligence before retrieving enrichment context or composing user-visible reports.
 
 ## Runtime Shape
 
@@ -41,6 +41,10 @@ Inferences are not enough. YAML overlays provide explicit corrections, boundary 
 The repository includes hosted Microsoft Teams ingress, Microsoft Graph, Jira, GitHub, Vault projection, model, Postgres audit, workspace-resolution, compliance-reminder, and context-assembly adapters. Their presence does not make every deployment ready: each capability still requires authorized private configuration, runtime composition, capability-specific readiness, and real acceptance evidence.
 
 The delivery-intelligence contracts and Strategy Kernel define a broader product than the currently proven production paths. Delivery intelligence organizes project operating data so Sarathi can answer the ordinary questions directed to a PM or Delivery Manager. Internal workspace reports are automatic; external publication and mutating actions remain human-governed.
+
+Structured delivery objects and cross-source episodes are the reporting authority. Exact, full-text, and vector retrieval enrich the selected episodes with authorized context; retrieval does not determine the period population or upgrade incomplete coverage into a complete report. Weekly, sprint, recent-period, and leadership reports use model composition. If composition or report validation fails, the runtime returns only the short safe failure notice and never publishes deterministic capsules or partial report prose.
+
+Microsoft Teams source capture and question answering are separate adapter capabilities. The current inbound resolver accepts explicitly mapped standard-channel and actor combinations. Configured meeting or group chats can be indexed as source material, but the current standard-only resolver cannot answer from them. Private- and shared-channel answering still require their own admission, membership, authorization, reply-path, and live-acceptance evidence.
 
 ## Strategic Execution Relationship
 

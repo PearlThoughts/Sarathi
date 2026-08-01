@@ -1,8 +1,17 @@
 # Roles And Boundaries
 
-Sarathi is one bot with many scopes.
+Sarathi is one bot with policy-bounded workspace and audience scopes.
 
-People should not need to choose between "team Sarathi" and "leadership Sarathi." They mention `@Sarathi` or DM Sarathi; the system computes what it can see, say, and do from the request.
+Team-visible and leadership products share the same delivery model; they are not separate bots. The current inbound Teams path accepts mentions only from explicitly mapped standard channels and actors. Direct-message, meeting/group-chat, private-channel, and shared-channel answering must not be inferred from the product model or Teams manifest.
+
+## Current Interaction Boundary
+
+- **Available resolver:** explicitly mapped standard-channel and actor combinations.
+- **Available source capture:** configured standard channels and explicitly mapped meeting or group chats may be indexed.
+- **Not yet implemented through the current resolver:** inbound meeting/group-chat and direct-message answering.
+- **Not production-ready:** private- and shared-channel answering.
+
+Manifest capability, source ingestion, inbound resolution, authorization, reply delivery, and live acceptance are independent gates. No one gate supports an “all users” or “all channels” claim.
 
 ## Effective Scope
 

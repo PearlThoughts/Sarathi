@@ -83,6 +83,23 @@ The response should:
 
 Fast questions may use a short acknowledgement. Deep synthesis is governed by completeness and operational usefulness, not an artificial ten-second or line-count limit.
 
+Weekly, sprint, recent-period, and leadership reports use model composition over the accepted structured delivery envelope. A recent-period report may take roughly 40–60 seconds. Provider, timeout, structure, citation, source-completeness, or quality failure publishes only the short safe failure notice; Sarathi does not substitute deterministic capsules, raw source rows, or partial report prose.
+
+## Sprint Review And Outlook
+
+A Sprint Review and Outlook is the sprint-shaped projection of the same delivery episodes. It covers:
+
+- exact previous- and current-sprint identity and dates;
+- work planned at the previous sprint boundary;
+- work added during the sprint;
+- completed, rolled-over, and dropped or superseded work;
+- current ownership, lifecycle state, meaningful movement, and explainable health;
+- alignment to the governed initiative set, including gaps and initiatives with no current-sprint activity;
+- active waits and decisions; and
+- advisory Jira hygiene corrections.
+
+The report consolidates authorized Jira, Teams, Vault, strategy, and code activity by capability. It does not present those systems as independent activity inventories.
+
 ## Jira And Execution-Plan Hygiene
 
 Sarathi treats Jira-like systems as the intended execution plan and a target for improvement, not as infallible reality.
@@ -100,7 +117,7 @@ Sarathi should initially propose corrections for human confirmation. Approved ac
 
 ## User Surfaces
 
-Microsoft Teams is the primary conversational surface, but it is not the product boundary. The same delivery episode and dependency models should support:
+Microsoft Teams is the primary conversational surface, but it is not the product boundary. The same delivery episode and dependency models support or are intended to support:
 
 - on-demand questions;
 - daily delivery briefs;
@@ -110,6 +127,8 @@ Microsoft Teams is the primary conversational surface, but it is not the product
 - future approved action cards.
 
 These products reuse the same project model and differ by period, audience, detail, and actionability.
+
+Current inbound availability is limited to explicitly mapped standard channels and actors. Meeting/group-chat source ingestion is broader than answering support, and private/shared-channel answering is not production-ready.
 
 ## Product Boundary
 

@@ -144,7 +144,11 @@ The technical operator and Microsoft 365 administrator should follow the [Organi
 
 ## 🏗️ Current Maturity
 
-Sarathi is under active development. The repository contains working foundations for Teams-based questions, delivery activity, workspace intent, reports, reminders, and hosted operation. It is not yet a one-click enterprise installation.
+Sarathi is under active development. Its current delivery-reporting path builds structured, cross-source delivery episodes first, then uses authorized full-text/vector retrieval to enrich those results. Weekly, sprint, recent-period, and leadership reports are model-composed and publish only after the complete report-quality contract passes. There is no deterministic or partial-content report fallback; a terminal composition or validation failure returns only a short safe notice.
+
+Recent-period synthesis may take roughly 40–60 seconds because completeness and report quality take priority over an artificial universal ten-second or line-count target. Fast operational answers remain a separate response product.
+
+The current Teams question-answering surface is narrower than the ingestion surface: configured standard channels and known actors are resolved through explicit mappings. Configured meeting or group chats may contribute indexed source context, but inbound answering from those chats is not implemented by the standard-channel resolver. Private- and shared-channel answering is not production-ready. App-manifest declarations, source ingestion, inbound resolution, authorization, deployment health, and live acceptance are separate states.
 
 Production use should be treated capability by capability. A successful deployment is not the same as a useful or trusted organizational rollout. Start small, verify the source records boundaries, measure whether it reduces coordination work, and keep a manual override.
 
@@ -153,6 +157,8 @@ Production use should be treated capability by capability. A successful deployme
 - [Product purpose and boundaries](docs/product/what.md)
 - [Why Sarathi exists](docs/product/why.md)
 - [How Sarathi works](docs/product/how.md)
+- [Delivery synthesis architecture](docs/architecture/delivery-synthesis.md)
+- [Delivery evaluation](docs/delivery-evaluation.md)
 - [Organization installation and activation](docs/installation.md)
 - [Documentation index](docs/README.md)
 

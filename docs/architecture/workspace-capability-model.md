@@ -31,6 +31,20 @@ Examples include `ai-delivery-assistant`, `compliance-reminders`, `drift-review`
 
 The same capability code may run in many workspaces, but its evidence, state, identities, and policy remain workspace-scoped.
 
+## Capability Status Dimensions
+
+Availability is not one boolean. Operators must record these dimensions separately:
+
+| Dimension | What it proves | What it does not prove |
+| --- | --- | --- |
+| App manifest | Teams may expose a declared surface | Runtime resolution, authorization, or acceptance |
+| Source ingestion | Approved records can enter the workspace corpus | A question can be asked from that source conversation |
+| Inbound resolution | The runtime can map an incoming activity to a workspace and actor | The caller is authorized for every requested corpus |
+| Authorization | The resolved actor, audience, source, and sensitivity checks pass | The answer is useful or accepted in live use |
+| Live acceptance | A real authorized workflow passed behavioral and privacy criteria | Other channels, users, workspaces, or capabilities are supported |
+
+The current Teams answer path resolves explicitly mapped standard channels and actors. Meeting and group chats may be indexed when configured, but inbound answering from them is not implemented through the current standard-only resolver. Private- and shared-channel answering is not production-ready.
+
 ## Configuration And Runtime State
 
 Versioned workspace configuration declares desired boundaries and policy. Runtime state records what actually happened.
