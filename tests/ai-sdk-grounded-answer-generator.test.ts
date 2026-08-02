@@ -312,6 +312,94 @@ describe("AI SDK OpenRouter answer generator", () => {
     });
   });
 
+  it("fails closed when a Sprint Review omits a mandatory planning label", async () => {
+    const presentation = {
+      kind: "delivery_report" as const,
+      requiredCitationSources: ["jira"] as const,
+      period: {
+        kind: "source_defined" as const,
+        reference: "current sprint",
+        timeZone: "Asia/Kolkata",
+      },
+      coverage: {
+        complete: true,
+        examinedRecords: 1,
+        acceptedChanges: 1,
+        duplicateRecords: 0,
+        excludedRecords: 0,
+        unmappedChanges: 0,
+        unavailableSources: [],
+      },
+      capabilitySections: [],
+      episodes: [],
+      dependencies: [],
+      decisionsNeeded: [],
+      jiraAdvisories: [],
+      sprintReview: {
+        previous: {
+          plannedAtStart: [],
+          addedDuringSprint: [],
+          completedDuringSprint: [],
+          rolledIntoCurrent: [],
+          dropped: [],
+        },
+        current: [],
+        initiatives: [],
+        noCurrentSprintActivity: [],
+        unaccountedWork: [],
+      },
+    };
+    const reportText = (includeUnaccountedWork: boolean): string =>
+      [
+        "## Sprint overview",
+        "- Delivery remains on plan.",
+        "## Previous sprint",
+        "- **Planned at start:** No observed work.",
+        "- **Delivered:** No observed work.",
+        "- **Rolled over:** No observed work.",
+        "- **Added during sprint:** No observed work.",
+        "- **Dropped or superseded:** No observed work.",
+        "## Current sprint",
+        "- No active work.",
+        "## Q3 alignment",
+        "- **No current-sprint activity:** No initiatives.",
+        ...(includeUnaccountedWork ? ["- **Unaccounted work:** None."] : []),
+        "## Waiting or decisions",
+        "- No active waits.",
+        "## Jira hygiene",
+        "- No advisory corrections.",
+        "## References",
+        "- [R1]",
+      ].join("\n");
+    const reportEnvelope = { ...envelope, presentation };
+    const incomplete = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(reportText(false)),
+    );
+
+    await expect(
+      Effect.runPromise(incomplete.generate(reportEnvelope).pipe(Effect.either)),
+    ).resolves.toMatchObject({
+      _tag: "Left",
+      left: { operation: "report-composition-structure" },
+    });
+
+    const complete = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(reportText(true)),
+    );
+    await expect(Effect.runPromise(complete.generate(reportEnvelope))).resolves.toMatchObject({
+      citations: [{ url: "https://jira.example.test/DEMO-754" }],
+    });
+    const promptModel = successfulModel(reportText(true));
+    await Effect.runPromise(
+      createGroundedAnswerGenerator(configuration, undefined, () => promptModel).generate(
+        reportEnvelope,
+      ),
+    );
+    expect(JSON.stringify(promptModel.doGenerateCalls)).toContain(
+      "always include the two explicit labels 'No current-sprint activity' and 'Unaccounted work'",
+    );
+  });
+
   it("classifies malformed or invalidly cited model output separately from provider failure", async () => {
     for (const text of [
       "Uncited answer.\nStill uncited.",

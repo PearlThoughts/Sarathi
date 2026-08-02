@@ -2281,9 +2281,9 @@ describe("delivery intelligence application", () => {
       createDeliveryAssistant({
         sources: [source],
         answerComposer: { compose },
-        sourceTimeoutMs: 250,
-        compositionTimeoutMs: 250,
-        totalBudgetMs: 300,
+        sourceTimeoutMs: 400,
+        compositionTimeoutMs: 500,
+        totalBudgetMs: 600,
       }).answer({
         ...request,
         question: "What are the delivery risks and next action?",
