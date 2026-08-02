@@ -186,6 +186,7 @@ export type DeliveryAssistantAnswer = {
   readonly citations: readonly {
     readonly label: string;
     readonly url: string;
+    readonly source: DeliverySourceKind;
   }[];
   readonly status: "ok" | "partial" | "empty" | "failed";
   readonly responseMode: DeliveryResponseMode;

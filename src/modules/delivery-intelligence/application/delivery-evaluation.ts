@@ -316,12 +316,7 @@ const sameSet = (left: readonly string[], right: readonly string[]): boolean =>
   [...left].sort().every((value, index) => value === [...right].sort()[index]);
 
 const citationSources = (answer: DeliveryAssistantAnswer): ReadonlySet<string> =>
-  new Set(
-    answer.citations.flatMap(({ label }) => {
-      const source = label.split(/\s+/)[0]?.toLocaleLowerCase("en");
-      return source === undefined ? [] : [source];
-    }),
-  );
+  new Set(answer.citations.map(({ source }) => source));
 
 export const evaluateDeliveryCase = (
   evaluationCase: DeliveryEvaluationCase,

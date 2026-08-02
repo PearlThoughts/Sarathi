@@ -648,6 +648,31 @@ const authorizedConflicts = (
     return claims.length < 2 || sources.size < 2 ? [] : [{ ...conflict, claims }];
   });
 
+const citationsWithSourceProvenance = (
+  citations: readonly { readonly label: string; readonly url: string }[],
+  result: DeliveryQueryResult,
+): readonly DeliveryAssistantAnswer["citations"][number][] => {
+  const sourceByUrl = new Map<string, DeliverySourceKind>();
+  const register = (url: string, source: DeliverySourceKind): void => {
+    const existing = sourceByUrl.get(url);
+    if (existing !== undefined && existing !== source)
+      invalidReport("report-composition-citation-unknown");
+    sourceByUrl.set(url, source);
+  };
+  for (const item of result.items) register(item.citationUrl, item.source);
+  for (const citation of result.periodDeliveryReport?.capsules.flatMap(
+    (capsule) => capsule.citations,
+  ) ?? [])
+    register(citation.url, citation.source);
+  for (const claim of result.conflicts.flatMap((conflict) => conflict.claims))
+    register(claim.source.citationUrl, claim.source.source);
+  return citations.map((citation) => {
+    const source = sourceByUrl.get(citation.url);
+    if (source === undefined) return invalidReport("report-composition-citation-unknown");
+    return { ...citation, source };
+  });
+};
+
 const composeAnswer = (
   _request: DeliveryAssistantRequest,
   plan: DeliveryQueryPlan,
@@ -662,13 +687,13 @@ const composeAnswer = (
     ? Number.POSITIVE_INFINITY
     : (responsePolicy.maximumLines ?? Number.POSITIVE_INFINITY);
   const itemsPerIntent = 5;
-  const citations: { label: string; url: string }[] = [];
+  const citations: DeliveryAssistantAnswer["citations"][number][] = [];
   const citationLabels = new Map<string, string>();
   const registerCitation = (item: DeliveryResultItem): void => {
     const key = item.citationUrl;
     if (citationLabels.has(key)) return;
     const label = `${sourceLabel[item.source]} ${citations.length + 1}`;
-    citations.push({ label, url: item.citationUrl });
+    citations.push({ label, url: item.citationUrl, source: item.source });
     citationLabels.set(key, label);
   };
   const references = (): readonly string[] => {
@@ -1163,7 +1188,7 @@ const composeWithModel = (
               return {
                 ...deterministic,
                 text,
-                citations: composed.citations,
+                citations: citationsWithSourceProvenance(composed.citations, result),
                 mentions: [],
                 ...(result.periodDeliveryReport === undefined
                   ? {}
@@ -1189,7 +1214,7 @@ const composeWithModel = (
             return {
               ...deterministic,
               text: lines.join("\n"),
-              citations: composed.citations,
+              citations: citationsWithSourceProvenance(composed.citations, result),
               mentions: [],
             };
           },
