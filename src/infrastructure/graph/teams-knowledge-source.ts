@@ -244,8 +244,22 @@ const retryAfterMilliseconds = (response: Response, now: Date): number => {
     ? seconds * 1_000
     : Date.parse(value) - now.getTime();
   if (!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 60_000)
-    throw new Error("Teams throttling returned an invalid retry interval.");
+    throw new Error("Teams retryable response returned an invalid retry interval.");
   return milliseconds;
+};
+
+const retryableGraphReadStatus = (status: number): boolean =>
+  status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+
+const retryDelayMilliseconds = (
+  response: Response | undefined,
+  retryCount: number,
+  now: Date,
+): number => {
+  const exponentialFloor = Math.min(60_000, 1_000 * 2 ** retryCount);
+  return response === undefined
+    ? exponentialFloor
+    : Math.max(retryAfterMilliseconds(response, now), exponentialFloor);
 };
 
 const delay = (
@@ -289,25 +303,38 @@ const readPages = async (
   const values: TeamsMessage[] = [];
   let next: string | undefined = initialUrl;
   let pages = 0;
-  let throttleRetries = 0;
+  let transientRetries = 0;
   while (next !== undefined) {
     if (pages >= maximumPages)
       throw new Error("Teams message pagination exceeded its safety bound.");
     await beforeRequest();
-    const response = await (configuration.fetcher ?? fetch)(next, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    });
-    if (response.status === 429) {
-      if (throttleRetries >= 8)
-        throw new Error("Teams message pagination exceeded its throttle retry bound.");
-      const providerDelay = retryAfterMilliseconds(response, configuration.now?.() ?? new Date());
-      const exponentialFloor = Math.min(60_000, 1_000 * 2 ** throttleRetries);
-      await delay(configuration, Math.max(providerDelay, exponentialFloor));
-      throttleRetries += 1;
+    let response: Response;
+    try {
+      response = await (configuration.fetcher ?? fetch)(next, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+    } catch {
+      if (transientRetries >= 8)
+        throw new Error("Teams message pagination exceeded its transient retry bound.");
+      await delay(
+        configuration,
+        retryDelayMilliseconds(undefined, transientRetries, configuration.now?.() ?? new Date()),
+      );
+      transientRetries += 1;
+      continue;
+    }
+    if (retryableGraphReadStatus(response.status)) {
+      if (transientRetries >= 8)
+        throw new Error("Teams message pagination exceeded its transient retry bound.");
+      await delay(
+        configuration,
+        retryDelayMilliseconds(response, transientRetries, configuration.now?.() ?? new Date()),
+      );
+      transientRetries += 1;
       continue;
     }
     if (!response.ok) throw new Error(`Teams knowledge read failed with HTTP ${response.status}.`);
-    throttleRetries = 0;
+    transientRetries = 0;
     const page = (await response.json()) as TeamsPage;
     const pageValues = page.value ?? [];
     values.push(...pageValues);

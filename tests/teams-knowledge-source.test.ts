@@ -215,6 +215,80 @@ describe("Teams knowledge source", () => {
     );
   });
 
+  it("retries transient Graph responses and transport failures with bounded backoff", async () => {
+    const retryDelays: number[] = [];
+    let attempt = 0;
+    const fetcher = vi.fn(async (): Promise<Response> => {
+      attempt += 1;
+      if (attempt === 1)
+        return Response.json(
+          { error: { code: "ServiceUnavailable" } },
+          { status: 503, headers: { "Retry-After": "0" } },
+        );
+      if (attempt === 2) throw new TypeError("Synthetic transport interruption");
+      return Response.json({ value: [] });
+    });
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      retryDelay: async (milliseconds) => {
+        retryDelays.push(milliseconds);
+      },
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).resolves.toMatchObject({
+      documents: [],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(retryDelays).toEqual([1_000, 2_000]);
+  });
+
+  it("fails deterministic Graph authorization errors without retrying", async () => {
+    const retryDelay = vi.fn(async () => undefined);
+    const fetcher = vi.fn(async () => Response.json({ error: {} }, { status: 403 }));
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      retryDelay,
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured Teams knowledge synchronization failed",
+    );
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(retryDelay).not.toHaveBeenCalled();
+  });
+
+  it("fails closed after exhausting the transient Graph retry bound", async () => {
+    const retryDelays: number[] = [];
+    const fetcher = vi.fn(async () => Response.json({ error: {} }, { status: 503 }));
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      retryDelay: async (milliseconds) => {
+        retryDelays.push(milliseconds);
+      },
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured Teams knowledge synchronization failed",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(9);
+    expect(retryDelays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000]);
+  });
+
   it("paginates an explicitly mapped meeting chat and builds contextual conversation windows", async () => {
     const requests: string[] = [];
     const retryDelays: number[] = [];
