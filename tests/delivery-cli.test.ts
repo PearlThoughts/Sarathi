@@ -81,7 +81,9 @@ items:
   it("parses a bounded query and returns answer metadata without source bodies", async () => {
     const answer = vi.fn(async (_request) => ({
       text: "Status: Ready [Jira 1](https://jira.example/browse/DEMO-1)",
-      citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
+      citations: [
+        { label: "Jira 1", url: "https://jira.example/browse/DEMO-1", source: "jira" as const },
+      ],
       status: "ok" as const,
       plan: {
         version: 1 as const,
@@ -177,7 +179,9 @@ items:
     ].join("\n");
     const answer = vi.fn(async (_request) => ({
       text: answerText,
-      citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
+      citations: [
+        { label: "Jira 1", url: "https://jira.example/browse/DEMO-1", source: "jira" as const },
+      ],
       status: "ok" as const,
       plan: {
         version: 1 as const,

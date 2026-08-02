@@ -349,7 +349,12 @@ describe("delivery intelligence application", () => {
         citations:
           input.compositionAttempt === "full"
             ? []
-            : [{ label: "PR", url: "https://example.com/github/publishing-pr(release)" }],
+            : [
+                {
+                  label: "Delivery 1",
+                  url: "https://example.com/github/publishing-pr(release)",
+                },
+              ],
       }),
     );
     const execute = vi.fn<DeliveryQuerySource["execute"]>((context) =>
@@ -485,6 +490,13 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("## Delivered");
     expect(answer.text).toContain("Vault record preserves the product rationale");
     expect(answer.text.split(/\r?\n/).length).toBeGreaterThan(3);
+    expect(answer.citations).toEqual([
+      {
+        label: "Delivery 1",
+        url: "https://example.com/github/publishing-pr(release)",
+        source: "github",
+      },
+    ]);
     expect(answer.acceptance).toMatchObject({
       mode: "deep_dive",
       product: "period_delivery_brief",

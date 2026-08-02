@@ -212,6 +212,7 @@ describe("Strategy Kernel delivery query source", () => {
       {
         label: "Strategy 1",
         url: "https://teams.microsoft.com/l/message/message-1",
+        source: "strategy",
       },
     ]);
   });

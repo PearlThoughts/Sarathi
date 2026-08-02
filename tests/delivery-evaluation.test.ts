@@ -12,7 +12,7 @@ const acceptedAnswer = (): DeliveryAssistantAnswer => ({
     "Here’s the current delivery status I found.",
     "- 📊 **Status:** Release is ready [Jira 1](https://jira.example/browse/DEMO-1)",
   ].join("\n"),
-  citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1" }],
+  citations: [{ label: "Jira 1", url: "https://jira.example/browse/DEMO-1", source: "jira" }],
   status: "ok",
   responseMode: "fast",
   responseProduct: "operational_answer",
@@ -142,6 +142,41 @@ describe("delivery evaluation", () => {
         ],
       }),
     ).toThrow("citation sources are invalid");
+  });
+
+  it("evaluates typed citation provenance independently of compact presentation labels", () => {
+    const evaluationSet = parseDeliveryEvaluationSet({
+      version: 1,
+      thresholds: { minimumPassRate: 1 },
+      cases: [
+        {
+          id: "capability-report",
+          question: "How is delivery aligned?",
+          expected: {
+            outcome: "answer",
+            citationSources: ["jira", "strategy", "teams", "vault", "github"],
+          },
+        },
+      ],
+    });
+    const evaluationCase = evaluationSet.cases[0];
+    if (evaluationCase === undefined) throw new Error("Expected one evaluation case.");
+    const answer: DeliveryAssistantAnswer = {
+      ...acceptedAnswer(),
+      citations: [
+        { label: "Delivery 1", url: "https://example.test/jira", source: "jira" },
+        { label: "Declared 1", url: "https://example.test/strategy", source: "strategy" },
+        { label: "Delivery 2", url: "https://example.test/teams", source: "teams" },
+        { label: "Delivery 3", url: "https://example.test/vault", source: "vault" },
+        { label: "Delivery 4", url: "https://example.test/github", source: "github" },
+      ],
+    };
+
+    expect(evaluateDeliveryCase(evaluationCase, { kind: "answer", answer })).toMatchObject({
+      passed: true,
+      failures: [],
+      citationCount: 5,
+    });
   });
 
   it("scores answer and denial cases without returning question or answer bodies", () => {
