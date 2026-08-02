@@ -115,6 +115,7 @@ export type ContextEvidence = {
 
 export type DeliveryReportPresentation = {
   readonly kind: "delivery_report";
+  readonly requiredCitationSources: readonly ContextEvidence["source"][];
   readonly period:
     | {
         readonly kind: "absolute";

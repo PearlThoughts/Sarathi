@@ -35,6 +35,7 @@ describe("AI SDK delivery answer composer", () => {
         answerMode: "model_assisted",
         maximumLines: 3,
         requiresFinance: false,
+        requiredSources: ["github", "vault", "teams"],
       },
       items: [
         {
@@ -207,6 +208,7 @@ describe("AI SDK delivery answer composer", () => {
     const envelope = generate.mock.calls[0]?.[0];
     expect(envelope?.presentation).toMatchObject({
       kind: "delivery_report",
+      requiredCitationSources: ["github", "vault", "teams"],
       coverage: {
         examinedRecords: 12,
         acceptedChanges: 1,

@@ -149,6 +149,7 @@ const reportDiagnosticCode = (error: RepositoryError): ReportFailureDiagnosticCo
     case "report-composition-sprint-classification":
     case "report-composition-initiative-identity":
     case "report-composition-citations-missing":
+    case "report-composition-required-citation-source-missing":
     case "report-composition-citation-unknown":
     case "report-composition-citation-url-unknown":
     case "report-composition-reference-id-unknown":
@@ -673,6 +674,18 @@ const citationsWithSourceProvenance = (
   });
 };
 
+const validatedReportCitations = (
+  citations: readonly { readonly label: string; readonly url: string }[],
+  result: DeliveryQueryResult,
+  requiredSources: readonly DeliverySourceKind[],
+): readonly DeliveryAssistantAnswer["citations"][number][] => {
+  const resolved = citationsWithSourceProvenance(citations, result);
+  const observedSources = new Set(resolved.map(({ source }) => source));
+  if (requiredSources.some((source) => !observedSources.has(source)))
+    invalidReport("report-composition-required-citation-source-missing");
+  return resolved;
+};
+
 const composeAnswer = (
   _request: DeliveryAssistantRequest,
   plan: DeliveryQueryPlan,
@@ -1188,7 +1201,11 @@ const composeWithModel = (
               return {
                 ...deterministic,
                 text,
-                citations: citationsWithSourceProvenance(composed.citations, result),
+                citations: validatedReportCitations(
+                  composed.citations,
+                  result,
+                  plan.requiredSources ?? [],
+                ),
                 mentions: [],
                 ...(result.periodDeliveryReport === undefined
                   ? {}

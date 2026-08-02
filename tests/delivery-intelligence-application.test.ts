@@ -68,11 +68,24 @@ const capabilityReportComposer: DeliveryAnswerComposer = {
           .map((capsule) => [capsule.id, capsule]),
       ).values(),
     ].slice(0, 20);
-    const citations = (
+    const selectedCitations =
       selected.length === 0
         ? input.items.slice(0, 20).map(({ source, citationUrl: url }) => ({ source, url }))
-        : selected.flatMap((capsule) => capsule.citations.slice(0, 1))
-    ).map(({ source, url }, index) => ({ label: `${source}-${index + 1}`, url }));
+        : selected.flatMap((capsule) => capsule.citations.slice(0, 1));
+    const availableCitations = [
+      ...selected.flatMap((capsule) => capsule.citations),
+      ...input.items.map(({ source, citationUrl: url }) => ({ source, url })),
+    ];
+    const requiredCitations = (input.plan.requiredSources ?? []).flatMap((requiredSource) => {
+      const citation = availableCitations.find(({ source }) => source === requiredSource);
+      return citation === undefined ? [] : [citation];
+    });
+    const citations = [...selectedCitations, ...requiredCitations].map(
+      ({ source, url }, index) => ({
+        label: `${source}-${index + 1}`,
+        url,
+      }),
+    );
     const uniqueCitations = [
       ...new Map(citations.map((citation) => [citation.url, citation])).values(),
     ];
@@ -345,6 +358,7 @@ describe("delivery intelligence application", () => {
                 "- No decisions.",
                 "## References",
                 "- [PR](https://example.com/github/publishing-pr(release))",
+                "- [Jira](https://example.com/jira/publishing-work)",
               ].join("\n"),
         citations:
           input.compositionAttempt === "full"
@@ -353,6 +367,10 @@ describe("delivery intelligence application", () => {
                 {
                   label: "Delivery 1",
                   url: "https://example.com/github/publishing-pr(release)",
+                },
+                {
+                  label: "Delivery 2",
+                  url: "https://example.com/jira/publishing-work",
                 },
               ],
       }),
@@ -495,6 +513,11 @@ describe("delivery intelligence application", () => {
         label: "Delivery 1",
         url: "https://example.com/github/publishing-pr(release)",
         source: "github",
+      },
+      {
+        label: "Delivery 2",
+        url: "https://example.com/jira/publishing-work",
+        source: "jira",
       },
     ]);
     expect(answer.acceptance).toMatchObject({
@@ -862,7 +885,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("additional changes");
     expect(answer.text).toContain("## In progress");
     expect(answer.text).not.toContain("coverage");
-    expect(answer.citations).toHaveLength(5);
+    expect(answer.citations.length).toBeGreaterThanOrEqual(5);
   });
 
   it("registers citations only for rendered leadership initiatives and removes raw projection summaries", async () => {
@@ -2631,6 +2654,42 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("Raw deterministic capsule inventory");
     expect(answer.text).not.toContain("outside.example.test");
     expect(answer.acceptance.passed).toBe(false);
+
+    const missingRequiredSource = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: {
+          compose: () =>
+            Effect.succeed({
+              text: [
+                "## Delivered",
+                "- Release capability shipped.",
+                "## In progress",
+                "- None.",
+                "## Waiting or blocked",
+                "- None.",
+                "## Decisions needed",
+                "- None.",
+                "## References",
+                "- [Jira](https://example.com/jira/DEMO-91)",
+              ].join("\n"),
+              citations: [{ label: "Jira", url: "https://example.com/jira/DEMO-91" }],
+            }),
+        },
+        capabilityLedger: {
+          version: 1,
+          capabilities: [{ key: "release", title: "Release", aliases: [{ value: "DEMO-91" }] }],
+        },
+      }).answer({ ...request, question: "What was delivered last week?" }),
+    );
+
+    expect(missingRequiredSource.status).toBe("failed");
+    expect(missingRequiredSource.failure).toMatchObject({
+      classification: "SARATHI-REPORT-COMPOSITION-INVALID",
+      diagnosticCode: "report-composition-required-citation-source-missing",
+    });
+    expect(missingRequiredSource.text).not.toContain("Release capability shipped");
+    expect(missingRequiredSource.acceptance.passed).toBe(false);
 
     const identifierInventory = await Effect.runPromise(
       createDeliveryAssistant({
