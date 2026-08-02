@@ -97,6 +97,14 @@ describe("knowledge synchronization service", () => {
   it("uses the checkpoint for hourly repair and records a privacy-safe terminal run", async () => {
     const readSnapshot = vi.fn(() => Effect.succeed(snapshot));
     const acquired: string[] = [];
+    const observedTriggers: Array<string | undefined> = [];
+    const observedRepository: KnowledgeRepository = {
+      ...repository,
+      reconcile: (observedSnapshot, observedEmbeddings, trigger) => {
+        observedTriggers.push(trigger);
+        return repository.reconcile(observedSnapshot, observedEmbeddings, trigger);
+      },
+    };
     const { control, runs } = controlRepository({
       acquireLease: (lease) =>
         Effect.sync(() => acquired.push(lease.operation)).pipe(Effect.as(true)),
@@ -111,7 +119,7 @@ describe("knowledge synchronization service", () => {
           leaseSeconds: 300,
           now: times("2026-07-22T11:00:00.000Z", "2026-07-22T11:00:30.000Z"),
         },
-        repository,
+        observedRepository,
         embeddings,
         control,
       ),
@@ -119,6 +127,7 @@ describe("knowledge synchronization service", () => {
 
     expect(readSnapshot).toHaveBeenCalledWith("example", "cursor-before");
     expect(acquired).toEqual(["source-synchronization"]);
+    expect(observedTriggers).toEqual(["hourly-reconciliation"]);
     expect(outcome).toMatchObject({ disposition: "succeeded", summary: { documentsObserved: 0 } });
     expect(runs).toEqual([
       expect.objectContaining({ status: "running", cursorBefore: "cursor-before" }),
@@ -133,6 +142,14 @@ describe("knowledge synchronization service", () => {
 
   it("starts a historical backfill without a prior cursor", async () => {
     const readSnapshot = vi.fn(() => Effect.succeed(snapshot));
+    const observedTriggers: Array<string | undefined> = [];
+    const observedRepository: KnowledgeRepository = {
+      ...repository,
+      reconcile: (observedSnapshot, observedEmbeddings, trigger) => {
+        observedTriggers.push(trigger);
+        return repository.reconcile(observedSnapshot, observedEmbeddings, trigger);
+      },
+    };
     const { control } = controlRepository();
     await Effect.runPromise(
       synchronizeKnowledgeSource(
@@ -144,12 +161,13 @@ describe("knowledge synchronization service", () => {
           leaseSeconds: 300,
           now: times("2026-07-22T11:00:00.000Z", "2026-07-22T11:00:30.000Z"),
         },
-        repository,
+        observedRepository,
         embeddings,
         control,
       ),
     );
     expect(readSnapshot).toHaveBeenCalledWith("example", undefined);
+    expect(observedTriggers).toEqual(["historical-backfill"]);
   });
 
   it("does not fetch an already completed provider event or a lease-contended source", async () => {

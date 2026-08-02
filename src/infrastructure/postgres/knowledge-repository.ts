@@ -23,6 +23,7 @@ import {
   type KnowledgeSourceSnapshot,
   type RankedKnowledgeCandidate,
   reciprocalRankFusion,
+  type SynchronizationTrigger,
 } from "../../modules/knowledge-layer/index.ts";
 import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
 import {
@@ -615,6 +616,18 @@ const reconcileStageFailureOperations = {
 
 type ReconcileStage = keyof typeof reconcileStageFailureOperations;
 
+export const checkpointActivityForTrigger = (
+  trigger: SynchronizationTrigger,
+  now: string,
+  previous: {
+    readonly lastEventAt?: string | null | undefined;
+    readonly lastReconciledAt?: string | null | undefined;
+  },
+) => ({
+  lastEventAt: trigger === "source-event" ? now : (previous.lastEventAt ?? null),
+  lastReconciledAt: trigger === "source-event" ? (previous.lastReconciledAt ?? null) : now,
+});
+
 class KnowledgeReconcileStageError extends Error {
   readonly cause: unknown;
   readonly reconcileStage: ReconcileStage;
@@ -1204,6 +1217,7 @@ const reconcileSnapshot = async (
   snapshot: KnowledgeSourceSnapshot,
   embeddings: KnowledgeEmbeddingPort,
   vectorsByVersion: ReadonlyMap<string, readonly (readonly number[])[]>,
+  trigger: SynchronizationTrigger,
   entityCatalog?: DeliveryEntityCatalog | undefined,
 ) => {
   let stage: ReconcileStage = "source";
@@ -1560,9 +1574,7 @@ const reconcileSnapshot = async (
           : newestObservedAt;
       const operationalCheckpoint = {
         indexedSourceRevision: snapshot.cursor,
-        lastEventAt: snapshot.mode === "delta" ? now : (previousCheckpoint?.lastEventAt ?? null),
-        lastReconciledAt:
-          snapshot.mode === "delta" ? (previousCheckpoint?.lastReconciledAt ?? null) : now,
+        ...checkpointActivityForTrigger(trigger, now, previousCheckpoint ?? {}),
         newestSourceUpdatedAt,
         lastSucceededAt: now,
         lagSeconds:
@@ -1614,7 +1626,7 @@ export const createPostgresKnowledgeRepository = (
   database: KnowledgePostgresDatabase,
   configuration: { readonly entityCatalog?: DeliveryEntityCatalog | undefined } = {},
 ): KnowledgeRepository => ({
-  reconcile: (snapshot, embeddings) => {
+  reconcile: (snapshot, embeddings, trigger) => {
     if (embeddings.dimensions !== 1536) {
       return Effect.fail(
         new RepositoryError({
@@ -1726,6 +1738,7 @@ export const createPostgresKnowledgeRepository = (
                       snapshot,
                       embeddings,
                       vectorsByVersion,
+                      trigger,
                       configuration.entityCatalog,
                     ),
                   catch: (failure) =>

@@ -155,7 +155,13 @@ const ingest = async (
     runRepositoryEffect(
       Effect.all(
         selected.map((reader) =>
-          ingestKnowledgeSource(reader, repository, embeddings, workspaceId(environment)),
+          ingestKnowledgeSource(
+            reader,
+            repository,
+            embeddings,
+            workspaceId(environment),
+            "historical-backfill",
+          ),
         ),
         { concurrency: 1 },
       ),
