@@ -8,6 +8,7 @@ import type {
   KnowledgePassageDraft,
   KnowledgeSourceKind,
 } from "../domain/knowledge.ts";
+import type { SynchronizationTrigger } from "../domain/synchronization.ts";
 
 export type KnowledgeSourceDocument = {
   readonly source: KnowledgeSourceKind;
@@ -82,6 +83,7 @@ export type KnowledgeRepository = {
   readonly reconcile: (
     snapshot: KnowledgeSourceSnapshot,
     embeddings: KnowledgeEmbeddingPort,
+    trigger: SynchronizationTrigger,
   ) => Effect.Effect<KnowledgeIngestionSummary, RepositoryError>;
   readonly search: (
     query: KnowledgeQuery,

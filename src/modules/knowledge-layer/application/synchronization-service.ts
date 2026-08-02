@@ -145,6 +145,7 @@ export const synchronizeKnowledgeSource = (
         repository,
         embeddings,
         request.workspaceId,
+        request.trigger,
         request.trigger === "historical-backfill" ? undefined : before.checkpoint?.cursor,
       );
     }).pipe(

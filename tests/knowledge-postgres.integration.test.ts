@@ -29,13 +29,23 @@ import {
   planDeliveryQuestion,
 } from "../src/modules/delivery-intelligence/index.ts";
 import {
+  type KnowledgeEmbeddingPort,
+  type KnowledgeRepository,
   type KnowledgeSourceSnapshot,
+  type SynchronizationTrigger,
   synchronizationEventDeliveryId,
   synchronizeKnowledgeSource,
 } from "../src/modules/knowledge-layer/index.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
+
+const reconcile = (
+  repository: KnowledgeRepository,
+  sourceSnapshot: KnowledgeSourceSnapshot,
+  embeddings: KnowledgeEmbeddingPort,
+  trigger: SynchronizationTrigger = "historical-backfill",
+) => repository.reconcile(sourceSnapshot, embeddings, trigger);
 
 const snapshot = (version: string, body: string): KnowledgeSourceSnapshot => ({
   sourceId: "jira-example-test",
@@ -195,13 +205,15 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       },
     };
     const first = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         snapshot("v1", "The builder is in QA with approved rollout risk."),
         embeddings,
       ),
     );
     const replay = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         snapshot("v1", "The builder is in QA with approved rollout risk."),
         embeddings,
       ),
@@ -227,7 +239,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const projection = projectionDocument.deliveryProjection;
     if (projection === undefined) throw new Error("Synthetic delivery projection is required.");
     const timestampReplay = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           ...projectionTimestampChanged,
           cursor: "cursor-v1-projection-timestamp-changed",
@@ -269,7 +282,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const provenanceDocument = provenanceChanged.documents[0];
     if (provenanceDocument === undefined) throw new Error("Synthetic document is required.");
     const provenanceReplay = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           ...provenanceChanged,
           cursor: "cursor-v1-provenance-changed",
@@ -409,7 +423,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     }
 
     const edited = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         snapshot("v2", "The builder passed QA and awaits release approval."),
         embeddings,
       ),
@@ -424,7 +439,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
 
     const changedModel = { ...embeddings, model: "deterministic-test-v2" };
     const restored = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         snapshot("v1", "The builder is in QA with approved rollout risk."),
         changedModel,
       ),
@@ -446,7 +462,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     ]);
 
     const overlapWithNoChanges = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "jira-example-test",
           source: "jira",
@@ -480,7 +497,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     ).toBe(2);
 
     const deleted = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "jira-example-test",
           source: "jira",
@@ -574,7 +592,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
 
     await expect(
       Effect.runPromise(
-        repository.reconcile(
+        reconcile(
+          repository,
           {
             ...base,
             cursor: "cursor-duplicate-locators",
@@ -605,6 +624,71 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       "select count(distinct p.id) as passage_count from knowledge_passage p join knowledge_item i on i.id = p.item_id where i.external_id = 'DEMO-636' and p.active",
     );
     expect(stored.rows).toEqual([{ passage_count: "0" }]);
+  });
+
+  test("records event and reconciliation health from the synchronization trigger", async () => {
+    const repository = createPostgresKnowledgeRepository(opened.database);
+    const embeddings = createDeterministicKnowledgeEmbedding();
+    const sourceId = "teams-checkpoint-trigger-test";
+    const workspaceId = "workspace-checkpoint-trigger";
+    const baseline = {
+      sourceId,
+      source: "teams" as const,
+      workspaceId,
+      cursor: "cursor-baseline",
+      scopeHash: "sha256-checkpoint-trigger-scope",
+      documents: [],
+    };
+    await Effect.runPromise(reconcile(repository, baseline, embeddings, "historical-backfill"));
+
+    const previousEventAt = "2026-01-01T00:00:00.000Z";
+    const previousReconciledAt = "2026-01-02T00:00:00.000Z";
+    await pool.query(
+      "update knowledge_sync_checkpoint set last_event_at = $1, last_reconciled_at = $2 where source_id = $3 and workspace_id = $4",
+      [previousEventAt, previousReconciledAt, sourceId, workspaceId],
+    );
+
+    await Effect.runPromise(
+      reconcile(
+        repository,
+        { ...baseline, cursor: "cursor-event", mode: "delta" },
+        embeddings,
+        "source-event",
+      ),
+    );
+    const eventCheckpoint = await pool.query<{
+      readonly last_event_at: Date;
+      readonly last_reconciled_at: Date;
+    }>(
+      "select last_event_at, last_reconciled_at from knowledge_sync_checkpoint where source_id = $1 and workspace_id = $2",
+      [sourceId, workspaceId],
+    );
+    const eventAt = eventCheckpoint.rows[0]?.last_event_at;
+    const reconciledAfterEvent = eventCheckpoint.rows[0]?.last_reconciled_at;
+    expect(eventAt?.toISOString()).not.toBe(previousEventAt);
+    expect(reconciledAfterEvent?.toISOString()).toBe(previousReconciledAt);
+
+    await Effect.runPromise(
+      reconcile(
+        repository,
+        { ...baseline, cursor: "cursor-reconciliation", mode: "delta" },
+        embeddings,
+        "hourly-reconciliation",
+      ),
+    );
+    const reconciliationCheckpoint = await pool.query<{
+      readonly last_event_at: Date;
+      readonly last_reconciled_at: Date;
+    }>(
+      "select last_event_at, last_reconciled_at from knowledge_sync_checkpoint where source_id = $1 and workspace_id = $2",
+      [sourceId, workspaceId],
+    );
+    expect(reconciliationCheckpoint.rows[0]?.last_event_at.toISOString()).toBe(
+      eventAt?.toISOString(),
+    );
+    expect(reconciliationCheckpoint.rows[0]?.last_reconciled_at.toISOString()).not.toBe(
+      previousReconciledAt,
+    );
   });
 
   test("resumes embedding from durable cached chunks after interruption", async () => {
@@ -667,7 +751,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     };
 
     await expect(
-      Effect.runPromise(repository.reconcile(largeSnapshot, interruptedEmbeddings)),
+      Effect.runPromise(reconcile(repository, largeSnapshot, interruptedEmbeddings)),
     ).rejects.toThrow("Knowledge embedding progress could not be cached");
     const cachedAfterInterruption = await pool.query<{ readonly count: string }>(
       "select count(*) from knowledge_embedding_cache where workspace_id = 'workspace-restart-safe' and source_id = 'github-restart-safe-test'",
@@ -700,7 +784,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
         return deterministic.embed(values);
       },
     };
-    const summary = await Effect.runPromise(repository.reconcile(largeSnapshot, retryEmbeddings));
+    const summary = await Effect.runPromise(reconcile(repository, largeSnapshot, retryEmbeddings));
 
     expect(summary).toMatchObject({
       documentsObserved: 1,
@@ -839,7 +923,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     for (const source of sourceKinds) {
       const sourceId = `${source}-convergence`;
       const bootstrap = await Effect.runPromise(
-        repository.reconcile(connectorSnapshot(source, "bootstrap"), embeddings),
+        reconcile(repository, connectorSnapshot(source, "bootstrap"), embeddings),
       );
       expect(bootstrap).toMatchObject({
         documentsObserved: 2,
@@ -895,7 +979,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       });
 
       const eventResult = await Effect.runPromise(
-        repository.reconcile(connectorSnapshot(source, "event"), embeddings),
+        reconcile(repository, connectorSnapshot(source, "event"), embeddings),
       );
       expect(eventResult).toMatchObject({
         documentsObserved: 2,
@@ -988,7 +1072,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       };
       await Effect.runPromise(control.startRun(run));
       const repair = await Effect.runPromise(
-        repository.reconcile(connectorSnapshot(source, "repair"), embeddings),
+        reconcile(repository, connectorSnapshot(source, "repair"), embeddings),
       );
       expect(repair).toMatchObject({
         documentsObserved: 1,
@@ -1058,7 +1142,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       cursor: "sync-operation-cursor-1",
       documents: initial.documents.map((document) => ({ ...document, sourceId })),
     };
-    await Effect.runPromise(repository.reconcile(scopedInitial, embeddings));
+    await Effect.runPromise(reconcile(repository, scopedInitial, embeddings));
     const readSnapshot = vi.fn((_workspaceId: string, _previousCursor?: string) =>
       Effect.succeed({
         ...scopedInitial,
@@ -1233,7 +1317,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       deliveryProjection: undefined,
     };
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId,
           source: "vault",
@@ -1247,7 +1332,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     );
     const renamed = await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId,
           source: "vault",
@@ -1358,7 +1444,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const oldExternalId = "context-old";
     const correctionExternalId = "context-correction";
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId,
           source: "vault",
@@ -1430,7 +1517,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     ]);
 
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId,
           source: "vault",
@@ -1540,7 +1628,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     });
 
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         sourceSnapshot(
           "github",
           "github-canonical-alias",
@@ -1554,7 +1643,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       ),
     );
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         sourceSnapshot(
           "jira",
           "jira-canonical-alias",
@@ -1669,7 +1759,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       },
     });
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "github-observation-owner",
           source: "github",
@@ -1829,7 +1920,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       })),
     );
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "github-weekly-owner-breadth",
           source: "github",
@@ -1968,7 +2060,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       sensitivity: "internal" as const,
     }));
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "github-source-balanced-query",
           source: "github",
@@ -2106,7 +2199,8 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const workspaceId = "workspace-indexed-implementation";
     const repository = createPostgresKnowledgeRepository(opened.database);
     await Effect.runPromise(
-      repository.reconcile(
+      reconcile(
+        repository,
         {
           sourceId: "github-indexed-implementation",
           source: "github",

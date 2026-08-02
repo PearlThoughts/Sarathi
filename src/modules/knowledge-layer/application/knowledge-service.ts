@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { reciprocalRankFusion } from "../domain/knowledge.ts";
+import type { SynchronizationTrigger } from "../domain/synchronization.ts";
 import type {
   KnowledgeEmbeddingPort,
   KnowledgeIngestionSummary,
@@ -17,6 +18,7 @@ export const ingestKnowledgeSource = (
   repository: KnowledgeRepository,
   embeddings: KnowledgeEmbeddingPort,
   workspaceId: string,
+  trigger: SynchronizationTrigger = "historical-backfill",
   previousCursor?: string,
 ): Effect.Effect<KnowledgeIngestionSummary, RepositoryError> =>
   Effect.gen(function* () {
@@ -58,7 +60,7 @@ export const ingestKnowledgeSource = (
         }),
       );
     }
-    return yield* repository.reconcile(snapshot, embeddings);
+    return yield* repository.reconcile(snapshot, embeddings, trigger);
   });
 
 export const queryKnowledge = (

@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
   boundedPostgresBindBatches,
+  checkpointActivityForTrigger,
   classifyKnowledgeReconcileFailure,
   collectReusableVectorsCacheFirst,
   queryPostgresBindBatches,
 } from "../src/infrastructure/postgres/knowledge-repository.ts";
 
 describe("knowledge reconcile failure classification", () => {
+  it("tracks source events and reconciliation runs independently of snapshot mode", () => {
+    const previous = {
+      lastEventAt: "2026-08-01T09:00:00.000Z",
+      lastReconciledAt: "2026-08-01T10:00:00.000Z",
+    };
+    const now = "2026-08-02T10:00:00.000Z";
+
+    expect(checkpointActivityForTrigger("source-event", now, previous)).toEqual({
+      lastEventAt: now,
+      lastReconciledAt: previous.lastReconciledAt,
+    });
+    for (const trigger of ["hourly-reconciliation", "historical-backfill"] as const)
+      expect(checkpointActivityForTrigger(trigger, now, previous)).toEqual({
+        lastEventAt: previous.lastEventAt,
+        lastReconciledAt: now,
+      });
+  });
+
   it("partitions protocol-limit-sized mutation inputs into bounded batches", () => {
     const values = Array.from({ length: 65_537 }, (_, index) => index);
     const batches = boundedPostgresBindBatches(values);
