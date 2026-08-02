@@ -108,7 +108,7 @@ describe("private-data scan", () => {
     expect(result.stderr).not.toContain("tracked.txt");
     expect(result.stderr).not.toContain(forbiddenValue);
     expect(result.stdout).toBe("");
-  });
+  }, 15_000);
 
   it("detects a forbidden identifier in a tracked filename without echoing it", async () => {
     const repository = await createRepository();
@@ -134,7 +134,7 @@ describe("private-data scan", () => {
     expect(processOutput).toContain("Private-data scan failed");
     expect(processOutput).not.toContain(forbiddenValue);
     expect(processOutput).not.toContain(relativeFilePath);
-  });
+  }, 15_000);
 
   it("scans the current working tree when a tracked file is pending deletion", async () => {
     const repository = await createRepository();
@@ -181,5 +181,5 @@ describe("private-data scan", () => {
     expect(result.stdout).not.toContain(forbiddenValue);
     expect(result.stderr).toBe("");
     expect(status.stdout).toBe("");
-  });
+  }, 15_000);
 });

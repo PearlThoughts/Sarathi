@@ -129,6 +129,7 @@ describe("AI SDK OpenRouter answer generator", () => {
       ...envelope,
       presentation: {
         kind: "delivery_report" as const,
+        requiredCitationSources: ["jira"] as const,
         period: {
           kind: "absolute" as const,
           fromInclusive: "2026-07-01T00:00:00.000Z",
@@ -176,7 +177,7 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(request).toContain("acceptedChanges");
     expect(request).toContain("Atlas Site Composer");
     expect(request).toContain("Synthesize the supplied multi-source delivery episodes");
-    expect(request).toContain("never write, copy, alter, or invent a URL");
+    expect(request).toContain("Never write, copy, alter, or invent a URL");
     expect(request).toContain("referenceId");
     expect(request).not.toContain("sourceUrl");
     expect(request).not.toContain("Finish with exactly one numbered");
@@ -208,6 +209,7 @@ describe("AI SDK OpenRouter answer generator", () => {
         evidence: [...envelope.evidence, { ...originalEvidence, sourceId: "DEMO-754-duplicate" }],
         presentation: {
           kind: "delivery_report" as const,
+          requiredCitationSources: ["jira"] as const,
           period: {
             kind: "absolute" as const,
             fromInclusive: "2026-07-01T00:00:00.000Z",
@@ -234,6 +236,80 @@ describe("AI SDK OpenRouter answer generator", () => {
 
     expect(result.citations).toMatchObject([{ url: "https://jira.example.test/DEMO-754" }]);
     expect(result.text.match(/https:\/\/jira\.example\.test\/DEMO-754/g)).toHaveLength(1);
+  });
+
+  it("fails closed when a composed report omits a required citation source", async () => {
+    const jiraEvidence = envelope.evidence[0];
+    if (jiraEvidence === undefined) throw new Error("Expected Jira evidence fixture");
+    const githubEvidence = {
+      ...jiraEvidence,
+      source: "github" as const,
+      sourceId: "pull-754",
+      sourceUrl: "https://github.example.test/pull/754",
+      title: "Implementation",
+    };
+    const presentation = {
+      kind: "delivery_report" as const,
+      requiredCitationSources: ["jira", "github"] as const,
+      period: {
+        kind: "absolute" as const,
+        fromInclusive: "2026-07-01T00:00:00.000Z",
+        toExclusive: "2026-07-31T00:00:00.000Z",
+        timeZone: "Asia/Kolkata",
+      },
+      coverage: {
+        complete: true,
+        examinedRecords: 2,
+        acceptedChanges: 1,
+        duplicateRecords: 0,
+        excludedRecords: 0,
+        unmappedChanges: 0,
+        unavailableSources: [],
+      },
+      capabilitySections: [],
+      episodes: [],
+      dependencies: [],
+      decisionsNeeded: [],
+      jiraAdvisories: [],
+    };
+    const reportText = (references: readonly string[]): string =>
+      [
+        "## Delivered",
+        "- Delivery is current.",
+        "## In progress",
+        "- No active work.",
+        "## Waiting or blocked",
+        "- No active waits.",
+        "## Decisions needed",
+        "- No decisions.",
+        "## References",
+        ...references,
+      ].join("\n");
+    const reportEnvelope = {
+      ...envelope,
+      evidence: [jiraEvidence, githubEvidence],
+      presentation,
+    };
+    const incomplete = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(reportText(["- [R1]"])),
+    );
+
+    await expect(
+      Effect.runPromise(incomplete.generate(reportEnvelope).pipe(Effect.either)),
+    ).resolves.toMatchObject({
+      _tag: "Left",
+      left: { operation: "report-composition-required-citation-source-missing" },
+    });
+
+    const complete = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(reportText(["- [R1]", "- [R2]"])),
+    );
+    await expect(Effect.runPromise(complete.generate(reportEnvelope))).resolves.toMatchObject({
+      citations: [
+        { url: "https://jira.example.test/DEMO-754" },
+        { url: "https://github.example.test/pull/754" },
+      ],
+    });
   });
 
   it("classifies malformed or invalidly cited model output separately from provider failure", async () => {
@@ -316,6 +392,7 @@ describe("AI SDK OpenRouter answer generator", () => {
       ...envelope,
       presentation: {
         kind: "delivery_report" as const,
+        requiredCitationSources: ["jira"] as const,
         period: {
           kind: "absolute" as const,
           fromInclusive: "2026-07-01T00:00:00.000Z",

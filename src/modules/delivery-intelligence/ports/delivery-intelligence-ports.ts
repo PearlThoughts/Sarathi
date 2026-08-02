@@ -225,6 +225,7 @@ export type DeliveryAssistantAnswer = {
           | "report-composition-sprint-classification"
           | "report-composition-initiative-identity"
           | "report-composition-citations-missing"
+          | "report-composition-required-citation-source-missing"
           | "report-composition-citation-unknown"
           | "report-composition-citation-url-unknown"
           | "report-composition-reference-id-unknown"

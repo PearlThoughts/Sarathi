@@ -140,15 +140,17 @@ export const createAiSdkDeliveryAnswerComposer = (
     );
     const report = input.periodDeliveryReport;
     const reportEpisodeIds = new Set(reportInformation.map(({ sourceId }) => sourceId));
+    const evidence = [...reportInformation, ...supplementalInformation, ...conflictInformation];
     return generator.generate({
       workspaceId: input.workspaceId,
       question: input.question,
-      evidence: [...reportInformation, ...supplementalInformation, ...conflictInformation],
+      evidence,
       ...(report === undefined
         ? {}
         : {
             presentation: {
               kind: "delivery_report" as const,
+              requiredCitationSources: input.plan.requiredSources ?? [],
               period:
                 report.census.boundary.kind === "absolute"
                   ? {
