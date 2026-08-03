@@ -1963,6 +1963,130 @@ describe("delivery intelligence application", () => {
     expect(answer.citations).toEqual([]);
   });
 
+  it("excludes unrelated delivered work from a named completion answer", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "migration-status", "OBJ-12: Move object storage — active", "status"),
+              subjectAliases: ["Object Store Migration"],
+              lifecycleState: "active",
+            },
+            {
+              ...item(
+                "github",
+                "migration-pr",
+                "Object storage migration adapter merged",
+                "delivered",
+              ),
+              selector: "observations",
+              subjectAliases: ["Object Store Migration"],
+              lifecycleState: "done",
+            },
+            item("jira", "unrelated-ticket", "Reference website cloning — done", "delivered"),
+            {
+              ...item("github", "unrelated-pr", "Brand tabs merged", "delivered"),
+              selector: "observations",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Is Object Store Migration fully done?",
+      }),
+    );
+
+    expect(answer.plan.subject).toEqual({ phrase: "Object Store Migration" });
+    expect(answer.text).toContain("Move object storage");
+    expect(answer.text).toContain("Object storage migration adapter merged");
+    expect(answer.text).not.toContain("Reference website cloning");
+    expect(answer.text).not.toContain("Brand tabs merged");
+    expect(answer.citations.map(({ url }) => url)).toEqual([
+      "https://example.com/jira/migration-status",
+      "https://example.com/github/migration-pr",
+    ]);
+  });
+
+  it("keeps short identifier tokens inside a named completion boundary", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "target", "A1 to B2 object migration is active", "status"),
+              subjectAliases: ["A1 to B2 Object Migration"],
+            },
+            {
+              ...item("jira", "other", "C3 to D4 object migration is done", "status"),
+              subjectAliases: ["C3 to D4 Object Migration"],
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Is A1 to B2 Object Migration fully done?",
+      }),
+    );
+
+    expect(answer.text).toContain("A1 to B2 object migration");
+    expect(answer.text).not.toContain("C3 to D4 object migration");
+  });
+
+  it("returns a short safe notice when a named completion subject has no matching evidence", async () => {
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            item("jira", "unrelated-ticket", "Reference website cloning — done", "delivered"),
+            {
+              ...item("github", "unrelated-pr", "Brand tabs merged", "delivered"),
+              selector: "observations",
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source] }).answer({
+        ...request,
+        question: "Is Object Store Migration fully done?",
+      }),
+    );
+
+    expect(answer.text).toBe(
+      [
+        "## Unable to verify",
+        "- No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
+      ].join("\n"),
+    );
+    expect(answer.status).toBe("empty");
+    expect(answer.citations).toEqual([]);
+    expect(answer.text).not.toContain("Reference website cloning");
+    expect(answer.text).not.toContain("Brand tabs merged");
+  });
+
   it("reports indexed Jira and Vault as partial when the projection store fails", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",

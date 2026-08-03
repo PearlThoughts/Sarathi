@@ -86,6 +86,25 @@ const reportFailureDraft = (
   };
 };
 
+const namedSubjectNoMatchDraft = (
+  plan: DeliveryQueryPlan,
+  result: DeliveryQueryResult,
+): DeliveryAnswerDraft => ({
+  text: [
+    "## Unable to verify",
+    "- No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
+  ].join("\n"),
+  citations: [],
+  status: "empty",
+  plan,
+  unavailableSources: result.unavailableSources,
+  conflicts: [],
+  missingRequiredSources: result.missingRequiredSources,
+  missingRequiredIntents: result.missingRequiredIntents,
+  periodCensus: result.periodCensus,
+  mentions: [],
+});
+
 const invalidReport = (operation: ReportFailureDiagnosticCode): never => {
   throw new RepositoryError({
     message: "Delivery report composition was invalid.",
@@ -602,7 +621,10 @@ const subjectTokens = (value: string): readonly string[] =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .split(" ")
-    .filter((token) => token.length > 2 && !["the", "and", "for", "with"].includes(token));
+    .filter(
+      (token) =>
+        (token.length > 2 || /\d/.test(token)) && !["the", "and", "for", "with"].includes(token),
+    );
 
 const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boolean => {
   // A cross-source conflict is a relationship between attributed claims, not a
@@ -732,6 +754,14 @@ const composeAnswer = (
   const items = uniqueRanked(result.items.filter((item) => itemMatchesPlan(item, plan)));
   const missingIntents = new Set(result.missingRequiredIntents ?? []);
   let historicalStatusOnly = false;
+
+  if (
+    items.length === 0 &&
+    plan.subject !== undefined &&
+    plan.intents.includes("delivered") &&
+    plan.intents.includes("status")
+  )
+    return namedSubjectNoMatchDraft(plan, result);
 
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const activityLines: string[] = [];
@@ -1829,8 +1859,14 @@ export const createDeliveryAssistant = (
                 const reportProduct =
                   responseProduct === "period_delivery_brief" ||
                   responseProduct === "leadership_report";
-                const composed =
-                  configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
+                const namedSubjectHasNoEvidence =
+                  completed.items.length === 0 &&
+                  plan.subject !== undefined &&
+                  plan.intents.includes("delivered") &&
+                  plan.intents.includes("status");
+                const composed = namedSubjectHasNoEvidence
+                  ? Effect.succeed(namedSubjectNoMatchDraft(plan, completed))
+                  : configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
                     ? Effect.succeed(
                         reportProduct
                           ? reportFailureDraft(

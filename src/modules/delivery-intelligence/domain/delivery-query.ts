@@ -304,6 +304,19 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
 
 const has = (value: string, pattern: RegExp): boolean => pattern.test(value);
 
+const namedCompletionTarget = (question: string): string | undefined => {
+  const patterns = [
+    /^\s*(?:is|are|was|were)\s+(?:the\s+)?(.+?)\s+(?:(?:fully|completely|entirely|already|now)\s+)?(?:done|delivered|completed|finished|shipped|released|deployed)\s*\??\s*$/i,
+    /^\s*(?:has|have|had)\s+(?:the\s+)?(.+?)\s+been\s+(?:(?:fully|completely|entirely|already)\s+)?(?:done|delivered|completed|finished|shipped|released|deployed)\s*\??\s*$/i,
+  ] as const;
+  const target = patterns
+    .map((pattern) => pattern.exec(question)?.[1]?.replace(/\s+/g, " ").trim())
+    .find((candidate) => candidate !== undefined && candidate !== "");
+  if (target === undefined || /^(?:it|this|that|these|those|they|them)$/i.test(target))
+    return undefined;
+  return target;
+};
+
 const calendarMonths: ReadonlyMap<string, number> = new Map([
   ["january", 1],
   ["february", 2],
@@ -526,6 +539,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     ) ||
     (deliveryCompletionQuestion && reportPeriod !== undefined);
   const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
+  const completionTarget = namedCompletionTarget(question);
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
     ?.trim();
@@ -546,7 +560,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           ? { phrase: implementationTarget }
           : ownershipTarget !== undefined
             ? { phrase: ownershipTarget }
-            : undefined;
+            : completionTarget !== undefined
+              ? { phrase: completionTarget }
+              : undefined;
   const activityQuestion =
     !periodReportQuestion &&
     (has(value, /\bactivity\b/) ||
@@ -638,6 +654,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           operator: "in",
           value: ["done", "delivered", "merged", "released", "deployed"],
         },
+        ...(completionTarget === undefined
+          ? []
+          : [
+              {
+                field: "title" as const,
+                operator: "contains" as const,
+                value: completionTarget,
+              },
+            ]),
       ],
       time,
       limit,
@@ -651,6 +676,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           operator: "in",
           value: ["pull_request", "commit", "deployment"],
         },
+        ...(completionTarget === undefined
+          ? []
+          : [
+              {
+                field: "title" as const,
+                operator: "contains" as const,
+                value: completionTarget,
+              },
+            ]),
       ],
       time,
       limit,
@@ -880,7 +914,11 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     add("conflicts", { select: "claims", limit: top });
     add("conflicts", { select: "github_live", limit: top });
   }
-  if (has(value, /\b(?:current status|project status|status of|overall status)\b/)) {
+  if (
+    completionTarget !== undefined ||
+    has(value, /\b(?:current status|project status|status of|overall status)\b/)
+  ) {
+    const namedStatusTarget = statusTarget ?? completionTarget;
     add("status", {
       select: "objects",
       objectKinds: [
@@ -898,9 +936,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       predicates:
         exactKey !== undefined
           ? [{ field: "externalKey", operator: "equals", value: exactKey }]
-          : statusTarget === undefined
+          : namedStatusTarget === undefined
             ? undefined
-            : [{ field: "title", operator: "contains", value: statusTarget }],
+            : [{ field: "title", operator: "contains", value: namedStatusTarget }],
       limit: top,
     });
     add("status", {
@@ -911,6 +949,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
           operator: "equals",
           value: "github",
         },
+        ...(namedStatusTarget === undefined
+          ? []
+          : [
+              {
+                field: "title" as const,
+                operator: "contains" as const,
+                value: namedStatusTarget,
+              },
+            ]),
       ],
       time: { kind: "lookback", days: 30 },
       limit: top,
@@ -918,7 +965,21 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   }
   if (intents.includes("goals") && !periodReportQuestion)
     add("goals", { select: "knowledge", limit: top });
-  if (intents.includes("status")) add("status", { select: "knowledge", limit: top });
+  if (intents.includes("status"))
+    add("status", {
+      select: "knowledge",
+      predicates:
+        statusTarget === undefined && completionTarget === undefined
+          ? undefined
+          : [
+              {
+                field: "title",
+                operator: "contains",
+                value: statusTarget ?? completionTarget,
+              },
+            ],
+      limit: top,
+    });
   if (intents.includes("goals") && intents.includes("current_work") && !periodReportQuestion) {
     add("current_work", {
       select: "objects",
@@ -963,7 +1024,9 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
   }
   const requiredSources = [
     ...new Set<DeliverySourceKind>([
-      ...(intents.includes("delivered") ? (["jira", "github"] as const) : []),
+      ...(intents.includes("delivered") && subject === undefined
+        ? (["jira", "github"] as const)
+        : []),
       ...(intents.includes("implementation") ? (["github"] as const) : []),
       ...(intents.includes("conflicts") ? (["jira", "teams", "github"] as const) : []),
       ...(intents.includes("capacity") ? (["teams"] as const) : []),

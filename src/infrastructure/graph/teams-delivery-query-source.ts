@@ -95,7 +95,10 @@ const routingTokens = (value: string): readonly string[] =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .split(" ")
-    .filter((token) => token.length > 2 && !["the", "and", "for", "with"].includes(token));
+    .filter(
+      (token) =>
+        (token.length > 2 || /\d/.test(token)) && !["the", "and", "for", "with"].includes(token),
+    );
 
 const channelMatchesPlan = (
   channel: TeamsDeliveryChannel,

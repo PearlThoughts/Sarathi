@@ -401,6 +401,37 @@ describe("delivery intelligence live query sources", () => {
     expect(observedJql).not.toBe('project in ("DEMO") ORDER BY updated DESC');
   });
 
+  it("targets every Jira read for a named completion question", async () => {
+    const observedJql: string[] = [];
+    const question = "Is Object Store Migration fully done?";
+    const plan = planDeliveryQuestion(question);
+    if (plan === undefined) throw new Error("Expected deterministic completion plan");
+    const source = createJiraDeliveryQuerySource({
+      baseUrl: "https://jira.example.test",
+      email: "reader@example.test",
+      apiToken: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      projectKeys: ["DEMO"],
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { readonly jql: string };
+        observedJql.push(body.jql);
+        return Response.json({ issues: [] });
+      },
+    });
+
+    await Effect.runPromise(source.execute({ ...context, question }, plan));
+
+    expect(observedJql).toHaveLength(2);
+    expect(
+      observedJql.every((jql) =>
+        jql.includes(
+          'component = "Object Store Migration" OR summary ~ "\\"Object Store Migration\\""',
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("returns named Jira assignees as practical ownership evidence", async () => {
     let observedJql = "";
     const question = "Who owns Atlas Site Composer?";

@@ -532,6 +532,30 @@ describe("delivery intelligence domain", () => {
     ]);
   });
 
+  it("carries the named subject and current state into completion questions", () => {
+    const plan = planDeliveryQuestion("Is Object Store Migration fully done?");
+
+    expect(plan?.subject).toEqual({ phrase: "Object Store Migration" });
+    expect(plan?.intents).toEqual(["delivered", "status"]);
+    expect(plan?.requiredSources).toBeUndefined();
+    expect(plan?.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "delivered",
+          select: "objects",
+          predicates: expect.arrayContaining([
+            { field: "title", operator: "contains", value: "Object Store Migration" },
+          ]),
+        }),
+        expect.objectContaining({
+          purpose: "status",
+          select: "objects",
+          predicates: [{ field: "title", operator: "contains", value: "Object Store Migration" }],
+        }),
+      ]),
+    );
+  });
+
   it("recognizes ordinary past-tense recurring-work questions", () => {
     const plan = planDeliveryQuestion("What issues have recurred in the last 120 days?");
 
