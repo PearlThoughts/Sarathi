@@ -5,6 +5,74 @@ import type { DeliveryAnswerComposer } from "../src/modules/delivery-intelligenc
 import type { GroundedAnswerGenerator } from "../src/modules/teams-mention/index.ts";
 
 describe("AI SDK delivery answer composer", () => {
+  it("passes completion governance and lifecycle metadata to grounded composition", async () => {
+    const generate = vi.fn<GroundedAnswerGenerator["generate"]>(() =>
+      Effect.succeed({ text: "generated", citations: [], unavailableSources: [] }),
+    );
+    const composer = createAiSdkDeliveryAnswerComposer({ generate });
+
+    await Effect.runPromise(
+      composer.compose({
+        compositionAttempt: "full",
+        workspaceId: "workspace",
+        question: "Is Object Store Migration fully done?",
+        requestedAt: "2026-08-03T10:00:00.000Z",
+        plan: {
+          version: 1,
+          intents: ["delivered", "status"],
+          operations: [{ id: "status-1", purpose: "status", select: "objects", limit: 10 }],
+          subject: { phrase: "Object Store Migration" },
+          answerMode: "model_assisted",
+          maximumLines: 3,
+          requiresFinance: false,
+        },
+        items: [
+          {
+            id: "migration",
+            workspaceId: "workspace",
+            source: "jira",
+            selector: "objects",
+            intent: "status",
+            title: "Object Store Migration",
+            summary: "Implementation is merged.",
+            citationUrl: "https://jira.example.test/DEMO-1",
+            sensitivity: "internal",
+            authority: 0.9,
+            lifecycleState: "done",
+            completionStage: "merged",
+            dedupeKey: "jira:migration",
+          },
+        ],
+        conflicts: [],
+        completionAssessment: {
+          subject: "Object Store Migration",
+          verdict: "cannot_verify",
+        },
+        responseProduct: "operational_answer",
+        responseMode: "fast",
+        responseBudget: {
+          sourceTimeoutMs: 1_000,
+          compositionTimeoutMs: 1_000,
+          totalBudgetMs: 3_000,
+        },
+      }),
+    );
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      presentation: {
+        kind: "completion_verdict",
+        subject: "Object Store Migration",
+        requiredVerdict: "cannot_verify",
+      },
+      evidence: [
+        expect.objectContaining({
+          excerpt: expect.stringContaining("Lifecycle: done. Completion stage: merged."),
+        }),
+      ],
+    });
+  });
+
   it("projects period capsules and supplemental Vault and Teams context into report synthesis", async () => {
     const generate = vi.fn<GroundedAnswerGenerator["generate"]>(() =>
       Effect.succeed({
@@ -250,6 +318,10 @@ describe("AI SDK delivery answer composer", () => {
     const reducedEnvelope = generate.mock.calls[1]?.[0];
     expect(reducedEnvelope?.evidence).toHaveLength(19);
     expect(reducedEnvelope?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(450);
-    expect(reducedEnvelope?.presentation?.episodes).toHaveLength(1);
+    expect(
+      reducedEnvelope?.presentation?.kind === "delivery_report"
+        ? reducedEnvelope.presentation.episodes
+        : undefined,
+    ).toHaveLength(1);
   });
 });

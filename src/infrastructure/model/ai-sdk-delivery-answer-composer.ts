@@ -113,7 +113,14 @@ export const createAiSdkDeliveryAnswerComposer = (
         `${item.evidenceRole === "declared_intent" ? "Declared intent" : "Observed evidence"} — ${item.intent.replaceAll("_", " ")}: ${item.title}`,
         supplementalTitleCharacters,
       ),
-      excerpt: boundedContext(item.summary, supplementalExcerptCharacters),
+      excerpt: boundedContext(
+        [
+          item.summary,
+          `Lifecycle: ${item.lifecycleState ?? "not recorded"}.`,
+          `Completion stage: ${item.completionStage ?? "not recorded"}.`,
+        ].join(" "),
+        supplementalExcerptCharacters,
+      ),
       occurredAt: item.observedAt ?? input.requestedAt,
       updatedAt: item.sourceUpdatedAt ?? item.observedAt ?? input.requestedAt,
       sensitivity: item.sensitivity,
@@ -141,6 +148,17 @@ export const createAiSdkDeliveryAnswerComposer = (
     const report = input.periodDeliveryReport;
     const reportEpisodeIds = new Set(reportInformation.map(({ sourceId }) => sourceId));
     const evidence = [...reportInformation, ...supplementalInformation, ...conflictInformation];
+    if (input.completionAssessment !== undefined)
+      return generator.generate({
+        workspaceId: input.workspaceId,
+        question: input.question,
+        evidence,
+        presentation: {
+          kind: "completion_verdict",
+          subject: input.completionAssessment.subject,
+          requiredVerdict: input.completionAssessment.verdict,
+        },
+      });
     return generator.generate({
       workspaceId: input.workspaceId,
       question: input.question,

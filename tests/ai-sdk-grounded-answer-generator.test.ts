@@ -109,6 +109,53 @@ describe("AI SDK OpenRouter answer generator", () => {
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
   });
 
+  it("requires the governed verdict for a named completion answer", async () => {
+    const completionEnvelope = {
+      ...envelope,
+      question: "Is Object Store Migration fully done?",
+      presentation: {
+        kind: "completion_verdict" as const,
+        subject: "Object Store Migration",
+        requiredVerdict: "cannot_verify" as const,
+      },
+    };
+    const missingVerdict = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(
+        "## Completion\n- The migration has merged changes.\n### References\n- [Jira](https://jira.example.test/DEMO-754)",
+      ),
+    );
+    await expect(
+      Effect.runPromise(missingVerdict.generate(completionEnvelope).pipe(Effect.either)),
+    ).resolves.toMatchObject({
+      _tag: "Left",
+      left: { operation: "answer-completion-verdict-invalid" },
+    });
+
+    const wrongVerdict = createGroundedAnswerGenerator(configuration, undefined, () =>
+      successfulModel(
+        "## Completion\n- Yes: The migration is fully done.\n### References\n- [Jira](https://jira.example.test/DEMO-754)",
+      ),
+    );
+    await expect(
+      Effect.runPromise(wrongVerdict.generate(completionEnvelope).pipe(Effect.either)),
+    ).resolves.toMatchObject({
+      _tag: "Left",
+      left: { operation: "answer-completion-verdict-invalid" },
+    });
+
+    const validModel = successfulModel(
+      "## Completion\n- Cannot verify: Merged changes do not establish accepted completion.\n### References\n- [Jira](https://jira.example.test/DEMO-754)",
+    );
+    const valid = createGroundedAnswerGenerator(configuration, undefined, () => validModel);
+    await expect(Effect.runPromise(valid.generate(completionEnvelope))).resolves.toMatchObject({
+      text: expect.stringContaining("- Cannot verify:"),
+    });
+    const request = JSON.stringify(validModel.doGenerateCalls);
+    expect(request).toContain("requiredVerdict");
+    expect(request).toContain("cannot_verify");
+    expect(request).toContain("Jira Done, merged code, release, or deployment");
+  });
+
   it("produces a capability-first delivery-manager synthesis for period reports", async () => {
     const modelText = [
       "## Delivered",

@@ -304,7 +304,7 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
 
 const has = (value: string, pattern: RegExp): boolean => pattern.test(value);
 
-const namedCompletionTarget = (question: string): string | undefined => {
+export const namedCompletionQuestionSubject = (question: string): string | undefined => {
   const patterns = [
     /^\s*(?:is|are|was|were)\s+(?:the\s+)?(.+?)\s+(?:(?:fully|completely|entirely|already|now)\s+)?(?:done|delivered|completed|finished|shipped|released|deployed)\s*\??\s*$/i,
     /^\s*(?:has|have|had)\s+(?:the\s+)?(.+?)\s+been\s+(?:(?:fully|completely|entirely|already)\s+)?(?:done|delivered|completed|finished|shipped|released|deployed)\s*\??\s*$/i,
@@ -539,7 +539,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     ) ||
     (deliveryCompletionQuestion && reportPeriod !== undefined);
   const exactKey = /\b([a-z][a-z0-9]+-\d+)\b/i.exec(value)?.[1]?.toUpperCase();
-  const completionTarget = namedCompletionTarget(question);
+  const completionTarget = namedCompletionQuestionSubject(question);
   const statusTarget = /\b(?:current |project |overall )?status of (.+?)(?:\?|$)/i
     .exec(question)?.[1]
     ?.trim();

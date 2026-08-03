@@ -101,6 +101,7 @@ export type {
   DeliveryTimeConstraint,
 } from "./domain/delivery-query.ts";
 export {
+  namedCompletionQuestionSubject,
   planDeliveryQuestion,
   validateDeliveryQueryPlan,
 } from "./domain/delivery-query.ts";
@@ -149,6 +150,7 @@ export type {
   DeliveryAssistant,
   DeliveryAssistantAnswer,
   DeliveryAssistantRequest,
+  DeliveryCompletionAssessment,
   DeliveryLifecycleState,
   DeliveryModelPlanner,
   DeliveryQueryContext,

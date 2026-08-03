@@ -211,11 +211,17 @@ export type DeliveryReportPresentation = {
     | undefined;
 };
 
+export type CompletionVerdictPresentation = {
+  readonly kind: "completion_verdict";
+  readonly subject: string;
+  readonly requiredVerdict: "yes" | "no" | "cannot_verify";
+};
+
 export type AuthorizedContextEnvelope = {
   readonly workspaceId: string;
   readonly question: string;
   readonly evidence: readonly ContextEvidence[];
-  readonly presentation?: DeliveryReportPresentation | undefined;
+  readonly presentation?: DeliveryReportPresentation | CompletionVerdictPresentation | undefined;
 };
 
 export type GroundedAnswer = {
