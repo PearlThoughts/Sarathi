@@ -239,6 +239,21 @@ export type DeliveryAssistantAnswer = {
           | undefined;
         readonly correlationCode: string;
       }
+    | {
+        readonly code: "SARATHI-ANSWER-COMPOSITION-FAILED";
+        readonly classification:
+          | "SARATHI-ANSWER-PROVIDER-FAILED"
+          | "SARATHI-ANSWER-COMPOSITION-TIMEOUT"
+          | "SARATHI-ANSWER-COMPOSITION-INVALID";
+        readonly diagnosticCode?:
+          | "answer-provider"
+          | "answer-composer-unavailable"
+          | "answer-composition-timeout"
+          | "answer-composition-invalid"
+          | "answer-completion-verdict-invalid"
+          | undefined;
+        readonly correlationCode: string;
+      }
     | undefined;
   readonly mentions?: readonly DeliveryActionTarget[];
 };
@@ -252,6 +267,7 @@ export type DeliveryAnswerCompositionInput = {
   readonly items: readonly DeliveryResultItem[];
   readonly conflicts: readonly DeliveryConflict[];
   readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
+  readonly completionAssessment?: DeliveryCompletionAssessment | undefined;
   readonly responseProduct: DeliveryResponseProduct;
   readonly responseMode: DeliveryResponseMode;
   readonly responseBudget: {
@@ -259,6 +275,11 @@ export type DeliveryAnswerCompositionInput = {
     readonly compositionTimeoutMs: number;
     readonly totalBudgetMs: number;
   };
+};
+
+export type DeliveryCompletionAssessment = {
+  readonly subject: string;
+  readonly verdict: "yes" | "no" | "cannot_verify";
 };
 
 export type DeliveryAnswerComposition = {

@@ -3,7 +3,11 @@ import { RepositoryError } from "../../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
 import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delivery-query.ts";
-import { planDeliveryQuestion, validateDeliveryQueryPlan } from "../domain/delivery-query.ts";
+import {
+  namedCompletionQuestionSubject,
+  planDeliveryQuestion,
+  validateDeliveryQueryPlan,
+} from "../domain/delivery-query.ts";
 import {
   type DeliveryResponseMode,
   type DeliveryResponseProduct,
@@ -21,6 +25,7 @@ import type {
   DeliveryAssistant,
   DeliveryAssistantAnswer,
   DeliveryAssistantRequest,
+  DeliveryCompletionAssessment,
   DeliveryModelPlanner,
   DeliveryQueryResult,
   DeliveryQuerySource,
@@ -50,12 +55,18 @@ type DeliveryAnswerDraft = Omit<
   "responseMode" | "responseProduct" | "responseBudget" | "acceptance"
 >;
 
-type ReportFailureClassification = NonNullable<
-  DeliveryAssistantAnswer["failure"]
->["classification"];
-type ReportFailureDiagnosticCode = NonNullable<
-  NonNullable<DeliveryAssistantAnswer["failure"]>["diagnosticCode"]
+type ReportFailure = Extract<
+  NonNullable<DeliveryAssistantAnswer["failure"]>,
+  { readonly code: "SARATHI-REPORT-COMPOSITION-FAILED" }
 >;
+type ReportFailureClassification = ReportFailure["classification"];
+type ReportFailureDiagnosticCode = NonNullable<ReportFailure["diagnosticCode"]>;
+type AnswerFailure = Extract<
+  NonNullable<DeliveryAssistantAnswer["failure"]>,
+  { readonly code: "SARATHI-ANSWER-COMPOSITION-FAILED" }
+>;
+type AnswerFailureClassification = AnswerFailure["classification"];
+type AnswerFailureDiagnosticCode = NonNullable<AnswerFailure["diagnosticCode"]>;
 
 const reportFailureDraft = (
   plan: DeliveryQueryPlan,
@@ -86,13 +97,91 @@ const reportFailureDraft = (
   };
 };
 
+const answerFailureDraft = (
+  plan: DeliveryQueryPlan,
+  classification: AnswerFailureClassification,
+  diagnosticCode: AnswerFailureDiagnosticCode,
+): DeliveryAnswerDraft => {
+  const correlationCode = `SAR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  return {
+    text: [
+      "Response composition failed.",
+      "",
+      "Error code: SARATHI-ANSWER-COMPOSITION-FAILED",
+      `Correlation code: ${correlationCode}`,
+      "Please retry the request.",
+    ].join("\n"),
+    citations: [],
+    status: "failed",
+    plan,
+    unavailableSources: [],
+    conflicts: [],
+    mentions: [],
+    failure: {
+      code: "SARATHI-ANSWER-COMPOSITION-FAILED",
+      classification,
+      diagnosticCode,
+      correlationCode,
+    },
+  };
+};
+
+const completionAssessment = (
+  question: string,
+  plan: DeliveryQueryPlan,
+  result: DeliveryQueryResult,
+): DeliveryCompletionAssessment | undefined => {
+  if (!plan.intents.includes("delivered") || !plan.intents.includes("status")) return undefined;
+  const subject = namedCompletionQuestionSubject(question);
+  if (subject === undefined) return undefined;
+  const stateBearingItems = result.items.filter(
+    (item) => item.lifecycleState !== undefined || item.completionStage !== undefined,
+  );
+  if (
+    stateBearingItems.some(
+      ({ lifecycleState }) =>
+        lifecycleState === "planned" ||
+        lifecycleState === "active" ||
+        lifecycleState === "blocked" ||
+        lifecycleState === "canceled",
+    )
+  )
+    return { subject, verdict: "no" };
+  if (
+    !result.complete ||
+    result.unavailableSources.length > 0 ||
+    (result.missingRequiredSources?.length ?? 0) > 0 ||
+    (result.missingRequiredIntents?.length ?? 0) > 0
+  )
+    return { subject, verdict: "cannot_verify" };
+  if (
+    stateBearingItems.length > 0 &&
+    stateBearingItems.every(({ completionStage }) => completionStage === "accepted")
+  )
+    return { subject, verdict: "yes" };
+  return { subject, verdict: "cannot_verify" };
+};
+
+const renderedCompletionVerdict = (
+  text: string,
+): DeliveryCompletionAssessment["verdict"] | undefined =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("- "))
+    ?.slice(2)
+    .replaceAll("*", "")
+    .match(/^(yes|no|cannot verify)\b/i)?.[1]
+    ?.toLowerCase()
+    .replace(" ", "_") as DeliveryCompletionAssessment["verdict"] | undefined;
+
 const namedSubjectNoMatchDraft = (
   plan: DeliveryQueryPlan,
   result: DeliveryQueryResult,
 ): DeliveryAnswerDraft => ({
   text: [
     "## Unable to verify",
-    "- No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
+    "- **Cannot verify:** No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
   ].join("\n"),
   citations: [],
   status: "empty",
@@ -1043,6 +1132,7 @@ const composeWithModel = (
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const reportComposition =
     responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
+  const requiredCompletionAssessment = completionAssessment(request.question, plan, result);
   const requiresSprintReview = plan.operations.some(({ time }) => time?.kind === "jira_sprint");
   if (
     reportComposition &&
@@ -1079,6 +1169,7 @@ const composeWithModel = (
   const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
   if (
     responseMode === "fast" &&
+    requiredCompletionAssessment === undefined &&
     (items.length < 2 ||
       !hasSourceBackedAction ||
       (result.missingRequiredIntents?.length ?? 0) > 0 ||
@@ -1108,6 +1199,9 @@ const composeWithModel = (
         responseProduct,
         responseMode,
         responseBudget,
+        ...(requiredCompletionAssessment === undefined
+          ? {}
+          : { completionAssessment: requiredCompletionAssessment }),
       }),
     ).pipe(
       Effect.flatMap((composed) =>
@@ -1253,6 +1347,14 @@ const composeWithModel = (
             if (!lines.includes("### References"))
               throw new Error("Composed delivery answer lacks a references footer.");
             if (
+              requiredCompletionAssessment !== undefined &&
+              renderedCompletionVerdict(composed.text) !== requiredCompletionAssessment.verdict
+            )
+              throw new RepositoryError({
+                message: "Delivery answer did not contain the required completion verdict.",
+                operation: "answer-completion-verdict-invalid",
+              });
+            if (
               composed.citations.some(
                 ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
               )
@@ -1304,7 +1406,24 @@ const composeWithModel = (
                 : reportDiagnosticCode(error),
             ),
           )
-        : Effect.succeed(deterministic),
+        : Effect.succeed(
+            answerFailureDraft(
+              plan,
+              error.operation === "delivery-answer-composition"
+                ? "SARATHI-ANSWER-COMPOSITION-TIMEOUT"
+                : error.operation === "answer-completion-verdict-invalid" ||
+                    error.operation === "report-composition-invalid"
+                  ? "SARATHI-ANSWER-COMPOSITION-INVALID"
+                  : "SARATHI-ANSWER-PROVIDER-FAILED",
+              error.operation === "delivery-answer-composition"
+                ? "answer-composition-timeout"
+                : error.operation === "answer-completion-verdict-invalid"
+                  ? "answer-completion-verdict-invalid"
+                  : error.operation === "report-composition-invalid"
+                    ? "answer-composition-invalid"
+                    : "answer-provider",
+            ),
+          ),
     ),
   );
 };
@@ -1859,37 +1978,55 @@ export const createDeliveryAssistant = (
                 const reportProduct =
                   responseProduct === "period_delivery_brief" ||
                   responseProduct === "leadership_report";
+                const requiredCompletionAssessment = completionAssessment(
+                  request.question,
+                  plan,
+                  completed,
+                );
                 const namedSubjectHasNoEvidence =
-                  completed.items.length === 0 &&
-                  plan.subject !== undefined &&
-                  plan.intents.includes("delivered") &&
-                  plan.intents.includes("status");
+                  completed.items.length === 0 && requiredCompletionAssessment !== undefined;
                 const composed = namedSubjectHasNoEvidence
                   ? Effect.succeed(namedSubjectNoMatchDraft(plan, completed))
-                  : configuration.answerComposer === undefined || remainingCompositionBudgetMs <= 0
+                  : configuration.answerComposer === undefined
                     ? Effect.succeed(
                         reportProduct
                           ? reportFailureDraft(
                               plan,
-                              remainingCompositionBudgetMs <= 0
-                                ? "SARATHI-REPORT-COMPOSITION-TIMEOUT"
-                                : "SARATHI-REPORT-PROVIDER-FAILED",
-                              remainingCompositionBudgetMs <= 0
-                                ? "report-composition-timeout"
-                                : "report-composer-unavailable",
+                              "SARATHI-REPORT-PROVIDER-FAILED",
+                              "report-composer-unavailable",
                             )
-                          : composeAnswer(request, plan, completed, responseMode),
+                          : requiredCompletionAssessment === undefined
+                            ? composeAnswer(request, plan, completed, responseMode)
+                            : answerFailureDraft(
+                                plan,
+                                "SARATHI-ANSWER-PROVIDER-FAILED",
+                                "answer-composer-unavailable",
+                              ),
                       )
-                    : composeWithModel(
-                        configuration.answerComposer,
-                        request,
-                        plan,
-                        completed,
-                        Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
-                        responseMode,
-                        responseProduct,
-                        responseBudget,
-                      );
+                    : remainingCompositionBudgetMs <= 0
+                      ? Effect.succeed(
+                          reportProduct
+                            ? reportFailureDraft(
+                                plan,
+                                "SARATHI-REPORT-COMPOSITION-TIMEOUT",
+                                "report-composition-timeout",
+                              )
+                            : answerFailureDraft(
+                                plan,
+                                "SARATHI-ANSWER-COMPOSITION-TIMEOUT",
+                                "answer-composition-timeout",
+                              ),
+                        )
+                      : composeWithModel(
+                          configuration.answerComposer,
+                          request,
+                          plan,
+                          completed,
+                          Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
+                          responseMode,
+                          responseProduct,
+                          responseBudget,
+                        );
                 return composed.pipe(
                   Effect.map((draft) => {
                     const elapsedMs = Math.max(0, Date.now() - startedAt);

@@ -54,6 +54,35 @@ const item = (
   dedupeKey: summary.toLowerCase(),
 });
 
+const completionComposer: DeliveryAnswerComposer = {
+  compose: (input) => {
+    const assessment = input.completionAssessment;
+    if (assessment === undefined)
+      return Effect.fail(
+        new RepositoryError({
+          message: "missing completion assessment",
+          operation: "test-completion-composer",
+        }),
+      );
+    const label =
+      assessment.verdict === "yes" ? "Yes" : assessment.verdict === "no" ? "No" : "Cannot verify";
+    return Effect.succeed({
+      text: [
+        "## Completion",
+        `- ${label}: ${input.items.map(({ summary }) => summary).join("; ")}`,
+        "### References",
+        ...input.items.map(
+          ({ citationUrl }, index) => `- [Reference ${index + 1}](${citationUrl})`,
+        ),
+      ].join("\n"),
+      citations: input.items.map(({ citationUrl }, index) => ({
+        label: `Reference ${index + 1}`,
+        url: citationUrl,
+      })),
+    });
+  },
+};
+
 const capabilityReportComposer: DeliveryAnswerComposer = {
   compose: (input) => {
     const report = input.periodDeliveryReport;
@@ -1999,7 +2028,7 @@ describe("delivery intelligence application", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [source] }).answer({
+      createDeliveryAssistant({ sources: [source], answerComposer: completionComposer }).answer({
         ...request,
         question: "Is Object Store Migration fully done?",
       }),
@@ -2010,10 +2039,13 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toContain("Object storage migration adapter merged");
     expect(answer.text).not.toContain("Reference website cloning");
     expect(answer.text).not.toContain("Brand tabs merged");
-    expect(answer.citations.map(({ url }) => url)).toEqual([
-      "https://example.com/jira/migration-status",
-      "https://example.com/github/migration-pr",
-    ]);
+    expect(answer.citations.map(({ url }) => url)).toHaveLength(2);
+    expect(answer.citations.map(({ url }) => url)).toEqual(
+      expect.arrayContaining([
+        "https://example.com/jira/migration-status",
+        "https://example.com/github/migration-pr",
+      ]),
+    );
   });
 
   it("keeps short identifier tokens inside a named completion boundary", async () => {
@@ -2039,7 +2071,7 @@ describe("delivery intelligence application", () => {
     };
 
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({ sources: [source] }).answer({
+      createDeliveryAssistant({ sources: [source], answerComposer: completionComposer }).answer({
         ...request,
         question: "Is A1 to B2 Object Migration fully done?",
       }),
@@ -2078,7 +2110,7 @@ describe("delivery intelligence application", () => {
     expect(answer.text).toBe(
       [
         "## Unable to verify",
-        "- No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
+        "- **Cannot verify:** No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
       ].join("\n"),
     );
     expect(answer.status).toBe("empty");
@@ -2350,13 +2382,16 @@ describe("delivery intelligence application", () => {
     expect(answer.citations).toHaveLength(2);
   });
 
-  it("falls back to the bounded deterministic answer for an invented model citation", async () => {
+  it("fails closed instead of publishing deterministic records for an invented model citation", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
-      selectors: ["observations"],
+      selectors: ["objects"],
       execute: () =>
         Effect.succeed({
-          items: [item("github", "code", "Merged code"), item("teams", "team", "Team update")],
+          items: [
+            item("jira", "risk", "Release dependency is at risk", "risks"),
+            item("teams", "action", "Confirm the release owner", "next_actions"),
+          ],
           conflicts: [],
           unavailableSources: [],
           complete: true,
@@ -2372,13 +2407,19 @@ describe("delivery intelligence application", () => {
               citations: [{ label: "source", url: "https://evil.example.test/x" }],
             }),
         },
-      }).answer(request),
+      }).answer({ ...request, question: "What are the delivery risks and next action?" }),
     );
+    expect(answer.status).toBe("failed");
+    expect(answer.failure).toMatchObject({
+      code: "SARATHI-ANSWER-COMPOSITION-FAILED",
+      classification: "SARATHI-ANSWER-COMPOSITION-INVALID",
+    });
     expect(answer.text).not.toContain("evil.example.test");
-    expect(answer.text).toContain("Merged code");
+    expect(answer.text).not.toContain("Release dependency is at risk");
+    expect(answer.citations).toEqual([]);
   });
 
-  it("falls back before the total deadline when optional model composition exceeds the remaining budget", async () => {
+  it("fails closed before the total deadline when model composition exceeds the remaining budget", async () => {
     const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() => Effect.never);
     const source: DeliveryQuerySource = {
       source: "projection",
@@ -2415,9 +2456,181 @@ describe("delivery intelligence application", () => {
     );
 
     expect(compose).toHaveBeenCalledOnce();
-    expect(answer.status).toBe("ok");
-    expect(answer.text).toContain("DEMO-1 release dependency is at risk");
-    expect(answer.text).toContain("DEMO-1 confirm the release owner");
+    expect(answer.status).toBe("failed");
+    expect(answer.failure).toMatchObject({
+      code: "SARATHI-ANSWER-COMPOSITION-FAILED",
+      classification: "SARATHI-ANSWER-COMPOSITION-TIMEOUT",
+      diagnosticCode: "answer-composition-timeout",
+    });
+    expect(answer.text).not.toContain("DEMO-1 release dependency is at risk");
+    expect(answer.text).not.toContain("DEMO-1 confirm the release owner");
+    expect(answer.citations).toEqual([]);
+  });
+
+  it("governs named completion verdicts from accepted and incomplete lifecycle evidence", async () => {
+    const cases = [
+      {
+        name: "active work",
+        lifecycleState: "active" as const,
+        completionStage: "accepted" as const,
+        expectedVerdict: "no" as const,
+        label: "No",
+        incompleteCoverage: false,
+      },
+      {
+        name: "accepted completion",
+        lifecycleState: "done" as const,
+        completionStage: "accepted" as const,
+        expectedVerdict: "yes" as const,
+        label: "Yes",
+        incompleteCoverage: false,
+      },
+      {
+        name: "merged implementation",
+        lifecycleState: "done" as const,
+        completionStage: "merged" as const,
+        expectedVerdict: "cannot_verify" as const,
+        label: "Cannot verify",
+        incompleteCoverage: false,
+      },
+      {
+        name: "accepted delivery without status coverage",
+        lifecycleState: "done" as const,
+        completionStage: "accepted" as const,
+        expectedVerdict: "cannot_verify" as const,
+        label: "Cannot verify",
+        incompleteCoverage: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const migrationItem = {
+        ...item(
+          "jira",
+          `migration-${testCase.expectedVerdict}`,
+          "Object Store Migration",
+          "status",
+        ),
+        subjectAliases: ["Object Store Migration"],
+        lifecycleState: testCase.lifecycleState,
+        completionStage: testCase.completionStage,
+      };
+      const deliveredItem = {
+        ...item(
+          "github",
+          `implementation-${testCase.expectedVerdict}`,
+          "Object Store Migration implementation",
+          "delivered",
+        ),
+        selector: "observations" as const,
+        subjectAliases: ["Object Store Migration"],
+        lifecycleState: testCase.lifecycleState,
+        completionStage: testCase.completionStage,
+      };
+      const compose = vi.fn<DeliveryAnswerComposer["compose"]>((input) =>
+        Effect.succeed({
+          text: [
+            "## Completion",
+            `- ${testCase.label}: ${testCase.name} determines the completion verdict.`,
+            "### References",
+            ...input.items.map(
+              ({ citationUrl }, index) => `- [Reference ${index + 1}](${citationUrl})`,
+            ),
+          ].join("\n"),
+          citations: input.items.map(({ citationUrl }, index) => ({
+            label: `Reference ${index + 1}`,
+            url: citationUrl,
+          })),
+        }),
+      );
+      const source: DeliveryQuerySource = {
+        source: "projection",
+        selectors: ["objects", "observations", "knowledge"],
+        execute: () =>
+          Effect.succeed({
+            items: testCase.incompleteCoverage ? [deliveredItem] : [migrationItem, deliveredItem],
+            conflicts: [],
+            unavailableSources: [],
+            complete: true,
+          }),
+      };
+
+      const answer = await Effect.runPromise(
+        createDeliveryAssistant({ sources: [source], answerComposer: { compose } }).answer({
+          ...request,
+          question: "Is Object Store Migration fully done?",
+        }),
+      );
+
+      expect(compose).toHaveBeenCalledOnce();
+      expect(compose.mock.calls[0]?.[0].completionAssessment).toEqual({
+        subject: "Object Store Migration",
+        verdict: testCase.expectedVerdict,
+      });
+      expect(answer.status).toBe(testCase.incompleteCoverage ? "partial" : "ok");
+      expect(answer.text).toContain(`- ${testCase.label}:`);
+      expect(answer.acceptance.passed).toBe(!testCase.incompleteCoverage);
+    }
+  });
+
+  it("publishes only a short failure when named completion composition omits its verdict", async () => {
+    const rawTitle = "Object Store Migration raw status record";
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "observations", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "migration", rawTitle, "status"),
+              subjectAliases: ["Object Store Migration"],
+              lifecycleState: "done" as const,
+              completionStage: "merged" as const,
+            },
+            {
+              ...item("github", "implementation", rawTitle, "delivered"),
+              selector: "observations" as const,
+              subjectAliases: ["Object Store Migration"],
+              lifecycleState: "done" as const,
+              completionStage: "merged" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({
+        sources: [source],
+        answerComposer: {
+          compose: (input) =>
+            Effect.succeed({
+              text: [
+                "## Completion",
+                `- ${rawTitle}.`,
+                "### References",
+                `- [Jira](${input.items[0]?.citationUrl})`,
+              ].join("\n"),
+              citations: input.items.slice(0, 1).map(({ citationUrl }) => ({
+                label: "Jira",
+                url: citationUrl,
+              })),
+            }),
+        },
+      }).answer({ ...request, question: "Is Object Store Migration fully done?" }),
+    );
+
+    expect(answer.status).toBe("failed");
+    expect(answer.failure).toMatchObject({
+      code: "SARATHI-ANSWER-COMPOSITION-FAILED",
+      classification: "SARATHI-ANSWER-COMPOSITION-INVALID",
+      diagnosticCode: "answer-completion-verdict-invalid",
+    });
+    expect(answer.text).toMatch(/^Response composition failed\./);
+    expect(answer.text).not.toContain(rawTitle);
+    expect(answer.citations).toEqual([]);
+    expect(answer.acceptance.passed).toBe(false);
   });
 
   it("fails closed when an implementation answer has no matching live GitHub result", async () => {

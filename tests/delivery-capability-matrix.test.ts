@@ -33,6 +33,29 @@ const reportComposer: DeliveryAnswerComposer = {
     const references = selectedReferences.map(
       ({ url }, index) => `- [Reference ${index + 1}](${url})`,
     );
+    if (report === undefined)
+      return Effect.succeed({
+        text: [
+          "## Status",
+          ...input.items
+            .filter(({ intent }) => intent !== "next_actions")
+            .map(({ summary }) => `- ${summary}`),
+          ...(input.items.some(({ intent }) => intent === "next_actions")
+            ? [
+                "## Next",
+                ...input.items
+                  .filter(({ intent }) => intent === "next_actions")
+                  .map(({ summary }) => `- ${summary}`),
+              ]
+            : []),
+          "### References",
+          ...references,
+        ].join("\n"),
+        citations: selectedReferences.map(({ url }, index) => ({
+          label: `Reference ${index + 1}`,
+          url,
+        })),
+      });
     const review = report?.sprintReview;
     return Effect.succeed({
       text:
