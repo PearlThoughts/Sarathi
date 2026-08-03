@@ -60,6 +60,7 @@ describe("AI SDK delivery answer composer", () => {
 
     expect(generate).toHaveBeenCalledOnce();
     expect(generate.mock.calls[0]?.[0]).toMatchObject({
+      modelTimeoutMs: 100,
       presentation: {
         kind: "completion_verdict",
         subject: "Object Store Migration",

@@ -25,6 +25,37 @@ const successfulModel = (text: string): MockLanguageModelV4 =>
     },
   });
 
+const delayedModel = (text: string, delayMs: number): MockLanguageModelV4 =>
+  new MockLanguageModelV4({
+    doGenerate: async ({ abortSignal }) => {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(resolve, delayMs);
+        abortSignal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timeout);
+            reject(abortSignal.reason);
+          },
+          { once: true },
+        );
+      });
+      return {
+        content: [{ type: "text", text }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: {
+            total: 10,
+            noCache: 10,
+            cacheRead: undefined,
+            cacheWrite: undefined,
+          },
+          outputTokens: { total: 5, text: 5, reasoning: undefined },
+        },
+        warnings: [],
+      };
+    },
+  });
+
 const failingModel = (): MockLanguageModelV4 =>
   new MockLanguageModelV4({
     doGenerate: async () => {
@@ -107,6 +138,26 @@ describe("AI SDK OpenRouter answer generator", () => {
       "Do not start with an acknowledgement or paraphrase",
     );
     expect(JSON.stringify(model.doGenerateCalls)).not.toContain("workspace");
+  });
+
+  it("uses the governed composition budget for concise model work", async () => {
+    const text =
+      "## Status\n- Delivery is current.\n### References\n- [Jira](https://jira.example.test/DEMO-754)";
+    const shortConfiguration = { ...configuration, timeoutMs: 10 };
+    const withinBudget = createGroundedAnswerGenerator(shortConfiguration, undefined, () =>
+      delayedModel(text, 30),
+    );
+
+    await expect(
+      Effect.runPromise(withinBudget.generate({ ...envelope, modelTimeoutMs: 100 })),
+    ).resolves.toMatchObject({ text });
+
+    const outsideBudget = createGroundedAnswerGenerator(shortConfiguration, undefined, () =>
+      delayedModel(text, 30),
+    );
+    await expect(Effect.runPromise(outsideBudget.generate(envelope))).rejects.toThrow(
+      "OpenRouter answer generation is unavailable",
+    );
   });
 
   it("requires the governed verdict for a named completion answer", async () => {

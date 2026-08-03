@@ -221,6 +221,7 @@ export type AuthorizedContextEnvelope = {
   readonly workspaceId: string;
   readonly question: string;
   readonly evidence: readonly ContextEvidence[];
+  readonly modelTimeoutMs?: number | undefined;
   readonly presentation?: DeliveryReportPresentation | CompletionVerdictPresentation | undefined;
 };
 
