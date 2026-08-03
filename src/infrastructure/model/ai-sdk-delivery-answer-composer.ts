@@ -8,6 +8,7 @@ const reportCapsuleTitleCharacters = 320;
 const reportCapsuleExcerptCharacters = 700;
 const supplementalTitleCharacters = 320;
 const supplementalExcerptCharacters = 900;
+const modelTimeoutHeadroomMs = 1_000;
 const balancedSupplementalEvidence = <Evidence extends { readonly source: string }>(
   evidence: readonly Evidence[],
   maximumEvidence: number,
@@ -153,6 +154,10 @@ export const createAiSdkDeliveryAnswerComposer = (
         workspaceId: input.workspaceId,
         question: input.question,
         evidence,
+        modelTimeoutMs: Math.max(
+          100,
+          input.responseBudget.compositionTimeoutMs - modelTimeoutHeadroomMs,
+        ),
         presentation: {
           kind: "completion_verdict",
           subject: input.completionAssessment.subject,
@@ -163,6 +168,10 @@ export const createAiSdkDeliveryAnswerComposer = (
       workspaceId: input.workspaceId,
       question: input.question,
       evidence,
+      modelTimeoutMs: Math.max(
+        100,
+        input.responseBudget.compositionTimeoutMs - modelTimeoutHeadroomMs,
+      ),
       ...(report === undefined
         ? {}
         : {

@@ -314,7 +314,7 @@ export const createGroundedAnswerGenerator = (
             abortSignal: AbortSignal.timeout(
               deliveryReport
                 ? Math.max(configuration.timeoutMs, deliveryReportModelTimeoutMs)
-                : configuration.timeoutMs,
+                : Math.max(configuration.timeoutMs, envelope.modelTimeoutMs ?? 0),
             ),
             experimental_telemetry: { isEnabled: false },
           });
