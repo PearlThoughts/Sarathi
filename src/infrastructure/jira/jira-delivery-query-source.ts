@@ -456,19 +456,21 @@ const planningForSprint = (
 const escapedJqlText = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 
-const statusTargetClause = (query: JiraDeliveryQuery): string => {
-  const exactKey = query.operation.predicates?.find(
-    ({ field, operator, value }) =>
-      field === "externalKey" && operator === "equals" && typeof value === "string",
-  )?.value;
+const subjectTargetClause = (query: JiraDeliveryQuery): string => {
+  const exactKey =
+    query.operation.predicates?.find(
+      ({ field, operator, value }) =>
+        field === "externalKey" && operator === "equals" && typeof value === "string",
+    )?.value ?? query.subject?.externalKey;
   if (typeof exactKey === "string" && /^[A-Z][A-Z0-9]+-\d+$/.test(exactKey))
     return ` AND key = "${exactKey}"`;
-  const titleTarget = query.operation.predicates?.find(
-    ({ field, operator, value }) =>
-      field === "title" && operator === "contains" && typeof value === "string",
-  )?.value;
+  const titleTarget =
+    query.operation.predicates?.find(
+      ({ field, operator, value }) =>
+        field === "title" && operator === "contains" && typeof value === "string",
+    )?.value ?? query.subject?.phrase;
   return typeof titleTarget === "string" && titleTarget.trim() !== ""
-    ? ` AND summary ~ "\\"${escapedJqlText(titleTarget.trim())}\\""`
+    ? ` AND (component = "${escapedJqlText(titleTarget.trim())}" OR summary ~ "\\"${escapedJqlText(titleTarget.trim())}\\"")`
     : "";
 };
 
@@ -508,13 +510,13 @@ const jqlForView = (
       return query.operation.time?.kind === "jira_sprint" &&
         query.operation.time.sprint === "previous"
         ? `${scope} AND sprint in closedSprints() ORDER BY updated DESC`
-        : `${scope} AND statusCategory = Done AND resolutiondate >= "${jiraDate(query.fromInclusive)}" AND resolutiondate < "${jiraDate(query.toExclusive)}" ORDER BY resolutiondate DESC`;
+        : `${scope}${subjectTargetClause(query)} AND statusCategory = Done AND resolutiondate >= "${jiraDate(query.fromInclusive)}" AND resolutiondate < "${jiraDate(query.toExclusive)}" ORDER BY resolutiondate DESC`;
     case "risks":
       return `${scope} AND statusCategory != Done ORDER BY priority DESC, updated DESC`;
     case "recurring":
       return `${scope} AND created >= "${jiraDate(query.fromInclusive)}" ORDER BY created DESC`;
     case "status":
-      return `${scope}${statusTargetClause(query)} ORDER BY updated DESC`;
+      return `${scope}${subjectTargetClause(query)} ORDER BY updated DESC`;
   }
 };
 
