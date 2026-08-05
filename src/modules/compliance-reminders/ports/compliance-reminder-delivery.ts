@@ -1,9 +1,9 @@
-import type { Effect } from "effect";
-import type { RepositoryError } from "../../../domain/errors.ts";
-import type { FollowUpDigest } from "../../follow-up/domain/follow-up.ts";
+import type { Effect } from 'effect';
+import type { RepositoryError } from '../../../domain/errors.ts';
+import type { FollowUpDigest } from '../../follow-up/index.ts';
 
 export type ComplianceReminderDelivery = {
-  readonly provider: "compliance-reminder-delivery";
+  readonly provider: 'compliance-reminder-delivery';
   readonly deliver: (input: {
     readonly workspaceId: string;
     readonly idempotencyKey: string;
