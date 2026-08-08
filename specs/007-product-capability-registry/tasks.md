@@ -11,7 +11,7 @@ This task map defines later implementation slices. This documentation change doe
 ## Persistence And Application
 
 - [x] T004 Add Drizzle tables and additive migration tests.
-- [ ] T005 Add recursive-CTE repository traversal with cycle and depth bounds.
+- [x] T005 Add recursive-CTE repository traversal with cycle and depth bounds.
 - [ ] T006 Add transactional revisions, audit events, idempotency, and optimistic concurrency.
 - [ ] T007 Add authorized query, preview, and command application services.
 
