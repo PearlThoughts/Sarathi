@@ -179,6 +179,13 @@
       "description": "Stable product identity, aliases, hierarchy, registration, retirement, typed relation compatibility, rename, and move coverage."
     },
     {
+      "id": "product-model-variants-history",
+      "path": "tests/product-model-variants-history.test.ts",
+      "command": "bunx vitest run tests/product-model-variants-history.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Deterministic variant composition, ambiguity rejection, immutable in-memory revision snapshots, and valid-time history coverage."
+    },
+    {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",
