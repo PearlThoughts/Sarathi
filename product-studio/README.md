@@ -22,7 +22,7 @@ The first view provides hierarchy, relation filtering, a full-path table, and do
 
 Governed mutation uses a separate user-bound credential provider and POST-only adapter. `SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON` maps an authenticated Payload user ID to a short-lived Sarathi actor credential and expiry. The provider fails closed for missing, malformed, unknown, or expired mappings. Production installations should replace the environment-backed provider with their OAuth/OIDC token broker while preserving the same per-user contract.
 
-The mutation adapter never reads `SARATHI_PRODUCT_STUDIO_READ_TOKEN`. Preview and execute require expected revision, stable idempotency key, justification, valid time, and a user-bound credential; execute additionally requires the short-lived preview token. UI mutation remains disabled until the preview, confirmation, and stale-revision recovery view is installed.
+The mutation adapter never reads `SARATHI_PRODUCT_STUDIO_READ_TOKEN`. Governed rename reauthenticates the Payload session on every preview and execute request, resolves that exact user's credential, and requires expected revision, stable idempotency key, justification, valid time, and a short-lived preview token. Confirmation is disabled for hidden impacts. A stale revision requires the editor to reload the current dossier and deliberately reapply or discard the draft.
 
 ## Availability
 

@@ -11,7 +11,7 @@ type MutationClientConfiguration = {
   readonly fetch?: Fetcher | undefined;
 };
 
-type ProductStudioRenameCommand = {
+export type ProductStudioRenameCommand = {
   readonly type: "RenameEntity";
   readonly workspaceId: string;
   readonly targetId: string;
@@ -101,7 +101,7 @@ const errorSchema = z
 type ProductStudioChangePreview = z.infer<typeof previewSchema>;
 type ProductStudioCommandResult = z.infer<typeof commitSchema>;
 
-class SarathiProductModelMutationError extends Error {
+export class SarathiProductModelMutationError extends Error {
   constructor(
     readonly status: number,
     readonly code: z.infer<typeof errorSchema>["error"]["code"],

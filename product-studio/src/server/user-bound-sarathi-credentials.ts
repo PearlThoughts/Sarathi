@@ -7,11 +7,11 @@ export type UserBoundSarathiCredential = {
   readonly expiresAt: string;
 };
 
-type UserBoundSarathiCredentialProvider = {
+export type UserBoundSarathiCredentialProvider = {
   readonly resolve: (payloadUserId: string) => UserBoundSarathiCredential;
 };
 
-class UserBoundSarathiCredentialUnavailable extends Error {
+export class UserBoundSarathiCredentialUnavailable extends Error {
   constructor() {
     super("A user-bound Sarathi credential is unavailable.");
     this.name = "UserBoundSarathiCredentialUnavailable";

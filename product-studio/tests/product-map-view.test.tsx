@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getMap = vi.fn();
 const getDossier = vi.fn();
@@ -63,7 +63,16 @@ const dossier = {
     createdRevision: 1,
     updatedRevision: 4,
   },
-  aliases: [],
+  aliases: [
+    {
+      id: "alias-synthetic-command",
+      entityId: childId,
+      value: "Synthetic capability",
+      normalizedValue: "synthetic capability",
+      kind: "canonical",
+      createdRevision: 1,
+    },
+  ],
   variants: [],
   claims: [],
   externalReferences: [],
@@ -79,6 +88,10 @@ describe("Product Studio product map view", () => {
   beforeEach(() => {
     getMap.mockReset().mockResolvedValue(map);
     getDossier.mockReset().mockResolvedValue(dossier);
+  });
+
+  afterEach(() => {
+    delete process.env.SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON;
   });
 
   it("renders hierarchy, filter controls, an accessible registry table, and a dossier", async () => {
@@ -110,6 +123,24 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain("Sign in through the Product Studio identity boundary");
     expect(getMap).not.toHaveBeenCalled();
     expect(getDossier).not.toHaveBeenCalled();
+  });
+
+  it("shows governed rename only when the authenticated user has a live credential", async () => {
+    process.env.SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON = JSON.stringify({
+      "studio-user": {
+        actorId: "sarathi-actor-synthetic",
+        accessToken: "user-access-token-synthetic",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+    });
+    const { ProductMapView } = await import("../src/views/ProductMapView");
+    const markup = renderToStaticMarkup(
+      await ProductMapView(viewProps({ id: "studio-user" }, { entity: childId })),
+    );
+
+    expect(markup).toContain("Governed Rename");
+    expect(markup).toContain("Preview Rename");
+    expect(markup).not.toContain("user-access-token-synthetic");
   });
 
   it("fails closed without rendering partial product data", async () => {
