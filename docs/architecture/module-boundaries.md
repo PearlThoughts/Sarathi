@@ -17,6 +17,8 @@ Do not create placeholder folders. A layer exists only when there is production 
 
 `src/modules/delivery-intelligence` owns the public product role and the reusable delivery model. It names delivery objects, relations, observations, claims, metrics, query plans, audience semantics, team-profile dials, and the PostgreSQL/pgvector storage boundary. Reporting is a query over this model, not a separate temporal subsystem.
 
+`src/modules/product-model` owns the slower-changing business product vocabulary: stable product, area, capability, and feature identity; its primary hierarchy; aliases; registration and lifecycle; variants; revisions; and governed identity evolution. It does not own delivery state or report composition.
+
 `src/modules/delivery-intelligence` owns the reusable project operating model and safe delivery-query grammar. Time windows are optional query constraints, not a separate bounded context. `src/modules/knowledge-layer` supports it with versioned unstructured content, retrieval, provenance, citations, and reconciliation. Neither module may deep-import the other; cross-capability composition uses public ports and result contracts.
 
 ## Cross-Boundary Rules

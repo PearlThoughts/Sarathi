@@ -20,6 +20,11 @@
   },
   "boundedContexts": [
     {
+      "name": "product-model",
+      "path": "src/modules/product-model",
+      "responsibility": "Own stable business product identity, hierarchy, aliases, relations, variants, registration, lifecycle, revisions, and governed identity evolution."
+    },
+    {
       "name": "workspace-model",
       "path": "src/modules/workspace-model",
       "responsibility": "Compile source-system structures and YAML overlays into Sarathi policy boundaries."
