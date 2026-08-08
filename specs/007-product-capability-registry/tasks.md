@@ -1,6 +1,6 @@
 # Tasks: Product Capability Registry And Product Studio
 
-This task map defines later implementation slices. This documentation change does not claim that the registry or Product Studio is implemented.
+This task map records the merged implementation slices. Live PostgreSQL, Product Studio identity-broker/browser, and private real-data acceptance remain separate evidence gates where noted in their PRs and Beads records.
 
 ## Domain Foundation
 
@@ -23,10 +23,10 @@ This task map defines later implementation slices. This documentation change doe
 
 ## Product Studio
 
-- [ ] T011 Build a read-only product map and feature dossier through Sarathi APIs.
-- [ ] T012 Add semantic zoom, relation filters, coverage, and accessible tree/table alternatives.
-- [ ] T013 Add previewed governed edits and stale-revision recovery.
-- [ ] T014 Prove identity integration, audience filtering, audit, rollback, and Product Studio independence from Teams runtime availability.
+- [x] T011 Build a read-only product map and feature dossier through Sarathi APIs.
+- [x] T012 Add semantic zoom, relation filters, coverage, and accessible tree/table alternatives.
+- [x] T013 Add previewed governed edits and stale-revision recovery.
+- [x] T014 Prove identity integration, audience filtering, audit, rollback, and Product Studio independence from Teams runtime availability.
 
 ## Optional Projections
 

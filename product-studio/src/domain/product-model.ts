@@ -73,6 +73,35 @@ export const productMapSchema = z
   })
   .strict();
 
+export const productCoverageSchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    asOf: z.string().datetime(),
+    revision: z.number().int().nonnegative(),
+    items: z.array(
+      z
+        .object({
+          entityId,
+          canonicalName: z.string().min(1),
+          kind,
+          flags: z.array(z.string().min(1)),
+          claimCount: z.number().int().nonnegative(),
+          referenceCount: z.number().int().nonnegative(),
+          variantCount: z.number().int().nonnegative(),
+          updatedRevision: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+    page: z
+      .object({
+        maximumItems: z.number().int().positive(),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    safeWarnings: z.array(z.string()),
+  })
+  .strict();
+
 const productEntitySchema = z
   .object({
     id: entityId,
@@ -193,6 +222,7 @@ export const productDossierSchema = z
 
 export type ProductHierarchyNode = z.infer<typeof productHierarchyNodeSchema>;
 export type ProductMap = z.infer<typeof productMapSchema>;
+export type ProductCoverage = z.infer<typeof productCoverageSchema>;
 export type ProductDossier = z.infer<typeof productDossierSchema>;
 
 type ProductMapRow = ProductHierarchyNode & {

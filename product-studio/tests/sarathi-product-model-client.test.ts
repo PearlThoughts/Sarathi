@@ -13,6 +13,15 @@ const map = {
   safeWarnings: [],
 };
 
+const coverage = {
+  workspaceId: "workspace-synthetic",
+  asOf: "2026-01-02T00:00:00.000Z",
+  revision: 4,
+  items: [],
+  page: { maximumItems: 100, truncated: false },
+  safeWarnings: [],
+};
+
 describe("Product Studio Sarathi server adapter", () => {
   let createClient: typeof import("../src/server/sarathi-product-model-client").createSarathiProductModelClientFromEnvironment;
 
@@ -71,6 +80,20 @@ describe("Product Studio Sarathi server adapter", () => {
       status: 503,
       message: "Product Studio data is unavailable.",
     });
+  });
+
+  it("reads bounded metadata-only coverage through the versioned workspace API", async () => {
+    const request = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(Response.json({ data: coverage })),
+    );
+    vi.stubGlobal("fetch", request);
+    const client = createClient();
+
+    await expect(client.getCoverage()).resolves.toEqual(coverage);
+    expect(String(request.mock.calls[0]?.[0])).toBe(
+      "https://sarathi.example.test/v1/workspaces/workspace-synthetic/product-model/coverage?maximumItems=100",
+    );
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ method: "GET", cache: "no-store" });
   });
 
   it("requires HTTPS for non-local Sarathi endpoints", () => {
