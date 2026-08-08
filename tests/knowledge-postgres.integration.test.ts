@@ -177,6 +177,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     const verification = await Effect.runPromise(applyKnowledgePostgresMigrations(databaseUrl));
     expect(verification.knowledgeTableCount).toBe(12);
     expect(verification.deliveryTableCount).toBe(8);
+    expect(verification.productTableCount).toBe(16);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
       "compliance_reminder_dry_run_evidence",
