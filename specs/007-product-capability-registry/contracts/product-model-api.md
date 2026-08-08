@@ -6,7 +6,7 @@ Every operation receives a server-resolved context containing organization, work
 
 ## Queries
 
-The initial transport surface is versioned under `/v1/workspaces/{workspaceId}/product-model`. It exposes `GET /map`, `GET /entities/{entityId}`, `GET /entities/{entityId}/subgraph`, `GET /coverage`, and `GET /availability`. Transport paths are adapters over the application query contracts below; they do not expose repository query parameters or arbitrary graph traversal.
+The initial transport surface is versioned under `/v1/workspaces/{workspaceId}/product-model`. It exposes `GET /map`, `GET /entities/{entityId}`, `GET /entities/{entityId}/subgraph`, `GET /coverage`, and `GET /availability/{entityId}`. Transport paths are adapters over the application query contracts below; they do not expose repository query parameters or arbitrary graph traversal. Identity and workspace context are resolved by the server; request headers and path parameters are not authority. Traversal, relation, coverage, temporal, and variant-qualifier inputs are typed and capped before an application query executes.
 
 - `GetProductMap`: primary hierarchy at a revision or valid time, with bounded summary fields.
 - `GetCapabilitySubgraph`: one entity, ancestors, descendants, and selected typed relations within bounded depth.

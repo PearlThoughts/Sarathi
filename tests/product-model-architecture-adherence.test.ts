@@ -16,7 +16,7 @@ const sourceText = (relativePath: string) => readFile(new URL(relativePath, modu
 describe("product-model architecture adherence", () => {
   it("keeps the bounded context in domain, application, and port layers", async () => {
     await Promise.all(
-      ["domain", "application", "ports"].map((directory) =>
+      ["domain", "application", "ports", "api"].map((directory) =>
         access(new URL(`${directory}/`, moduleRoot)),
       ),
     );
@@ -38,6 +38,7 @@ describe("product-model architecture adherence", () => {
         "product-model-query-authorizer.ts",
       ]),
     );
+    expect(await sourceFiles("api")).toContain("register-product-model-routes.ts");
   });
 
   it("keeps Drizzle, PostgreSQL, and infrastructure imports out of the core", async () => {
@@ -58,6 +59,7 @@ describe("product-model architecture adherence", () => {
     expect(source).toContain('export * from "./domain/product-model.ts"');
     expect(source).toContain('export * from "./application/product-model-commands.ts"');
     expect(source).toContain('export * from "./ports/product-model-command-repository.ts"');
+    expect(source).toContain('export * from "./api/register-product-model-routes.ts"');
   });
 
   it("keeps delivery compatibility in the application layer and delegates the existing report path", async () => {
