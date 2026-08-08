@@ -1322,7 +1322,6 @@ const queryClaims = async (
       .where(
         and(
           eq(deliveryClaimTable.workspaceId, context.workspaceId),
-          authorizationCondition(database, context, "claim", deliveryClaimTable.id),
           ...sourceScopeConditions(deliveryClaimTable.sourceKind, context),
           eq(deliveryClaimTable.active, true),
           isNull(deliveryClaimTable.deletedAt),

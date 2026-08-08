@@ -1,7 +1,9 @@
-import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
+import { MigrateUpArgs, MigrateDownArgs, sql } from "@payloadcms/db-postgres";
 
 export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   await db.execute(sql`
+   CREATE SCHEMA IF NOT EXISTS "product_studio";
+
    CREATE TABLE "product_studio"."studio_users_sessions" (
      "_order" integer NOT NULL,
      "_parent_id" uuid NOT NULL,
@@ -95,7 +97,7 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   CREATE INDEX "payload_preferences_rels_path_idx" ON "product_studio"."payload_preferences_rels" USING btree ("path");
   CREATE INDEX "payload_preferences_rels_studio_users_id_idx" ON "product_studio"."payload_preferences_rels" USING btree ("studio_users_id");
   CREATE INDEX "payload_migrations_updated_at_idx" ON "product_studio"."payload_migrations" USING btree ("updated_at");
-  CREATE INDEX "payload_migrations_created_at_idx" ON "product_studio"."payload_migrations" USING btree ("created_at");`)
+  CREATE INDEX "payload_migrations_created_at_idx" ON "product_studio"."payload_migrations" USING btree ("created_at");`);
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
@@ -107,5 +109,5 @@ export async function down({ db, payload, req }: MigrateDownArgs): Promise<void>
   DROP TABLE "product_studio"."payload_locked_documents_rels" CASCADE;
   DROP TABLE "product_studio"."payload_preferences" CASCADE;
   DROP TABLE "product_studio"."payload_preferences_rels" CASCADE;
-  DROP TABLE "product_studio"."payload_migrations" CASCADE;`)
+  DROP TABLE "product_studio"."payload_migrations" CASCADE;`);
 }

@@ -40,6 +40,10 @@ describe("Product Studio architecture adherence", () => {
     for (const name of migrationNames) {
       const migration = await readFile(new URL(name, migrationRoot), "utf8");
       expect(migration).toContain('"product_studio".');
+      expect(migration).toContain('CREATE SCHEMA IF NOT EXISTS "product_studio"');
+      expect(migration.indexOf('CREATE SCHEMA IF NOT EXISTS "product_studio"')).toBeLessThan(
+        migration.indexOf('CREATE TABLE "product_studio".'),
+      );
       expect(migration).not.toContain('"public".');
       expect(migration).not.toMatch(
         /product_(?:entity|hierarchy|relation|revision|audit|identity_event|outbox)/,

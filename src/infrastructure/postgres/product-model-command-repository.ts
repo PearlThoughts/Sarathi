@@ -47,7 +47,7 @@ const same = (left: unknown, right: unknown) => json(left) === json(right);
 export const buildCurrentProductModelQuery = (workspaceId: string): SQL<ProductModelRow> =>
   sql<ProductModelRow>`
     select jsonb_build_object(
-      'workspaceId', ${workspaceId},
+      'workspaceId', ${workspaceId}::text,
       'revision', coalesce((select max(revision) from product_revision where workspace_id = ${workspaceId}), 0),
       'entities', coalesce((
         select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(

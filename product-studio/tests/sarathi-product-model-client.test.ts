@@ -46,7 +46,7 @@ describe("Product Studio Sarathi server adapter", () => {
       Promise.resolve(Response.json({ data: map })),
     );
     vi.stubGlobal("fetch", request);
-    const client = createClient();
+    const client = createClient(() => new Date("2026-08-08T17:45:00.000Z"));
 
     await expect(client.getMap(3)).resolves.toEqual(map);
     expect(request).toHaveBeenCalledOnce();
@@ -87,11 +87,11 @@ describe("Product Studio Sarathi server adapter", () => {
       Promise.resolve(Response.json({ data: coverage })),
     );
     vi.stubGlobal("fetch", request);
-    const client = createClient();
+    const client = createClient(() => new Date("2026-08-08T17:45:00.000Z"));
 
     await expect(client.getCoverage()).resolves.toEqual(coverage);
     expect(String(request.mock.calls[0]?.[0])).toBe(
-      "https://sarathi.example.test/v1/workspaces/workspace-synthetic/product-model/coverage?maximumItems=100",
+      "https://sarathi.example.test/v1/workspaces/workspace-synthetic/product-model/coverage?maximumItems=100&staleBefore=2026-05-10T17%3A45%3A00.000Z",
     );
     expect(request.mock.calls[0]?.[1]).toMatchObject({ method: "GET", cache: "no-store" });
   });

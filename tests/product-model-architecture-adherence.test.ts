@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const moduleRoot = new URL("../src/modules/product-model/", import.meta.url);
 const deliveryRoot = new URL("../src/modules/delivery-intelligence/", import.meta.url);
 const postgresRoot = new URL("../src/infrastructure/postgres/", import.meta.url);
+const migrationsRoot = new URL("../drizzle/", import.meta.url);
 const testsRoot = new URL("./", import.meta.url);
 
 const sourceFiles = async (relativeDirectory: string) =>
@@ -105,6 +106,26 @@ describe("product-model architecture adherence", () => {
     expect(commandAdapter).toContain("database.transaction(async");
     expect(commandAdapter).toMatch(/\.insert\(product[A-Za-z]+Table\)/);
     expect(commandAdapter).toMatch(/\.update\(product[A-Za-z]+Table\)/);
+  });
+
+  it("creates composite referenced keys before product-model foreign keys", async () => {
+    const migration = await readFile(
+      new URL("0008_product-model-core.sql", migrationsRoot),
+      "utf8",
+    );
+    const referencedKey =
+      'CONSTRAINT "product_entity_workspace_id_kind" UNIQUE("workspace_id","id","kind")';
+    const aliasForeignKey =
+      'CONSTRAINT "product_entity_alias_entity_fk" FOREIGN KEY ("workspace_id","entity_id","entity_kind")';
+
+    expect(migration).toContain(referencedKey);
+    expect(migration).toContain(aliasForeignKey);
+    expect(migration.indexOf(referencedKey)).toBeLessThan(migration.indexOf(aliasForeignKey));
+
+    const schema = await readFile(new URL("product-model-schema.ts", postgresRoot), "utf8");
+    expect(schema).toContain(
+      'unique("product_entity_workspace_id_kind").on(table.workspaceId, table.id, table.kind)',
+    );
   });
 
   it("registers every permanent product-model Vitest suite in the test manifest", async () => {

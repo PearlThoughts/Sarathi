@@ -2,6 +2,7 @@ import { count, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { createApp } from "../src/app.ts";
 import { runDeliverySyncCommand } from "../src/cli/commands/delivery-sync-runtime.ts";
 import { runKnowledgeCommand } from "../src/cli/commands/knowledge-runtime.ts";
 import { RepositoryError } from "../src/domain/errors.ts";
@@ -36,6 +37,8 @@ import {
   synchronizationEventDeliveryId,
   synchronizeKnowledgeSource,
 } from "../src/modules/knowledge-layer/index.ts";
+import type { SarathiConfig } from "../src/platform/config.ts";
+import { makeSarathiRuntime } from "../src/platform/runtime.ts";
 
 const databaseUrl = process.env.SARATHI_KNOWLEDGE_TEST_DATABASE_URL;
 const describeDatabase = databaseUrl === undefined ? describe.skip : describe;
@@ -564,13 +567,12 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 12,
-          appliedMigrationCount: 8,
+          appliedMigrationCount: 10,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
               documentsObserved: 0,
               itemsDeleted: 1,
-              lastEventAt: expect.any(String),
               lastReconciledAt: expect.any(String),
               newestSourceUpdatedAt: "2026-07-20T00:00:00.000Z",
               lastSucceededAt: expect.any(String),
@@ -2504,7 +2506,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       unavailableSources: [],
       complete: true,
     });
-    expect(result.periodCensus?.replayChecksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.periodCensus?.replayChecksum).toMatch(/^sha256-[a-f0-9]{64}$/);
 
     const denied = await Effect.runPromise(
       source.execute({ ...context, actorId: "blocked-actor" }, plan),
@@ -2514,5 +2516,143 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       candidateCount: 0,
       complete: true,
     });
+  });
+
+  test("composes the live product-model runtime for authorized commands and reads", async () => {
+    const workspaceId = globalThis.crypto.randomUUID();
+    const entityId = globalThis.crypto.randomUUID();
+    const readToken = `synthetic-read-${globalThis.crypto.randomUUID()}`;
+    const writeToken = `synthetic-write-${globalThis.crypto.randomUUID()}`;
+    const now = "2026-08-08T17:45:00.000Z";
+    const config: SarathiConfig = {
+      serviceName: "sarathi",
+      environment: "test",
+      http: { port: 0 },
+      overlayPath: "unused",
+      auth: { provider: "static" },
+      productModel: {
+        databaseUrl: databaseUrl ?? "",
+        previewSecret: "synthetic-live-preview-secret-at-least-thirty-two-bytes",
+        principals: [
+          {
+            accessToken: readToken,
+            organizationId: "synthetic-live-organization",
+            workspaceId,
+            actorId: "synthetic-live-reader",
+            trustTier: "trusted",
+            effectiveAudience: ["workspace:synthetic-live"],
+            maximumSensitivity: "internal",
+            modelEgress: "block",
+            permittedCorpusScopes: ["product-model"],
+            surfaces: ["api"],
+            queryOperations: ["get-map", "get-subgraph", "get-dossier", "get-coverage"],
+            commandOperations: [],
+            allowHiddenImpacts: false,
+            policyVersion: "synthetic-live-policy-v1",
+          },
+          {
+            accessToken: writeToken,
+            organizationId: "synthetic-live-organization",
+            workspaceId,
+            actorId: "synthetic-live-owner",
+            trustTier: "maintainer",
+            effectiveAudience: ["workspace:synthetic-live"],
+            maximumSensitivity: "internal",
+            modelEgress: "block",
+            permittedCorpusScopes: ["product-model"],
+            surfaces: ["product-studio"],
+            queryOperations: [],
+            commandOperations: ["preview-change", "execute-command"],
+            allowHiddenImpacts: false,
+            policyVersion: "synthetic-live-policy-v1",
+          },
+        ],
+      },
+    };
+    const runtime = makeSarathiRuntime({ config, clock: { now: () => now } });
+    const app = createApp(runtime);
+    const command = {
+      type: "ProposeEntity",
+      workspaceId,
+      targetId: entityId,
+      expectedRevision: 0,
+      idempotencyKey: `synthetic-live-${globalThis.crypto.randomUUID()}`,
+      justification: "Create an invented product for PostgreSQL runtime acceptance.",
+      validFrom: "2026-08-08T17:40:00.000Z",
+      payload: {
+        kind: "product",
+        canonicalName: "Synthetic Runtime Product",
+        description: "Invented PostgreSQL integration fixture.",
+        canonicalAliasId: `alias-${globalThis.crypto.randomUUID()}`,
+        lifecycle: "available",
+        sensitivity: "internal",
+        audience: ["workspace:synthetic-live"],
+      },
+    };
+
+    try {
+      const unauthorized = await app.request(`/v1/workspaces/${workspaceId}/product-model/map`);
+      expect(unauthorized.status).toBe(403);
+
+      const previewResponse = await app.request(
+        `/v1/workspaces/${workspaceId}/product-model/changes/preview`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${writeToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(command),
+        },
+      );
+      expect(previewResponse.status).toBe(200);
+      const preview = (await previewResponse.json()) as {
+        readonly data: { readonly previewToken: string };
+      };
+
+      const executeResponse = await app.request(
+        `/v1/workspaces/${workspaceId}/product-model/commands`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${writeToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ ...command, previewToken: preview.data.previewToken }),
+        },
+      );
+      expect(executeResponse.status).toBe(200);
+      await expect(executeResponse.json()).resolves.toMatchObject({
+        data: { status: "committed", revision: 1, replayed: false },
+      });
+
+      const readHeaders = { authorization: `Bearer ${readToken}` };
+      const [mapResponse, dossierResponse, coverageResponse] = await Promise.all([
+        app.request(`/v1/workspaces/${workspaceId}/product-model/map`, {
+          headers: readHeaders,
+        }),
+        app.request(`/v1/workspaces/${workspaceId}/product-model/entities/${entityId}`, {
+          headers: readHeaders,
+        }),
+        app.request(
+          `/v1/workspaces/${workspaceId}/product-model/coverage?staleBefore=2026-05-01T00:00:00.000Z`,
+          { headers: readHeaders },
+        ),
+      ]);
+      expect([mapResponse.status, dossierResponse.status, coverageResponse.status]).toEqual([
+        200, 200, 200,
+      ]);
+      await expect(mapResponse.json()).resolves.toMatchObject({
+        data: { revision: 1, entities: [{ entityId, canonicalName: "Synthetic Runtime Product" }] },
+      });
+      await expect(dossierResponse.json()).resolves.toMatchObject({
+        data: { revision: 1, entity: { id: entityId }, proposals: [] },
+      });
+      await expect(coverageResponse.json()).resolves.toMatchObject({
+        data: { revision: 1, items: [{ entityId }] },
+      });
+    } finally {
+      await runtime.close();
+    }
   });
 });

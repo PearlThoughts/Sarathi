@@ -64,6 +64,7 @@ CREATE TABLE "product_entity" (
 	"created_revision" integer NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "product_entity_workspace_id_id_pk" PRIMARY KEY("workspace_id","id"),
+	CONSTRAINT "product_entity_workspace_id_kind" UNIQUE("workspace_id","id","kind"),
 	CONSTRAINT "product_entity_kind" CHECK ("product_entity"."kind" in ('product', 'area', 'capability', 'feature'))
 );
 --> statement-breakpoint
@@ -209,7 +210,6 @@ CREATE INDEX "product_entity_attachment_current_entity" ON "product_entity_attac
 CREATE UNIQUE INDEX "product_entity_state_current" ON "product_entity_state" USING btree ("workspace_id","entity_id") WHERE "product_entity_state"."superseded_at" is null;--> statement-breakpoint
 CREATE INDEX "product_entity_state_workspace_revision" ON "product_entity_state" USING btree ("workspace_id","revision");--> statement-breakpoint
 CREATE INDEX "product_entity_state_workspace_valid_time" ON "product_entity_state" USING btree ("workspace_id","valid_from","valid_to");--> statement-breakpoint
-CREATE UNIQUE INDEX "product_entity_workspace_id_kind" ON "product_entity" USING btree ("workspace_id","id","kind");--> statement-breakpoint
 CREATE INDEX "product_entity_workspace_kind" ON "product_entity" USING btree ("workspace_id","kind","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "product_hierarchy_edge_current_parent" ON "product_hierarchy_edge" USING btree ("workspace_id","child_id") WHERE "product_hierarchy_edge"."superseded_at" is null and "product_hierarchy_edge"."valid_to" is null;--> statement-breakpoint
 CREATE INDEX "product_hierarchy_edge_current_children" ON "product_hierarchy_edge" USING btree ("workspace_id","parent_id","superseded_at","valid_to");--> statement-breakpoint

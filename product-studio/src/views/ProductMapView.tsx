@@ -337,7 +337,6 @@ const Dossier = ({
       )}
       {canMutate && canonicalAliasId !== undefined ? (
         <RenameEntityForm
-          canonicalAliasId={canonicalAliasId}
           canonicalName={dossier.entity.canonicalName}
           entityId={dossier.entity.id}
           revision={dossier.revision}

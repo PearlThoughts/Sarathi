@@ -70,12 +70,10 @@ const requestChange = async (
 export const RenameEntityForm = ({
   entityId,
   canonicalName: initialCanonicalName,
-  canonicalAliasId,
   revision,
 }: {
   readonly entityId: string;
   readonly canonicalName: string;
-  readonly canonicalAliasId: string;
   readonly revision: number;
 }) => {
   const [canonicalName, setCanonicalName] = useState(initialCanonicalName);
@@ -90,7 +88,6 @@ export const RenameEntityForm = ({
       entityId,
       expectedRevision: revision,
       canonicalName,
-      canonicalAliasId,
       justification,
     });
     const response = result?.response;
