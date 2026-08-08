@@ -48,7 +48,15 @@ export type ProductHierarchyTraversalResult = {
   readonly truncated: boolean;
 };
 
+export type ProductModelRevisionRequest = {
+  readonly workspaceId: string;
+  readonly point: ProductModelReadPoint;
+};
+
 export type ProductModelGraphRepository = {
+  readonly resolveRevision: (
+    request: ProductModelRevisionRequest,
+  ) => Effect.Effect<number | undefined, ProductModelError | RepositoryError>;
   readonly traverseHierarchy: (
     request: ProductHierarchyTraversal,
   ) => Effect.Effect<ProductHierarchyTraversalResult, ProductModelError | RepositoryError>;

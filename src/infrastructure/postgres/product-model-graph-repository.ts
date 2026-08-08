@@ -10,6 +10,7 @@ import {
   type ProductLifecycle,
   ProductModelError,
   type ProductModelGraphRepository,
+  type ProductModelReadPoint,
   type ProductRegistration,
 } from "../../modules/product-model/index.ts";
 import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
@@ -38,8 +39,18 @@ type ProductHierarchyRow = {
   readonly depth: number;
 };
 
+type ProductRevisionRow = { readonly revision: number | null };
+
 const invalid = (message: string, reference?: string) =>
   Effect.fail(new ProductModelError("invalid_input", message, reference));
+
+const validateReadPoint = (point: ProductModelReadPoint) => {
+  if (point.kind === "revision" && (!Number.isSafeInteger(point.revision) || point.revision < 1))
+    return invalid("Historical revision must be a positive integer.");
+  if (point.kind !== "revision" && !Number.isFinite(Date.parse(point.at)))
+    return invalid("A valid product-model query instant is required.", point.at);
+  return Effect.void;
+};
 
 const validate = (request: ProductHierarchyTraversal) => {
   if (request.workspaceId.trim() === "")
@@ -64,14 +75,25 @@ const validate = (request: ProductHierarchyTraversal) => {
     );
   if (request.direction === "ancestors" && request.rootEntityId === undefined)
     return invalid("Ancestor traversal requires a root entity ID.");
-  if (
-    request.point.kind === "revision" &&
-    (!Number.isSafeInteger(request.point.revision) || request.point.revision < 1)
-  )
-    return invalid("Historical revision must be a positive integer.");
-  if (request.point.kind !== "revision" && !Number.isFinite(Date.parse(request.point.at)))
-    return invalid("A valid product-model query instant is required.", request.point.at);
-  return Effect.void;
+  return validateReadPoint(request.point);
+};
+
+export const buildProductModelRevisionQuery = (
+  workspaceId: string,
+  point: ProductModelReadPoint,
+): SQL<ProductRevisionRow> => {
+  const pointAt = point.kind === "revision" ? null : point.at;
+  const pointRevision = point.kind === "revision" ? point.revision : null;
+  return sql<ProductRevisionRow>`
+    select max(revision)::integer as revision
+    from product_revision
+    where workspace_id = ${workspaceId}
+      and (
+        (${point.kind} = 'revision' and revision = ${pointRevision})
+        or (${point.kind} = 'current' and recorded_at <= ${pointAt}::timestamptz)
+        or (${point.kind} = 'valid_time' and valid_from <= ${pointAt}::timestamptz)
+      )
+  `;
 };
 
 export const buildProductHierarchyTraversalQuery = (
@@ -118,6 +140,7 @@ export const buildProductHierarchyTraversalQuery = (
         and (
           (${pointKind} = 'current'
             and state.superseded_at is null
+            and state.recorded_at <= ${pointAt}::timestamptz
             and state.valid_from <= ${pointAt}::timestamptz
             and (state.valid_to is null or state.valid_to > ${pointAt}::timestamptz))
           or (${pointKind} = 'valid_time'
@@ -148,6 +171,7 @@ export const buildProductHierarchyTraversalQuery = (
         and (
           (${pointKind} = 'current'
             and edge.superseded_at is null
+            and edge.recorded_at <= ${pointAt}::timestamptz
             and edge.valid_from <= ${pointAt}::timestamptz
             and (edge.valid_to is null or edge.valid_to > ${pointAt}::timestamptz))
           or (${pointKind} = 'valid_time'
@@ -246,6 +270,22 @@ const toNode = (row: ProductHierarchyRow): ProductHierarchyNode => ({
 export const createPostgresProductModelGraphRepository = (
   database: KnowledgePostgresDatabase,
 ): ProductModelGraphRepository => ({
+  resolveRevision: ({ workspaceId, point }) =>
+    Effect.gen(function* () {
+      if (workspaceId.trim() === "")
+        return yield* invalid("A workspace is required for product revision resolution.");
+      yield* validateReadPoint(point);
+      const result = yield* Effect.tryPromise({
+        try: () => database.execute(buildProductModelRevisionQuery(workspaceId, point)),
+        catch: () =>
+          new RepositoryError({
+            message: "Product revision resolution failed.",
+            operation: "product-model-resolve-revision",
+          }),
+      });
+      const row = result.rows[0] as ProductRevisionRow | undefined;
+      return row?.revision ?? undefined;
+    }),
   traverseHierarchy: (request) =>
     Effect.gen(function* () {
       yield* validate(request);

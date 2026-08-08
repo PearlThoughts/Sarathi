@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { KnowledgePostgresDatabase } from "../src/infrastructure/postgres/knowledge-migrations.ts";
 import {
   buildProductHierarchyTraversalQuery,
+  buildProductModelRevisionQuery,
   createPostgresProductModelGraphRepository,
 } from "../src/infrastructure/postgres/product-model-graph-repository.ts";
 import { parseProductEntityId } from "../src/modules/product-model/index.ts";
@@ -27,12 +28,33 @@ const request = () => ({
 });
 
 describe("PostgreSQL product-model graph repository", () => {
+  it("resolves current and historical workspace revisions with bound parameters", () => {
+    const dialect = new PgDialect();
+    const current = dialect.sqlToQuery(
+      buildProductModelRevisionQuery(workspaceId, {
+        kind: "current",
+        at: "2026-01-02T00:00:00.000Z",
+      }),
+    );
+    const historical = dialect.sqlToQuery(
+      buildProductModelRevisionQuery(workspaceId, { kind: "revision", revision: 7 }),
+    );
+
+    expect(current.sql).toContain("select max(revision)::integer as revision");
+    expect(current.sql).toContain("recorded_at <= $");
+    expect(current.params).toContain("2026-01-02T00:00:00.000Z");
+    expect(historical.sql).toContain("revision = $");
+    expect(historical.params).toContain(7);
+  });
+
   it("injects temporal and row-visibility predicates before bounded recursive traversal", () => {
     const compiled = new PgDialect().sqlToQuery(buildProductHierarchyTraversalQuery(request()));
 
     expect(compiled.sql).toContain("with recursive selected_revision");
     expect(compiled.sql).toContain("state.workspace_id = $");
     expect(compiled.sql).toContain("edge.workspace_id = $");
+    expect(compiled.sql).toContain("state.recorded_at <= $");
+    expect(compiled.sql).toContain("edge.recorded_at <= $");
     expect(compiled.sql).toMatch(/state\.audience \?\| array\[\$\d+, \$\d+\]::text\[\]/);
     expect(compiled.sql).toContain("case state.sensitivity");
     expect(compiled.sql).toContain("inner join visible_state child");
