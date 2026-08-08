@@ -1,18 +1,22 @@
 import { Effect } from "effect";
 import {
+  normalizeProductAlias,
   type ProductEntity,
   type ProductEntityAttachment,
   type ProductEntityId,
   type ProductHierarchyEdge,
   type ProductIdentityEvent,
   type ProductIdentityEventType,
+  type ProductLifecycle,
   type ProductModel,
   type ProductModelChangeContext,
   ProductModelError,
   type ProductModelErrorCode,
+  type ProductRegistration,
   type ProductRelation,
   type ProductRelationEndpoint,
   type ProductRevisionEventType,
+  type ProductSplitReferenceKind,
   productRelationPolicies,
 } from "./product-model.ts";
 
@@ -88,6 +92,7 @@ const nextBase = (model: ProductModel) => ({
   variants: model.variants,
   attachments: model.attachments,
   redirects: model.redirects,
+  orphans: model.orphans,
 });
 
 const endpointKey = (endpoint: ProductRelationEndpoint) =>
@@ -329,3 +334,359 @@ export const mergeProductEntities = (
   input: { readonly sourceIds: readonly ProductEntityId[]; readonly survivorId: ProductEntityId },
   context: ProductModelChangeContext,
 ) => evolveToSurvivor(model, input.sourceIds, input.survivorId, context, "merged");
+
+export type SplitProductEntityTarget = {
+  readonly id: ProductEntityId;
+  readonly canonicalName: string;
+  readonly canonicalAliasId: string;
+  readonly description?: string | undefined;
+  readonly registration: ProductRegistration;
+  readonly lifecycle: ProductLifecycle;
+  readonly sensitivity: ProductEntity["sensitivity"];
+  readonly audience: readonly string[];
+};
+export type ProductSplitReferenceDisposition = {
+  readonly kind: ProductSplitReferenceKind;
+  readonly referenceId: string;
+} & (
+  | { readonly action: "target"; readonly targetId: ProductEntityId }
+  | { readonly action: "retain" }
+  | { readonly action: "orphan" }
+);
+export type SplitProductEntityInput = {
+  readonly sourceId: ProductEntityId;
+  readonly targets: readonly SplitProductEntityTarget[];
+  readonly sourceDisposition:
+    | { readonly kind: "redirect"; readonly targetId: ProductEntityId }
+    | { readonly kind: "contested_shell" };
+  readonly references: readonly ProductSplitReferenceDisposition[];
+};
+
+const referenceKey = (kind: ProductSplitReferenceKind, referenceId: string) =>
+  `${kind}:${referenceId}`;
+const activeAt = (
+  value: {
+    readonly registration: ProductRegistration;
+    readonly validFrom: string;
+    readonly validTo?: string | undefined;
+  },
+  instant: number,
+) =>
+  value.registration !== "superseded" &&
+  Date.parse(value.validFrom) <= instant &&
+  (value.validTo === undefined || Date.parse(value.validTo) > instant);
+
+const splitReferences = (
+  model: ProductModel,
+  sourceId: ProductEntityId,
+  validAt: string,
+): readonly { readonly kind: ProductSplitReferenceKind; readonly referenceId: string }[] => {
+  const instant = Date.parse(validAt);
+  return [
+    ...model.aliases
+      .filter(({ entityId }) => entityId === sourceId)
+      .map(({ id }) => ({ kind: "alias" as const, referenceId: id })),
+    ...model.variants
+      .filter((variant) => variant.baseEntityId === sourceId && activeAt(variant, instant))
+      .map(({ id }) => ({ kind: "variant" as const, referenceId: id })),
+    ...model.relations.flatMap((relation) => {
+      if (!activeAt(relation, instant)) return [];
+      const references: { kind: ProductSplitReferenceKind; referenceId: string }[] = [];
+      if (relation.source.kind === "entity" && relation.source.entityId === sourceId)
+        references.push({ kind: "relation_source", referenceId: relation.id });
+      if (relation.target.kind === "entity" && relation.target.entityId === sourceId)
+        references.push({ kind: "relation_target", referenceId: relation.id });
+      return references;
+    }),
+    ...model.attachments
+      .filter(
+        (attachment) =>
+          attachment.entityId === sourceId && attachment.registration !== "superseded",
+      )
+      .map(({ id }) => ({ kind: "attachment" as const, referenceId: id })),
+    ...model.hierarchy
+      .filter(({ parentId }) => parentId === sourceId)
+      .filter(({ childId }) => {
+        const child = entityFor(model, childId);
+        return child !== undefined && activeEntity(child);
+      })
+      .map(({ childId }) => ({ kind: "child" as const, referenceId: childId })),
+  ];
+};
+
+export const splitProductEntity = (
+  model: ProductModel,
+  input: SplitProductEntityInput,
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    if (!validInstant(context.validFrom))
+      return yield* failure("invalid_input", "Split requires a valid business instant.");
+    const source = entityFor(model, input.sourceId);
+    if (source === undefined)
+      return yield* failure("entity_not_found", "Split source was not found.", input.sourceId);
+    if (!activeEntity(source) || model.redirects.some(({ fromId }) => fromId === input.sourceId))
+      return yield* failure("entity_retired", "Split source must be current and active.");
+    const targetIds = new Set(input.targets.map(({ id }) => id));
+    const aliasIds = new Set(input.targets.map(({ canonicalAliasId }) => canonicalAliasId));
+    const names = input.targets.map(({ canonicalName }) => normalizeProductAlias(canonicalName));
+    if (
+      input.targets.length < 2 ||
+      targetIds.size !== input.targets.length ||
+      aliasIds.size !== input.targets.length ||
+      names.some((name) => name === "") ||
+      new Set(names).size !== names.length ||
+      input.targets.some(
+        (target) =>
+          target.id === input.sourceId ||
+          !nonBlank(target.canonicalAliasId) ||
+          target.registration === "superseded" ||
+          target.lifecycle === "retired" ||
+          model.entities.some(({ id }) => id === target.id) ||
+          model.aliases.some(({ id }) => id === target.canonicalAliasId) ||
+          model.aliases.some(
+            (alias) =>
+              alias.normalizedValue === normalizeProductAlias(target.canonicalName) &&
+              entityFor(model, alias.entityId)?.kind === source.kind,
+          ),
+      )
+    )
+      return yield* failure("identity_incompatible", "Split targets are invalid.", input.sourceId);
+    const redirectTargetId =
+      input.sourceDisposition.kind === "redirect" ? input.sourceDisposition.targetId : undefined;
+    if (
+      redirectTargetId !== undefined &&
+      (!targetIds.has(redirectTargetId) ||
+        (source.registration === "ratified" &&
+          input.targets.find(({ id }) => id === redirectTargetId)?.registration !== "ratified"))
+    )
+      return yield* failure("identity_incompatible", "Split redirect target is invalid.");
+    const required = splitReferences(model, input.sourceId, context.validFrom);
+    const requiredKeys = new Set(
+      required.map(({ kind, referenceId }) => referenceKey(kind, referenceId)),
+    );
+    const suppliedKeys = input.references.map(({ kind, referenceId }) =>
+      referenceKey(kind, referenceId),
+    );
+    if (
+      new Set(suppliedKeys).size !== suppliedKeys.length ||
+      requiredKeys.size !== suppliedKeys.length ||
+      suppliedKeys.some((key) => !requiredKeys.has(key)) ||
+      input.references.some(
+        (reference) =>
+          (reference.action === "target" && !targetIds.has(reference.targetId)) ||
+          (reference.action === "retain" && input.sourceDisposition.kind === "redirect"),
+      ) ||
+      (input.sourceDisposition.kind === "contested_shell" &&
+        !input.references.some(({ kind, action }) => kind === "alias" && action === "retain"))
+    )
+      return yield* failure(
+        "disposition_incomplete",
+        "Every active split reference requires one valid disposition.",
+        input.sourceId,
+      );
+    const targetById = new Map(input.targets.map((target) => [target.id, target]));
+    for (const reference of input.references) {
+      if (reference.action !== "target") continue;
+      const target = targetById.get(reference.targetId);
+      const ratifiedReference =
+        (reference.kind === "variant" &&
+          model.variants.find(({ id }) => id === reference.referenceId)?.registration ===
+            "ratified") ||
+        ((reference.kind === "relation_source" || reference.kind === "relation_target") &&
+          model.relations.find(({ id }) => id === reference.referenceId)?.registration ===
+            "ratified") ||
+        (reference.kind === "attachment" &&
+          model.attachments.find(({ id }) => id === reference.referenceId)?.registration ===
+            "ratified");
+      if (ratifiedReference && target?.registration !== "ratified")
+        return yield* failure(
+          "identity_incompatible",
+          "Ratified references require a ratified split target.",
+          reference.referenceId,
+        );
+    }
+    const revision = model.revision + 1;
+    const dispositions = new Map(
+      input.references.map((reference) => [
+        referenceKey(reference.kind, reference.referenceId),
+        reference,
+      ]),
+    );
+    const dispositionFor = (kind: ProductSplitReferenceKind, referenceId: string) =>
+      dispositions.get(referenceKey(kind, referenceId));
+    const targetFor = (reference: ProductSplitReferenceDisposition | undefined) =>
+      reference?.action === "target" ? reference.targetId : undefined;
+    const targetEntities: ProductEntity[] = input.targets.map((target) => ({
+      id: target.id,
+      workspaceId: model.workspaceId,
+      kind: source.kind,
+      canonicalName: target.canonicalName.trim(),
+      ...(target.description === undefined ? {} : { description: target.description }),
+      registration: target.registration,
+      lifecycle: target.lifecycle,
+      sensitivity: target.sensitivity,
+      audience: [...new Set(target.audience)],
+      createdRevision: revision,
+      updatedRevision: revision,
+    }));
+    const aliases = model.aliases.flatMap((alias) => {
+      if (alias.entityId !== input.sourceId) return [alias];
+      const disposition = dispositionFor("alias", alias.id);
+      if (disposition === undefined) return [alias];
+      if (disposition.action === "orphan") return [];
+      const targetId = targetFor(disposition);
+      return targetId === undefined
+        ? [alias]
+        : [
+            {
+              ...alias,
+              entityId: targetId,
+              kind: alias.kind === "canonical" ? ("former_name" as const) : alias.kind,
+            },
+          ];
+    });
+    const variants = model.variants.flatMap((variant) => {
+      if (variant.baseEntityId !== input.sourceId) return [variant];
+      const disposition = dispositionFor("variant", variant.id);
+      if (disposition?.action === "orphan") return [];
+      const targetId = targetFor(disposition);
+      return [targetId === undefined ? variant : { ...variant, baseEntityId: targetId }];
+    });
+    const relations = dedupeRelations(
+      model.relations.flatMap((relation) => {
+        const sourceReference =
+          relation.source.kind === "entity" && relation.source.entityId === input.sourceId
+            ? dispositionFor("relation_source", relation.id)
+            : undefined;
+        const targetReference =
+          relation.target.kind === "entity" && relation.target.entityId === input.sourceId
+            ? dispositionFor("relation_target", relation.id)
+            : undefined;
+        if (sourceReference?.action === "orphan" || targetReference?.action === "orphan") return [];
+        const sourceTarget = targetFor(sourceReference);
+        const targetTarget = targetFor(targetReference);
+        return [
+          {
+            ...relation,
+            source:
+              sourceTarget === undefined
+                ? relation.source
+                : { kind: "entity" as const, entityId: sourceTarget },
+            target:
+              targetTarget === undefined
+                ? relation.target
+                : { kind: "entity" as const, entityId: targetTarget },
+          },
+        ];
+      }),
+    );
+    if (hasCardinalityConflict(relations))
+      return yield* failure(
+        "identity_incompatible",
+        "Split disposition would violate relation cardinality.",
+        input.sourceId,
+      );
+    const attachments = model.attachments.flatMap((attachment) => {
+      if (attachment.entityId !== input.sourceId) return [attachment];
+      const disposition = dispositionFor("attachment", attachment.id);
+      if (disposition?.action === "orphan") return [];
+      const targetId = targetFor(disposition);
+      return [targetId === undefined ? attachment : { ...attachment, entityId: targetId }];
+    });
+    const sourceParentId = model.hierarchy.find(
+      ({ childId }) => childId === input.sourceId,
+    )?.parentId;
+    const hierarchy = model.hierarchy
+      .flatMap((edge): ProductHierarchyEdge[] => {
+        if (edge.childId === input.sourceId && input.sourceDisposition.kind === "redirect")
+          return [];
+        if (edge.parentId !== input.sourceId) return [edge];
+        const disposition = dispositionFor("child", edge.childId);
+        if (disposition?.action === "orphan") return [];
+        const targetId = targetFor(disposition);
+        return targetId === undefined
+          ? [edge]
+          : [{ ...edge, parentId: targetId, createdRevision: revision }];
+      })
+      .concat(
+        sourceParentId === undefined
+          ? []
+          : input.targets.map(({ id }) => ({
+              childId: id,
+              parentId: sourceParentId,
+              createdRevision: revision,
+            })),
+      );
+    const orphaned = input.references.filter(({ action }) => action === "orphan");
+    const sourceRegistration: ProductRegistration =
+      input.sourceDisposition.kind === "redirect" ? "superseded" : "contested";
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        entities: [
+          ...model.entities.map((entity) =>
+            entity.id === input.sourceId
+              ? { ...entity, registration: sourceRegistration, updatedRevision: revision }
+              : entity,
+          ),
+          ...targetEntities,
+        ],
+        aliases: [
+          ...aliases,
+          ...input.targets.map((target) => ({
+            id: target.canonicalAliasId,
+            entityId: target.id,
+            value: target.canonicalName.trim(),
+            normalizedValue: normalizeProductAlias(target.canonicalName),
+            kind: "canonical" as const,
+            createdRevision: revision,
+          })),
+        ],
+        hierarchy,
+        relations,
+        variants,
+        attachments,
+        redirects:
+          redirectTargetId === undefined
+            ? model.redirects
+            : [
+                ...model.redirects.map((redirect) =>
+                  redirect.toId === input.sourceId
+                    ? { ...redirect, toId: redirectTargetId }
+                    : redirect,
+                ),
+                {
+                  workspaceId: model.workspaceId,
+                  fromId: input.sourceId,
+                  toId: redirectTargetId,
+                  createdRevision: revision,
+                },
+              ],
+        orphans: [
+          ...model.orphans,
+          ...orphaned.map(({ kind, referenceId }) => ({
+            workspaceId: model.workspaceId,
+            sourceEntityId: input.sourceId,
+            kind,
+            referenceId,
+            createdRevision: revision,
+          })),
+        ],
+      },
+      {
+        type: "split",
+        entityIds: [input.sourceId, ...input.targets.map(({ id }) => id)],
+        details: {
+          sourceDisposition: input.sourceDisposition.kind,
+          targetIds: input.targets.map(({ id }) => id),
+          orphaned: orphaned.map(({ kind, referenceId }) => referenceKey(kind, referenceId)),
+          retained: input.references
+            .filter(({ action }) => action === "retain")
+            .map(({ kind, referenceId }) => referenceKey(kind, referenceId)),
+        },
+      },
+    );
+  });

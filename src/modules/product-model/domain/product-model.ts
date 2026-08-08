@@ -134,12 +134,28 @@ export type ProductRedirect = {
   readonly createdRevision: number;
 };
 
+export type ProductSplitReferenceKind =
+  | "alias"
+  | "variant"
+  | "relation_source"
+  | "relation_target"
+  | "attachment"
+  | "child";
+export type ProductReferenceOrphan = {
+  readonly workspaceId: string;
+  readonly sourceEntityId: ProductEntityId;
+  readonly kind: ProductSplitReferenceKind;
+  readonly referenceId: string;
+  readonly createdRevision: number;
+};
+
 export type ProductIdentityEventType =
   | "registered"
   | "renamed"
   | "moved"
   | "redirected"
   | "merged"
+  | "split"
   | "retired"
   | "superseded";
 export type ProductRevisionEventType =
@@ -180,6 +196,7 @@ export type ProductModel = {
   readonly variants: readonly ProductVariant[];
   readonly attachments: readonly ProductEntityAttachment[];
   readonly redirects: readonly ProductRedirect[];
+  readonly orphans: readonly ProductReferenceOrphan[];
   readonly revisions: readonly ProductRevision[];
   readonly identityEvents: readonly ProductIdentityEvent[];
 };
@@ -203,6 +220,7 @@ export type ProductModelErrorCode =
   | "redirect_conflict"
   | "redirect_cycle"
   | "identity_incompatible"
+  | "disposition_incomplete"
   | "relation_conflict"
   | "relation_incompatible"
   | "variant_conflict"
@@ -259,6 +277,7 @@ export const createProductModel = (workspaceId: string): ProductModel => ({
   variants: [],
   attachments: [],
   redirects: [],
+  orphans: [],
   revisions: [],
   identityEvents: [],
 });
@@ -347,6 +366,7 @@ const nextBase = (model: ProductModel) => ({
   variants: model.variants,
   attachments: model.attachments,
   redirects: model.redirects,
+  orphans: model.orphans,
 });
 
 const aliasConflict = (

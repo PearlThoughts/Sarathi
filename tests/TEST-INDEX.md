@@ -202,6 +202,13 @@
 - Scope: Opaque product attachments, merge reference transfer, canonical redirects, relation collapse, authority compatibility, and redirect-cycle rejection.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-split
+
+- Command: `bunx vitest run tests/product-model-split.test.ts`
+- Location: `tests/product-model-split.test.ts`
+- Scope: Complete split disposition across aliases, relation endpoints, variants, opaque references, and children, including orphan and contested-shell outcomes.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts`

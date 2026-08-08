@@ -193,6 +193,13 @@
       "description": "Opaque product attachments, merge reference transfer, canonical redirects, relation collapse, authority compatibility, and redirect-cycle rejection."
     },
     {
+      "id": "product-model-split",
+      "path": "tests/product-model-split.test.ts",
+      "command": "bunx vitest run tests/product-model-split.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Complete split disposition across aliases, relation endpoints, variants, opaque references, and children, including orphan and contested-shell outcomes."
+    },
+    {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",
