@@ -30,3 +30,9 @@ Do not create placeholder folders. A layer exists only when there is production 
 - Source-system inference is treated as evidence; YAML overlays are explicit policy input, not enforcement.
 
 The enforceable contract is `bun run static:architecture`, which runs ArchContract and dependency-cruiser. Keep both gates green when moving code across layers.
+
+## Product-Model Fitness Rules
+
+Product-model persistence uses the Drizzle schema and typed query builders for ordinary reads, inserts, updates, and deletes. Raw SQL is reserved for relational operations that the normal builder API does not express usefully, such as bounded recursive CTE traversal, PostgreSQL advisory transaction locks, and aggregate reconstruction. A raw-SQL exception must stay in infrastructure, remain parameterized and bounded, and have a permanent query-shape or integration test.
+
+`tests/product-model-architecture-adherence.test.ts` turns these conventions into fail-loud Vitest checks. It verifies the domain/application/ports layout, keeps framework and infrastructure dependencies out of the core, prevents infrastructure leakage through the public barrel, rejects raw product-model DML, requires the Drizzle transaction boundary, keeps the delivery compatibility adapter on the existing report path, and requires every permanent product-model suite to be registered in `tests/manifest.json` and `tests/TEST-INDEX.md`.

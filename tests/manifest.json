@@ -200,6 +200,13 @@
       "description": "Executable product-model convention checks for bounded-context layout, domain and framework separation, public-barrel hygiene, typed Drizzle DML, explicit transactions, and permanent test registration."
     },
     {
+      "id": "product-model-delivery-projection",
+      "path": "tests/product-model-delivery-projection.test.ts",
+      "command": "bunx vitest run tests/product-model-delivery-projection.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Authorization-first projection of ratified registry identity into the existing delivery CapabilityLedger, explicit legacy alias migration, bounded safe failure, and unchanged report-path delegation."
+    },
+    {
       "id": "product-model-authorized-queries",
       "path": "tests/product-model-queries.test.ts",
       "command": "bunx vitest run tests/product-model-queries.test.ts",

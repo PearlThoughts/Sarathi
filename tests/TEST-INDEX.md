@@ -209,6 +209,13 @@
 - Scope: Executable adherence to the preferred domain-first directory layout, framework-free domain/application/port core, infrastructure-free public barrel, typed Drizzle DML, explicit PostgreSQL transaction boundary, and complete registration of permanent product-model Vitest suites.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-delivery-projection
+
+- Command: `bunx vitest run tests/product-model-delivery-projection.test.ts`
+- Location: `tests/product-model-delivery-projection.test.ts`
+- Scope: Authorization-first projection of ratified registry identities into the existing delivery CapabilityLedger, explicit legacy alias/correction migration, bounded fail-closed behavior, and delegation through the unchanged delivery assistant/report-composition path.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-authorized-queries
 
 - Command: `bunx vitest run tests/product-model-queries.test.ts`

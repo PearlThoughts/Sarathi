@@ -302,6 +302,12 @@ export type DeliveryAssistant = {
   ) => Effect.Effect<DeliveryAssistantAnswer, RepositoryError>;
 };
 
+export type CapabilityLedgerProjection = {
+  readonly project: (
+    request: DeliveryAssistantRequest,
+  ) => Effect.Effect<CapabilityLedger, RepositoryError>;
+};
+
 export type DeliveryReportingConfiguration = {
   readonly capabilityLedger?: CapabilityLedger | undefined;
 };
