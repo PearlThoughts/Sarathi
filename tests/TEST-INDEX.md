@@ -195,6 +195,13 @@
 - Scope: Deterministic qualifier composition, specificity and precedence, ambiguity rejection, immutable in-memory revision snapshots, workspace isolation, and valid-time history.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-identity-evolution
+
+- Command: `bunx vitest run tests/product-model-identity-evolution.test.ts`
+- Location: `tests/product-model-identity-evolution.test.ts`
+- Scope: Opaque product attachments, merge reference transfer, canonical redirects, relation collapse, authority compatibility, and redirect-cycle rejection.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts`

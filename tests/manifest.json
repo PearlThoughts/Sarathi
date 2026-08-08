@@ -186,6 +186,13 @@
       "description": "Deterministic variant composition, ambiguity rejection, immutable in-memory revision snapshots, and valid-time history coverage."
     },
     {
+      "id": "product-model-identity-evolution",
+      "path": "tests/product-model-identity-evolution.test.ts",
+      "command": "bunx vitest run tests/product-model-identity-evolution.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Opaque product attachments, merge reference transfer, canonical redirects, relation collapse, authority compatibility, and redirect-cycle rejection."
+    },
+    {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",
