@@ -176,7 +176,7 @@
       "path": "tests/product-model.test.ts",
       "command": "bunx vitest run tests/product-model.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Stable product identity, alias, single-parent hierarchy, kind, cycle, rename, and move coverage."
+      "description": "Stable product identity, aliases, hierarchy, registration, retirement, typed relation compatibility, rename, and move coverage."
     },
     {
       "id": "delivery-intelligence-application",
