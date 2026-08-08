@@ -193,6 +193,41 @@
       "description": "Workspace-scoped aggregate reconstruction, typed Drizzle DML enforcement, per-workspace transaction locking, optimistic concurrency, idempotent audit replay, temporal delta persistence, atomic revision/state/identity-event/audit/outbox writes, and transaction rollback coverage."
     },
     {
+      "id": "product-model-architecture-adherence",
+      "path": "tests/product-model-architecture-adherence.test.ts",
+      "command": "bunx vitest run tests/product-model-architecture-adherence.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Executable product-model convention checks for bounded-context layout, domain and framework separation, public-barrel hygiene, typed Drizzle DML, explicit transactions, and permanent test registration."
+    },
+    {
+      "id": "product-model-authorized-queries",
+      "path": "tests/product-model-queries.test.ts",
+      "command": "bunx vitest run tests/product-model-queries.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Authorization-before-access map, historical graph, subgraph, revision, relation-overlay, truncation, and unavailable-revision application coverage."
+    },
+    {
+      "id": "product-model-detail-queries",
+      "path": "tests/product-model-detail-queries.test.ts",
+      "command": "bunx vitest run tests/product-model-detail-queries.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Authorization-first dossier, coverage, availability, metadata-only proposal, deterministic variant, and safe-warning application coverage."
+    },
+    {
+      "id": "product-model-postgres-graph",
+      "path": "tests/product-model-postgres-graph-repository.test.ts",
+      "command": "bunx vitest run tests/product-model-postgres-graph-repository.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Workspace-, time-, audience-, sensitivity-, cycle-, depth-, node-, and relation-bounded PostgreSQL product graph traversal coverage."
+    },
+    {
+      "id": "product-model-postgres-detail",
+      "path": "tests/product-model-postgres-detail-repository.test.ts",
+      "command": "bunx vitest run tests/product-model-postgres-detail-repository.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Visibility-filtered PostgreSQL dossier and coverage query construction, metadata-only proposal projection, deterministic mapping, and bound validation coverage."
+    },
+    {
       "id": "product-model-variants-history",
       "path": "tests/product-model-variants-history.test.ts",
       "command": "bunx vitest run tests/product-model-variants-history.test.ts",

@@ -202,6 +202,41 @@
 - Scope: Workspace-scoped aggregate reconstruction, a source-level fitness test that rejects raw DML in favor of typed Drizzle schema builders, PostgreSQL advisory transaction locking, optimistic concurrency, idempotent audit replay and conflict detection, temporal delta persistence, atomic revision/state/identity-event/proposal/audit/outbox writes, and rollback on a late durable-write failure.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-architecture-adherence
+
+- Command: `bunx vitest run tests/product-model-architecture-adherence.test.ts`
+- Location: `tests/product-model-architecture-adherence.test.ts`
+- Scope: Executable adherence to the preferred domain-first directory layout, framework-free domain/application/port core, infrastructure-free public barrel, typed Drizzle DML, explicit PostgreSQL transaction boundary, and complete registration of permanent product-model Vitest suites.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-authorized-queries
+
+- Command: `bunx vitest run tests/product-model-queries.test.ts`
+- Location: `tests/product-model-queries.test.ts`
+- Scope: Authorization before revision or repository access, current and historical map envelopes, bounded ancestor/descendant subgraphs, induced relation overlays, truncation warnings, and unavailable revisions.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-detail-queries
+
+- Command: `bunx vitest run tests/product-model-detail-queries.test.ts`
+- Location: `tests/product-model-detail-queries.test.ts`
+- Scope: Authorization-first dossier, coverage, and availability services; metadata-only proposal exposure; deterministic variant resolution; and safe warnings without evidence expansion.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-postgres-graph
+
+- Command: `bunx vitest run tests/product-model-postgres-graph-repository.test.ts`
+- Location: `tests/product-model-postgres-graph-repository.test.ts`
+- Scope: Workspace-, recorded-time-, valid-time-, revision-, audience-, sensitivity-, cycle-, depth-, node-, and relation-bounded PostgreSQL product graph traversal.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-postgres-detail
+
+- Command: `bunx vitest run tests/product-model-postgres-detail-repository.test.ts`
+- Location: `tests/product-model-postgres-detail-repository.test.ts`
+- Scope: Visibility-filtered PostgreSQL dossier and coverage query construction, metadata-only proposal projection, deterministic row mapping, and fail-before-database bound validation.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-variants-history
 
 - Command: `bunx vitest run tests/product-model-variants-history.test.ts`
