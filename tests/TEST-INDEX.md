@@ -185,7 +185,7 @@
 
 - Command: `bunx vitest run tests/product-model.test.ts`
 - Location: `tests/product-model.test.ts`
-- Scope: Stable opaque product identity, alias history, single-parent hierarchy, kind compatibility, explicit skipped levels, cycle rejection, rename, and move.
+- Scope: Stable opaque product identity, alias history, single-parent hierarchy, registration, retirement, typed relation compatibility, cycle rejection, rename, and move.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## delivery-intelligence-application
