@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CapabilityLedger,
   createDeliveryAssistant,
+  createRegistryBackedDeliveryAssistant,
   type DeliveryAnswerComposer,
   type DeliveryQuerySource,
   type DeliveryQuestionIntent,
@@ -287,11 +288,14 @@ describe("AI Delivery Assistant capability matrix", () => {
     capabilityQuestions,
   )("answers $question through reusable query operations", async (row) => {
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({
-        sources: [genericSource],
-        answerComposer: reportComposer,
-        capabilityLedger,
-      }).answer({
+      createRegistryBackedDeliveryAssistant(
+        {
+          sources: [genericSource],
+          answerComposer: reportComposer,
+          capabilityLedger,
+        },
+        { project: () => Effect.succeed(capabilityLedger) },
+      ).answer({
         workspaceId: "workspace-atlas",
         actorId: "actor-atlas",
         maximumSensitivity: "internal",

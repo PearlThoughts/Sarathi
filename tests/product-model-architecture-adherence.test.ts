@@ -2,6 +2,7 @@ import { access, readdir, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const moduleRoot = new URL("../src/modules/product-model/", import.meta.url);
+const deliveryRoot = new URL("../src/modules/delivery-intelligence/", import.meta.url);
 const postgresRoot = new URL("../src/infrastructure/postgres/", import.meta.url);
 const testsRoot = new URL("./", import.meta.url);
 
@@ -57,6 +58,25 @@ describe("product-model architecture adherence", () => {
     expect(source).toContain('export * from "./domain/product-model.ts"');
     expect(source).toContain('export * from "./application/product-model-commands.ts"');
     expect(source).toContain('export * from "./ports/product-model-command-repository.ts"');
+  });
+
+  it("keeps delivery compatibility in the application layer and delegates the existing report path", async () => {
+    const projection = await readFile(
+      new URL("application/project-product-capability-ledger.ts", deliveryRoot),
+      "utf8",
+    );
+    const periodReport = await readFile(
+      new URL("domain/period-delivery-report.ts", deliveryRoot),
+      "utf8",
+    );
+
+    expect(projection).toContain('from "../../product-model/index.ts"');
+    expect(projection).not.toMatch(
+      /from\s+["']\.\.\/\.\.\/product-model\/(?:domain|application|ports)\//,
+    );
+    expect(projection).toContain("createDeliveryAssistant({ ...configuration, capabilityLedger })");
+    expect(projection).not.toContain("buildPeriodDeliveryReport");
+    expect(periodReport.match(/export const buildPeriodDeliveryReport\s*=/g)).toHaveLength(1);
   });
 
   it("uses typed Drizzle DML across product-model PostgreSQL adapters", async () => {

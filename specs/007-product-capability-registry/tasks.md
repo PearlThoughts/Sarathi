@@ -17,9 +17,9 @@ This task map defines later implementation slices. This documentation change doe
 
 ## Delivery Integration
 
-- [ ] T008 Project ratified registry IDs into the existing `CapabilityLedger`.
-- [ ] T009 Migrate legacy capability aliases and corrections without changing report population.
-- [ ] T010 Prove the governed period, sprint, leadership, citation, and safe-failure regressions.
+- [x] T008 Project ratified registry IDs into the existing `CapabilityLedger`.
+- [x] T009 Migrate legacy capability aliases and corrections without changing report population.
+- [x] T010 Prove the governed period, sprint, leadership, citation, and safe-failure regressions.
 
 ## Product Studio
 

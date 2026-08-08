@@ -24,6 +24,14 @@ export {
   parseDeliveryEvaluationSet,
   summarizeDeliveryEvaluation,
 } from "./application/delivery-evaluation.ts";
+export type {
+  ProductCapabilityCompatibilityMapping,
+  ProductCapabilityLedgerProjectionConfiguration,
+} from "./application/project-product-capability-ledger.ts";
+export {
+  createProductCapabilityLedgerProjection,
+  createRegistryBackedDeliveryAssistant,
+} from "./application/project-product-capability-ledger.ts";
 export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";
 export { parseAttributedDeliveryAssertion } from "./domain/attributed-assertion.ts";
 export type {
@@ -143,6 +151,7 @@ export {
   validateCapabilityLedger,
 } from "./domain/period-delivery-report.ts";
 export type {
+  CapabilityLedgerProjection,
   DeliveryActionTarget,
   DeliveryAnswerComposer,
   DeliveryAnswerComposition,
