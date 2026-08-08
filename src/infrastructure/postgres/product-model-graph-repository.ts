@@ -5,6 +5,7 @@ import type { SensitivityTier } from "../../domain/policy.ts";
 import {
   type ProductEntityId,
   type ProductEntityKind,
+  type ProductExternalReferenceKind,
   type ProductHierarchyNode,
   type ProductHierarchyTraversal,
   type ProductLifecycle,
@@ -12,6 +13,9 @@ import {
   type ProductModelGraphRepository,
   type ProductModelReadPoint,
   type ProductRegistration,
+  type ProductRelation,
+  type ProductRelationEndpoint,
+  type ProductRelationType,
 } from "../../modules/product-model/index.ts";
 import type { KnowledgePostgresDatabase } from "./knowledge-migrations.ts";
 
@@ -41,6 +45,27 @@ type ProductHierarchyRow = {
 
 type ProductRevisionRow = { readonly revision: number | null };
 
+type ProductRelationRow = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly relationType: ProductRelationType;
+  readonly sourceKind: "entity" | "external";
+  readonly sourceEntityId: string | null;
+  readonly sourceReferenceKind: ProductExternalReferenceKind;
+  readonly sourceReferenceId: string | null;
+  readonly targetKind: "entity" | "external";
+  readonly targetEntityId: string | null;
+  readonly targetReferenceKind: ProductExternalReferenceKind;
+  readonly targetReferenceId: string | null;
+  readonly registration: ProductRegistration;
+  readonly sourceClass: string;
+  readonly sensitivity: SensitivityTier;
+  readonly audience: readonly string[];
+  readonly validFrom: string;
+  readonly validTo: string | null;
+  readonly createdRevision: number;
+};
+
 const invalid = (message: string, reference?: string) =>
   Effect.fail(new ProductModelError("invalid_input", message, reference));
 
@@ -51,6 +76,22 @@ const validateReadPoint = (point: ProductModelReadPoint) => {
     return invalid("A valid product-model query instant is required.", point.at);
   return Effect.void;
 };
+
+const sqlTextArray = (values: readonly string[]) =>
+  values.length === 0
+    ? sql`array[]::text[]`
+    : sql`array[${sql.join(
+        values.map((value) => sql`${value}`),
+        sql`, `,
+      )}]::text[]`;
+
+const sqlUuidArray = (values: readonly ProductEntityId[]) =>
+  values.length === 0
+    ? sql`array[]::uuid[]`
+    : sql`array[${sql.join(
+        values.map((value) => sql`${value}::uuid`),
+        sql`, `,
+      )}]::uuid[]`;
 
 const validate = (request: ProductHierarchyTraversal) => {
   if (request.workspaceId.trim() === "")
@@ -104,13 +145,7 @@ export const buildProductHierarchyTraversalQuery = (
   const pointRevision = request.point.kind === "revision" ? request.point.revision : null;
   const rootEntityId = request.rootEntityId ?? null;
   const audienceIds = [...request.visibility.audienceIds];
-  const audienceArray =
-    audienceIds.length === 0
-      ? sql`array[]::text[]`
-      : sql`array[${sql.join(
-          audienceIds.map((audienceId) => sql`${audienceId}`),
-          sql`, `,
-        )}]::text[]`;
+  const audienceArray = sqlTextArray(audienceIds);
   const maximumSensitivity = sensitivityRank[request.visibility.maximumSensitivity];
 
   return sql<ProductHierarchyRow>`
@@ -253,6 +288,114 @@ export const buildProductHierarchyTraversalQuery = (
   `;
 };
 
+export const buildProductRelationReadQuery = (
+  request: Parameters<ProductModelGraphRepository["readRelations"]>[0],
+): SQL<ProductRelationRow> => {
+  const pointAt = request.point.kind === "revision" ? null : request.point.at;
+  const pointRevision = request.point.kind === "revision" ? request.point.revision : null;
+  const entityIds = sqlUuidArray(request.entityIds);
+  const audience = sqlTextArray(request.visibility.audienceIds);
+  const maximumSensitivity = sensitivityRank[request.visibility.maximumSensitivity];
+  return sql<ProductRelationRow>`
+    with selected_revision as (
+      select recorded_at
+      from product_revision
+      where workspace_id = ${request.workspaceId}
+        and revision = ${pointRevision}
+    )
+    select distinct on (relation.id)
+      relation.id,
+      relation.workspace_id as "workspaceId",
+      relation.relation_type as "relationType",
+      relation.source_kind as "sourceKind",
+      relation.source_entity_id as "sourceEntityId",
+      relation.source_reference_kind as "sourceReferenceKind",
+      relation.source_reference_id as "sourceReferenceId",
+      relation.target_kind as "targetKind",
+      relation.target_entity_id as "targetEntityId",
+      relation.target_reference_kind as "targetReferenceKind",
+      relation.target_reference_id as "targetReferenceId",
+      relation.registration,
+      relation.source_class as "sourceClass",
+      relation.sensitivity,
+      relation.audience,
+      relation.valid_from as "validFrom",
+      relation.valid_to as "validTo",
+      relation.created_revision as "createdRevision"
+    from product_relation relation
+    left join selected_revision selected on true
+    where relation.workspace_id = ${request.workspaceId}
+      and (
+        (${request.point.kind} = 'current'
+          and relation.superseded_at is null
+          and relation.recorded_at <= ${pointAt}::timestamptz
+          and relation.valid_from <= ${pointAt}::timestamptz
+          and (relation.valid_to is null or relation.valid_to > ${pointAt}::timestamptz))
+        or (${request.point.kind} = 'valid_time'
+          and relation.valid_from <= ${pointAt}::timestamptz
+          and (relation.valid_to is null or relation.valid_to > ${pointAt}::timestamptz))
+        or (${request.point.kind} = 'revision'
+          and selected.recorded_at is not null
+          and relation.recorded_at <= selected.recorded_at
+          and (relation.superseded_at is null or relation.superseded_at > selected.recorded_at))
+      )
+      and case relation.sensitivity
+        when 'public' then 0
+        when 'internal' then 1
+        when 'confidential' then 2
+        when 'restricted' then 3
+        else 4
+      end <= ${maximumSensitivity}
+      and (relation.audience = '[]'::jsonb or relation.audience ?| ${audience})
+      and (
+        (relation.source_kind = 'entity' and relation.target_kind = 'entity'
+          and relation.source_entity_id = any(${entityIds})
+          and relation.target_entity_id = any(${entityIds}))
+        or (relation.source_kind = 'entity' and relation.target_kind = 'external'
+          and relation.source_entity_id = any(${entityIds}))
+        or (relation.source_kind = 'external' and relation.target_kind = 'entity'
+          and relation.target_entity_id = any(${entityIds}))
+      )
+    order by relation.id, relation.created_revision desc
+    limit ${request.maximumRelations + 1}
+  `;
+};
+
+const endpoint = (
+  kind: ProductRelationRow["sourceKind"],
+  entityId: string | null,
+  referenceKind: ProductRelationRow["sourceReferenceKind"],
+  referenceId: string | null,
+): ProductRelationEndpoint =>
+  kind === "entity"
+    ? { kind, entityId: entityId as ProductEntityId }
+    : { kind, referenceKind, referenceId: referenceId ?? "" };
+
+const toRelation = (row: ProductRelationRow): ProductRelation => ({
+  id: row.id,
+  workspaceId: row.workspaceId,
+  type: row.relationType,
+  source: endpoint(
+    row.sourceKind,
+    row.sourceEntityId,
+    row.sourceReferenceKind,
+    row.sourceReferenceId,
+  ),
+  target: endpoint(
+    row.targetKind,
+    row.targetEntityId,
+    row.targetReferenceKind,
+    row.targetReferenceId,
+  ),
+  registration: row.registration,
+  sourceClass: row.sourceClass,
+  sensitivity: row.sensitivity,
+  audience: row.audience,
+  validFrom: row.validFrom,
+  ...(row.validTo === null ? {} : { validTo: row.validTo }),
+  createdRevision: row.createdRevision,
+});
+
 const toNode = (row: ProductHierarchyRow): ProductHierarchyNode => ({
   entityId: row.entityId as ProductEntityId,
   ...(row.parentId === null ? {} : { parentId: row.parentId as ProductEntityId }),
@@ -285,6 +428,35 @@ export const createPostgresProductModelGraphRepository = (
       });
       const row = result.rows[0] as ProductRevisionRow | undefined;
       return row?.revision ?? undefined;
+    }),
+  readRelations: (request) =>
+    Effect.gen(function* () {
+      if (request.workspaceId.trim() === "")
+        return yield* invalid("A workspace is required for product relation reads.");
+      yield* validateReadPoint(request.point);
+      if (
+        !Number.isSafeInteger(request.maximumRelations) ||
+        request.maximumRelations < 1 ||
+        request.maximumRelations > maximumTraversalNodes
+      )
+        return yield* invalid(
+          `Relation limit must be between 1 and ${maximumTraversalNodes}.`,
+          String(request.maximumRelations),
+        );
+      if (request.entityIds.length === 0) return { relations: [], truncated: false };
+      const result = yield* Effect.tryPromise({
+        try: () => database.execute(buildProductRelationReadQuery(request)),
+        catch: () =>
+          new RepositoryError({
+            message: "Product relation read failed.",
+            operation: "product-model-read-relations",
+          }),
+      });
+      const rows = result.rows as unknown as readonly ProductRelationRow[];
+      return {
+        relations: rows.slice(0, request.maximumRelations).map(toRelation),
+        truncated: rows.length > request.maximumRelations,
+      };
     }),
   traverseHierarchy: (request) =>
     Effect.gen(function* () {

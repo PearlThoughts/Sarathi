@@ -1,6 +1,10 @@
 import { Effect } from "effect";
 import type { RepositoryError, ValidationError } from "../../../domain/errors.ts";
-import type { ProductEntityId, ProductModelError } from "../domain/product-model.ts";
+import type {
+  ProductEntityId,
+  ProductModelError,
+  ProductRelation,
+} from "../domain/product-model.ts";
 import type {
   ProductHierarchyNode,
   ProductModelGraphRepository,
@@ -46,13 +50,19 @@ export type ProductGraphPage = {
   readonly truncated: boolean;
 };
 
+export type ProductRelationPage = {
+  readonly maximumRelations: number;
+  readonly truncated: boolean;
+};
+
 export type ProductGraphEnvelope = {
   readonly workspaceId: string;
   readonly asOf: string;
   readonly revision: number;
   readonly entities: readonly ProductHierarchyNode[];
-  readonly relations: readonly never[];
+  readonly relations: readonly ProductRelation[];
   readonly page: ProductGraphPage;
+  readonly relationPage: ProductRelationPage;
   readonly safeWarnings: readonly string[];
 };
 
@@ -63,10 +73,11 @@ export type ProductSubgraphEnvelope = {
   readonly rootEntityId: ProductEntityId;
   readonly ancestors: readonly ProductHierarchyNode[];
   readonly descendants: readonly ProductHierarchyNode[];
-  readonly relations: readonly never[];
+  readonly relations: readonly ProductRelation[];
   readonly pages: {
     readonly ancestors: ProductGraphPage;
     readonly descendants: ProductGraphPage;
+    readonly relations: ProductRelationPage;
   };
   readonly safeWarnings: readonly string[];
 };
@@ -75,12 +86,14 @@ export type ProductMapQuery = {
   readonly at: string;
   readonly maximumDepth?: number | undefined;
   readonly maximumNodes?: number | undefined;
+  readonly maximumRelations?: number | undefined;
 };
 
 export type ProductHistoricalGraphQuery = {
   readonly validAt: string;
   readonly maximumDepth?: number | undefined;
   readonly maximumNodes?: number | undefined;
+  readonly maximumRelations?: number | undefined;
 };
 
 export type ProductSubgraphQuery = {
@@ -89,6 +102,7 @@ export type ProductSubgraphQuery = {
   readonly maximumAncestorDepth?: number | undefined;
   readonly maximumDescendantDepth?: number | undefined;
   readonly maximumNodesPerDirection?: number | undefined;
+  readonly maximumRelations?: number | undefined;
 };
 
 export type ProductModelQueryService = {
@@ -162,6 +176,7 @@ export const createProductModelQueryService = (
     asOf: string,
     maximumDepth: number,
     maximumNodes: number,
+    maximumRelations: number,
   ) =>
     Effect.gen(function* () {
       yield* authorize(authorizer, context, operation);
@@ -174,14 +189,23 @@ export const createProductModelQueryService = (
         point,
         visibility: visibility(context),
       });
+      const relationResult = yield* repository.readRelations({
+        workspaceId: context.workspaceId,
+        entityIds: result.nodes.map(({ entityId }) => entityId),
+        maximumRelations,
+        point,
+        visibility: visibility(context),
+      });
+      const isTruncated = result.truncated || relationResult.truncated;
       return {
         workspaceId: context.workspaceId,
         asOf,
         revision,
         entities: result.nodes,
-        relations: [],
+        relations: relationResult.relations,
         page: page(maximumDepth, maximumNodes, result.truncated),
-        safeWarnings: warnings(result.truncated),
+        relationPage: { maximumRelations, truncated: relationResult.truncated },
+        safeWarnings: warnings(isTruncated),
       };
     });
 
@@ -189,6 +213,7 @@ export const createProductModelQueryService = (
     getProductMap: (context, query) => {
       const maximumDepth = query.maximumDepth ?? 4;
       const maximumNodes = query.maximumNodes ?? 250;
+      const maximumRelations = query.maximumRelations ?? 250;
       return graph(
         context,
         "get-map",
@@ -196,11 +221,13 @@ export const createProductModelQueryService = (
         query.at,
         maximumDepth,
         maximumNodes,
+        maximumRelations,
       );
     },
     getProductGraphAtTime: (context, query) => {
       const maximumDepth = query.maximumDepth ?? 4;
       const maximumNodes = query.maximumNodes ?? 250;
+      const maximumRelations = query.maximumRelations ?? 250;
       return graph(
         context,
         "get-historical-graph",
@@ -208,6 +235,7 @@ export const createProductModelQueryService = (
         query.validAt,
         maximumDepth,
         maximumNodes,
+        maximumRelations,
       );
     },
     getCapabilitySubgraph: (context, query) =>
@@ -223,6 +251,7 @@ export const createProductModelQueryService = (
         const maximumAncestorDepth = query.maximumAncestorDepth ?? 4;
         const maximumDescendantDepth = query.maximumDescendantDepth ?? 4;
         const maximumNodes = query.maximumNodesPerDirection ?? 100;
+        const maximumRelations = query.maximumRelations ?? 250;
         const [ancestors, descendants] = yield* Effect.all(
           [
             repository.traverseHierarchy({
@@ -246,7 +275,18 @@ export const createProductModelQueryService = (
           ],
           { concurrency: 2 },
         );
-        const isTruncated = ancestors.truncated || descendants.truncated;
+        const entityIds = [
+          ...new Set([...ancestors.nodes, ...descendants.nodes].map(({ entityId }) => entityId)),
+        ];
+        const relationResult = yield* repository.readRelations({
+          workspaceId: context.workspaceId,
+          entityIds,
+          maximumRelations,
+          point,
+          visibility: visibility(context),
+        });
+        const isTruncated =
+          ancestors.truncated || descendants.truncated || relationResult.truncated;
         return {
           workspaceId: context.workspaceId,
           asOf: query.at,
@@ -254,10 +294,11 @@ export const createProductModelQueryService = (
           rootEntityId: query.rootEntityId,
           ancestors: ancestors.nodes,
           descendants: descendants.nodes,
-          relations: [],
+          relations: relationResult.relations,
           pages: {
             ancestors: page(maximumAncestorDepth, maximumNodes, ancestors.truncated),
             descendants: page(maximumDescendantDepth, maximumNodes, descendants.truncated),
+            relations: { maximumRelations, truncated: relationResult.truncated },
           },
           safeWarnings: warnings(isTruncated),
         };
