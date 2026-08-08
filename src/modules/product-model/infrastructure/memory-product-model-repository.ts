@@ -18,7 +18,8 @@ const validateSnapshot = (model: ProductModel) =>
   model.relations.every(({ workspaceId }) => workspaceId === model.workspaceId) &&
   model.variants.every(({ workspaceId }) => workspaceId === model.workspaceId) &&
   model.attachments.every(({ workspaceId }) => workspaceId === model.workspaceId) &&
-  model.redirects.every(({ workspaceId }) => workspaceId === model.workspaceId);
+  model.redirects.every(({ workspaceId }) => workspaceId === model.workspaceId) &&
+  model.orphans.every(({ workspaceId }) => workspaceId === model.workspaceId);
 
 export const createInMemoryProductModelRepository = (): ProductModelRepository => {
   const snapshots = new Map<string, ProductModel[]>();

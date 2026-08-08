@@ -4,9 +4,9 @@ This task map defines later implementation slices. This documentation change doe
 
 ## Domain Foundation
 
-- [ ] T001 Add `product-model` domain contracts and public surface.
-- [ ] T002 Add hierarchy, relation, registration, variant, and identity-evolution invariants.
-- [ ] T003 Add deterministic fixtures for rename, move, merge, split, retirement, and historical queries.
+- [x] T001 Add `product-model` domain contracts and public surface.
+- [x] T002 Add hierarchy, relation, registration, variant, and identity-evolution invariants.
+- [x] T003 Add deterministic fixtures for rename, move, merge, split, retirement, and historical queries.
 
 ## Persistence And Application
 
