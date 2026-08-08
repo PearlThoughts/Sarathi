@@ -8,6 +8,8 @@ import {
   relationTypes,
 } from "../domain/product-model";
 import { createSarathiProductModelClientFromEnvironment } from "../server/sarathi-product-model-client";
+import { createUserBoundSarathiCredentialProvider } from "../server/user-bound-sarathi-credentials";
+import { RenameEntityForm } from "./RenameEntityForm";
 
 const scalar = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value;
@@ -15,6 +17,15 @@ const scalar = (value: string | string[] | undefined): string | undefined =>
 const boundedDepth = (value: string | undefined): number => {
   const parsed = Number(value ?? "4");
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 8 ? parsed : 4;
+};
+
+const mutationAvailable = (payloadUserId: string): boolean => {
+  try {
+    createUserBoundSarathiCredentialProvider().resolve(payloadUserId);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const labelForKind: Readonly<Record<ProductHierarchyNode["kind"], string>> = {
@@ -190,58 +201,75 @@ const RelationList = ({
   );
 };
 
-const Dossier = ({ dossier }: { readonly dossier: ProductDossier }) => (
-  <aside
-    aria-labelledby="dossier-title"
-    className="rounded-md border border-stone-300 bg-stone-950 p-6 text-stone-100 shadow-md"
-  >
-    <p className="font-mono text-xs text-teal-300">{labelForKind[dossier.entity.kind]} dossier</p>
-    <h2 className="mt-2 text-balance text-2xl font-semibold" id="dossier-title">
-      {dossier.entity.canonicalName}
-    </h2>
-    <p className="mt-3 text-pretty text-sm text-stone-300">
-      {dossier.entity.description ?? "No ratified description is available."}
-    </p>
-    <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
-      <div>
-        <dt className="text-stone-400">Registration</dt>
-        <dd className="mt-1 font-semibold">{dossier.entity.registration}</dd>
-      </div>
-      <div>
-        <dt className="text-stone-400">Lifecycle</dt>
-        <dd className="mt-1 font-semibold">{dossier.entity.lifecycle}</dd>
-      </div>
-      <div>
-        <dt className="text-stone-400">Aliases</dt>
-        <dd className="mt-1 font-mono tabular-nums">{dossier.aliases.length}</dd>
-      </div>
-      <div>
-        <dt className="text-stone-400">Variants</dt>
-        <dd className="mt-1 font-mono tabular-nums">{dossier.variants.length}</dd>
-      </div>
-      <div>
-        <dt className="text-stone-400">Claims</dt>
-        <dd className="mt-1 font-mono tabular-nums">{dossier.claims.length}</dd>
-      </div>
-      <div>
-        <dt className="text-stone-400">References</dt>
-        <dd className="mt-1 font-mono tabular-nums">{dossier.externalReferences.length}</dd>
-      </div>
-    </dl>
-    {dossier.aliases.length === 0 ? null : (
-      <div className="mt-6">
-        <h3 className="font-semibold">Known language</h3>
-        <ul className="mt-2 flex flex-wrap gap-2">
-          {dossier.aliases.map((alias) => (
-            <li className="rounded-full border border-stone-700 px-3 py-1 text-xs" key={alias.id}>
-              {alias.value}
-            </li>
-          ))}
-        </ul>
-      </div>
-    )}
-  </aside>
-);
+const Dossier = ({
+  dossier,
+  canMutate,
+}: {
+  readonly dossier: ProductDossier;
+  readonly canMutate: boolean;
+}) => {
+  const canonicalAliasId = dossier.aliases.find(({ kind }) => kind === "canonical")?.id;
+  return (
+    <aside
+      aria-labelledby="dossier-title"
+      className="rounded-md border border-stone-300 bg-stone-950 p-6 text-stone-100 shadow-md"
+    >
+      <p className="font-mono text-xs text-teal-300">{labelForKind[dossier.entity.kind]} dossier</p>
+      <h2 className="mt-2 text-balance text-2xl font-semibold" id="dossier-title">
+        {dossier.entity.canonicalName}
+      </h2>
+      <p className="mt-3 text-pretty text-sm text-stone-300">
+        {dossier.entity.description ?? "No ratified description is available."}
+      </p>
+      <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <dt className="text-stone-400">Registration</dt>
+          <dd className="mt-1 font-semibold">{dossier.entity.registration}</dd>
+        </div>
+        <div>
+          <dt className="text-stone-400">Lifecycle</dt>
+          <dd className="mt-1 font-semibold">{dossier.entity.lifecycle}</dd>
+        </div>
+        <div>
+          <dt className="text-stone-400">Aliases</dt>
+          <dd className="mt-1 font-mono tabular-nums">{dossier.aliases.length}</dd>
+        </div>
+        <div>
+          <dt className="text-stone-400">Variants</dt>
+          <dd className="mt-1 font-mono tabular-nums">{dossier.variants.length}</dd>
+        </div>
+        <div>
+          <dt className="text-stone-400">Claims</dt>
+          <dd className="mt-1 font-mono tabular-nums">{dossier.claims.length}</dd>
+        </div>
+        <div>
+          <dt className="text-stone-400">References</dt>
+          <dd className="mt-1 font-mono tabular-nums">{dossier.externalReferences.length}</dd>
+        </div>
+      </dl>
+      {dossier.aliases.length === 0 ? null : (
+        <div className="mt-6">
+          <h3 className="font-semibold">Known Language</h3>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {dossier.aliases.map((alias) => (
+              <li className="rounded-full border border-stone-700 px-3 py-1 text-xs" key={alias.id}>
+                {alias.value}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {canMutate && canonicalAliasId !== undefined ? (
+        <RenameEntityForm
+          canonicalAliasId={canonicalAliasId}
+          canonicalName={dossier.entity.canonicalName}
+          entityId={dossier.entity.id}
+          revision={dossier.revision}
+        />
+      ) : null}
+    </aside>
+  );
+};
 
 export const ProductMapView = async ({ initPageResult, searchParams }: AdminViewServerProps) => {
   if (!initPageResult.req.user)
@@ -253,6 +281,8 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
         </p>
       </main>
     );
+
+  const canMutate = mutationAvailable(String(initPageResult.req.user.id));
 
   const params = searchParams ?? {};
   const depth = boundedDepth(scalar(params.depth));
@@ -293,8 +323,9 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
                 Product Map
               </h1>
               <p className="mt-3 text-pretty text-stone-700">
-                A read-only view of ratified business identity. Delivery evidence and technical
-                artifacts remain supporting links, not product boundaries.
+                A governed view of ratified business identity. Authorized editors preview changes
+                before confirmation. Delivery evidence and technical artifacts remain supporting
+                links, not product boundaries.
               </p>
             </div>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-stone-300 bg-white p-4 text-sm shadow-sm">
@@ -430,7 +461,7 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
               </p>
             </aside>
           ) : (
-            <Dossier dossier={dossier} />
+            <Dossier canMutate={canMutate} dossier={dossier} />
           )}
         </div>
       </main>

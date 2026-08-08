@@ -95,6 +95,33 @@ describe("Product Studio architecture adherence", () => {
     expect(credentialProvider).not.toContain("SARATHI_PRODUCT_STUDIO_READ_TOKEN");
   });
 
+  it("reauthenticates every mutation request and preserves preview and stale recovery", async () => {
+    const route = await readFile(
+      new URL("src/app/studio-api/product-model-change/route.ts", studioRoot),
+      "utf8",
+    );
+    const handler = await readFile(
+      new URL("src/server/product-model-change-handler.ts", studioRoot),
+      "utf8",
+    );
+    const form = await readFile(new URL("src/views/RenameEntityForm.tsx", studioRoot), "utf8");
+
+    expect(route).toContain("payload.auth({ headers: request.headers })");
+    expect(route).toContain("createUserBoundSarathiCredentialProvider()");
+    expect(route).not.toContain("SARATHI_PRODUCT_STUDIO_READ_TOKEN");
+    expect(handler.indexOf("dependencies.authenticate(request)")).toBeLessThan(
+      handler.indexOf("dependencies.credentials.resolve(user.id)"),
+    );
+    expect(handler.indexOf("dependencies.credentials.resolve(user.id)")).toBeLessThan(
+      handler.indexOf("dependencies.clientFor(credential)"),
+    );
+    expect(form).toContain("Preview Rename");
+    expect(form).toContain("Confirm Rename");
+    expect(form).toContain("hiddenEntityImpactCount > 0");
+    expect(form).toContain('state.code === "stale_revision"');
+    expect(form).toContain("deliberately reapply or discard");
+  });
+
   it("provides a semantic non-graph reading path and runs in the root check", async () => {
     const view = await readFile(new URL("src/views/ProductMapView.tsx", studioRoot), "utf8");
     const rootPackage = await readFile(new URL("../package.json", studioRoot), "utf8");
