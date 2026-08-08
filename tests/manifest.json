@@ -200,6 +200,13 @@
       "description": "Executable product-model convention checks for bounded-context layout, domain and framework separation, public-barrel hygiene, typed Drizzle DML, explicit transactions, and permanent test registration."
     },
     {
+      "id": "product-model-api",
+      "path": "tests/product-model-api.test.ts",
+      "command": "bunx vitest run tests/product-model-api.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Versioned product-model HTTP read contracts, server-owned request context, bounded map/subgraph/availability parameters, safe errors, and Product Studio availability isolation from platform health."
+    },
+    {
       "id": "product-model-delivery-projection",
       "path": "tests/product-model-delivery-projection.test.ts",
       "command": "bunx vitest run tests/product-model-delivery-projection.test.ts",

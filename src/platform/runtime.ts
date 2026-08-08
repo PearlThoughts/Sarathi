@@ -8,6 +8,7 @@ import {
   makeYamlWorkspaceOverlaySource,
 } from "../infrastructure/overlay/yaml-workspace-overlay.ts";
 import type { AuthorizationService, AuthService } from "../modules/identity-access/index.ts";
+import type { ProductModelApiDependencies } from "../modules/product-model/index.ts";
 import type { WorkspaceSourceSnapshot } from "../modules/workspace-model/contracts.ts";
 import type { WorkspaceOverlaySource } from "../modules/workspace-model/ports/workspace-overlay-source.ts";
 import type { SarathiConfig } from "./config.ts";
@@ -20,6 +21,7 @@ export type SarathiRuntime = {
   readonly auth: AuthService;
   readonly workspaceOverlay: WorkspaceOverlaySource;
   readonly authorization: AuthorizationService;
+  readonly productModelApi?: ProductModelApiDependencies | undefined;
   readonly clock: {
     readonly now: () => string;
   };
@@ -31,6 +33,7 @@ export type RuntimeOverrides = {
   readonly auth?: AuthService | undefined;
   readonly workspaceOverlay?: WorkspaceOverlaySource | undefined;
   readonly authorization?: AuthorizationService | undefined;
+  readonly productModelApi?: ProductModelApiDependencies | undefined;
   readonly clock?: { readonly now: () => string } | undefined;
 };
 
@@ -59,6 +62,7 @@ export const makeSarathiRuntime = (overrides: RuntimeOverrides = {}): SarathiRun
     auth: overrides.auth ?? makeAuthService(config),
     workspaceOverlay: overrides.workspaceOverlay ?? makeOverlaySource(config),
     authorization: overrides.authorization ?? makeInMemoryAuthorizationService(),
+    productModelApi: overrides.productModelApi,
     clock: overrides.clock ?? { now: () => new Date().toISOString() },
   };
 };
