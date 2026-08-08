@@ -105,6 +105,7 @@ export type ProductVariant = {
   readonly delta: Readonly<Record<string, ProductVariantValue>>;
   readonly precedence: number;
   readonly registration: ProductRegistration;
+  readonly sourceClass: string;
   readonly sensitivity: SensitivityTier;
   readonly audience: readonly string[];
   readonly validFrom: string;
@@ -1069,4 +1070,198 @@ export const addProductRelation = (
       },
       { type: "relation_added" },
     );
+  });
+
+export const productVariantAxes: readonly ProductVariantAxis[] = [
+  "client",
+  "tenant",
+  "brand",
+  "role",
+  "environment",
+  "version",
+  "build",
+  "feature_flag",
+];
+
+export type AddProductVariantInput = Omit<
+  ProductVariant,
+  "workspaceId" | "validFrom" | "createdRevision"
+>;
+
+export const addProductVariant = (
+  model: ProductModel,
+  input: AddProductVariantInput,
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    const entity = entityFor(model, input.baseEntityId);
+    if (entity === undefined)
+      return yield* failure(
+        "entity_not_found",
+        "Variant base entity was not found.",
+        input.baseEntityId,
+      );
+    if (!activeEntity(entity))
+      return yield* failure(
+        "entity_retired",
+        "A retired entity cannot receive a variant.",
+        input.baseEntityId,
+      );
+    if (input.registration === "ratified" && entity.registration !== "ratified")
+      return yield* failure(
+        "transition_invalid",
+        "A ratified variant requires a ratified base entity.",
+        input.baseEntityId,
+      );
+    const qualifierKeys = Object.keys(input.qualifiers);
+    const qualifiers = productVariantAxes.flatMap((axis) => {
+      const value = input.qualifiers[axis];
+      return value === undefined ? [] : [[axis, value.trim()] as const];
+    });
+    const fields = Object.entries(input.delta);
+    if (
+      !nonBlank(input.id) ||
+      !nonBlank(input.sourceClass) ||
+      input.registration === "superseded" ||
+      model.variants.some(({ id }) => id === input.id) ||
+      qualifierKeys.some((key) => !productVariantAxes.includes(key as ProductVariantAxis)) ||
+      qualifiers.length === 0 ||
+      qualifiers.some(([, value]) => !nonBlank(value)) ||
+      fields.length === 0 ||
+      fields.some(
+        ([field, value]) =>
+          !nonBlank(field) ||
+          value === undefined ||
+          (typeof value === "number" && !Number.isFinite(value)),
+      ) ||
+      !Number.isSafeInteger(input.precedence) ||
+      (input.validTo !== undefined &&
+        (!validInstant(input.validTo) ||
+          Date.parse(input.validTo) <= Date.parse(context.validFrom)))
+    )
+      return yield* failure("variant_conflict", "The product variant is invalid.", input.id);
+    const revision = model.revision + 1;
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        variants: [
+          ...model.variants,
+          {
+            ...input,
+            workspaceId: model.workspaceId,
+            qualifiers: Object.fromEntries(qualifiers),
+            audience: [...new Set(input.audience)],
+            validFrom: context.validFrom,
+            createdRevision: revision,
+          },
+        ],
+      },
+      { type: "variant_added" },
+    );
+  });
+
+export type ResolvedProductVariant = {
+  readonly entityId: ProductEntityId;
+  readonly qualifiers: Readonly<Partial<Record<ProductVariantAxis, string>>>;
+  readonly appliedVariantIds: readonly string[];
+  readonly appliedVariants: readonly {
+    readonly id: string;
+    readonly qualifiers: Readonly<Partial<Record<ProductVariantAxis, string>>>;
+    readonly fields: readonly string[];
+  }[];
+  readonly delta: Readonly<Record<string, ProductVariantValue>>;
+};
+
+export const resolveProductVariant = (
+  model: ProductModel,
+  entityId: ProductEntityId,
+  qualifiers: Readonly<Partial<Record<ProductVariantAxis, string>>>,
+  validAt: string,
+): Effect.Effect<ResolvedProductVariant, ProductModelError> =>
+  Effect.gen(function* () {
+    const entity = entityFor(model, entityId);
+    if (entity === undefined)
+      return yield* failure("entity_not_found", "Product entity was not found.", entityId);
+    if (!activeEntity(entity))
+      return yield* failure("entity_retired", "A retired entity has no current variant.", entityId);
+    if (entity.registration !== "ratified")
+      return yield* failure(
+        "transition_invalid",
+        "Variant resolution requires a ratified base entity.",
+        entityId,
+      );
+    const qualifierKeys = Object.keys(qualifiers);
+    const requested = Object.fromEntries(
+      productVariantAxes.flatMap((axis) => {
+        const value = qualifiers[axis];
+        return value === undefined ? [] : [[axis, value.trim()]];
+      }),
+    ) as Readonly<Partial<Record<ProductVariantAxis, string>>>;
+    if (
+      !validInstant(validAt) ||
+      qualifierKeys.some((key) => !productVariantAxes.includes(key as ProductVariantAxis)) ||
+      Object.values(requested).some((value) => !nonBlank(value))
+    )
+      return yield* failure("invalid_input", "Variant resolution input is invalid.");
+    const instant = Date.parse(validAt);
+    const applicable = model.variants.filter(
+      (variant) =>
+        variant.baseEntityId === entityId &&
+        variant.registration === "ratified" &&
+        Date.parse(variant.validFrom) <= instant &&
+        (variant.validTo === undefined || Date.parse(variant.validTo) > instant) &&
+        Object.entries(variant.qualifiers).every(
+          ([axis, value]) => requested[axis as ProductVariantAxis] === value,
+        ),
+    );
+    const selected = new Map<string, ProductVariant>();
+    const fields = [...new Set(applicable.flatMap((variant) => Object.keys(variant.delta)))].sort();
+    for (const field of fields) {
+      const candidates = applicable
+        .filter((variant) => field in variant.delta)
+        .sort(
+          (left, right) =>
+            Object.keys(right.qualifiers).length - Object.keys(left.qualifiers).length ||
+            right.precedence - left.precedence ||
+            left.id.localeCompare(right.id),
+        );
+      const winner = candidates[0];
+      if (winner === undefined) continue;
+      const specificity = Object.keys(winner.qualifiers).length;
+      const ties = candidates.filter(
+        (candidate) =>
+          Object.keys(candidate.qualifiers).length === specificity &&
+          candidate.precedence === winner.precedence,
+      );
+      if (ties.some((candidate) => candidate.delta[field] !== winner.delta[field]))
+        return yield* failure(
+          "variant_ambiguous",
+          "Equally applicable variants disagree on an overridden field.",
+          field,
+        );
+      selected.set(field, winner);
+    }
+    const applied = [...new Set(selected.values())].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+    return {
+      entityId,
+      qualifiers: requested,
+      appliedVariantIds: applied.map(({ id }) => id),
+      appliedVariants: applied.map((variant) => ({
+        id: variant.id,
+        qualifiers: variant.qualifiers,
+        fields: [...selected.entries()]
+          .filter(([, selectedVariant]) => selectedVariant.id === variant.id)
+          .map(([field]) => field),
+      })),
+      delta: Object.fromEntries(
+        [...selected.entries()].map(([field, variant]) => [
+          field,
+          variant.delta[field] as ProductVariantValue,
+        ]),
+      ),
+    };
   });

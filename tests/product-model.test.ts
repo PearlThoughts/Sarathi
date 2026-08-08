@@ -4,12 +4,7 @@ import {
   addProductRelation,
   attachProductEntityParent,
   changeProductEntityRegistration,
-  createProductModel,
   moveProductEntity,
-  type ProductEntityId,
-  type ProductEntityKind,
-  type ProductModel,
-  type ProductModelChangeContext,
   parseProductEntityId,
   productParentId,
   registerProductEntity,
@@ -17,75 +12,13 @@ import {
   resolveProductAlias,
   retireProductEntity,
 } from "../src/modules/product-model/index.ts";
-
-const ids = {
-  product: "10000000-0000-4000-8000-000000000001",
-  area: "20000000-0000-4000-8000-000000000002",
-  capabilityA: "30000000-0000-4000-8000-000000000003",
-  capabilityB: "40000000-0000-4000-8000-000000000004",
-  feature: "50000000-0000-4000-8000-000000000005",
-  extra: "60000000-0000-4000-8000-000000000006",
-  skipped: "70000000-0000-4000-8000-000000000007",
-} as const;
-
-const entityId = (value: string) => Effect.runSync(parseProductEntityId(value));
-const context = (sequence: number): ProductModelChangeContext => ({
-  eventId: `synthetic-event-${sequence}`,
-  actorId: "synthetic-product-owner",
-  validFrom: `2026-01-${String(sequence).padStart(2, "0")}T00:00:00.000Z`,
-  recordedAt: `2026-01-${String(sequence).padStart(2, "0")}T01:00:00.000Z`,
-});
-
-const register = (
-  model: ProductModel,
-  sequence: number,
-  id: string,
-  kind: ProductEntityKind,
-  canonicalName: string,
-  parentId?: ProductEntityId,
-  allowSkippedLevel = false,
-) =>
-  Effect.runPromise(
-    registerProductEntity(
-      model,
-      {
-        id: entityId(id),
-        kind,
-        canonicalName,
-        canonicalAliasId: `alias-${sequence}`,
-        registration: "candidate",
-        lifecycle: "planned",
-        sensitivity: "public",
-        audience: ["workspace-members"],
-        ...(parentId === undefined ? {} : { parentId }),
-        ...(allowSkippedLevel ? { allowSkippedLevel } : {}),
-      },
-      context(sequence),
-    ),
-  );
-
-const baseModel = async () => {
-  let model = createProductModel("synthetic-workspace");
-  model = await register(model, 1, ids.product, "product", "Workspace Suite");
-  model = await register(model, 2, ids.area, "area", "Content Operations", entityId(ids.product));
-  model = await register(model, 3, ids.capabilityA, "capability", "Publishing", entityId(ids.area));
-  model = await register(
-    model,
-    4,
-    ids.capabilityB,
-    "capability",
-    "Distribution",
-    entityId(ids.area),
-  );
-  return register(
-    model,
-    5,
-    ids.feature,
-    "feature",
-    "Scheduled Publishing",
-    entityId(ids.capabilityA),
-  );
-};
+import {
+  createBaseProductModelFixture as baseModel,
+  productChangeContext as context,
+  productEntityId as entityId,
+  productFixtureIds as ids,
+  registerFixtureProductEntity as register,
+} from "./fixtures/product-model-fixture.ts";
 
 const errorCode = async (effect: Effect.Effect<unknown, { readonly code: string }>) => {
   const result = await Effect.runPromise(Effect.either(effect));
@@ -374,5 +307,42 @@ describe("product model domain", () => {
         ),
       ),
     ).toBe("relation_incompatible");
+
+    const withThirdCapability = await register(
+      before,
+      6,
+      ids.extra,
+      "capability",
+      "Analytics",
+      entityId(ids.area),
+    );
+    const variantOf = await Effect.runPromise(
+      addProductRelation(
+        withThirdCapability,
+        {
+          ...common,
+          id: "synthetic-variant-of",
+          type: "variant_of",
+          source: { kind: "entity", entityId: capabilityA },
+          target: { kind: "entity", entityId: capabilityB },
+        },
+        context(7),
+      ),
+    );
+    expect(
+      await errorCode(
+        addProductRelation(
+          variantOf,
+          {
+            ...common,
+            id: "synthetic-second-variant-of",
+            type: "variant_of",
+            source: { kind: "entity", entityId: capabilityA },
+            target: { kind: "entity", entityId: entityId(ids.extra) },
+          },
+          context(8),
+        ),
+      ),
+    ).toBe("relation_conflict");
   });
 });

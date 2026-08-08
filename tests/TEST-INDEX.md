@@ -188,6 +188,13 @@
 - Scope: Stable opaque product identity, alias history, single-parent hierarchy, registration, retirement, typed relation compatibility, cycle rejection, rename, and move.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-variants-history
+
+- Command: `bunx vitest run tests/product-model-variants-history.test.ts`
+- Location: `tests/product-model-variants-history.test.ts`
+- Scope: Deterministic qualifier composition, specificity and precedence, ambiguity rejection, immutable in-memory revision snapshots, workspace isolation, and valid-time history.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts`
