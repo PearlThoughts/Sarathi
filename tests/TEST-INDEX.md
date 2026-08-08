@@ -188,6 +188,13 @@
 - Scope: Stable opaque product identity, alias history, single-parent hierarchy, registration, retirement, typed relation compatibility, cycle rejection, rename, and move.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-commands
+
+- Command: `bunx vitest run tests/product-model-commands.test.ts`
+- Location: `tests/product-model-commands.test.ts`
+- Scope: Authorization before repository access, side-effect-free preview, actor/workspace/policy/revision-bound short-lived preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay and conflict detection, atomic domain/revision/audit/identity-event/outbox commits, and rollback.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-variants-history
 
 - Command: `bunx vitest run tests/product-model-variants-history.test.ts`

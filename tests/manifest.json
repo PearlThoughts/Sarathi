@@ -179,6 +179,13 @@
       "description": "Stable product identity, aliases, hierarchy, registration, retirement, typed relation compatibility, rename, and move coverage."
     },
     {
+      "id": "product-model-commands",
+      "path": "tests/product-model-commands.test.ts",
+      "command": "bunx vitest run tests/product-model-commands.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Authorization-before-access, side-effect-free preview, bounded preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay, atomic domain/revision/audit/outbox commits, and rollback coverage."
+    },
+    {
       "id": "product-model-variants-history",
       "path": "tests/product-model-variants-history.test.ts",
       "command": "bunx vitest run tests/product-model-variants-history.test.ts",
