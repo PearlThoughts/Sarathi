@@ -216,6 +216,13 @@
 - Scope: Versioned Product Studio read APIs, server-resolved identity/context, bounded map/subgraph/availability inputs, safe error envelopes, and product-model availability isolation from platform health.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-studio-architecture-adherence
+
+- Command: `bunx vitest run tests/product-studio-architecture-adherence.test.ts`
+- Location: `tests/product-studio-architecture-adherence.test.ts`
+- Scope: Independent Payload persistence, migration-only schema evolution, API-only Sarathi access, read-only transport, accessible hierarchy/table alternatives, and root CI registration.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-delivery-projection
 
 - Command: `bunx vitest run tests/product-model-delivery-projection.test.ts`

@@ -207,6 +207,13 @@
       "description": "Versioned product-model HTTP read contracts, server-owned request context, bounded map/subgraph/availability parameters, safe errors, and Product Studio availability isolation from platform health."
     },
     {
+      "id": "product-studio-architecture-adherence",
+      "path": "tests/product-studio-architecture-adherence.test.ts",
+      "command": "bunx vitest run tests/product-studio-architecture-adherence.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Executable Product Studio convention checks for independent Payload persistence, migration-only schema evolution, API-only Sarathi access, read-only transport, accessible hierarchy/table alternatives, and root CI registration."
+    },
+    {
       "id": "product-model-delivery-projection",
       "path": "tests/product-model-delivery-projection.test.ts",
       "command": "bunx vitest run tests/product-model-delivery-projection.test.ts",
