@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -50,7 +51,7 @@ export const productEntityTable = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
-    uniqueIndex("product_entity_workspace_id_kind").on(table.workspaceId, table.id, table.kind),
+    unique("product_entity_workspace_id_kind").on(table.workspaceId, table.id, table.kind),
     foreignKey({
       columns: [table.workspaceId, table.createdRevision],
       foreignColumns: [productRevisionTable.workspaceId, productRevisionTable.revision],

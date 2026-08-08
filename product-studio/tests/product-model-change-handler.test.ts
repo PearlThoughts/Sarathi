@@ -39,7 +39,6 @@ const previewBody = {
   entityId,
   expectedRevision: 4,
   canonicalName: "Synthetic Capability",
-  canonicalAliasId: "alias-synthetic-command",
   justification: "The product owner approved the canonical name.",
 };
 
@@ -83,6 +82,10 @@ describe("Product Studio product-model change handler", () => {
         targetId: entityId,
         expectedRevision: 4,
         idempotencyKey: "product-studio-00000000-0000-4000-8000-000000000901",
+        payload: {
+          canonicalName: "Synthetic Capability",
+          canonicalAliasId: "product-studio-alias-00000000-0000-4000-8000-000000000901",
+        },
       }),
     );
     await expect(response.json()).resolves.toMatchObject({

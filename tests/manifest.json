@@ -214,6 +214,13 @@
       "description": "Executable product-model convention checks for bounded-context layout, domain and framework separation, public-barrel hygiene, typed Drizzle DML, explicit transactions, and permanent test registration."
     },
     {
+      "id": "product-model-runtime-composition",
+      "path": "tests/product-model-runtime-composition.test.ts",
+      "command": "bunx vitest run tests/product-model-runtime-composition.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Fail-closed runtime configuration, server-owned token principals, operation-scoped read and command authorization, HMAC preview binding, and authorization-before-database composition coverage."
+    },
+    {
       "id": "product-model-api",
       "path": "tests/product-model-api.test.ts",
       "command": "bunx vitest run tests/product-model-api.test.ts",

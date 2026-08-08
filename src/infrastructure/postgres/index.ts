@@ -4,6 +4,7 @@ export * from "./knowledge-migrations.ts";
 export * from "./knowledge-repository.ts";
 export * from "./knowledge-schema.ts";
 export * from "./knowledge-synchronization-control.ts";
+export * from "./product-model-command-repository.ts";
 export * from "./product-model-detail-repository.ts";
 export * from "./product-model-graph-repository.ts";
 export * from "./product-model-schema.ts";

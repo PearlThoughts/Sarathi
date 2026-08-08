@@ -9,10 +9,10 @@ const server = Bun.serve({
 });
 
 const keepAlive = setInterval(() => undefined, 60_000);
-const stopServer = (): never => {
+const stopServer = (): void => {
   clearInterval(keepAlive);
   server.stop(true);
-  process.exit(0);
+  void runtime.close().finally(() => process.exit(0));
 };
 
 process.on("SIGINT", stopServer);

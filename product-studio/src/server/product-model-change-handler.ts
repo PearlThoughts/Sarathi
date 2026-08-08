@@ -27,7 +27,6 @@ const previewRequestSchema = z
     entityId: z.uuid(),
     expectedRevision: z.number().int().nonnegative(),
     canonicalName: z.string().trim().min(1).max(240),
-    canonicalAliasId: z.string().trim().min(1).max(240),
     justification: z.string().trim().min(8).max(4_000),
   })
   .strict();
@@ -71,17 +70,18 @@ export const createProductModelChangeHandler =
       const input = requestSchema.parse(await request.json());
       const client = dependencies.clientFor(credential);
       if (input.action === "preview-rename") {
+        const changeId = dependencies.newId();
         const command: ProductStudioRenameCommand = {
           type: "RenameEntity",
           workspaceId: dependencies.workspaceId,
           targetId: input.entityId,
           expectedRevision: input.expectedRevision,
-          idempotencyKey: `product-studio-${dependencies.newId()}`,
+          idempotencyKey: `product-studio-${changeId}`,
           justification: input.justification,
           validFrom: dependencies.now(),
           payload: {
             canonicalName: input.canonicalName,
-            canonicalAliasId: input.canonicalAliasId,
+            canonicalAliasId: `product-studio-alias-${changeId}`,
           },
         };
         const preview = await client.previewRename(command);

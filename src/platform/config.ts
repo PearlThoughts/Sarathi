@@ -1,6 +1,37 @@
 import { Effect } from "effect";
+import { z } from "zod";
+import type { ModelEgressPolicy, SensitivityTier, TrustTier } from "../domain/policy.ts";
+import type {
+  ProductEntityId,
+  ProductModelCommandOperation,
+  ProductModelQueryOperation,
+} from "../modules/product-model/index.ts";
 
 export type PlatformEnvironment = "local" | "test" | "production";
+
+export type ProductModelPrincipalConfiguration = {
+  readonly accessToken: string;
+  readonly organizationId: string;
+  readonly workspaceId: string;
+  readonly actorId: string;
+  readonly trustTier: TrustTier;
+  readonly effectiveAudience: readonly string[];
+  readonly maximumSensitivity: SensitivityTier;
+  readonly modelEgress: ModelEgressPolicy;
+  readonly permittedCorpusScopes: readonly string[];
+  readonly surfaces: readonly ("api" | "product-studio")[];
+  readonly queryOperations: readonly ProductModelQueryOperation[];
+  readonly commandOperations: readonly ProductModelCommandOperation[];
+  readonly entityIds?: readonly ProductEntityId[] | undefined;
+  readonly allowHiddenImpacts: boolean;
+  readonly policyVersion: string;
+};
+
+export type ProductModelRuntimeConfiguration = {
+  readonly databaseUrl: string;
+  readonly previewSecret: string;
+  readonly principals: readonly ProductModelPrincipalConfiguration[];
+};
 
 export type SarathiConfig = {
   readonly serviceName: "sarathi";
@@ -9,6 +40,7 @@ export type SarathiConfig = {
     readonly port: number;
   };
   readonly overlayPath: string;
+  readonly productModel?: ProductModelRuntimeConfiguration | undefined;
   readonly auth:
     | {
         readonly provider: "better-auth-postgres";
@@ -19,6 +51,74 @@ export type SarathiConfig = {
     | {
         readonly provider: "static";
       };
+};
+
+const productModelPrincipalSchema = z
+  .object({
+    accessToken: z.string().min(16),
+    organizationId: z.string().min(1),
+    workspaceId: z.string().min(1),
+    actorId: z.string().min(1),
+    trustTier: z.enum(["guest", "member", "trusted", "maintainer", "admin"]),
+    effectiveAudience: z.array(z.string().min(1)),
+    maximumSensitivity: z.enum(["public", "internal", "confidential", "restricted"]),
+    modelEgress: z.enum(["allow", "redact", "approval-required", "block"]),
+    permittedCorpusScopes: z.array(z.string().min(1)),
+    surfaces: z.array(z.enum(["api", "product-studio"])).min(1),
+    queryOperations: z.array(
+      z.enum([
+        "get-map",
+        "get-subgraph",
+        "get-dossier",
+        "get-historical-graph",
+        "get-coverage",
+        "get-availability",
+        "list-proposals",
+      ]),
+    ),
+    commandOperations: z.array(z.enum(["preview-change", "execute-command"])),
+    entityIds: z.array(z.uuid()).optional(),
+    allowHiddenImpacts: z.boolean().default(false),
+    policyVersion: z.string().min(1),
+  })
+  .strict();
+
+const parseProductModelConfiguration = (
+  environment: Record<string, string | undefined>,
+): ProductModelRuntimeConfiguration | undefined => {
+  const databaseUrl = environment.SARATHI_PRODUCT_MODEL_DATABASE_URL;
+  const previewSecret = environment.SARATHI_PRODUCT_MODEL_PREVIEW_SECRET;
+  const serializedPrincipals = environment.SARATHI_PRODUCT_MODEL_PRINCIPALS_JSON;
+  if (
+    databaseUrl === undefined &&
+    previewSecret === undefined &&
+    serializedPrincipals === undefined
+  )
+    return undefined;
+  if (
+    databaseUrl === undefined ||
+    databaseUrl.trim() === "" ||
+    previewSecret === undefined ||
+    serializedPrincipals === undefined
+  )
+    throw new Error(
+      "Product-model runtime requires database URL, preview secret, and principal configuration.",
+    );
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(serializedPrincipals);
+  } catch {
+    throw new Error("SARATHI_PRODUCT_MODEL_PRINCIPALS_JSON must contain valid JSON.");
+  }
+  const principals = z.array(productModelPrincipalSchema).min(1).parse(decoded);
+  const identities = principals.map(({ workspaceId, actorId }) => `${workspaceId}\u0000${actorId}`);
+  if (new Set(identities).size !== identities.length)
+    throw new Error("Product-model principal workspace and actor identities must be unique.");
+  return {
+    databaseUrl,
+    previewSecret,
+    principals: principals as readonly ProductModelPrincipalConfiguration[],
+  };
 };
 
 const environmentFrom = (value: string | undefined): PlatformEnvironment => {
@@ -37,13 +137,15 @@ const authModeFrom = (value: string | undefined): "static" | "better-auth-postgr
   return undefined;
 };
 
-export const loadPlatformConfig = (): Effect.Effect<SarathiConfig> =>
+export const loadPlatformConfig = (
+  source: Record<string, string | undefined> = Bun.env,
+): Effect.Effect<SarathiConfig> =>
   Effect.sync(() => {
-    const environment = environmentFrom(Bun.env.SARATHI_ENVIRONMENT ?? Bun.env.NODE_ENV);
-    const authMode = authModeFrom(Bun.env.SARATHI_AUTH_MODE);
-    const databaseUrl = Bun.env.SARATHI_AUTH_DATABASE_URL;
-    const secret = Bun.env.SARATHI_AUTH_SECRET;
-    const baseUrl = Bun.env.SARATHI_PUBLIC_BASE_URL ?? "http://localhost:3000";
+    const environment = environmentFrom(source.SARATHI_ENVIRONMENT ?? source.NODE_ENV);
+    const authMode = authModeFrom(source.SARATHI_AUTH_MODE);
+    const databaseUrl = source.SARATHI_AUTH_DATABASE_URL;
+    const secret = source.SARATHI_AUTH_SECRET;
+    const baseUrl = source.SARATHI_PUBLIC_BASE_URL ?? "http://localhost:3000";
     const auth =
       authMode === "better-auth-postgres" ||
       (authMode === undefined && databaseUrl !== undefined && secret !== undefined)
@@ -72,9 +174,10 @@ export const loadPlatformConfig = (): Effect.Effect<SarathiConfig> =>
       serviceName: "sarathi",
       environment,
       http: {
-        port: Number.parseInt(Bun.env.PORT ?? "3000", 10),
+        port: Number.parseInt(source.PORT ?? "3000", 10),
       },
-      overlayPath: Bun.env.SARATHI_WORKSPACE_OVERLAY_PATH ?? "config/workspace.overlay.yaml",
+      overlayPath: source.SARATHI_WORKSPACE_OVERLAY_PATH ?? "config/workspace.overlay.yaml",
       auth,
+      productModel: parseProductModelConfiguration(source),
     };
   });

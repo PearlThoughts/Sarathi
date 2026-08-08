@@ -15,6 +15,7 @@ type SarathiClientConfiguration = {
   readonly workspaceId: string;
   readonly accessToken: string;
   readonly fetch?: Fetcher | undefined;
+  readonly now?: (() => Date) | undefined;
 };
 
 class SarathiProductModelClientError extends Error {
@@ -47,6 +48,7 @@ const createSarathiProductModelClient = (configuration: SarathiClientConfigurati
   const workspaceId = required("workspaceId", configuration.workspaceId);
   const accessToken = required("accessToken", configuration.accessToken);
   const request = configuration.fetch ?? fetch;
+  const now = configuration.now ?? (() => new Date());
 
   const read = async (path: string): Promise<unknown> => {
     const url = new URL(
@@ -73,12 +75,20 @@ const createSarathiProductModelClient = (configuration: SarathiClientConfigurati
       productMapSchema.parse(await read(`map?maximumDepth=${maximumDepth}`)),
     getDossier: async (entityId: string): Promise<ProductDossier> =>
       productDossierSchema.parse(await read(`entities/${encodeURIComponent(entityId)}`)),
-    getCoverage: async (maximumItems = 100): Promise<ProductCoverage> =>
-      productCoverageSchema.parse(await read(`coverage?maximumItems=${maximumItems}`)),
+    getCoverage: async (maximumItems = 100): Promise<ProductCoverage> => {
+      const staleBefore = new Date(now().getTime() - 90 * 24 * 60 * 60 * 1_000).toISOString();
+      return productCoverageSchema.parse(
+        await read(
+          `coverage?maximumItems=${maximumItems}&staleBefore=${encodeURIComponent(staleBefore)}`,
+        ),
+      );
+    },
   };
 };
 
-export const createSarathiProductModelClientFromEnvironment = () =>
+export const createSarathiProductModelClientFromEnvironment = (
+  now: () => Date = () => new Date(),
+) =>
   createSarathiProductModelClient({
     baseUrl: required("SARATHI_API_BASE_URL", process.env.SARATHI_API_BASE_URL),
     workspaceId: required(
@@ -89,4 +99,5 @@ export const createSarathiProductModelClientFromEnvironment = () =>
       "SARATHI_PRODUCT_STUDIO_READ_TOKEN",
       process.env.SARATHI_PRODUCT_STUDIO_READ_TOKEN,
     ),
+    now,
   });
