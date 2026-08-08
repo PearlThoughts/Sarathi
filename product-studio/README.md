@@ -20,7 +20,9 @@ The first view provides hierarchy, relation filtering, a full-path table, and do
 
 `SARATHI_PRODUCT_STUDIO_READ_TOKEN` is a server-only, read-only credential for the installed workspace. Its authorization should permit the versioned product-model map/dossier/subgraph/coverage/availability query surface only. It must not permit commands, evidence expansion, model egress, Teams delivery, synchronization control, or cross-workspace access.
 
-Governed mutation remains disabled in this checkpoint. It may be added only with a user-bound Sarathi identity, preview token, expected revision, idempotency key, justification, authorization recheck, audit, and stale-revision recovery.
+Governed mutation uses a separate user-bound credential provider and POST-only adapter. `SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON` maps an authenticated Payload user ID to a short-lived Sarathi actor credential and expiry. The provider fails closed for missing, malformed, unknown, or expired mappings. Production installations should replace the environment-backed provider with their OAuth/OIDC token broker while preserving the same per-user contract.
+
+The mutation adapter never reads `SARATHI_PRODUCT_STUDIO_READ_TOKEN`. Preview and execute require expected revision, stable idempotency key, justification, valid time, and a user-bound credential; execute additionally requires the short-lived preview token. UI mutation remains disabled until the preview, confirmation, and stale-revision recovery view is installed.
 
 ## Availability
 

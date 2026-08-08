@@ -75,6 +75,26 @@ describe("Product Studio architecture adherence", () => {
     expect(adapter).not.toMatch(/sql`|\.insert\(|\.update\(|\.delete\(/);
   });
 
+  it("separates user-bound mutation authority from the shared read token", async () => {
+    const mutationAdapter = await readFile(
+      new URL("src/server/sarathi-product-model-mutation-client.ts", studioRoot),
+      "utf8",
+    );
+    const credentialProvider = await readFile(
+      new URL("src/server/user-bound-sarathi-credentials.ts", studioRoot),
+      "utf8",
+    );
+
+    expect(mutationAdapter).toContain('method: "POST"');
+    expect(mutationAdapter).toContain('"changes/preview"');
+    expect(mutationAdapter).toContain('"commands"');
+    expect(mutationAdapter).not.toContain("SARATHI_PRODUCT_STUDIO_READ_TOKEN");
+    expect(mutationAdapter).not.toMatch(/sql`|\.insert\(|\.update\(|\.delete\(/);
+    expect(credentialProvider).toContain("SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON");
+    expect(credentialProvider).toContain("expiresAt");
+    expect(credentialProvider).not.toContain("SARATHI_PRODUCT_STUDIO_READ_TOKEN");
+  });
+
   it("provides a semantic non-graph reading path and runs in the root check", async () => {
     const view = await readFile(new URL("src/views/ProductMapView.tsx", studioRoot), "utf8");
     const rootPackage = await readFile(new URL("../package.json", studioRoot), "utf8");
