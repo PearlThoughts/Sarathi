@@ -1,6 +1,7 @@
 import type { AdminViewServerProps } from "payload";
 import type { ReactNode } from "react";
 import {
+  type ProductCoverage,
   type ProductDossier,
   type ProductHierarchyNode,
   type ProductMap,
@@ -201,6 +202,81 @@ const RelationList = ({
   );
 };
 
+const CoverageReview = ({ coverage }: { readonly coverage: ProductCoverage }) => (
+  <section aria-labelledby="coverage-heading">
+    <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <div>
+        <h2 className="scroll-mt-6 text-balance text-2xl font-semibold" id="coverage-heading">
+          Coverage Review
+        </h2>
+        <p className="mt-2 text-pretty text-sm text-stone-700">
+          Authorized metadata-only gaps for product-owner review. Evidence bodies are never shown.
+        </p>
+      </div>
+      <p className="font-mono text-sm text-stone-600 tabular-nums">
+        {coverage.items.length} review items
+      </p>
+    </div>
+    {coverage.items.length === 0 ? (
+      <p className="mt-4 rounded-md border border-stone-300 bg-white p-4 text-pretty text-sm text-stone-700 shadow-sm">
+        No authorized coverage gaps were returned for this workspace revision.
+      </p>
+    ) : (
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+        {coverage.items.map((item) => (
+          <li
+            className="rounded-md border border-stone-300 bg-white p-4 shadow-sm"
+            key={item.entityId}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <a
+                className="font-semibold text-stone-950 underline decoration-stone-400 underline-offset-4 hover:decoration-stone-950 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700"
+                href={`/admin/product-map?entity=${encodeURIComponent(item.entityId)}`}
+              >
+                {item.canonicalName}
+              </a>
+              <span className="font-mono text-xs text-stone-500">{labelForKind[item.kind]}</span>
+            </div>
+            <ul
+              aria-label={`Coverage flags for ${item.canonicalName}`}
+              className="mt-3 flex flex-wrap gap-2"
+            >
+              {item.flags.map((flag) => (
+                <li
+                  className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-mono text-xs text-amber-950"
+                  key={flag}
+                >
+                  {flag.replaceAll("_", " ")}
+                </li>
+              ))}
+            </ul>
+            <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <dt className="text-stone-500">Claims</dt>
+                <dd className="font-mono tabular-nums">{item.claimCount}</dd>
+              </div>
+              <div>
+                <dt className="text-stone-500">References</dt>
+                <dd className="font-mono tabular-nums">{item.referenceCount}</dd>
+              </div>
+              <div>
+                <dt className="text-stone-500">Variants</dt>
+                <dd className="font-mono tabular-nums">{item.variantCount}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    )}
+    {coverage.page.truncated ? (
+      <p className="mt-3 text-pretty text-sm text-amber-900" role="status">
+        Coverage results are bounded. Refine the review through Sarathi before making a product
+        decision.
+      </p>
+    ) : null}
+  </section>
+);
+
 const Dossier = ({
   dossier,
   canMutate,
@@ -291,7 +367,7 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
 
   try {
     const client = createSarathiProductModelClientFromEnvironment();
-    const map = await client.getMap(depth);
+    const [map, coverage] = await Promise.all([client.getMap(depth), client.getCoverage()]);
     const availableRelationTypes = relationTypes(map);
     const relationFilter = availableRelationTypes.includes(selectedRelation ?? "")
       ? selectedRelation
@@ -396,6 +472,18 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
                 {warning}
               </p>
             ))}
+
+            {coverage.safeWarnings.map((warning) => (
+              <p
+                className="rounded-md border border-amber-400 bg-amber-50 p-4 text-pretty text-sm text-amber-950"
+                key={warning}
+                role="status"
+              >
+                {warning}
+              </p>
+            ))}
+
+            <CoverageReview coverage={coverage} />
 
             {map.entities.length === 0 ? (
               <section className="rounded-md border border-stone-300 bg-white p-8 text-center shadow-sm">

@@ -1,7 +1,9 @@
 import "server-only";
 import {
+  type ProductCoverage,
   type ProductDossier,
   type ProductMap,
+  productCoverageSchema,
   productDossierSchema,
   productMapSchema,
 } from "../domain/product-model";
@@ -71,6 +73,8 @@ const createSarathiProductModelClient = (configuration: SarathiClientConfigurati
       productMapSchema.parse(await read(`map?maximumDepth=${maximumDepth}`)),
     getDossier: async (entityId: string): Promise<ProductDossier> =>
       productDossierSchema.parse(await read(`entities/${encodeURIComponent(entityId)}`)),
+    getCoverage: async (maximumItems = 100): Promise<ProductCoverage> =>
+      productCoverageSchema.parse(await read(`coverage?maximumItems=${maximumItems}`)),
   };
 };
 

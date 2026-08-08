@@ -124,11 +124,18 @@ describe("Product Studio architecture adherence", () => {
 
   it("provides a semantic non-graph reading path and runs in the root check", async () => {
     const view = await readFile(new URL("src/views/ProductMapView.tsx", studioRoot), "utf8");
+    const adapter = await readFile(
+      new URL("src/server/sarathi-product-model-client.ts", studioRoot),
+      "utf8",
+    );
     const rootPackage = await readFile(new URL("../package.json", studioRoot), "utf8");
     const testManifest = await readFile(new URL("../tests/manifest.json", studioRoot), "utf8");
 
     expect(view).toContain("<Hierarchy map={map} />");
     expect(view).toContain("<RegistryTable map={map} />");
+    expect(view).toContain("<CoverageReview coverage={coverage} />");
+    expect(view).toContain("Evidence bodies are never shown.");
+    expect(adapter).toContain("coverage?maximumItems=");
     expect(view).toContain('<table className="w-full border-collapse text-left text-sm">');
     expect(view).not.toContain("<canvas");
     expect(rootPackage).toContain('"check:product-studio"');

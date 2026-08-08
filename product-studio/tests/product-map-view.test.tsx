@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getMap = vi.fn();
 const getDossier = vi.fn();
+const getCoverage = vi.fn();
 
 vi.mock("server-only", () => ({}));
 vi.mock("../src/server/sarathi-product-model-client", () => ({
-  createSarathiProductModelClientFromEnvironment: () => ({ getDossier, getMap }),
+  createSarathiProductModelClientFromEnvironment: () => ({ getCoverage, getDossier, getMap }),
 }));
 
 const rootId = "00000000-0000-4000-8000-000000000301";
@@ -81,6 +82,26 @@ const dossier = {
   safeWarnings: [],
 };
 
+const coverage = {
+  workspaceId: "workspace-synthetic",
+  asOf: "2026-01-02T00:00:00.000Z",
+  revision: 4,
+  items: [
+    {
+      entityId: childId,
+      canonicalName: "Synthetic capability",
+      kind: "capability",
+      flags: ["stale", "weakly_evidenced"],
+      claimCount: 0,
+      referenceCount: 0,
+      variantCount: 1,
+      updatedRevision: 4,
+    },
+  ],
+  page: { maximumItems: 100, truncated: false },
+  safeWarnings: [],
+};
+
 const viewProps = (user: unknown, searchParams: Record<string, string> = {}) =>
   ({ initPageResult: { req: { user } }, searchParams }) as never;
 
@@ -88,6 +109,7 @@ describe("Product Studio product map view", () => {
   beforeEach(() => {
     getMap.mockReset().mockResolvedValue(map);
     getDossier.mockReset().mockResolvedValue(dossier);
+    getCoverage.mockReset().mockResolvedValue(coverage);
   });
 
   afterEach(() => {
@@ -110,10 +132,15 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain('scope="col"');
     expect(markup).toContain('scope="row"');
     expect(markup).toContain('id="dossier-title"');
+    expect(markup).toContain('id="coverage-heading"');
+    expect(markup).toContain("Coverage Review");
+    expect(markup).toContain("weakly evidenced");
+    expect(markup).toContain("Evidence bodies are never shown");
     expect(markup).toContain("focus-visible:outline-2");
     expect(markup).not.toContain("<canvas");
     expect(getMap).toHaveBeenCalledOnce();
     expect(getDossier).toHaveBeenCalledWith(childId);
+    expect(getCoverage).toHaveBeenCalledOnce();
   });
 
   it("does not access Sarathi before Product Studio authentication", async () => {
@@ -123,6 +150,7 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain("Sign in through the Product Studio identity boundary");
     expect(getMap).not.toHaveBeenCalled();
     expect(getDossier).not.toHaveBeenCalled();
+    expect(getCoverage).not.toHaveBeenCalled();
   });
 
   it("shows governed rename only when the authenticated user has a live credential", async () => {
