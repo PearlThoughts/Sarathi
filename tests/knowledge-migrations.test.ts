@@ -34,6 +34,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 5, tag: "0005_canonical-entity-time" },
       { idx: 6, tag: "0006_independent-sync-control" },
       { idx: 7, tag: "0007_restart-safe-embedding-cache" },
+      { idx: 8, tag: "0008_product-model-core" },
     ]);
   });
 
@@ -164,5 +165,36 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).toContain('"content_hash" text NOT NULL');
     expect(schema).not.toContain("body");
     expect(schema).not.toMatch(/\b(?:DROP|TRUNCATE|DELETE)\b/i);
+  });
+
+  it("adds only normalized product-model tables with temporal and workspace constraints", async () => {
+    const schema = await migration("0008_product-model-core.sql");
+    const createdTables = [...schema.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]);
+
+    expect(createdTables).toEqual([
+      "product_entity_alias",
+      "product_entity_attachment",
+      "product_entity_state",
+      "product_entity",
+      "product_hierarchy_edge",
+      "product_identity_event",
+      "product_redirect",
+      "product_reference_orphan",
+      "product_relation",
+      "product_revision",
+      "product_variant",
+    ]);
+    expect(schema).toContain('"id" uuid NOT NULL');
+    expect(schema).toContain('CONSTRAINT "product_hierarchy_edge_not_self"');
+    expect(schema).toContain('CREATE UNIQUE INDEX "product_hierarchy_edge_current_parent"');
+    expect(schema).toContain('CREATE UNIQUE INDEX "product_entity_alias_current_lookup"');
+    expect(schema).toContain('CONSTRAINT "product_relation_source_shape"');
+    expect(schema).toContain('CONSTRAINT "product_reference_orphan_resolution"');
+    expect(schema).not.toMatch(/\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM|ALTER TYPE)\b/i);
+    const alteredTables = [...schema.matchAll(/ALTER TABLE "([^"]+)"/g)].map((match) => match[1]);
+    expect(alteredTables.length).toBeGreaterThan(0);
+    expect(alteredTables.every((table) => table?.startsWith("product_"))).toBe(true);
+    expect(schema).not.toContain("teams_mention_audit");
+    expect(schema).not.toContain("compliance_reminder_audit");
   });
 });

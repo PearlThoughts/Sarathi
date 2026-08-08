@@ -14,6 +14,19 @@ import {
   uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
+import {
+  productEntityAliasTable,
+  productEntityAttachmentTable,
+  productEntityStateTable,
+  productEntityTable,
+  productHierarchyEdgeTable,
+  productIdentityEventTable,
+  productRedirectTable,
+  productReferenceOrphanTable,
+  productRelationTable,
+  productRevisionTable,
+  productVariantTable,
+} from "./product-model-schema.ts";
 
 const timestampColumn = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
 
@@ -772,4 +785,15 @@ export const knowledgePostgresSchema = {
   deliveryFinanceMetricTable,
   deliveryClaimTable,
   deliveryAclBindingTable,
+  productRevisionTable,
+  productEntityTable,
+  productEntityStateTable,
+  productEntityAliasTable,
+  productHierarchyEdgeTable,
+  productRelationTable,
+  productVariantTable,
+  productEntityAttachmentTable,
+  productRedirectTable,
+  productReferenceOrphanTable,
+  productIdentityEventTable,
 };

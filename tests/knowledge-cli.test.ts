@@ -42,6 +42,7 @@ describe("knowledge CLI", () => {
             "0005_canonical-entity-time",
             "0006_independent-sync-control",
             "0007_restart-safe-embedding-cache",
+            "0008_product-model-core",
           ],
           protectedTables: [
             "compliance_reminder_audit",
