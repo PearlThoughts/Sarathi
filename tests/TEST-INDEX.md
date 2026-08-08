@@ -195,6 +195,13 @@
 - Scope: Authorization before repository access, side-effect-free preview, actor/workspace/policy/revision-bound short-lived preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay and conflict detection, atomic domain/revision/audit/identity-event/outbox commits, and rollback.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-postgres-commands
+
+- Command: `bunx vitest run tests/product-model-postgres-command-repository.test.ts`
+- Location: `tests/product-model-postgres-command-repository.test.ts`
+- Scope: Workspace-scoped aggregate reconstruction, a source-level fitness test that rejects raw DML in favor of typed Drizzle schema builders, PostgreSQL advisory transaction locking, optimistic concurrency, idempotent audit replay and conflict detection, temporal delta persistence, atomic revision/state/identity-event/proposal/audit/outbox writes, and rollback on a late durable-write failure.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-variants-history
 
 - Command: `bunx vitest run tests/product-model-variants-history.test.ts`

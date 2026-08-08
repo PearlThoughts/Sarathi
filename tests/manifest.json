@@ -186,6 +186,13 @@
       "description": "Authorization-before-access, side-effect-free preview, bounded preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay, atomic domain/revision/audit/outbox commits, and rollback coverage."
     },
     {
+      "id": "product-model-postgres-commands",
+      "path": "tests/product-model-postgres-command-repository.test.ts",
+      "command": "bunx vitest run tests/product-model-postgres-command-repository.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Workspace-scoped aggregate reconstruction, typed Drizzle DML enforcement, per-workspace transaction locking, optimistic concurrency, idempotent audit replay, temporal delta persistence, atomic revision/state/identity-event/audit/outbox writes, and transaction rollback coverage."
+    },
+    {
       "id": "product-model-variants-history",
       "path": "tests/product-model-variants-history.test.ts",
       "command": "bunx vitest run tests/product-model-variants-history.test.ts",
