@@ -43,6 +43,7 @@ describe("knowledge CLI", () => {
             "0006_independent-sync-control",
             "0007_restart-safe-embedding-cache",
             "0008_product-model-core",
+            "0009_product-model-governance",
           ],
           protectedTables: [
             "compliance_reminder_audit",

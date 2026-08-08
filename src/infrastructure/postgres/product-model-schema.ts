@@ -82,7 +82,9 @@ export const productEntityStateTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.entityId, table.revision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.entityId, table.revision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.entityId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -141,7 +143,9 @@ export const productEntityAliasTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.id, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.entityId, table.entityKind],
       foreignColumns: [
@@ -184,7 +188,9 @@ export const productHierarchyEdgeTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.childId, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.childId, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.childId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -242,7 +248,9 @@ export const productRelationTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.id, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.sourceEntityId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -312,7 +320,9 @@ export const productVariantTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.id, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.baseEntityId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -357,7 +367,9 @@ export const productEntityAttachmentTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.id, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.entityId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -394,7 +406,9 @@ export const productRedirectTable = pgTable(
     supersededAt: timestampColumn("superseded_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.fromEntityId, table.createdRevision] }),
+    primaryKey({
+      columns: [table.workspaceId, table.fromEntityId, table.createdRevision],
+    }),
     foreignKey({
       columns: [table.workspaceId, table.fromEntityId],
       foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
@@ -503,5 +517,239 @@ export const productIdentityEventTable = pgTable(
       table.validFrom,
       table.revision,
     ),
+  ],
+);
+
+export const productClaimTable = pgTable(
+  "product_claim",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    entityId: uuid("entity_id").notNull(),
+    claimType: text("claim_type").notNull(),
+    predicate: text("predicate").notNull(),
+    value: jsonb("value").$type<unknown>().notNull(),
+    evidenceReferenceIds: jsonb("evidence_reference_ids").$type<readonly string[]>().notNull(),
+    registration: text("registration").notNull(),
+    sourceClass: text("source_class").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    audience: audienceColumn(),
+    createdRevision: integer("created_revision").notNull(),
+    validFrom: timestampColumn("valid_from").notNull(),
+    validTo: timestampColumn("valid_to"),
+    recordedAt: timestampColumn("recorded_at").notNull(),
+    supersededAt: timestampColumn("superseded_at"),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.entityId],
+      foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
+      name: "product_claim_entity_fk",
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.createdRevision],
+      foreignColumns: [productRevisionTable.workspaceId, productRevisionTable.revision],
+      name: "product_claim_revision_fk",
+    }),
+    uniqueIndex("product_claim_current_id")
+      .on(table.workspaceId, table.id)
+      .where(sql`${table.supersededAt} is null`),
+    index("product_claim_current_entity").on(
+      table.workspaceId,
+      table.entityId,
+      table.claimType,
+      table.registration,
+      table.supersededAt,
+    ),
+    check(
+      "product_claim_type",
+      sql`${table.claimType} in ('definition', 'invariant', 'exclusion', 'availability', 'behavior')`,
+    ),
+    check(
+      "product_claim_registration",
+      sql`${table.registration} in ('candidate', 'ratified', 'contested', 'superseded')`,
+    ),
+    check(
+      "product_claim_validity",
+      sql`${table.validTo} is null or ${table.validTo} > ${table.validFrom}`,
+    ),
+  ],
+);
+
+export const productExternalReferenceTable = pgTable(
+  "product_external_reference",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    entityId: uuid("entity_id").notNull(),
+    referenceKind: text("reference_kind").notNull(),
+    sourceClass: text("source_class").notNull(),
+    externalId: text("external_id").notNull(),
+    canonicalUrl: text("canonical_url"),
+    sensitivity: text("sensitivity").notNull(),
+    audience: audienceColumn(),
+    modelEgress: text("model_egress").notNull(),
+    createdRevision: integer("created_revision").notNull(),
+    validFrom: timestampColumn("valid_from").notNull(),
+    validTo: timestampColumn("valid_to"),
+    recordedAt: timestampColumn("recorded_at").notNull(),
+    supersededAt: timestampColumn("superseded_at"),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.id, table.createdRevision],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.entityId],
+      foreignColumns: [productEntityTable.workspaceId, productEntityTable.id],
+      name: "product_external_reference_entity_fk",
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.createdRevision],
+      foreignColumns: [productRevisionTable.workspaceId, productRevisionTable.revision],
+      name: "product_external_reference_revision_fk",
+    }),
+    uniqueIndex("product_external_reference_current_source")
+      .on(table.workspaceId, table.sourceClass, table.referenceKind, table.externalId)
+      .where(sql`${table.supersededAt} is null`),
+    index("product_external_reference_current_entity").on(
+      table.workspaceId,
+      table.entityId,
+      table.referenceKind,
+      table.supersededAt,
+    ),
+    check(
+      "product_external_reference_kind",
+      sql`${table.referenceKind} in ('delivery', 'intent', 'technical', 'runtime', 'evidence', 'policy', 'availability')`,
+    ),
+    check(
+      "product_external_reference_model_egress",
+      sql`${table.modelEgress} in ('allow', 'redact', 'block', 'approval-required')`,
+    ),
+    check(
+      "product_external_reference_validity",
+      sql`${table.validTo} is null or ${table.validTo} > ${table.validFrom}`,
+    ),
+  ],
+);
+
+export const productChangeProposalTable = pgTable(
+  "product_change_proposal",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    commandType: text("command_type").notNull(),
+    targetEntityIds: jsonb("target_entity_ids").$type<readonly string[]>().notNull(),
+    payload: jsonb("payload").$type<Readonly<Record<string, unknown>>>().notNull(),
+    evidenceReferenceIds: jsonb("evidence_reference_ids").$type<readonly string[]>().notNull(),
+    expectedRevision: integer("expected_revision").notNull(),
+    justification: text("justification").notNull(),
+    state: text("state").notNull(),
+    sourceClass: text("source_class").notNull(),
+    proposedByActorId: text("proposed_by_actor_id").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    audience: audienceColumn(),
+    proposedAt: timestampColumn("proposed_at").notNull(),
+    expiresAt: timestampColumn("expires_at").notNull(),
+    reviewedByActorId: text("reviewed_by_actor_id"),
+    reviewedAt: timestampColumn("reviewed_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    index("product_change_proposal_review_queue").on(
+      table.workspaceId,
+      table.state,
+      table.expiresAt,
+      table.proposedAt,
+    ),
+    check("product_change_proposal_revision", sql`${table.expectedRevision} >= 0`),
+    check(
+      "product_change_proposal_state",
+      sql`${table.state} in ('pending', 'approved', 'rejected', 'expired', 'withdrawn')`,
+    ),
+    check("product_change_proposal_expiry", sql`${table.expiresAt} > ${table.proposedAt}`),
+    check(
+      "product_change_proposal_review",
+      sql`(${table.state} in ('pending', 'expired', 'withdrawn') and ${table.reviewedByActorId} is null and ${table.reviewedAt} is null) or (${table.state} in ('approved', 'rejected') and ${table.reviewedByActorId} is not null and ${table.reviewedAt} is not null)`,
+    ),
+  ],
+);
+
+export const productCommandAuditTable = pgTable(
+  "product_command_audit",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    requestId: text("request_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    commandType: text("command_type").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    commandHash: text("command_hash").notNull(),
+    justification: text("justification").notNull(),
+    outcome: text("outcome").notNull(),
+    resultingRevision: integer("resulting_revision"),
+    eventId: text("event_id"),
+    impactSummary: jsonb("impact_summary").$type<Readonly<Record<string, unknown>>>().notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    audience: audienceColumn(),
+    recordedAt: timestampColumn("recorded_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      columns: [table.workspaceId, table.resultingRevision],
+      foreignColumns: [productRevisionTable.workspaceId, productRevisionTable.revision],
+      name: "product_command_audit_revision_fk",
+    }),
+    uniqueIndex("product_command_audit_idempotency").on(table.workspaceId, table.idempotencyKey),
+    uniqueIndex("product_command_audit_request").on(table.workspaceId, table.requestId),
+    index("product_command_audit_revision").on(table.workspaceId, table.resultingRevision),
+    check(
+      "product_command_audit_outcome",
+      sql`${table.outcome} in ('committed', 'rejected', 'failed')`,
+    ),
+    check(
+      "product_command_audit_result",
+      sql`(${table.outcome} = 'committed' and ${table.resultingRevision} is not null and ${table.eventId} is not null) or (${table.outcome} <> 'committed' and ${table.resultingRevision} is null and ${table.eventId} is null)`,
+    ),
+  ],
+);
+
+export const productOutboxEventTable = pgTable(
+  "product_outbox_event",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    id: uuid("id").notNull(),
+    revision: integer("revision").notNull(),
+    eventType: text("event_type").notNull(),
+    aggregateIds: jsonb("aggregate_ids").$type<readonly string[]>().notNull(),
+    payload: jsonb("payload").$type<Readonly<Record<string, unknown>>>().notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    audience: audienceColumn(),
+    createdAt: timestampColumn("created_at").notNull(),
+    publishedAt: timestampColumn("published_at"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      columns: [table.workspaceId, table.revision],
+      foreignColumns: [productRevisionTable.workspaceId, productRevisionTable.revision],
+      name: "product_outbox_event_revision_fk",
+    }),
+    uniqueIndex("product_outbox_event_revision_type").on(
+      table.workspaceId,
+      table.revision,
+      table.eventType,
+    ),
+    index("product_outbox_event_unpublished").on(
+      table.workspaceId,
+      table.publishedAt,
+      table.createdAt,
+    ),
+    check("product_outbox_event_attempts", sql`${table.attemptCount} >= 0`),
   ],
 );

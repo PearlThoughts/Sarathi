@@ -15,12 +15,17 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 import {
+  productChangeProposalTable,
+  productClaimTable,
+  productCommandAuditTable,
   productEntityAliasTable,
   productEntityAttachmentTable,
   productEntityStateTable,
   productEntityTable,
+  productExternalReferenceTable,
   productHierarchyEdgeTable,
   productIdentityEventTable,
+  productOutboxEventTable,
   productRedirectTable,
   productReferenceOrphanTable,
   productRelationTable,
@@ -796,4 +801,9 @@ export const knowledgePostgresSchema = {
   productRedirectTable,
   productReferenceOrphanTable,
   productIdentityEventTable,
+  productClaimTable,
+  productExternalReferenceTable,
+  productChangeProposalTable,
+  productCommandAuditTable,
+  productOutboxEventTable,
 };

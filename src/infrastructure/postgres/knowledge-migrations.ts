@@ -103,6 +103,7 @@ export const knowledgeMigrationPlan = {
     "0006_independent-sync-control",
     "0007_restart-safe-embedding-cache",
     "0008_product-model-core",
+    "0009_product-model-governance",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,
@@ -157,9 +158,9 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
       `Expected 8 delivery intelligence tables after migration; found ${deliveryTableCount}.`,
     );
   const productTableCount = names.filter((name) => name.startsWith("product_")).length;
-  if (productTableCount !== 11)
+  if (productTableCount !== 16)
     throw new Error(
-      `Expected 11 product-model tables after migration; found ${productTableCount}.`,
+      `Expected 16 product-model tables after migration; found ${productTableCount}.`,
     );
   return {
     vectorExtensionVersion,

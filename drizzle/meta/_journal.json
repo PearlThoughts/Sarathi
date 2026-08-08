@@ -64,6 +64,13 @@
       "when": 1786194653081,
       "tag": "0008_product-model-core",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786195417674,
+      "tag": "0009_product-model-governance",
+      "breakpoints": true
     }
   ]
 }
