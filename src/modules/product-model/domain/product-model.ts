@@ -113,16 +113,40 @@ export type ProductVariant = {
   readonly createdRevision: number;
 };
 
+export type ProductAttachmentKind = "claim" | "delivery_reference" | "external_reference";
+export type ProductEntityAttachment = {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly entityId: ProductEntityId;
+  readonly kind: ProductAttachmentKind;
+  readonly referenceId: string;
+  readonly registration: ProductRegistration;
+  readonly sourceClass: string;
+  readonly sensitivity: SensitivityTier;
+  readonly audience: readonly string[];
+  readonly createdRevision: number;
+};
+
+export type ProductRedirect = {
+  readonly workspaceId: string;
+  readonly fromId: ProductEntityId;
+  readonly toId: ProductEntityId;
+  readonly createdRevision: number;
+};
+
 export type ProductIdentityEventType =
   | "registered"
   | "renamed"
   | "moved"
+  | "redirected"
+  | "merged"
   | "retired"
   | "superseded";
 export type ProductRevisionEventType =
   | ProductIdentityEventType
   | "registration_changed"
   | "relation_added"
+  | "attachment_added"
   | "variant_added";
 
 export type ProductIdentityEvent = {
@@ -154,6 +178,8 @@ export type ProductModel = {
   readonly hierarchy: readonly ProductHierarchyEdge[];
   readonly relations: readonly ProductRelation[];
   readonly variants: readonly ProductVariant[];
+  readonly attachments: readonly ProductEntityAttachment[];
+  readonly redirects: readonly ProductRedirect[];
   readonly revisions: readonly ProductRevision[];
   readonly identityEvents: readonly ProductIdentityEvent[];
 };
@@ -174,6 +200,9 @@ export type ProductModelErrorCode =
   | "parent_conflict"
   | "kind_incompatible"
   | "hierarchy_cycle"
+  | "redirect_conflict"
+  | "redirect_cycle"
+  | "identity_incompatible"
   | "relation_conflict"
   | "relation_incompatible"
   | "variant_conflict"
@@ -228,6 +257,8 @@ export const createProductModel = (workspaceId: string): ProductModel => ({
   hierarchy: [],
   relations: [],
   variants: [],
+  attachments: [],
+  redirects: [],
   revisions: [],
   identityEvents: [],
 });
@@ -314,6 +345,8 @@ const nextBase = (model: ProductModel) => ({
   hierarchy: model.hierarchy,
   relations: model.relations,
   variants: model.variants,
+  attachments: model.attachments,
+  redirects: model.redirects,
 });
 
 const aliasConflict = (
