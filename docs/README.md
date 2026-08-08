@@ -36,6 +36,7 @@ Sarathi documentation has two audiences:
 - [Delivery Evaluation](delivery-evaluation.md) defines governed case, suite, fingerprint-bound human review, and acceptance semantics.
 - [ADR 0005](adr/0005-single-runtime-private-overlays.md) records the single-runtime and private-overlay decision.
 - [ADR 0010](adr/0010-bounded-teams-collaboration-scopes.md) records the target Teams collaboration-scope model and its incremental rollout boundary.
+- [ADR 0011](adr/0011-product-capability-registry-and-product-studio.md) proposes Sarathi-owned product capability identity, PostgreSQL graph persistence, and the Payload Product Studio adapter boundary.
 - [Test Index](../tests/TEST-INDEX.md) lists verification commands and test scope.
 
 ## Current Platform Capabilities
