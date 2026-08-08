@@ -172,6 +172,13 @@
       "description": "Delivery model, finance isolation, conflict derivation, safe query grammar, arbitrary calendar-period and timezone-boundary parsing, response-product budgets, and deterministic period-census coverage."
     },
     {
+      "id": "product-model-domain",
+      "path": "tests/product-model.test.ts",
+      "command": "bunx vitest run tests/product-model.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Stable product identity, alias, single-parent hierarchy, kind, cycle, rename, and move coverage."
+    },
+    {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",

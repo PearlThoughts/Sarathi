@@ -181,6 +181,13 @@
 - Scope: Delivery objects, relations, observations, claims, metrics, goals, commitments, finance isolation, conflict derivation, safe generic query planning, arbitrary lookbacks, calendar month/quarter and source-defined period boundaries, workspace-local timezone resolution, response-product budgets, and deterministic census coverage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-domain
+
+- Command: `bunx vitest run tests/product-model.test.ts`
+- Location: `tests/product-model.test.ts`
+- Scope: Stable opaque product identity, alias history, single-parent hierarchy, kind compatibility, explicit skipped levels, cycle rejection, rename, and move.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-intelligence-application
 
 - Command: `bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts`
