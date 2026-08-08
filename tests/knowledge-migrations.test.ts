@@ -35,6 +35,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 6, tag: "0006_independent-sync-control" },
       { idx: 7, tag: "0007_restart-safe-embedding-cache" },
       { idx: 8, tag: "0008_product-model-core" },
+      { idx: 9, tag: "0009_product-model-governance" },
     ]);
   });
 
@@ -190,6 +191,32 @@ describe("knowledge Drizzle migrations", () => {
     expect(schema).toContain('CREATE UNIQUE INDEX "product_entity_alias_current_lookup"');
     expect(schema).toContain('CONSTRAINT "product_relation_source_shape"');
     expect(schema).toContain('CONSTRAINT "product_reference_orphan_resolution"');
+    expect(schema).not.toMatch(/\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM|ALTER TYPE)\b/i);
+    const alteredTables = [...schema.matchAll(/ALTER TABLE "([^"]+)"/g)].map((match) => match[1]);
+    expect(alteredTables.length).toBeGreaterThan(0);
+    expect(alteredTables.every((table) => table?.startsWith("product_"))).toBe(true);
+    expect(schema).not.toContain("teams_mention_audit");
+    expect(schema).not.toContain("compliance_reminder_audit");
+  });
+
+  it("adds governed claims, references, proposals, audit, and outbox without changing prior models", async () => {
+    const schema = await migration("0009_product-model-governance.sql");
+    const createdTables = [...schema.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]);
+
+    expect(createdTables).toEqual([
+      "product_change_proposal",
+      "product_claim",
+      "product_command_audit",
+      "product_external_reference",
+      "product_outbox_event",
+    ]);
+    expect(schema).toContain('CONSTRAINT "product_claim_registration"');
+    expect(schema).toContain('CONSTRAINT "product_external_reference_model_egress"');
+    expect(schema).toContain('CONSTRAINT "product_change_proposal_review"');
+    expect(schema).toContain('CREATE UNIQUE INDEX "product_command_audit_idempotency"');
+    expect(schema).toContain('CONSTRAINT "product_outbox_event_revision_fk"');
+    expect(schema).not.toContain("source_body");
+    expect(schema).not.toContain("payload_body");
     expect(schema).not.toMatch(/\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM|ALTER TYPE)\b/i);
     const alteredTables = [...schema.matchAll(/ALTER TABLE "([^"]+)"/g)].map((match) => match[1]);
     expect(alteredTables.length).toBeGreaterThan(0);
