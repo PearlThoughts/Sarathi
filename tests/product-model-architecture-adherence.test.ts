@@ -60,6 +60,7 @@ describe("product-model architecture adherence", () => {
     expect(source).toContain('export * from "./application/product-model-commands.ts"');
     expect(source).toContain('export * from "./ports/product-model-command-repository.ts"');
     expect(source).toContain('export * from "./api/register-product-model-routes.ts"');
+    expect(source).toContain('export * from "./api/product-model-command-transport.ts"');
   });
 
   it("keeps delivery compatibility in the application layer and delegates the existing report path", async () => {

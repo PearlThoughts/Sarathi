@@ -186,6 +186,20 @@
       "description": "Authorization-before-access, side-effect-free preview, bounded preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay, atomic domain/revision/audit/outbox commits, and rollback coverage."
     },
     {
+      "id": "product-model-command-api",
+      "path": "tests/product-model-command-api.test.ts",
+      "command": "bunx vitest run tests/product-model-command-api.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Authorization-before-parse command HTTP transport, server-owned Product Studio identity, strict request contracts, typed stale conflicts, and health isolation coverage."
+    },
+    {
+      "id": "product-model-command-transport",
+      "path": "tests/product-model-command-transport.test.ts",
+      "command": "bunx vitest run tests/product-model-command-transport.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Strict transport parsing coverage for every governed product-model command variant and rejection of browser-selected identity fields."
+    },
+    {
       "id": "product-model-postgres-commands",
       "path": "tests/product-model-postgres-command-repository.test.ts",
       "command": "bunx vitest run tests/product-model-postgres-command-repository.test.ts",

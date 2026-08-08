@@ -2,6 +2,13 @@ import { Effect } from "effect";
 import type { Context, Hono } from "hono";
 import { type RepositoryError, ValidationError } from "../../../domain/errors.ts";
 import { runEffect } from "../../../platform/http.ts";
+import {
+  ProductModelCommandAccessDenied,
+  ProductModelCommandApprovalRequired,
+  type ProductModelCommandError,
+  type ProductModelCommandService,
+  ProductModelCommandUnavailable,
+} from "../application/product-model-commands.ts";
 import type { ProductModelDetailQueryService } from "../application/product-model-detail-queries.ts";
 import type { ProductModelQueryService } from "../application/product-model-queries.ts";
 import {
@@ -13,7 +20,9 @@ import {
   type ProductVariantAxis,
   parseProductEntityId,
 } from "../domain/product-model.ts";
+import { ProductCommandPersistenceError } from "../ports/product-model-command-repository.ts";
 import type { ProductModelRequestContext } from "../ports/product-model-query-authorizer.ts";
+import { parseProductModelCommand } from "./product-model-command-transport.ts";
 
 export type ProductModelApiContextResolver = {
   readonly resolve: (
@@ -29,6 +38,7 @@ export type ProductModelApiContextResolver = {
 export type ProductModelApiDependencies = {
   readonly queries: ProductModelQueryService;
   readonly details: ProductModelDetailQueryService;
+  readonly commands?: ProductModelCommandService | undefined;
   readonly context: ProductModelApiContextResolver;
   readonly now: () => string;
 };
@@ -38,6 +48,11 @@ type ProductModelTransportError =
   | ProductModelQueryUnavailable
   | ProductModelError
   | RepositoryError
+  | ValidationError;
+
+type ProductModelCommandTransportError =
+  | ProductModelAccessDenied
+  | ProductModelCommandError
   | ValidationError;
 
 const safeError = (error: ProductModelTransportError) => {
@@ -66,6 +81,54 @@ const respondError = (context: Context, error: ProductModelTransportError) => {
   if (error instanceof ProductModelError || error instanceof ValidationError)
     return context.json(body, 400);
   return context.json(body, 503);
+};
+
+const safeCommandError = (error: ProductModelCommandTransportError) => {
+  if (error instanceof ProductModelAccessDenied || error instanceof ProductModelCommandAccessDenied)
+    return {
+      status: 403 as const,
+      code: "PRODUCT_MODEL_COMMAND_ACCESS_DENIED",
+      message: "Access denied.",
+    };
+  if (error instanceof ProductModelCommandUnavailable)
+    return {
+      status: 404 as const,
+      code: "PRODUCT_MODEL_NOT_FOUND",
+      message: "Product-model data is unavailable.",
+    };
+  if (error instanceof ProductModelCommandApprovalRequired)
+    return {
+      status: 409 as const,
+      code: "approval_required",
+      message: "Additional approval is required for hidden impacts.",
+    };
+  if (error instanceof ProductCommandPersistenceError) {
+    if (error.code === "transaction_failed")
+      return {
+        status: 503 as const,
+        code: "PRODUCT_MODEL_UNAVAILABLE",
+        message: "The product-model service is unavailable.",
+      };
+    return { status: 409 as const, code: error.code, message: error.message };
+  }
+  if (error instanceof ProductModelError)
+    return {
+      status: error.code === "invalid_input" ? (400 as const) : (422 as const),
+      code: error.code,
+      message: error.message,
+    };
+  if (error instanceof ValidationError)
+    return { status: 400 as const, code: "INVALID_REQUEST", message: error.message };
+  return {
+    status: 503 as const,
+    code: "PRODUCT_MODEL_UNAVAILABLE",
+    message: "The product-model service is unavailable.",
+  };
+};
+
+const respondCommandError = (context: Context, error: ProductModelCommandTransportError) => {
+  const safe = safeCommandError(error);
+  return context.json({ error: { code: safe.code, message: safe.message } }, safe.status);
 };
 
 const unavailable = (context: Context) =>
@@ -152,22 +215,66 @@ const authorizedContext = (
   dependencies: ProductModelApiDependencies,
   context: Context,
   workspaceId: string,
+  surface: "api" | "product-studio" = "api",
 ) =>
   dependencies.context
-    .resolve(context.req.raw, workspaceId, "api")
+    .resolve(context.req.raw, workspaceId, surface)
     .pipe(
       Effect.flatMap((resolved) =>
-        resolved.workspaceId === workspaceId && resolved.surface === "api"
+        resolved.workspaceId === workspaceId && resolved.surface === surface
           ? Effect.succeed(resolved)
           : Effect.fail(new ProductModelAccessDenied("Workspace denied.", "get-map")),
       ),
     );
+
+const commandFromRequest = (context: Context) =>
+  Effect.tryPromise({
+    try: () => context.req.json<unknown>(),
+    catch: () =>
+      new ValidationError({
+        message: "Product command body is invalid.",
+        field: "body",
+      }),
+  }).pipe(Effect.flatMap(parseProductModelCommand));
 
 export const registerProductModelRoutes = (
   app: Hono,
   dependencies?: ProductModelApiDependencies | undefined,
 ): void => {
   const base = "/v1/workspaces/:workspaceId/product-model";
+
+  const commandRoute = (operation: "preview" | "execute", context: Context) => {
+    if (dependencies === undefined || dependencies.commands === undefined)
+      return Promise.resolve(unavailable(context));
+    const workspaceId = context.req.param("workspaceId") ?? "";
+    const commands = dependencies.commands;
+    return runEffect(
+      Effect.gen(function* () {
+        const requestContext = yield* authorizedContext(
+          dependencies,
+          context,
+          workspaceId,
+          "product-studio",
+        );
+        const command = yield* commandFromRequest(context);
+        if (operation === "execute" && command.previewToken === undefined)
+          return yield* Effect.fail(
+            new ValidationError({
+              message: "previewToken is required for Product Studio commands.",
+              field: "previewToken",
+            }),
+          );
+        return yield* operation === "preview"
+          ? commands.preview(requestContext, command)
+          : commands.execute(requestContext, command);
+      }),
+    ).then((result) =>
+      result.ok ? context.json({ data: result.value }) : respondCommandError(context, result.error),
+    );
+  };
+
+  app.post(`${base}/changes/preview`, (context) => commandRoute("preview", context));
+  app.post(`${base}/commands`, (context) => commandRoute("execute", context));
 
   app.get(`${base}/map`, async (context) => {
     if (dependencies === undefined) return unavailable(context);

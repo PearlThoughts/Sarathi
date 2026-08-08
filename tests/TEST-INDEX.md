@@ -195,6 +195,20 @@
 - Scope: Authorization before repository access, side-effect-free preview, actor/workspace/policy/revision-bound short-lived preview tokens, unauthorized impact filtering, optimistic concurrency, idempotent replay and conflict detection, atomic domain/revision/audit/identity-event/outbox commits, and rollback.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-model-command-api
+
+- Command: `bunx vitest run tests/product-model-command-api.test.ts`
+- Location: `tests/product-model-command-api.test.ts`
+- Scope: Authorization before request parsing and command-service access, server-owned Product Studio identity, strict JSON contracts, typed stale-revision conflicts, and platform health isolation.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-command-transport
+
+- Command: `bunx vitest run tests/product-model-command-transport.test.ts`
+- Location: `tests/product-model-command-transport.test.ts`
+- Scope: Strict transport parsing for every governed product-model command variant, including proposal resolution, and rejection of browser-selected identity fields.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-postgres-commands
 
 - Command: `bunx vitest run tests/product-model-postgres-command-repository.test.ts`

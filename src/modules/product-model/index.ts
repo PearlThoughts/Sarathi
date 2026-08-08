@@ -1,3 +1,4 @@
+export * from "./api/product-model-command-transport.ts";
 export * from "./api/register-product-model-routes.ts";
 export * from "./application/product-model-commands.ts";
 export * from "./application/product-model-detail-queries.ts";
