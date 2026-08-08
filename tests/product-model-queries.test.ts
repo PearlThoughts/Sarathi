@@ -53,6 +53,20 @@ const child: ProductHierarchyNode = {
   depth: 1,
 };
 
+const relation = {
+  id: "relation-synthetic",
+  workspaceId,
+  type: "depends_on" as const,
+  source: { kind: "entity" as const, entityId: childEntityId },
+  target: { kind: "entity" as const, entityId: rootEntityId },
+  registration: "ratified" as const,
+  sourceClass: "fixture",
+  sensitivity: "internal" as const,
+  audience: ["workspace:synthetic"],
+  validFrom: "2026-01-01T00:00:00.000Z",
+  createdRevision: 3,
+};
+
 const allowedAuthorizer = (events: string[]): ProductModelQueryAuthorizer => ({
   authorize: (_request, operation) =>
     Effect.sync(() => {
@@ -66,6 +80,11 @@ const repository = (events: string[]): ProductModelGraphRepository => ({
     Effect.sync(() => {
       events.push(`revision:${point.kind}`);
       return 3;
+    }),
+  readRelations: ({ point }) =>
+    Effect.sync(() => {
+      events.push(`relations:${point.kind}`);
+      return { relations: [relation], truncated: false };
     }),
   traverseHierarchy: (request) =>
     Effect.sync(() => {
@@ -83,9 +102,11 @@ describe("product-model application queries", () => {
       Effect.succeed({ allowed: false, reason: "Workspace denied.", policyVersion: "policy-1" }),
     );
     const resolveRevision = vi.fn();
+    const readRelations = vi.fn();
     const traverseHierarchy = vi.fn();
     const service = createProductModelQueryService({ authorize }, {
       resolveRevision,
+      readRelations,
       traverseHierarchy,
     } as unknown as ProductModelGraphRepository);
 
@@ -97,6 +118,7 @@ describe("product-model application queries", () => {
     if (result._tag === "Left") expect(result.left).toBeInstanceOf(ProductModelAccessDenied);
     expect(authorize).toHaveBeenCalledOnce();
     expect(resolveRevision).not.toHaveBeenCalled();
+    expect(readRelations).not.toHaveBeenCalled();
     expect(traverseHierarchy).not.toHaveBeenCalled();
   });
 
@@ -116,12 +138,14 @@ describe("product-model application queries", () => {
       "authorize:get-map",
       "revision:current",
       "traverse:descendants:current",
+      "relations:current",
     ]);
     expect(result).toMatchObject({
       workspaceId,
       asOf: "2026-01-02T00:00:00.000Z",
       revision: 3,
       page: { maximumDepth: 3, maximumNodes: 1, truncated: true },
+      relationPage: { maximumRelations: 250, truncated: false },
       safeWarnings: ["Product graph results were truncated at the authorized query bound."],
     });
   });
@@ -138,6 +162,7 @@ describe("product-model application queries", () => {
       "authorize:get-historical-graph",
       "revision:valid_time",
       "traverse:descendants:valid_time",
+      "relations:valid_time",
     ]);
     expect(result.asOf).toBe("2025-06-01T00:00:00.000Z");
   });
@@ -158,10 +183,11 @@ describe("product-model application queries", () => {
 
     expect(events[0]).toBe("authorize:get-subgraph");
     expect(events[1]).toBe("revision:current");
-    expect(events.slice(2).sort()).toEqual([
+    expect(events.slice(2, 4).sort()).toEqual([
       "traverse:ancestors:current",
       "traverse:descendants:current",
     ]);
+    expect(events[4]).toBe("relations:current");
     expect(result).toMatchObject({
       workspaceId,
       revision: 3,
@@ -169,6 +195,7 @@ describe("product-model application queries", () => {
       pages: {
         ancestors: { maximumDepth: 2, maximumNodes: 10, truncated: false },
         descendants: { maximumDepth: 3, maximumNodes: 10, truncated: false },
+        relations: { maximumRelations: 250, truncated: false },
       },
     });
   });
@@ -177,6 +204,7 @@ describe("product-model application queries", () => {
     const traverseHierarchy = vi.fn();
     const service = createProductModelQueryService(allowedAuthorizer([]), {
       resolveRevision: () => Effect.succeed(undefined),
+      readRelations: () => Effect.succeed({ relations: [], truncated: false }),
       traverseHierarchy,
     });
 

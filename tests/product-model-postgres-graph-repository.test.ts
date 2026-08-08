@@ -5,6 +5,7 @@ import type { KnowledgePostgresDatabase } from "../src/infrastructure/postgres/k
 import {
   buildProductHierarchyTraversalQuery,
   buildProductModelRevisionQuery,
+  buildProductRelationReadQuery,
   createPostgresProductModelGraphRepository,
 } from "../src/infrastructure/postgres/product-model-graph-repository.ts";
 import { parseProductEntityId } from "../src/modules/product-model/index.ts";
@@ -28,6 +29,29 @@ const request = () => ({
 });
 
 describe("PostgreSQL product-model graph repository", () => {
+  it("reads only induced, visible, bounded relation overlays", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      buildProductRelationReadQuery({
+        workspaceId,
+        entityIds: [entityId(rootId), entityId("00000000-0000-4000-8000-000000000002")],
+        maximumRelations: 25,
+        point: { kind: "current", at: "2026-01-02T00:00:00.000Z" },
+        visibility: {
+          audienceIds: ["workspace:synthetic"],
+          maximumSensitivity: "internal",
+        },
+      }),
+    );
+
+    expect(compiled.sql).toContain("from product_relation relation");
+    expect(compiled.sql).toContain("select distinct on (relation.id)");
+    expect(compiled.sql).toContain("relation.audience ?| array[$");
+    expect(compiled.sql).toContain("relation.source_entity_id = any(array[$");
+    expect(compiled.sql).toContain("relation.target_entity_id = any(array[$");
+    expect(compiled.sql).toContain("limit $");
+    expect(compiled.params).toContain(26);
+  });
+
   it("resolves current and historical workspace revisions with bound parameters", () => {
     const dialect = new PgDialect();
     const current = dialect.sqlToQuery(

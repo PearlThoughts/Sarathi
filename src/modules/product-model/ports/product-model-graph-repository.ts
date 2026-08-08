@@ -7,6 +7,7 @@ import type {
   ProductLifecycle,
   ProductModelError,
   ProductRegistration,
+  ProductRelation,
 } from "../domain/product-model.ts";
 
 export type ProductModelReadPoint =
@@ -53,10 +54,26 @@ export type ProductModelRevisionRequest = {
   readonly point: ProductModelReadPoint;
 };
 
+export type ProductRelationReadRequest = {
+  readonly workspaceId: string;
+  readonly entityIds: readonly ProductEntityId[];
+  readonly maximumRelations: number;
+  readonly point: ProductModelReadPoint;
+  readonly visibility: ProductModelVisibility;
+};
+
+export type ProductRelationReadResult = {
+  readonly relations: readonly ProductRelation[];
+  readonly truncated: boolean;
+};
+
 export type ProductModelGraphRepository = {
   readonly resolveRevision: (
     request: ProductModelRevisionRequest,
   ) => Effect.Effect<number | undefined, ProductModelError | RepositoryError>;
+  readonly readRelations: (
+    request: ProductRelationReadRequest,
+  ) => Effect.Effect<ProductRelationReadResult, ProductModelError | RepositoryError>;
   readonly traverseHierarchy: (
     request: ProductHierarchyTraversal,
   ) => Effect.Effect<ProductHierarchyTraversalResult, ProductModelError | RepositoryError>;
