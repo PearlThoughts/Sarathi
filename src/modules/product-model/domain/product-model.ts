@@ -1330,7 +1330,12 @@ export const changeProductVariantPrecedence = (
     const variant = model.variants.find(({ id }) => id === input.variantId);
     if (variant === undefined)
       return yield* failure("entity_not_found", "Product variant was not found.", input.variantId);
-    if (variant.registration === "superseded" || variant.validTo !== undefined)
+    if (
+      variant.registration === "superseded" ||
+      Date.parse(context.validFrom) <= Date.parse(variant.validFrom) ||
+      (variant.validTo !== undefined &&
+        Date.parse(context.validFrom) >= Date.parse(variant.validTo))
+    )
       return yield* failure("transition_invalid", "An inactive variant cannot change precedence.");
     if (!Number.isSafeInteger(input.precedence))
       return yield* failure("variant_conflict", "Variant precedence must be a safe integer.");
