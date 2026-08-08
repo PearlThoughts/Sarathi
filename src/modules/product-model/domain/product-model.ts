@@ -162,8 +162,12 @@ export type ProductRevisionEventType =
   | ProductIdentityEventType
   | "registration_changed"
   | "relation_added"
+  | "relation_removed"
   | "attachment_added"
-  | "variant_added";
+  | "variant_added"
+  | "variant_precedence_changed"
+  | "lifecycle_changed"
+  | "audience_promoted";
 
 export type ProductIdentityEvent = {
   readonly id: string;
@@ -839,6 +843,76 @@ export const retireProductEntity = (
     );
   });
 
+export const changeProductEntityLifecycle = (
+  model: ProductModel,
+  input: {
+    readonly entityId: ProductEntityId;
+    readonly lifecycle: Exclude<ProductLifecycle, "retired">;
+  },
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    const entity = entityFor(model, input.entityId);
+    if (entity === undefined)
+      return yield* failure("entity_not_found", "Product entity was not found.", input.entityId);
+    if (!activeEntity(entity))
+      return yield* failure("entity_retired", "An inactive entity cannot change lifecycle.");
+    if (entity.lifecycle === input.lifecycle)
+      return yield* failure("no_change", "The product lifecycle is unchanged.", input.entityId);
+    const revision = model.revision + 1;
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        entities: model.entities.map((candidate) =>
+          candidate.id === input.entityId
+            ? { ...candidate, lifecycle: input.lifecycle, updatedRevision: revision }
+            : candidate,
+        ),
+      },
+      { type: "lifecycle_changed" },
+    );
+  });
+
+export const promoteProductEntityAudience = (
+  model: ProductModel,
+  input: { readonly entityId: ProductEntityId; readonly audience: readonly string[] },
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    const entity = entityFor(model, input.entityId);
+    if (entity === undefined)
+      return yield* failure("entity_not_found", "Product entity was not found.", input.entityId);
+    if (!activeEntity(entity))
+      return yield* failure("entity_retired", "An inactive entity cannot change audience.");
+    const audience = [...new Set(input.audience.map((value) => value.trim()))].filter(Boolean);
+    if (
+      audience.length === 0 ||
+      entity.audience.some((value) => !audience.includes(value)) ||
+      audience.every((value) => entity.audience.includes(value))
+    )
+      return yield* failure(
+        "transition_invalid",
+        "Audience promotion must retain every current audience and add at least one audience.",
+        input.entityId,
+      );
+    const revision = model.revision + 1;
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        entities: model.entities.map((candidate) =>
+          candidate.id === input.entityId
+            ? { ...candidate, audience, updatedRevision: revision }
+            : candidate,
+        ),
+      },
+      { type: "audience_promoted" },
+    );
+  });
+
 export type ProductRelationEndpointRule =
   | { readonly kind: "entity"; readonly sameKind?: boolean }
   | {
@@ -1125,6 +1199,38 @@ export const addProductRelation = (
     );
   });
 
+export const removeProductRelation = (
+  model: ProductModel,
+  relationId: string,
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    const relation = model.relations.find(({ id }) => id === relationId);
+    if (relation === undefined)
+      return yield* failure("entity_not_found", "Product relation was not found.", relationId);
+    if (relation.registration === "superseded" || relation.validTo !== undefined)
+      return yield* failure("no_change", "The product relation is already inactive.", relationId);
+    if (Date.parse(context.validFrom) <= Date.parse(relation.validFrom))
+      return yield* failure(
+        "invalid_input",
+        "Relation removal must occur after relation activation.",
+        relationId,
+      );
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        relations: model.relations.map((candidate) =>
+          candidate.id === relationId
+            ? { ...candidate, registration: "superseded", validTo: context.validFrom }
+            : candidate,
+        ),
+      },
+      { type: "relation_removed" },
+    );
+  });
+
 export const productVariantAxes: readonly ProductVariantAxis[] = [
   "client",
   "tenant",
@@ -1212,6 +1318,36 @@ export const addProductVariant = (
         ],
       },
       { type: "variant_added" },
+    );
+  });
+
+export const changeProductVariantPrecedence = (
+  model: ProductModel,
+  input: { readonly variantId: string; readonly precedence: number },
+  context: ProductModelChangeContext,
+): Effect.Effect<ProductModel, ProductModelError> =>
+  Effect.gen(function* () {
+    const variant = model.variants.find(({ id }) => id === input.variantId);
+    if (variant === undefined)
+      return yield* failure("entity_not_found", "Product variant was not found.", input.variantId);
+    if (variant.registration === "superseded" || variant.validTo !== undefined)
+      return yield* failure("transition_invalid", "An inactive variant cannot change precedence.");
+    if (!Number.isSafeInteger(input.precedence))
+      return yield* failure("variant_conflict", "Variant precedence must be a safe integer.");
+    if (variant.precedence === input.precedence)
+      return yield* failure("no_change", "The variant precedence is unchanged.", input.variantId);
+    return yield* commit(
+      model,
+      context,
+      {
+        ...nextBase(model),
+        variants: model.variants.map((candidate) =>
+          candidate.id === input.variantId
+            ? { ...candidate, precedence: input.precedence }
+            : candidate,
+        ),
+      },
+      { type: "variant_precedence_changed" },
     );
   });
 
