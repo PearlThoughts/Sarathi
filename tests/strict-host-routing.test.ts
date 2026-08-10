@@ -31,6 +31,13 @@ describe("strict host routing", () => {
         configuration,
       ),
     ).toBe("api");
+    expect(
+      classifyHostSurface(
+        configuration.apiHost,
+        "/v1/workspaces/workspace-example/product-model/map",
+        configuration,
+      ),
+    ).toBe("api");
     expect(classifyHostSurface(configuration.apiHost, "/oauth/callback", configuration)).toBe(
       "denied",
     );
@@ -43,6 +50,13 @@ describe("strict host routing", () => {
     expect(classifyHostSurface(configuration.appHost, "/api/messages", configuration)).toBe(
       "denied",
     );
+    expect(
+      classifyHostSurface(
+        configuration.appHost,
+        "/v1/workspaces/workspace-example/product-model/map",
+        configuration,
+      ),
+    ).toBe("denied");
     expect(
       classifyHostSurface(
         configuration.appHost,
