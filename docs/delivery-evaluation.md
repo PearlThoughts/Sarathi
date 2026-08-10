@@ -8,8 +8,11 @@ The evaluation set is supplied with `--set-json` or `SARATHI_DELIVERY_EVALUATION
 bun run delivery evaluate \
   --actor-id <mapped-actor-id> \
   --time-zone <iana-zone> \
+  --source-scopes-json '["jira","github","vault","strategy"]' \
   --set-json '<versioned-json>'
 ```
+
+`--source-scopes-json` (or `SARATHI_DELIVERY_PERMITTED_SOURCE_SCOPES_JSON`) narrows both `delivery query` and every case in `delivery evaluate` to an explicit subset of `jira`, `vault`, `github`, `teams`, `email`, and `strategy`. Adapters outside the validated grant are not executed. Empty, duplicate, unknown, or malformed scopes fail before the answer path runs. Omitting the option preserves the caller's existing authorized source behavior.
 
 The runner evaluates expected outcome, intent, status, citation count and source mix, required or forbidden answer terms, the answer acceptance envelope, optional human-usefulness ratings, and optional reconstruction recall. A denial case must name the exact privacy-safe failure operation so an unrelated outage cannot pass an authorization test.
 

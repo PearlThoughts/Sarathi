@@ -142,6 +142,8 @@ items:
         "structured",
         "--response-product",
         "period_delivery_brief",
+        "--source-scopes-json",
+        '["jira","github","vault","strategy"]',
       ],
       {
         SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
@@ -155,6 +157,7 @@ items:
         workspaceId: "workspace-1",
         actorId: "actor-1",
         audienceIds: ["delivery-team"],
+        permittedSourceScopes: ["jira", "github", "vault", "strategy"],
         maximumSensitivity: "internal",
         financeAccess: true,
         requestedAt: "2026-07-20T12:00:00.000Z",
@@ -258,6 +261,8 @@ items:
         "Asia/Kolkata",
         "--set-json",
         evaluationSet,
+        "--source-scopes-json",
+        '["jira","github"]',
       ],
       {
         SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1",
@@ -269,6 +274,7 @@ items:
       expect.objectContaining({
         question: "Private project status wording",
         actorId: "actor-1",
+        permittedSourceScopes: ["jira", "github"],
       }),
     );
     expect(result).toMatchObject({
@@ -299,6 +305,35 @@ items:
     expect(serialized).not.toContain("Private project status wording");
     expect(serialized).not.toContain("Internal status detail");
     expect(serialized).not.toContain("https://jira.example");
+  });
+
+  it("rejects malformed source scopes without invoking the answer path or echoing input", async () => {
+    const answer = vi.fn();
+    const result = await runDeliveryCommand(
+      [
+        "query",
+        "--question",
+        "What is the project status?",
+        "--actor-id",
+        "actor-1",
+        "--time-zone",
+        "Asia/Kolkata",
+        "--source-scopes-json",
+        '["jira","unapproved-private-source"]',
+      ],
+      { SARATHI_KNOWLEDGE_WORKSPACE_ID: "workspace-1" },
+      { answer },
+    );
+
+    expect(answer).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      exitCode: 1,
+      output: {
+        ok: false,
+        message: "Delivery operation failed; inspect privacy-safe service diagnostics.",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("unapproved-private-source");
   });
 
   it("implements rebuild as a non-destructive full reconciliation", async () => {
