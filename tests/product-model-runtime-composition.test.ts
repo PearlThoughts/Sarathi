@@ -1,3 +1,5 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.ts";
@@ -9,6 +11,7 @@ import { makeSarathiRuntime } from "../src/platform/runtime.ts";
 
 const readToken = "synthetic-read-token-00000001";
 const workspaceId = "synthetic-runtime-workspace";
+const execFile = promisify(execFileCallback);
 
 const principal = (
   overrides: Partial<ProductModelPrincipalConfiguration> = {},
@@ -45,6 +48,22 @@ const environment = () => ({
 });
 
 describe("product-model runtime composition", () => {
+  it("loads its default environment under the hosted Node runtime", async () => {
+    const script =
+      'import { Effect } from "effect"; import { loadPlatformConfig } from "./src/platform/config.ts"; console.log(Effect.runSync(loadPlatformConfig()).serviceName);';
+
+    const { stdout } = await execFile(
+      "node",
+      ["--import", "tsx", "--input-type=module", "--eval", script],
+      {
+        cwd: process.cwd(),
+        env: { PATH: process.env.PATH ?? "", NODE_ENV: "test" },
+      },
+    );
+
+    expect(stdout.trim()).toBe("sarathi");
+  });
+
   it("fails closed when runtime configuration is partial or principal identities collide", () => {
     expect(() =>
       Effect.runSync(

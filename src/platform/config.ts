@@ -138,7 +138,7 @@ const authModeFrom = (value: string | undefined): "static" | "better-auth-postgr
 };
 
 export const loadPlatformConfig = (
-  source: Record<string, string | undefined> = Bun.env,
+  source: Record<string, string | undefined> = process.env,
 ): Effect.Effect<SarathiConfig> =>
   Effect.sync(() => {
     const environment = environmentFrom(source.SARATHI_ENVIRONMENT ?? source.NODE_ENV);
