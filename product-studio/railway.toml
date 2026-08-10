@@ -1,0 +1,12 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "bun run --cwd product-studio build"
+watchPatterns = ["/product-studio/**", "/bun.lock", "/package.json"]
+
+[deploy]
+preDeployCommand = "bun run --cwd product-studio payload migrate"
+startCommand = "bun run --cwd product-studio start"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
