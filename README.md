@@ -160,6 +160,7 @@ Production use should be treated capability by capability. A successful deployme
 - [Delivery synthesis architecture](docs/architecture/delivery-synthesis.md)
 - [Delivery evaluation](docs/delivery-evaluation.md)
 - [Organization installation and activation](docs/installation.md)
+- [Local Product Registry and Product Studio](docs/local-product-registry.md)
 - [Documentation index](docs/README.md)
 
 ## 💬 Feedback

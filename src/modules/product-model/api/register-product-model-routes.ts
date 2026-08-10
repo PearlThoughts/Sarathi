@@ -287,11 +287,44 @@ export const registerProductModelRoutes = (
         const maximumRelations = yield* boundedInteger(
           context.req.query("maximumRelations"),
           250,
-          1_000,
+          500,
         );
         const at = yield* parseInstant(context.req.query("at"), dependencies.now(), "at");
         return yield* dependencies.queries.getProductMap(requestContext, {
           at,
+          maximumDepth,
+          maximumNodes,
+          maximumRelations,
+        });
+      }),
+    );
+    return result.ok ? context.json({ data: result.value }) : respondError(context, result.error);
+  });
+
+  app.get(`${base}/history`, async (context) => {
+    if (dependencies === undefined) return unavailable(context);
+    const workspaceId = context.req.param("workspaceId");
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const requestContext = yield* authorizedContext(dependencies, context, workspaceId);
+        const maximumDepth = yield* boundedInteger(context.req.query("maximumDepth"), 4, 8);
+        const maximumNodes = yield* boundedInteger(context.req.query("maximumNodes"), 250, 500);
+        const maximumRelations = yield* boundedInteger(
+          context.req.query("maximumRelations"),
+          250,
+          500,
+        );
+        const validAt = context.req.query("validAt");
+        if (validAt === undefined)
+          return yield* Effect.fail(
+            new ValidationError({
+              message: "validAt is required.",
+              field: "validAt",
+            }),
+          );
+        const parsedValidAt = yield* parseInstant(validAt, validAt, "validAt");
+        return yield* dependencies.queries.getProductGraphAtTime(requestContext, {
+          validAt: parsedValidAt,
           maximumDepth,
           maximumNodes,
           maximumRelations,
@@ -343,7 +376,7 @@ export const registerProductModelRoutes = (
         const maximumRelations = yield* boundedInteger(
           context.req.query("maximumRelations"),
           250,
-          1_000,
+          500,
         );
         const at = yield* parseInstant(context.req.query("at"), dependencies.now(), "at");
         return yield* dependencies.queries.getCapabilitySubgraph(requestContext, {
