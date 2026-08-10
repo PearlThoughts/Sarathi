@@ -28,6 +28,8 @@ The mutation adapter never reads `SARATHI_PRODUCT_STUDIO_READ_TOKEN`. Governed r
 
 Product Studio deploys independently. A failed Sarathi read returns a closed error view with no product data. Product Studio health or database failures do not participate in the Teams, synchronization, or delivery-report runtimes.
 
+The Railway service builds from the repository root so the shared Bun lockfile remains authoritative, while using `/product-studio/railway.toml` as its custom config file. The service must use its own PostgreSQL service and `PRODUCT_STUDIO_DATABASE_URL`; it must not reuse Sarathi's application database credential.
+
 ## Verification
 
 From the repository root:
