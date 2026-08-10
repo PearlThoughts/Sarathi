@@ -371,6 +371,8 @@ const endpoint = (
     ? { kind, entityId: entityId as ProductEntityId }
     : { kind, referenceKind, referenceId: referenceId ?? "" };
 
+const isoInstant = (value: string): string => new Date(value).toISOString();
+
 const toRelation = (row: ProductRelationRow): ProductRelation => ({
   id: row.id,
   workspaceId: row.workspaceId,
@@ -391,8 +393,8 @@ const toRelation = (row: ProductRelationRow): ProductRelation => ({
   sourceClass: row.sourceClass,
   sensitivity: row.sensitivity,
   audience: row.audience,
-  validFrom: row.validFrom,
-  ...(row.validTo === null ? {} : { validTo: row.validTo }),
+  validFrom: isoInstant(row.validFrom),
+  ...(row.validTo === null ? {} : { validTo: isoInstant(row.validTo) }),
   createdRevision: row.createdRevision,
 });
 

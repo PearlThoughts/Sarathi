@@ -257,6 +257,40 @@ describe("product-model HTTP API", () => {
     });
   });
 
+  it("exposes bounded valid-time history through the authorized query service", async () => {
+    const getProductGraphAtTime = vi.fn(() => Effect.succeed(graph));
+    const app = createApp(runtime(dependencies({ queries: queries({ getProductGraphAtTime }) })));
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/history?validAt=${encodeURIComponent(at)}&maximumRelations=500`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getProductGraphAtTime).toHaveBeenCalledWith(context, {
+      validAt: at,
+      maximumDepth: 4,
+      maximumNodes: 250,
+      maximumRelations: 500,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      data: { workspaceId, revision: 4 },
+    });
+  });
+
+  it("requires a valid history instant before historical graph access", async () => {
+    const getProductGraphAtTime = vi.fn();
+    const app = createApp(runtime(dependencies({ queries: queries({ getProductGraphAtTime }) })));
+
+    const missing = await app.request(`/v1/workspaces/${workspaceId}/product-model/history`);
+    const invalid = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/history?validAt=not-an-instant`,
+    );
+
+    expect(missing.status).toBe(400);
+    expect(invalid.status).toBe(400);
+    expect(getProductGraphAtTime).not.toHaveBeenCalled();
+  });
+
   it("validates traversal bounds after context resolution and before graph access", async () => {
     const events: string[] = [];
     const getProductMap = vi.fn();

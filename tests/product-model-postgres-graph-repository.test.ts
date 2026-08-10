@@ -224,4 +224,53 @@ describe("PostgreSQL product-model graph repository", () => {
     });
     expect(execute).toHaveBeenCalledOnce();
   });
+
+  it("normalizes PostgreSQL relation timestamps at the repository boundary", async () => {
+    const targetId = "00000000-0000-4000-8000-000000000002";
+    const execute = vi.fn(async () => ({
+      rows: [
+        {
+          id: "relation-synthetic",
+          workspaceId,
+          relationType: "enables",
+          sourceKind: "entity",
+          sourceEntityId: rootId,
+          sourceReferenceKind: "technical",
+          sourceReferenceId: null,
+          targetKind: "entity",
+          targetEntityId: targetId,
+          targetReferenceKind: "technical",
+          targetReferenceId: null,
+          registration: "ratified",
+          sourceClass: "synthetic",
+          sensitivity: "internal",
+          audience: ["workspace:synthetic"],
+          validFrom: "2026-08-10 09:55:00+00",
+          validTo: "2026-09-10 09:55:00+00",
+          createdRevision: 5,
+        },
+      ],
+    }));
+    const repository = createPostgresProductModelGraphRepository({
+      execute,
+    } as unknown as KnowledgePostgresDatabase);
+
+    const result = await Effect.runPromise(
+      repository.readRelations({
+        workspaceId,
+        entityIds: [entityId(rootId), entityId(targetId)],
+        maximumRelations: 10,
+        point: { kind: "current", at: "2026-08-11T00:00:00.000Z" },
+        visibility: {
+          audienceIds: ["workspace:synthetic"],
+          maximumSensitivity: "internal",
+        },
+      }),
+    );
+
+    expect(result.relations[0]).toMatchObject({
+      validFrom: "2026-08-10T09:55:00.000Z",
+      validTo: "2026-09-10T09:55:00.000Z",
+    });
+  });
 });
