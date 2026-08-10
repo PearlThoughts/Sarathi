@@ -16,6 +16,7 @@ const isApiPath = (path: string): boolean =>
   path === "/api/teams/notifications" ||
   path === "/health" ||
   path === "/ready" ||
+  path.startsWith("/v1/") ||
   path.startsWith("/internal/");
 
 const isRailwayHealthPath = (path: string): boolean => path === "/health" || path === "/ready";
