@@ -11,6 +11,7 @@ import {
 } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import express from "express";
+import { createApp } from "../app.ts";
 import { runDeliverySyncCommand } from "../cli/commands/delivery-sync-runtime.ts";
 import { startDeliverySyncScheduler } from "../cli/commands/delivery-sync-scheduler.ts";
 import { RepositoryError } from "../domain/errors.ts";
@@ -95,10 +96,12 @@ import {
   type TeamsMentionCommand,
   type TeamsMentionDependencies,
 } from "../modules/teams-mention/index.ts";
+import { makeSarathiRuntime } from "../platform/runtime.ts";
 import {
   classifyHostSurface,
   strictHostRoutingConfigurationFromEnvironment,
 } from "./host-routing.ts";
+import { createHostedPlatformApiMiddleware } from "./hosted-platform-api.ts";
 import { parseTeamsChangeNotificationBatch } from "./teams-change-notification-ingress.ts";
 
 export type TeamsIngressConfiguration = {
@@ -1188,6 +1191,8 @@ export const startTeamsIngress = (): void => {
   const diagnostics = createPrivacySafeTeamsIngressDiagnosticSink();
   const application = createTeamsIngressApplication(composition.dependencies, adapter, diagnostics);
   const server = express();
+  const platformRuntime = makeSarathiRuntime();
+  const platformApp = createApp(platformRuntime);
   const strictHosts = strictHostRoutingConfigurationFromEnvironment();
   if (strictHosts !== undefined) {
     server.use((request, response, next) => {
@@ -1198,6 +1203,7 @@ export const startTeamsIngress = (): void => {
       next();
     });
   }
+  server.use(createHostedPlatformApiMiddleware(platformApp.fetch));
   server.use(express.json());
   server.post("/api/teams/notifications", (request, response) => {
     const validationToken =

@@ -51,6 +51,7 @@
     "@effect/printer": "^0.50",
     "@effect/printer-ansi": "^0.50",
     "@effect/typeclass": "^0.41",
+    "@hono/node-server": "1.19.14",
     "@microsoft/agents-activity": "1.6.1",
     "@microsoft/agents-hosting": "1.6.1",
     "@openrouter/ai-sdk-provider": "3.0.0",
