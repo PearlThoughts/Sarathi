@@ -1,3 +1,8 @@
+import {
+  type CollaborationSourceScope,
+  collaborationSourceScopes,
+  isCollaborationSourceScope,
+} from "../../domain/collaboration-source-scope.ts";
 import { RepositoryError } from "../../domain/errors.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
 import { createGitHubDeliveryQuerySource } from "../../infrastructure/github/index.ts";
@@ -99,6 +104,28 @@ const parseJson = <Value>(name: string, value: string | undefined): Value => {
   }
 };
 
+const permittedSourceScopesFrom = (
+  args: readonly string[],
+  environment: DeliveryRuntimeEnvironment,
+): readonly CollaborationSourceScope[] | undefined => {
+  const serialized =
+    option(args, "--source-scopes-json") ??
+    environment.SARATHI_DELIVERY_PERMITTED_SOURCE_SCOPES_JSON;
+  if (serialized === undefined) return undefined;
+  const decoded = parseJson<unknown>("--source-scopes-json", serialized);
+  if (
+    !Array.isArray(decoded) ||
+    decoded.length === 0 ||
+    decoded.length > collaborationSourceScopes.length ||
+    !decoded.every(isCollaborationSourceScope) ||
+    new Set(decoded).size !== decoded.length
+  )
+    throw new Error(
+      "--source-scopes-json must contain a unique non-empty array of supported source scopes.",
+    );
+  return decoded;
+};
+
 const option = (args: readonly string[], name: string): string | undefined => {
   const index = args.indexOf(name);
   return index < 0 ? undefined : args[index + 1];
@@ -159,6 +186,7 @@ const queryRequest = (
           "SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON",
           environment.SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON,
         );
+  const permittedSourceScopes = permittedSourceScopesFrom(args, environment);
   return {
     workspaceId: required(
       "SARATHI_KNOWLEDGE_WORKSPACE_ID",
@@ -166,6 +194,7 @@ const queryRequest = (
     ),
     actorId,
     audienceIds,
+    ...(permittedSourceScopes === undefined ? {} : { permittedSourceScopes }),
     maximumSensitivity: maximumSensitivity as SensitivityTier,
     financeAccess: financeActorIds.has(actorId),
     requestedAt: option(args, "--requested-at") ?? new Date().toISOString(),
@@ -516,7 +545,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, intent import|status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone>, or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive].",
+          "Use delivery status, intent import|status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone> [--source-scopes-json <json>], or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive] [--source-scopes-json <json>].",
       },
     };
   } catch (error) {
