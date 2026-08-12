@@ -135,10 +135,11 @@ describe("Product Studio architecture adherence", () => {
     const rootPackage = await readFile(new URL("../package.json", studioRoot), "utf8");
     const testManifest = await readFile(new URL("../tests/manifest.json", studioRoot), "utf8");
 
-    expect(view).toContain("<Hierarchy map={map} />");
-    expect(view).toContain("<RegistryTable map={map} />");
+    expect(view).toContain("<Hierarchy map={visibleMap} />");
+    expect(view).toContain("<RegistryTable map={visibleMap} />");
     expect(view).toContain("<CoverageReview coverage={coverage} />");
-    expect(view).toContain("Evidence bodies are never shown.");
+    expect(view).toContain("evidence bodies are never shown.");
+    expect(view).toContain("Read relationships as a list");
     expect(adapter).toContain("coverage?maximumItems=");
     expect(view).toContain('<table className="w-full border-collapse text-left text-sm">');
     expect(view).not.toContain("<canvas");

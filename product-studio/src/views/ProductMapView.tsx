@@ -5,12 +5,18 @@ import {
   type ProductDossier,
   type ProductHierarchyNode,
   type ProductMap,
+  productMapMatching,
   productMapRows,
   relationTypes,
 } from "../domain/product-model";
 import { createSarathiProductModelClientFromEnvironment } from "../server/sarathi-product-model-client";
 import { createUserBoundSarathiCredentialProvider } from "../server/user-bound-sarathi-credentials";
+import { ProductRelationGraph } from "./ProductRelationGraph";
+import { ProductStudioLoginRedirect } from "./ProductStudioLoginRedirect";
 import { RenameEntityForm } from "./RenameEntityForm";
+
+const PRODUCT_MAP_PATH = "/admin/product-map";
+const preservedProductMapParams = ["depth", "relation", "entity", "q"] as const;
 
 const scalar = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value;
@@ -19,6 +25,19 @@ const boundedDepth = (value: string | undefined): number => {
   const parsed = Number(value ?? "4");
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 8 ? parsed : 4;
 };
+
+const productMapReturnPath = (searchParams: AdminViewServerProps["searchParams"]): string => {
+  const target = new URLSearchParams();
+  for (const key of preservedProductMapParams) {
+    const value = scalar(searchParams?.[key]);
+    if (value !== undefined && value.length > 0) target.set(key, value);
+  }
+  const query = target.toString();
+  return query.length === 0 ? PRODUCT_MAP_PATH : `${PRODUCT_MAP_PATH}?${query}`;
+};
+
+const loginPathFor = (returnPath: string): string =>
+  `/admin/login?redirect=${encodeURIComponent(returnPath)}`;
 
 const mutationAvailable = (payloadUserId: string): boolean => {
   try {
@@ -115,6 +134,179 @@ const Hierarchy = ({ map }: { readonly map: ProductMap }) => {
   return branch(undefined, new Set());
 };
 
+const CapabilityMap = ({ map }: { readonly map: ProductMap }) => {
+  const children = new Map<string | undefined, ProductHierarchyNode[]>();
+  for (const node of map.entities) {
+    const siblings = children.get(node.parentId) ?? [];
+    siblings.push(node);
+    children.set(node.parentId, siblings);
+  }
+  for (const siblings of children.values())
+    siblings.sort((left, right) => left.canonicalName.localeCompare(right.canonicalName));
+
+  const products = (children.get(undefined) ?? []).filter(({ kind }) => kind === "product");
+  const areas = map.entities.filter(({ kind }) => kind === "area");
+  const capabilitiesFor = (parentId: string) =>
+    (children.get(parentId) ?? []).filter(({ kind }) => kind === "capability");
+  const featuresFor = (parentId: string) =>
+    (children.get(parentId) ?? []).filter(({ kind }) => kind === "feature");
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-stone-300 bg-stone-200 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 bg-stone-950 px-5 py-4 text-stone-100">
+        <div>
+          <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-teal-300">
+            Product landscape
+          </p>
+          <p className="mt-1 text-lg font-semibold">
+            {products.map(({ canonicalName }) => canonicalName).join(", ") || "Authorized map"}
+          </p>
+        </div>
+        <dl className="flex gap-5 text-sm">
+          {(["area", "capability", "feature"] as const).map((kind) => (
+            <div className="text-right" key={kind}>
+              <dt className="text-stone-400">{labelForKind[kind]}</dt>
+              <dd className="font-mono font-semibold tabular-nums">
+                {map.entities.filter((entity) => entity.kind === kind).length}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      {areas.length === 0 ? (
+        <p className="bg-white p-6 text-sm text-stone-700">
+          This view has no product areas. Use the complete hierarchy below to inspect the authorized
+          structure.
+        </p>
+      ) : (
+        <ol className="grid gap-px bg-stone-300 lg:grid-cols-2">
+          {areas.map((area, areaIndex) => {
+            const capabilities = capabilitiesFor(area.entityId);
+            const directFeatures = featuresFor(area.entityId);
+            return (
+              <li className="bg-stone-50 p-5" key={area.entityId}>
+                <header className="flex items-start gap-4 border-b border-stone-300 pb-4">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-9 shrink-0 place-items-center rounded-full border border-teal-700 font-mono text-xs font-semibold text-teal-900"
+                  >
+                    {String(areaIndex + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-stone-500">
+                      Product area
+                    </p>
+                    <h3 className="mt-1 text-balance text-xl font-semibold">
+                      <EntityLink node={area} />
+                    </h3>
+                    {area.description === undefined ? null : (
+                      <p className="mt-2 text-pretty text-sm leading-relaxed text-stone-600">
+                        {area.description}
+                      </p>
+                    )}
+                  </div>
+                </header>
+                {capabilities.length === 0 && directFeatures.length === 0 ? (
+                  <p className="mt-4 text-sm text-stone-600">
+                    No children are visible at this depth.
+                  </p>
+                ) : (
+                  <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {capabilities.map((capability) => {
+                      const features = featuresFor(capability.entityId);
+                      return (
+                        <li
+                          className="rounded-lg border border-stone-300 bg-white p-4 shadow-sm"
+                          key={capability.entityId}
+                        >
+                          <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-teal-800">
+                            Capability
+                          </p>
+                          <h4 className="mt-1 text-sm leading-snug">
+                            <EntityLink node={capability} />
+                          </h4>
+                          {features.length === 0 ? null : (
+                            <ul
+                              aria-label={`Features in ${capability.canonicalName}`}
+                              className="mt-3 space-y-2 border-l border-stone-300 pl-3"
+                            >
+                              {features.map((feature) => (
+                                <li
+                                  className="text-xs leading-snug text-stone-700"
+                                  key={feature.entityId}
+                                >
+                                  <EntityLink node={feature} />
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
+                    {directFeatures.map((feature) => (
+                      <li
+                        className="rounded-lg border border-dashed border-stone-400 bg-white p-4"
+                        key={feature.entityId}
+                      >
+                        <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                          Direct feature
+                        </p>
+                        <p className="mt-1 text-sm">
+                          <EntityLink node={feature} />
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+};
+
+const relationGraphProjection = (map: ProductMap, selected?: string) => {
+  const entityNames = new Map(map.entities.map((entity) => [entity.entityId, entity]));
+  const relations = map.relations.filter(({ type }) => selected === undefined || type === selected);
+  const nodes = new Map<
+    string,
+    {
+      readonly id: string;
+      readonly kind: ProductHierarchyNode["kind"] | "external";
+      readonly label: string;
+    }
+  >();
+
+  const endpoint = (value: ProductMap["relations"][number]["source"]) => {
+    if (value.kind === "external") {
+      const id = `external:${value.referenceKind}:${value.referenceId}`;
+      nodes.set(id, { id, kind: "external", label: value.referenceId });
+      return id;
+    }
+    const entity = entityNames.get(value.entityId);
+    if (entity !== undefined)
+      nodes.set(entity.entityId, {
+        id: entity.entityId,
+        kind: entity.kind,
+        label: entity.canonicalName,
+      });
+    return value.entityId;
+  };
+
+  const projectedRelations = relations.map((relation) => ({
+    id: relation.id,
+    sourceId: endpoint(relation.source),
+    targetId: endpoint(relation.target),
+    type: relation.type,
+  }));
+  return {
+    entities: [...nodes.values()],
+    relations: projectedRelations,
+  };
+};
+
 const RegistryTable = ({ map }: { readonly map: ProductMap }) => (
   <div className="overflow-x-auto rounded-md border border-stone-300 bg-white shadow-sm">
     <table className="w-full border-collapse text-left text-sm">
@@ -203,78 +395,80 @@ const RelationList = ({
 };
 
 const CoverageReview = ({ coverage }: { readonly coverage: ProductCoverage }) => (
-  <section aria-labelledby="coverage-heading">
-    <div className="flex flex-wrap items-baseline justify-between gap-3">
-      <div>
-        <h2 className="scroll-mt-6 text-balance text-2xl font-semibold" id="coverage-heading">
-          Coverage Review
-        </h2>
-        <p className="mt-2 text-pretty text-sm text-stone-700">
-          Authorized metadata-only gaps for product-owner review. Evidence bodies are never shown.
+  <details className="group rounded-xl border border-stone-300 bg-white shadow-sm">
+    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-4 rounded-xl px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">
+      <span>
+        <span className="block text-lg font-semibold" id="coverage-heading">
+          Product-owner review queue
+        </span>
+        <span className="mt-1 block text-sm text-stone-600">
+          Metadata gaps and unresolved coverage; evidence bodies are never shown.
+        </span>
+      </span>
+      <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 font-mono text-xs font-semibold text-amber-950 tabular-nums">
+        {coverage.items.length} items
+      </span>
+    </summary>
+    <div className="border-t border-stone-200 p-5">
+      {coverage.items.length === 0 ? (
+        <p className="rounded-md border border-stone-300 bg-stone-50 p-4 text-pretty text-sm text-stone-700">
+          No authorized coverage gaps were returned for this workspace revision.
         </p>
-      </div>
-      <p className="font-mono text-sm text-stone-600 tabular-nums">
-        {coverage.items.length} review items
-      </p>
-    </div>
-    {coverage.items.length === 0 ? (
-      <p className="mt-4 rounded-md border border-stone-300 bg-white p-4 text-pretty text-sm text-stone-700 shadow-sm">
-        No authorized coverage gaps were returned for this workspace revision.
-      </p>
-    ) : (
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-        {coverage.items.map((item) => (
-          <li
-            className="rounded-md border border-stone-300 bg-white p-4 shadow-sm"
-            key={item.entityId}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <a
-                className="font-semibold text-stone-950 underline decoration-stone-400 underline-offset-4 hover:decoration-stone-950 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700"
-                href={`/admin/product-map?entity=${encodeURIComponent(item.entityId)}`}
-              >
-                {item.canonicalName}
-              </a>
-              <span className="font-mono text-xs text-stone-500">{labelForKind[item.kind]}</span>
-            </div>
-            <ul
-              aria-label={`Coverage flags for ${item.canonicalName}`}
-              className="mt-3 flex flex-wrap gap-2"
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {coverage.items.map((item) => (
+            <li
+              className="rounded-md border border-stone-300 bg-white p-4 shadow-sm"
+              key={item.entityId}
             >
-              {item.flags.map((flag) => (
-                <li
-                  className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-mono text-xs text-amber-950"
-                  key={flag}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <a
+                  className="font-semibold text-stone-950 underline decoration-stone-400 underline-offset-4 hover:decoration-stone-950 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700"
+                  href={`/admin/product-map?entity=${encodeURIComponent(item.entityId)}`}
                 >
-                  {flag.replaceAll("_", " ")}
-                </li>
-              ))}
-            </ul>
-            <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
-              <div>
-                <dt className="text-stone-500">Claims</dt>
-                <dd className="font-mono tabular-nums">{item.claimCount}</dd>
+                  {item.canonicalName}
+                </a>
+                <span className="font-mono text-xs text-stone-500">{labelForKind[item.kind]}</span>
               </div>
-              <div>
-                <dt className="text-stone-500">References</dt>
-                <dd className="font-mono tabular-nums">{item.referenceCount}</dd>
-              </div>
-              <div>
-                <dt className="text-stone-500">Variants</dt>
-                <dd className="font-mono tabular-nums">{item.variantCount}</dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-      </ul>
-    )}
-    {coverage.page.truncated ? (
-      <p className="mt-3 text-pretty text-sm text-amber-900" role="status">
-        Coverage results are bounded. Refine the review through Sarathi before making a product
-        decision.
-      </p>
-    ) : null}
-  </section>
+              <ul
+                aria-label={`Coverage flags for ${item.canonicalName}`}
+                className="mt-3 flex flex-wrap gap-2"
+              >
+                {item.flags.map((flag) => (
+                  <li
+                    className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 font-mono text-xs text-amber-950"
+                    key={flag}
+                  >
+                    {flag.replaceAll("_", " ")}
+                  </li>
+                ))}
+              </ul>
+              <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <dt className="text-stone-500">Claims</dt>
+                  <dd className="font-mono tabular-nums">{item.claimCount}</dd>
+                </div>
+                <div>
+                  <dt className="text-stone-500">References</dt>
+                  <dd className="font-mono tabular-nums">{item.referenceCount}</dd>
+                </div>
+                <div>
+                  <dt className="text-stone-500">Variants</dt>
+                  <dd className="font-mono tabular-nums">{item.variantCount}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
+      {coverage.page.truncated ? (
+        <p className="mt-3 text-pretty text-sm text-amber-900" role="status">
+          Coverage results are bounded. Refine the review through Sarathi before making a product
+          decision.
+        </p>
+      ) : null}
+    </div>
+  </details>
 );
 
 const Dossier = ({
@@ -288,7 +482,7 @@ const Dossier = ({
   return (
     <aside
       aria-labelledby="dossier-title"
-      className="rounded-md border border-stone-300 bg-stone-950 p-6 text-stone-100 shadow-md"
+      className="h-fit rounded-md border border-stone-300 bg-stone-950 p-6 text-stone-100 shadow-md xl:sticky xl:top-6"
     >
       <p className="font-mono text-xs text-teal-300">{labelForKind[dossier.entity.kind]} dossier</p>
       <h2 className="mt-2 text-balance text-2xl font-semibold" id="dossier-title">
@@ -347,22 +541,16 @@ const Dossier = ({
 };
 
 export const ProductMapView = async ({ initPageResult, searchParams }: AdminViewServerProps) => {
+  const params = searchParams ?? {};
   if (!initPageResult.req.user)
-    return (
-      <main className="p-8">
-        <h1 className="text-balance text-3xl font-semibold">Product Studio</h1>
-        <p className="mt-4 text-pretty text-stone-700">
-          Sign in through the Product Studio identity boundary to view the product map.
-        </p>
-      </main>
-    );
+    return <ProductStudioLoginRedirect target={loginPathFor(productMapReturnPath(params))} />;
 
   const canMutate = mutationAvailable(String(initPageResult.req.user.id));
 
-  const params = searchParams ?? {};
   const depth = boundedDepth(scalar(params.depth));
   const selectedRelation = scalar(params.relation);
   const selectedEntity = scalar(params.entity);
+  const query = scalar(params.q)?.trim();
 
   try {
     const client = createSarathiProductModelClientFromEnvironment();
@@ -371,6 +559,8 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
     const relationFilter = availableRelationTypes.includes(selectedRelation ?? "")
       ? selectedRelation
       : undefined;
+    const visibleMap = productMapMatching(map, query);
+    const graph = relationGraphProjection(visibleMap, relationFilter);
     const dossier =
       selectedEntity === undefined ? undefined : await client.getDossier(selectedEntity);
 
@@ -416,6 +606,36 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
           </div>
         </header>
 
+        <nav
+          aria-label="Product map sections"
+          className="mx-auto mt-5 flex max-w-7xl flex-wrap gap-x-5 gap-y-2 border-b border-stone-300 pb-4 text-sm font-semibold"
+        >
+          <a
+            className="underline decoration-stone-400 underline-offset-4 hover:decoration-teal-700"
+            href="#capability-map-heading"
+          >
+            Capability map
+          </a>
+          <a
+            className="underline decoration-stone-400 underline-offset-4 hover:decoration-teal-700"
+            href="#relations-heading"
+          >
+            Relationship graph
+          </a>
+          <a
+            className="underline decoration-stone-400 underline-offset-4 hover:decoration-teal-700"
+            href="#coverage-heading"
+          >
+            Review queue
+          </a>
+          <a
+            className="underline decoration-stone-400 underline-offset-4 hover:decoration-teal-700"
+            href="#registry-table-heading"
+          >
+            Registry
+          </a>
+        </nav>
+
         <div className="mx-auto mt-8 grid max-w-7xl gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="min-w-0 space-y-10">
             <form
@@ -454,12 +674,31 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
                   ))}
                 </select>
               </label>
+              <label className="grid min-w-56 flex-1 gap-1 text-sm font-semibold" htmlFor="q">
+                Find in Product Map
+                <input
+                  className="rounded-md border border-stone-400 bg-white px-3 py-2 font-normal text-stone-950 placeholder:text-stone-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                  defaultValue={query ?? ""}
+                  id="q"
+                  name="q"
+                  placeholder="Capability, feature, or definition"
+                  type="search"
+                />
+              </label>
               <button
                 className="rounded-md bg-teal-800 px-4 py-2 font-semibold text-white shadow-sm hover:bg-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
                 type="submit"
               >
                 Apply View
               </button>
+              {query === undefined || query.length === 0 ? null : (
+                <a
+                  className="px-2 py-2 text-sm font-semibold text-stone-700 underline decoration-stone-400 underline-offset-4 hover:decoration-teal-700"
+                  href={`/admin/product-map?depth=${depth}${relationFilter === undefined ? "" : `&relation=${encodeURIComponent(relationFilter)}`}`}
+                >
+                  Clear search
+                </a>
+              )}
             </form>
 
             {map.safeWarnings.map((warning) => (
@@ -482,8 +721,6 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
               </p>
             ))}
 
-            <CoverageReview coverage={coverage} />
-
             {map.entities.length === 0 ? (
               <section className="rounded-md border border-stone-300 bg-white p-8 text-center shadow-sm">
                 <h2 className="text-balance text-2xl font-semibold">
@@ -494,53 +731,98 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
                   Studio will not infer or create product boundaries.
                 </p>
               </section>
+            ) : visibleMap.entities.length === 0 ? (
+              <section className="rounded-xl border border-stone-300 bg-white p-8 text-center shadow-sm">
+                <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-teal-800">
+                  No map matches
+                </p>
+                <h2 className="mt-2 text-balance text-2xl font-semibold">
+                  No authorized entity matches “{query}”
+                </h2>
+                <p className="mx-auto mt-3 max-w-xl text-pretty text-stone-700">
+                  Try a broader product term or clear the search. The registry was not changed.
+                </p>
+              </section>
             ) : (
               <>
-                <section aria-labelledby="hierarchy-heading">
+                <section aria-labelledby="capability-map-heading">
                   <h2
                     className="scroll-mt-6 text-balance text-2xl font-semibold"
-                    id="hierarchy-heading"
+                    id="capability-map-heading"
                   >
-                    Hierarchy
+                    Capability Map
                   </h2>
-                  <p className="mb-4 mt-2 text-pretty text-sm text-stone-700">
-                    The governed single-parent spine, shown without requiring a pointer or visual
-                    graph navigation.
+                  <p className="mb-4 mt-2 max-w-3xl text-pretty text-sm leading-relaxed text-stone-700">
+                    Product areas contain stable business capabilities; customer-recognizable
+                    features sit within them. Tile size and position do not represent priority,
+                    maturity, ownership, or delivery progress.
                   </p>
-                  <Hierarchy map={map} />
+                  {query === undefined || query.length === 0 ? null : (
+                    <p className="mb-4 font-mono text-xs text-stone-600" role="status">
+                      Showing {visibleMap.entities.length} of {map.entities.length} entities for “
+                      {query}”. Matching branches retain their hierarchy context.
+                    </p>
+                  )}
+                  <CapabilityMap map={visibleMap} />
                 </section>
                 <section aria-labelledby="relations-heading">
                   <h2
                     className="scroll-mt-6 text-balance text-2xl font-semibold"
                     id="relations-heading"
                   >
-                    Relations
+                    Relationship Graph
                   </h2>
-                  <p className="mb-4 mt-2 text-pretty text-sm text-stone-700">
-                    Typed cross-links within the current authorized map.
+                  <p className="mb-4 mt-2 max-w-3xl text-pretty text-sm leading-relaxed text-stone-700">
+                    Typed cross-links are separated from the containment hierarchy. Pan, zoom, use
+                    the overview, or tab through nodes and edges; choose a node to open its dossier.
                   </p>
-                  <RelationList
-                    map={map}
-                    {...(relationFilter === undefined ? {} : { selected: relationFilter })}
-                  />
+                  <ProductRelationGraph entities={graph.entities} relations={graph.relations} />
+                  <details className="mt-3 rounded-lg border border-stone-300 bg-white">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">
+                      Read relationships as a list
+                    </summary>
+                    <div className="border-t border-stone-200 p-4">
+                      <RelationList
+                        map={visibleMap}
+                        {...(relationFilter === undefined ? {} : { selected: relationFilter })}
+                      />
+                    </div>
+                  </details>
                 </section>
-                <section aria-labelledby="table-heading">
-                  <h2
-                    className="scroll-mt-6 text-balance text-2xl font-semibold"
-                    id="table-heading"
+                <CoverageReview coverage={coverage} />
+                <details className="rounded-xl border border-stone-300 bg-white shadow-sm">
+                  <summary
+                    className="cursor-pointer px-5 py-4 text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                    id="hierarchy-heading"
                   >
-                    Registry Table
-                  </h2>
-                  <p className="mb-4 mt-2 text-pretty text-sm text-stone-700">
-                    A sortable reading order is preserved through the full hierarchy path.
-                  </p>
-                  <RegistryTable map={map} />
-                </section>
+                    Complete semantic hierarchy
+                  </summary>
+                  <div className="border-t border-stone-200 p-5">
+                    <p className="mb-4 text-pretty text-sm text-stone-700">
+                      The governed single-parent spine, readable without visual graph navigation.
+                    </p>
+                    <Hierarchy map={visibleMap} />
+                  </div>
+                </details>
+                <details className="rounded-xl border border-stone-300 bg-white shadow-sm">
+                  <summary
+                    className="cursor-pointer px-5 py-4 text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                    id="registry-table-heading"
+                  >
+                    Registry table
+                  </summary>
+                  <div className="border-t border-stone-200 p-5">
+                    <p className="mb-4 text-pretty text-sm text-stone-700">
+                      The complete reading order and full hierarchy path for this view.
+                    </p>
+                    <RegistryTable map={visibleMap} />
+                  </div>
+                </details>
               </>
             )}
           </div>
           {dossier === undefined ? (
-            <aside className="h-fit rounded-md border border-stone-300 bg-white p-6 shadow-sm">
+            <aside className="h-fit rounded-md border border-stone-300 bg-white p-6 shadow-sm xl:sticky xl:top-6">
               <h2 className="text-balance text-xl font-semibold">Feature Dossier</h2>
               <p className="mt-3 text-pretty text-sm text-stone-700">
                 Choose an entity from the hierarchy or table to inspect its authorized identity,

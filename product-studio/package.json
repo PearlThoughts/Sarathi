@@ -9,10 +9,11 @@
     "check": "bun run typecheck && bun run lint && bun run test && bun run build:verify",
     "build:verify": "PAYLOAD_SECRET=product-studio-build-verification-secret PRODUCT_STUDIO_DATABASE_URL=postgresql://build:build@127.0.0.1:5432/product_studio SARATHI_API_BASE_URL=http://127.0.0.1:3001 SARATHI_PRODUCT_STUDIO_READ_TOKEN=build-verification-token SARATHI_PRODUCT_STUDIO_WORKSPACE_ID=00000000-0000-4000-8000-000000000001 next build",
     "dev": "next dev",
-    "lint": "biome check src/app src/collections src/domain src/server src/views src/payload.config.ts tests package.json tsconfig.json next.config.ts postcss.config.mjs vitest.config.ts && oxlint src/app src/collections src/domain src/server src/views src/payload.config.ts tests",
+    "lint": "biome check src/app src/collections src/domain src/server src/views src/payload.config.ts tests tests-browser package.json tsconfig.json next.config.ts postcss.config.mjs vitest.config.ts playwright.config.ts && oxlint src/app src/collections src/domain src/server src/views src/payload.config.ts tests tests-browser playwright.config.ts",
     "payload": "payload",
     "start": "next start",
     "test": "vitest run",
+    "test:browser": "playwright test --config playwright.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@payloadcms/db-postgres": "3.87.1",
     "@payloadcms/next": "3.87.1",
+    "@xyflow/react": "12.11.2",
     "graphql": "^16.8.1",
     "next": "16.2.6",
     "payload": "3.87.1",
@@ -29,6 +31,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
