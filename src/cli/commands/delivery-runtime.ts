@@ -625,7 +625,7 @@ export const runDeliveryCommand = async (
             citations: answer.citations,
             status: answer.status,
             unavailableSources: answer.unavailableSources,
-            conflicts: answer.conflicts.length,
+            conflicts: answer.completionAssessment?.conflicts.length ?? answer.conflicts.length,
             responseMode: answer.responseMode,
             responseProduct: answer.responseProduct,
             acceptance: answer.acceptance,

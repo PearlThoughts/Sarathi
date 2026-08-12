@@ -61,6 +61,7 @@ export type DeliveryQueryField =
   | "metricCategory"
   | "metricKind"
   | "dedupeKey"
+  | "sourceReference"
   | "observedAt"
   | "startAt"
   | "dueAt";

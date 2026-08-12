@@ -3,7 +3,11 @@ import { RepositoryError } from "../../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type { ProductCompletionResolution } from "../../product-model/index.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
-import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delivery-query.ts";
+import type {
+  DeliveryQueryOperation,
+  DeliveryQueryPlan,
+  DeliveryQuestionIntent,
+} from "../domain/delivery-query.ts";
 import {
   namedCompletionQuestionSubject,
   planDeliveryQuestion,
@@ -708,6 +712,18 @@ const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boo
   );
   if (operation === undefined) return false;
   if (operation.select === "github_live" && item.source !== "github") return false;
+  const explicitlyBound = plan.operations.some(
+    (candidate) =>
+      candidate.purpose === item.intent &&
+      candidate.select === item.selector &&
+      candidate.predicates?.some(
+        ({ field, operator, value }) =>
+          operator === "equals" &&
+          ((field === "sourceReference" && value === item.citationUrl) ||
+            (field === "externalKey" && value === item.planning?.externalKey)),
+      ),
+  );
+  if (explicitlyBound) return true;
   const subject = plan.subject;
   if (subject === undefined) return true;
   const searchable =
@@ -716,6 +732,56 @@ const itemMatchesPlan = (item: DeliveryResultItem, plan: DeliveryQueryPlan): boo
     return searchable.includes(subject.externalKey.toLowerCase());
   const tokens = subjectTokens(subject.phrase ?? "");
   return tokens.every((token) => searchable.includes(token));
+};
+
+const completionRetrievalPlan = (
+  plan: DeliveryQueryPlan,
+  resolution: ProductCompletionResolution | undefined,
+): DeliveryQueryPlan => {
+  if (resolution?.kind !== "resolved") return plan;
+  const referenceOperations: readonly DeliveryQueryOperation[] =
+    resolution.contract.evidenceBindings.flatMap<DeliveryQueryOperation>((binding, index) => {
+      if (binding.source === "jira" && binding.reference.kind === "external_key")
+        return [
+          {
+            id: `completion-reference-${index + 1}`,
+            purpose: "status" as const,
+            select: "objects" as const,
+            objectKinds: ["work_item" as const],
+            predicates: [
+              { field: "source" as const, operator: "equals" as const, value: "jira" },
+              {
+                field: "externalKey" as const,
+                operator: "equals" as const,
+                value: binding.reference.value,
+              },
+            ],
+            limit: 1,
+          },
+        ];
+      if (binding.source === "github" && binding.reference.kind === "citation_url")
+        return [
+          {
+            id: `completion-reference-${index + 1}`,
+            purpose: "status" as const,
+            select: "observations" as const,
+            predicates: [
+              { field: "source" as const, operator: "equals" as const, value: "github" },
+              {
+                field: "sourceReference" as const,
+                operator: "equals" as const,
+                value: binding.reference.value,
+              },
+            ],
+            limit: 1,
+          },
+        ];
+      return [];
+    });
+  return {
+    ...plan,
+    operations: [...plan.operations, ...referenceOperations],
+  };
 };
 
 const uniqueConflicts = (conflicts: readonly DeliveryConflict[]): readonly DeliveryConflict[] => {
@@ -1453,7 +1519,12 @@ const responseAcceptance = (
   const acceptanceIntents = reportProduct
     ? answer.plan.intents.filter((intent) => intent === "delivered")
     : answer.plan.intents;
-  const requestedIntents = reportProduct ? 1 : acceptanceIntents.length;
+  const semanticCompletionPassed =
+    answer.completionAssessment === undefined ||
+    (answer.status !== "failed" &&
+      validatesCompletionSemantics(answer.text, answer.completionAssessment));
+  const completionProduct = answer.completionAssessment !== undefined;
+  const requestedIntents = reportProduct || completionProduct ? 1 : acceptanceIntents.length;
   const emittedIntents = new Set(
     result.items
       .filter((item) => answer.text.includes(item.citationUrl))
@@ -1465,16 +1536,20 @@ const responseAcceptance = (
     )
   )
     emittedIntents.add("conflicts");
-  const coveredIntents = reportProduct
-    ? result.periodDeliveryReport !== undefined &&
-      result.periodDeliveryReport.capsules.length > 0 &&
-      result.complete &&
-      (result.missingRequiredSources?.length ?? 0) === 0
+  const coveredIntents = completionProduct
+    ? semanticCompletionPassed
       ? 1
       : 0
-    : acceptanceIntents.filter(
-        (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
-      ).length;
+    : reportProduct
+      ? result.periodDeliveryReport !== undefined &&
+        result.periodDeliveryReport.capsules.length > 0 &&
+        result.complete &&
+        (result.missingRequiredSources?.length ?? 0) === 0
+        ? 1
+        : 0
+      : acceptanceIntents.filter(
+          (intent) => !missingIntents.has(intent) && emittedIntents.has(intent),
+        ).length;
   const completenessRatio = ratio(coveredIntents, requestedIntents);
   const lines = answer.text.split(/\r?\n/).map((line) => line.trim());
   const structuredReportProduct = reportProduct && result.periodDeliveryReport !== undefined;
@@ -1540,10 +1615,6 @@ const responseAcceptance = (
   const formatPassed = structuredReportProduct
     ? reportHeadings.every((heading) => headings.has(heading))
     : headings.size > 0 && headings.has("### References");
-  const semanticCompletionPassed =
-    answer.completionAssessment === undefined ||
-    (answer.status !== "failed" &&
-      validatesCompletionSemantics(answer.text, answer.completionAssessment));
   const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
@@ -1775,6 +1846,7 @@ export const createDeliveryAssistant = (
     return planQuestion(request, configuration.modelPlanner).pipe(
       Effect.flatMap((planned) => {
         const plan = planForResponseMode(planned, responseMode);
+        const retrievalPlan = completionRetrievalPlan(plan, configuration.completionResolution);
         if (plan.requiresFinance && !request.financeAccess)
           return Effect.fail(
             new RepositoryError({
@@ -1815,7 +1887,7 @@ export const createDeliveryAssistant = (
           compositionTimeoutMs,
           totalBudgetMs,
         } as const;
-        const selectors = new Set(plan.operations.map((operation) => operation.select));
+        const selectors = new Set(retrievalPlan.operations.map((operation) => operation.select));
         const sources = configuration.sources.filter(
           (source) =>
             source.selectors.some((selector) => selectors.has(selector)) &&
@@ -1839,7 +1911,7 @@ export const createDeliveryAssistant = (
         } as const;
         return Effect.all(
           sources.map((source) =>
-            source.execute(context, plan).pipe(
+            source.execute(context, retrievalPlan).pipe(
               Effect.timeoutFail({
                 duration: sourceTimeoutMs,
                 onTimeout: () =>
@@ -1879,7 +1951,7 @@ export const createDeliveryAssistant = (
                   (request.permittedSourceScopes === undefined ||
                     request.permittedSourceScopes.includes(item.source)) &&
                   isSensitivityAtOrBelow(item.sensitivity, request.maximumSensitivity) &&
-                  itemMatchesPlan(item, plan),
+                  itemMatchesPlan(item, retrievalPlan),
               );
             const requestedAt = Date.parse(request.requestedAt);
             const unavailableSources = reportedUnavailableSources.filter(

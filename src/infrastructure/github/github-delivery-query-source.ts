@@ -252,6 +252,74 @@ const operationAllowsGitHub = (operation: DeliveryQueryOperation): boolean => {
   return values.map(String).includes("github");
 };
 
+const sourceReferenceFor = (operation: DeliveryQueryOperation): string | undefined => {
+  const predicate = operation.predicates?.find(
+    ({ field, operator, value }) =>
+      field === "sourceReference" && operator === "equals" && typeof value === "string",
+  );
+  return typeof predicate?.value === "string" ? predicate.value : undefined;
+};
+
+const pullReference = (
+  value: string,
+): { readonly repository: string; readonly number: number } | undefined => {
+  try {
+    const url = new URL(value);
+    const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/.exec(url.pathname);
+    if (url.origin !== "https://github.com" || match === null) return undefined;
+    const owner = match[1];
+    const name = match[2];
+    const number = Number(match[3]);
+    return owner === undefined || name === undefined || !Number.isSafeInteger(number)
+      ? undefined
+      : { repository: `${owner}/${name}`, number };
+  } catch {
+    return undefined;
+  }
+};
+
+const readPullReference = async (
+  configuration: GitHubDeliveryQueryConfiguration,
+  context: DeliveryQueryContext,
+  operation: DeliveryQueryOperation,
+  reference: string,
+): Promise<readonly DeliveryResultItem[]> => {
+  const parsed = pullReference(reference);
+  const allowedRepositories = configuration.allowedRepositories ?? [];
+  const repositoryScopes = configuration.repositoryScopes ?? [];
+  if (
+    parsed === undefined ||
+    !githubCodeRepositoryAllowed(parsed.repository, allowedRepositories, repositoryScopes)
+  )
+    return [];
+  const pull = await requestJson<GitHubPull>(
+    configuration,
+    new URL(
+      `https://api.github.com/repos/${repositoryPath(parsed.repository)}/pulls/${parsed.number}`,
+    ),
+  );
+  if (pull.title === undefined || pull.html_url !== reference) return [];
+  const observedAt = pull.merged_at ?? pull.updated_at;
+  const action = pull.merged_at == null ? "open" : "merged";
+  return [
+    {
+      id: `github:${parsed.repository}:pull:${parsed.number}`,
+      workspaceId: context.workspaceId,
+      source: "github",
+      selector: "observations",
+      intent: operation.purpose,
+      title: pull.title,
+      summary: `PR #${parsed.number} ${action}: ${pull.title}`,
+      citationUrl: reference,
+      sensitivity: configuration.sensitivity ?? "internal",
+      authority: (configuration.authority ?? 0.9) + 0.05,
+      ...(observedAt === undefined ? {} : { observedAt }),
+      owner: githubOwner(configuration, pull.user?.login),
+      dedupeKey: `github:${parsed.repository}:pull:${parsed.number}:${action}`,
+    },
+  ];
+};
+
 const readScopedActivity = async (
   configuration: GitHubDeliveryQueryConfiguration,
   scope: GitHubRepositoryScope,
@@ -405,10 +473,14 @@ export const createGitHubDeliveryQuerySource = (
               operationAllowsGitHub(operation) &&
               (operation.select === "github_live" ||
                 (operation.select === "observations" &&
-                  ["activity", "delivered"].includes(operation.purpose))),
+                  (["activity", "delivered"].includes(operation.purpose) ||
+                    sourceReferenceFor(operation) !== undefined))),
           );
           const responses = await Promise.all(
             selected.map(async (operation) => {
+              const sourceReference = sourceReferenceFor(operation);
+              if (sourceReference !== undefined)
+                return readPullReference(configuration, context, operation, sourceReference);
               if (operation.select === "github_live") {
                 const matches = await Effect.runPromise(
                   liveSearch.search({
