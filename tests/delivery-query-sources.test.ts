@@ -122,6 +122,58 @@ describe("delivery intelligence live query sources", () => {
     expect(requests).toBe(0);
   });
 
+  it("reads an explicitly governed GitHub pull reference without broad activity search", async () => {
+    const requests: string[] = [];
+    const reference = "https://github.com/example/repo/pull/17";
+    const source = createGitHubDeliveryQuerySource({
+      token: "test-token",
+      workspaceId: context.workspaceId,
+      allowedActorIds: new Set([context.actorId]),
+      allowedRepositories: ["example/repo"],
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return Response.json({
+          number: 17,
+          title: "Complete object-store adapter",
+          html_url: reference,
+          updated_at: "2026-07-20T10:00:00.000Z",
+          merged_at: null,
+          state: "open",
+        });
+      },
+    });
+    const plan: DeliveryQueryPlan = {
+      version: 1,
+      intents: ["status"],
+      operations: [
+        {
+          id: "completion-reference",
+          purpose: "status",
+          select: "observations",
+          predicates: [
+            { field: "source", operator: "equals", value: "github" },
+            { field: "sourceReference", operator: "equals", value: reference },
+          ],
+          limit: 1,
+        },
+      ],
+      answerMode: "model_assisted",
+      maximumLines: 3,
+      requiresFinance: false,
+    };
+
+    const result = await Effect.runPromise(source.execute(context, plan));
+
+    expect(requests).toEqual(["https://api.github.com/repos/example/repo/pulls/17"]);
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        intent: "status",
+        citationUrl: reference,
+        summary: expect.stringContaining("open"),
+      }),
+    ]);
+  });
+
   it("reads organization-scoped activity and excludes repositories outside the configured prefix", async () => {
     const requests: string[] = [];
     const source = createGitHubDeliveryQuerySource({

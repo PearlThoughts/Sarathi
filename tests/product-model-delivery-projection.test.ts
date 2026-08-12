@@ -499,6 +499,21 @@ describe("product-model delivery compatibility projection", () => {
     );
 
     expect(sourceExecute).toHaveBeenCalledOnce();
+    expect(sourceExecute.mock.calls[0]?.[1].operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          purpose: "status",
+          select: "observations",
+          predicates: expect.arrayContaining([
+            {
+              field: "sourceReference",
+              operator: "equals",
+              value: "https://example.com/change",
+            },
+          ]),
+        }),
+      ]),
+    );
     expect(compose).toHaveBeenCalledOnce();
     expect(answer.completionAssessment).toMatchObject({
       disposition: "complete",
@@ -506,6 +521,7 @@ describe("product-model delivery compatibility projection", () => {
       criteria: [{ id: "deployment", disposition: "satisfied" }],
     });
     expect(answer.acceptance.semanticCompletionPassed).toBe(true);
+    expect(answer.acceptance.passed).toBe(true);
   });
 
   it("does not access the registry for non-report delivery questions", async () => {
