@@ -32,6 +32,8 @@ export {
   createProductCapabilityLedgerProjection,
   createRegistryBackedDeliveryAssistant,
 } from "./application/project-product-capability-ledger.ts";
+export type { CompletionReconciliation } from "./application/reconcile-product-completion.ts";
+export { reconcileProductCompletion } from "./application/reconcile-product-completion.ts";
 export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";
 export { parseAttributedDeliveryAssertion } from "./domain/attributed-assertion.ts";
 export type {
@@ -46,6 +48,15 @@ export {
   resolveDeliveryEntity,
   validateDeliveryEntityCatalog,
 } from "./domain/canonical-entity.ts";
+export type {
+  CompletionAssessment,
+  CompletionConflict,
+  CompletionCriterionAssessment,
+  CompletionDisposition,
+  CompletionObservation,
+  CriterionDisposition,
+  ExcludedObservation,
+} from "./domain/completion-model.ts";
 export type {
   ChannelPreference,
   CoachingDepth,

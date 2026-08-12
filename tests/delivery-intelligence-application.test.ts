@@ -65,11 +65,20 @@ const completionComposer: DeliveryAnswerComposer = {
         }),
       );
     const label =
-      assessment.verdict === "yes" ? "Yes" : assessment.verdict === "no" ? "No" : "Cannot verify";
+      assessment.disposition === "complete"
+        ? "Yes"
+        : assessment.disposition === "incomplete"
+          ? "No"
+          : "Cannot verify";
     return Effect.succeed({
       text: [
         "## Completion",
         `- ${label}: ${input.items.map(({ summary }) => summary).join("; ")}`,
+        ...assessment.criteria.map(({ title, disposition }) => `- ${title}: ${disposition}`),
+        ...(assessment.conflicts.length === 0 ? [] : ["## Conflict", "- Conflict recorded."]),
+        ...(assessment.excludedObservations.length === 0
+          ? []
+          : ["## Excluded", "- Excluded observations remain outside the completion boundary."]),
         "### References",
         ...input.items.map(
           ({ citationUrl }, index) => `- [Reference ${index + 1}](${citationUrl})`,
@@ -1992,7 +2001,7 @@ describe("delivery intelligence application", () => {
     expect(answer.citations).toEqual([]);
   });
 
-  it("excludes unrelated delivered work from a named completion answer", async () => {
+  it("fails closed when a named completion answer bypasses registry projection", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects", "observations", "knowledge"],
@@ -2035,20 +2044,14 @@ describe("delivery intelligence application", () => {
     );
 
     expect(answer.plan.subject).toEqual({ phrase: "Object Store Migration" });
-    expect(answer.text).toContain("Move object storage");
-    expect(answer.text).toContain("Object storage migration adapter merged");
+    expect(answer.status).toBe("failed");
+    expect(answer.failure).toMatchObject({ diagnosticCode: "answer-provider" });
+    expect(answer.text).not.toContain("Move object storage");
     expect(answer.text).not.toContain("Reference website cloning");
-    expect(answer.text).not.toContain("Brand tabs merged");
-    expect(answer.citations.map(({ url }) => url)).toHaveLength(2);
-    expect(answer.citations.map(({ url }) => url)).toEqual(
-      expect.arrayContaining([
-        "https://example.com/jira/migration-status",
-        "https://example.com/github/migration-pr",
-      ]),
-    );
+    expect(answer.citations).toEqual([]);
   });
 
-  it("keeps short identifier tokens inside a named completion boundary", async () => {
+  it("does not use token matching as named completion identity", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects", "observations", "knowledge"],
@@ -2077,11 +2080,12 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toContain("A1 to B2 object migration");
+    expect(answer.status).toBe("failed");
+    expect(answer.text).not.toContain("A1 to B2 object migration");
     expect(answer.text).not.toContain("C3 to D4 object migration");
   });
 
-  it("returns a short safe notice when a named completion subject has no matching evidence", async () => {
+  it("does not publish a deterministic fallback when named completion identity is unavailable", async () => {
     const source: DeliveryQuerySource = {
       source: "projection",
       selectors: ["objects", "observations", "knowledge"],
@@ -2107,13 +2111,8 @@ describe("delivery intelligence application", () => {
       }),
     );
 
-    expect(answer.text).toBe(
-      [
-        "## Unable to verify",
-        "- **Cannot verify:** No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
-      ].join("\n"),
-    );
-    expect(answer.status).toBe("empty");
+    expect(answer.text).toMatch(/^Response composition failed\./);
+    expect(answer.status).toBe("failed");
     expect(answer.citations).toEqual([]);
     expect(answer.text).not.toContain("Reference website cloning");
     expect(answer.text).not.toContain("Brand tabs merged");
@@ -2467,7 +2466,7 @@ describe("delivery intelligence application", () => {
     expect(answer.citations).toEqual([]);
   });
 
-  it("governs named completion verdicts from accepted and incomplete lifecycle evidence", async () => {
+  it("does not let raw lifecycle evidence govern named completion without a registry contract", async () => {
     const cases = [
       {
         name: "active work",
@@ -2562,18 +2561,15 @@ describe("delivery intelligence application", () => {
         }),
       );
 
-      expect(compose).toHaveBeenCalledOnce();
-      expect(compose.mock.calls[0]?.[0].completionAssessment).toEqual({
-        subject: "Object Store Migration",
-        verdict: testCase.expectedVerdict,
-      });
-      expect(answer.status).toBe(testCase.incompleteCoverage ? "partial" : "ok");
-      expect(answer.text).toContain(`- ${testCase.label}:`);
-      expect(answer.acceptance.passed).toBe(!testCase.incompleteCoverage);
+      expect(compose).not.toHaveBeenCalled();
+      expect(answer.status).toBe("failed");
+      expect(answer.failure).toMatchObject({ diagnosticCode: "answer-provider" });
+      expect(answer.text).not.toContain(`- ${testCase.label}:`);
+      expect(answer.acceptance.passed).toBe(false);
     }
   });
 
-  it("publishes only a short failure when named completion composition omits its verdict", async () => {
+  it("publishes only a short failure before composition when registry identity is absent", async () => {
     const rawTitle = "Object Store Migration raw status record";
     const source: DeliveryQuerySource = {
       source: "projection",
@@ -2624,8 +2620,8 @@ describe("delivery intelligence application", () => {
     expect(answer.status).toBe("failed");
     expect(answer.failure).toMatchObject({
       code: "SARATHI-ANSWER-COMPOSITION-FAILED",
-      classification: "SARATHI-ANSWER-COMPOSITION-INVALID",
-      diagnosticCode: "answer-completion-verdict-invalid",
+      classification: "SARATHI-ANSWER-PROVIDER-FAILED",
+      diagnosticCode: "answer-provider",
     });
     expect(answer.text).toMatch(/^Response composition failed\./);
     expect(answer.text).not.toContain(rawTitle);

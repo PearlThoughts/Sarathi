@@ -64,6 +64,33 @@ const acceptedAnswer = (): DeliveryAssistantAnswer => ({
 const acceptedAnswerFingerprint = stableSha256(acceptedAnswer().text);
 
 describe("delivery evaluation", () => {
+  it("fails semantic completion evaluation even when generic answer acceptance is green", () => {
+    const answer = acceptedAnswer();
+    const evaluationCase = {
+      id: "semantic-completion",
+      question: "Is Object Storage Migration complete?",
+      expected: {
+        outcome: "answer" as const,
+        acceptancePassed: true,
+        completion: {
+          disposition: "incomplete" as const,
+          deliveryChangeId: "object-storage-change",
+          affectedEntityIds: ["00000000-0000-4000-8000-000000000111"],
+          requiredFacets: ["application_deployment"],
+          criterionDispositions: { deployment: "contradicted" as const },
+          minimumConflicts: 1,
+          minimumExcludedObservations: 1,
+          scopeRequired: true,
+        },
+      },
+    };
+
+    const result = evaluateDeliveryCase(evaluationCase, { kind: "answer", answer });
+
+    expect(answer.acceptance.passed).toBe(true);
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContain("completion_assessment_missing");
+  });
   it("validates a bounded versioned set and rejects duplicate case IDs", () => {
     const evaluationSet = parseDeliveryEvaluationSet({
       version: 1,

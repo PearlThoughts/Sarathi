@@ -10,6 +10,7 @@ import {
   type DeliveryQuerySource,
 } from "../src/modules/delivery-intelligence/index.ts";
 import {
+  type ProductCompletionContract,
   type ProductFeatureDossier,
   type ProductGraphEnvelope,
   type ProductModelDetailQueryService,
@@ -354,6 +355,157 @@ describe("product-model delivery compatibility projection", () => {
     expect(result._tag).toBe("Left");
     expect(execute).not.toHaveBeenCalled();
     expect(compose).not.toHaveBeenCalled();
+  });
+
+  it("resolves named operational completion through ratified registry identity before retrieval", async () => {
+    const relationGraph: ProductGraphEnvelope = {
+      ...graph,
+      relations: [
+        {
+          id: "relation-delivery-change",
+          workspaceId,
+          type: "affected_by",
+          source: { kind: "entity", entityId },
+          target: {
+            kind: "external",
+            referenceKind: "delivery",
+            referenceId: "object-storage-change",
+          },
+          registration: "ratified",
+          sourceClass: "synthetic",
+          sensitivity: "internal",
+          audience: ["workspace:synthetic"],
+          validFrom: at,
+          createdRevision: 4,
+        },
+      ],
+    };
+    const completionContract: ProductCompletionContract = {
+      id: "object-storage-change-v1",
+      deliveryChange: {
+        id: "object-storage-change",
+        canonicalName: "Object Storage Migration",
+        aliases: [{ value: "Object Store Migration", authority: "ratified_alias" }],
+      },
+      affectedEntityIds: [entityId],
+      defaultScope: { description: "the governed environment", qualifiers: {} },
+      criteria: [
+        {
+          id: "deployment",
+          title: "Application deployment",
+          facet: "application_deployment",
+          required: true,
+          acceptableAuthorities: ["deployment"],
+        },
+      ],
+      evidenceBindings: [
+        {
+          source: "github",
+          reference: { kind: "citation_url", value: "https://example.com/change" },
+          subjectId: "object-storage-change",
+          assertionType: "deployed-change",
+          criterionId: "deployment",
+          relevance: "supports",
+          authority: "deployment",
+        },
+      ],
+    };
+    const sourceExecute = vi.fn<DeliveryQuerySource["execute"]>(() =>
+      Effect.succeed({
+        items: [
+          {
+            id: "deployed-change",
+            workspaceId,
+            source: "github",
+            selector: "observations",
+            intent: "delivered",
+            title: "Object Store Migration deployed",
+            summary: "The governed change is deployed.",
+            citationUrl: "https://example.com/change",
+            sensitivity: "internal",
+            authority: 0.9,
+            observedAt: at,
+            subjectAliases: ["Object Store Migration"],
+            dedupeKey: "deployed-change",
+          },
+          {
+            id: "status-change",
+            workspaceId,
+            source: "github",
+            selector: "observations",
+            intent: "status",
+            title: "Object Store Migration deployed",
+            summary: "The governed change is deployed.",
+            citationUrl: "https://example.com/change",
+            sensitivity: "internal",
+            authority: 0.9,
+            observedAt: at,
+            subjectAliases: ["Object Store Migration"],
+            dedupeKey: "status-change",
+          },
+        ],
+        conflicts: [],
+        unavailableSources: [],
+        complete: true,
+      }),
+    );
+    const compose = vi.fn(({ completionAssessment, items }) =>
+      Effect.succeed({
+        text: [
+          "## Completion",
+          `- Yes: ${completionAssessment?.requestedScope?.description}.`,
+          ...(completionAssessment !== undefined &&
+          "affectedEntities" in completionAssessment.subject
+            ? completionAssessment.subject.affectedEntities.map(
+                ({ canonicalName }: { readonly canonicalName: string }) =>
+                  `- ${canonicalName} is in scope.`,
+              )
+            : []),
+          "- Application deployment: satisfied.",
+          "### References",
+          `- [GitHub](${items[0]?.citationUrl})`,
+        ].join("\n"),
+        citations: [{ label: "GitHub", url: items[0]?.citationUrl ?? "" }],
+      }),
+    );
+    const projection = createProductCapabilityLedgerProjection({
+      queries: queryService(() => Effect.succeed(relationGraph)),
+      details: detailService(() => Effect.succeed(dossier)),
+      contextFor: () => ({
+        ...context,
+        actorId: "product-owner-synthetic",
+        effectiveAudience: ["product-review-synthetic"],
+      }),
+      completionContracts: [completionContract],
+      authorizeContextDelegation: (assistantRequest, productContext) =>
+        assistantRequest.actorId === actorId &&
+        productContext.actorId === "product-owner-synthetic" &&
+        productContext.effectiveAudience.includes("product-review-synthetic"),
+    });
+    const assistant = createRegistryBackedDeliveryAssistant(
+      {
+        sources: [{ source: "github", selectors: ["observations"], execute: sourceExecute }],
+        answerComposer: { compose },
+      },
+      projection,
+    );
+
+    const answer = await Effect.runPromise(
+      assistant.answer({
+        ...request,
+        question: "Is Object Store Migration fully done?",
+        responseProduct: "operational_answer",
+      }),
+    );
+
+    expect(sourceExecute).toHaveBeenCalledOnce();
+    expect(compose).toHaveBeenCalledOnce();
+    expect(answer.completionAssessment).toMatchObject({
+      disposition: "complete",
+      subject: { deliveryChangeId: "object-storage-change", matchedBy: "ratified_alias" },
+      criteria: [{ id: "deployment", disposition: "satisfied" }],
+    });
+    expect(answer.acceptance.semanticCompletionPassed).toBe(true);
   });
 
   it("does not access the registry for non-report delivery questions", async () => {

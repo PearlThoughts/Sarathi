@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type {
+  ProductCompletionContract,
   ProductEntityId,
   ProductFeatureDossier,
   ProductGraphEnvelope,
@@ -9,6 +10,8 @@ import type {
   ProductModelQueryService,
   ProductModelRequestContext,
 } from "../../product-model/index.ts";
+import { resolveProductCompletionContract } from "../../product-model/index.ts";
+import { namedCompletionQuestionSubject } from "../domain/delivery-query.ts";
 import { selectDeliveryResponseProduct } from "../domain/delivery-response-mode.ts";
 import {
   type CapabilityAlias,
@@ -42,6 +45,10 @@ export type ProductCapabilityLedgerProjectionConfiguration = {
   readonly maximumDepth?: number | undefined;
   readonly maximumNodes?: number | undefined;
   readonly maximumRelations?: number | undefined;
+  readonly completionContracts?: readonly ProductCompletionContract[] | undefined;
+  readonly authorizeContextDelegation?:
+    | ((request: DeliveryAssistantRequest, context: ProductModelRequestContext) => boolean)
+    | undefined;
 };
 
 const projectionFailure = (): RepositoryError =>
@@ -72,13 +79,23 @@ const uniqueAliases = (aliases: readonly CapabilityAlias[]): readonly Capability
 const validateRequestContext = (
   request: DeliveryAssistantRequest,
   context: ProductModelRequestContext,
+  authorizeContextDelegation:
+    | ((request: DeliveryAssistantRequest, context: ProductModelRequestContext) => boolean)
+    | undefined,
 ): void => {
-  if (context.workspaceId !== request.workspaceId || context.actorId !== request.actorId)
+  const delegated = authorizeContextDelegation?.(request, context) === true;
+  if (
+    context.workspaceId !== request.workspaceId ||
+    (context.actorId !== request.actorId && !delegated)
+  )
     throw projectionFailure();
   if (!isSensitivityAtOrBelow(context.maximumSensitivity, request.maximumSensitivity))
     throw projectionFailure();
   const requestedAudience = new Set(request.audienceIds ?? []);
-  if (context.effectiveAudience.some((audienceId) => !requestedAudience.has(audienceId)))
+  if (
+    context.effectiveAudience.some((audienceId) => !requestedAudience.has(audienceId)) &&
+    !delegated
+  )
     throw projectionFailure();
 };
 
@@ -188,15 +205,16 @@ const projectLedger = (
 
 export const createProductCapabilityLedgerProjection = (
   configuration: ProductCapabilityLedgerProjectionConfiguration,
-): CapabilityLedgerProjection => ({
-  project: (request) =>
+): CapabilityLedgerProjection => {
+  const authorizedGraph = (request: DeliveryAssistantRequest) =>
     Effect.gen(function* () {
       const context = yield* Effect.try({
         try: () => configuration.contextFor(request),
         catch: projectionFailure,
       });
       yield* Effect.try({
-        try: () => validateRequestContext(request, context),
+        try: () =>
+          validateRequestContext(request, context, configuration.authorizeContextDelegation),
         catch: projectionFailure,
       });
       const graph = yield* configuration.queries.getProductMap(context, {
@@ -207,26 +225,81 @@ export const createProductCapabilityLedgerProjection = (
       });
       if (graph.page.truncated || graph.relationPage.truncated)
         return yield* Effect.fail(projectionFailure());
-      const entityIds = graph.entities
-        .filter(
-          ({ registration, lifecycle }) => registration === "ratified" && lifecycle !== "retired",
-        )
-        .map(({ entityId }) => entityId);
-      const dossiers = yield* Effect.all(
-        entityIds.map((entityId) =>
-          configuration.details.getFeatureDossier(context, {
-            entityId,
-            at: request.requestedAt,
-          }),
-        ),
-        { concurrency: 4 },
-      );
-      return yield* Effect.try({
-        try: () => projectLedger(graph, dossiers, configuration),
-        catch: projectionFailure,
-      });
-    }).pipe(Effect.mapError(projectionFailure)),
-});
+      return { graph, context };
+    }).pipe(Effect.mapError(projectionFailure));
+  return {
+    project: (request) =>
+      authorizedGraph(request).pipe(
+        Effect.flatMap(({ graph, context }) => {
+          const entityIds = graph.entities
+            .filter(
+              ({ registration, lifecycle }) =>
+                registration === "ratified" && lifecycle !== "retired",
+            )
+            .map(({ entityId }) => entityId);
+          return Effect.all(
+            entityIds.map((entityId) =>
+              configuration.details.getFeatureDossier(context, {
+                entityId,
+                at: request.requestedAt,
+              }),
+            ),
+            { concurrency: 4 },
+          ).pipe(
+            Effect.flatMap((dossiers) =>
+              Effect.try({
+                try: () => projectLedger(graph, dossiers, configuration),
+                catch: projectionFailure,
+              }),
+            ),
+          );
+        }),
+        Effect.mapError(projectionFailure),
+      ),
+    ...(configuration.completionContracts === undefined
+      ? {}
+      : {
+          resolveCompletion: (request: DeliveryAssistantRequest, phrase: string) =>
+            authorizedGraph(request).pipe(
+              Effect.flatMap(({ graph }) =>
+                Effect.try({
+                  try: () =>
+                    resolveProductCompletionContract({
+                      phrase,
+                      requestedAt: request.requestedAt,
+                      contracts: configuration.completionContracts ?? [],
+                      visibleEntities: graph.entities.map((entity) => ({
+                        entityId: entity.entityId,
+                        canonicalName: entity.canonicalName,
+                        registration: entity.registration,
+                        lifecycle: entity.lifecycle,
+                      })),
+                      ratifiedDeliveryRelations: graph.relations.flatMap((relation) => {
+                        if (relation.registration !== "ratified") return [];
+                        const endpoints = [relation.source, relation.target];
+                        const delivery = endpoints.find(
+                          (endpoint) =>
+                            endpoint.kind === "external" && endpoint.referenceKind === "delivery",
+                        );
+                        const entity = endpoints.find((endpoint) => endpoint.kind === "entity");
+                        return delivery?.kind === "external" && entity?.kind === "entity"
+                          ? [
+                              {
+                                deliveryChangeId: delivery.referenceId,
+                                entityId: entity.entityId,
+                              },
+                            ]
+                          : [];
+                      }),
+                    }),
+                  catch: projectionFailure,
+                }),
+              ),
+              Effect.mapError(projectionFailure),
+            ),
+        }),
+  };
+};
 
 export const createRegistryBackedDeliveryAssistant = (
   configuration: DeliveryAssistantConfiguration,
@@ -234,6 +307,17 @@ export const createRegistryBackedDeliveryAssistant = (
 ): DeliveryAssistant => ({
   answer: (request) => {
     const product = selectDeliveryResponseProduct(request.question, request.responseProduct);
+    const completionPhrase = namedCompletionQuestionSubject(request.question);
+    if (product === "operational_answer" && completionPhrase !== undefined) {
+      if (projection.resolveCompletion === undefined) return Effect.fail(projectionFailure());
+      return projection
+        .resolveCompletion(request, completionPhrase)
+        .pipe(
+          Effect.flatMap((completionResolution) =>
+            createDeliveryAssistant({ ...configuration, completionResolution }).answer(request),
+          ),
+        );
+    }
     if (product !== "period_delivery_brief" && product !== "leadership_report")
       return createDeliveryAssistant(configuration).answer(request);
     return projection

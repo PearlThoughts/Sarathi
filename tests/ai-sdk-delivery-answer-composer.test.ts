@@ -45,8 +45,15 @@ describe("AI SDK delivery answer composer", () => {
         ],
         conflicts: [],
         completionAssessment: {
-          subject: "Object Store Migration",
-          verdict: "cannot_verify",
+          subject: {
+            unresolvedPhrase: "Object Store Migration",
+            candidateContractIds: [],
+          },
+          criteria: [],
+          conflicts: [],
+          excludedObservations: [],
+          disposition: "not_established",
+          summaryReason: "Required evidence is missing.",
         },
         responseProduct: "operational_answer",
         responseMode: "fast",

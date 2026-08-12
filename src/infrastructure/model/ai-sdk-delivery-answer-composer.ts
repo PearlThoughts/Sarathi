@@ -149,7 +149,18 @@ export const createAiSdkDeliveryAnswerComposer = (
     const report = input.periodDeliveryReport;
     const reportEpisodeIds = new Set(reportInformation.map(({ sourceId }) => sourceId));
     const evidence = [...reportInformation, ...supplementalInformation, ...conflictInformation];
-    if (input.completionAssessment !== undefined)
+    if (input.completionAssessment !== undefined) {
+      const assessment = input.completionAssessment;
+      const subject =
+        "canonicalName" in assessment.subject
+          ? assessment.subject.canonicalName
+          : assessment.subject.unresolvedPhrase;
+      const requiredVerdict =
+        assessment.disposition === "complete"
+          ? "yes"
+          : assessment.disposition === "incomplete"
+            ? "no"
+            : "cannot_verify";
       return generator.generate({
         workspaceId: input.workspaceId,
         question: input.question,
@@ -160,10 +171,30 @@ export const createAiSdkDeliveryAnswerComposer = (
         ),
         presentation: {
           kind: "completion_verdict",
-          subject: input.completionAssessment.subject,
-          requiredVerdict: input.completionAssessment.verdict,
+          subject,
+          requiredVerdict,
+          disposition: assessment.disposition,
+          ...(assessment.requestedScope === undefined
+            ? {}
+            : { requestedScope: assessment.requestedScope.description }),
+          ...("affectedEntities" in assessment.subject
+            ? {
+                affectedEntities: assessment.subject.affectedEntities.map(
+                  ({ canonicalName }) => canonicalName,
+                ),
+              }
+            : {}),
+          criteria: assessment.criteria.map(({ title, facet, disposition, reason }) => ({
+            title,
+            facet,
+            disposition,
+            reason,
+          })),
+          conflicts: assessment.conflicts.map(({ reason }) => reason),
+          excludedObservations: assessment.excludedObservations.map(({ reason }) => reason),
         },
       });
+    }
     return generator.generate({
       workspaceId: input.workspaceId,
       question: input.question,

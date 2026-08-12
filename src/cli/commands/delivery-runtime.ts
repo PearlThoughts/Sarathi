@@ -4,7 +4,8 @@ import {
   isCollaborationSourceScope,
 } from "../../domain/collaboration-source-scope.ts";
 import { RepositoryError } from "../../domain/errors.ts";
-import type { SensitivityTier } from "../../domain/policy.ts";
+import { isSensitivityAtOrBelow, type SensitivityTier } from "../../domain/policy.ts";
+import { createProductModelApiSecurity } from "../../infrastructure/auth/product-model-api-security.ts";
 import { createGitHubDeliveryQuerySource } from "../../infrastructure/github/index.ts";
 import {
   createEmailDeliveryQuerySource,
@@ -20,6 +21,8 @@ import {
 import {
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
+  createPostgresProductModelDetailRepository,
+  createPostgresProductModelGraphRepository,
   createPostgresStrategyKernelRepository,
   createStrategyKernelDeliveryQuerySource,
   openKnowledgePostgresDatabase,
@@ -33,6 +36,8 @@ import {
 import {
   type CapabilityLedger,
   createDeliveryAssistant,
+  createProductCapabilityLedgerProjection,
+  createRegistryBackedDeliveryAssistant,
   type DeliveryAssistantAnswer,
   type DeliveryAssistantRequest,
   type DeliveryQuerySource,
@@ -49,6 +54,12 @@ import {
   summarizeDeliveryEvaluation,
   validateCapabilityLedger,
 } from "../../modules/delivery-intelligence/index.ts";
+import {
+  createProductModelDetailQueryService,
+  createProductModelQueryService,
+  parseProductCompletionContracts,
+} from "../../modules/product-model/index.ts";
+import { loadPlatformConfig } from "../../platform/config.ts";
 import { runDeclaredInitiativeCommand } from "./declared-initiative-runtime.ts";
 import { runDeliverySyncCommand } from "./delivery-sync-runtime.ts";
 import { runRepositoryEffect } from "./effect-repository-promise.ts";
@@ -75,6 +86,11 @@ type MailScopeProjection = {
   readonly mode: "dedicated-mailbox" | "matched";
   readonly routingTerms?: readonly string[] | undefined;
   readonly participantAddresses?: readonly string[] | undefined;
+};
+type ProductModelActorMapping = {
+  readonly requestActorId: string;
+  readonly productModelActorId: string;
+  readonly productModelAudienceIds: readonly string[];
 };
 
 const sensitivities = new Set<SensitivityTier>([
@@ -358,39 +374,117 @@ const answerFromRuntime = async (
             environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON,
           ),
         );
+  const completionContracts =
+    environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON === undefined
+      ? undefined
+      : parseProductCompletionContracts(
+          parseJson<unknown>(
+            "SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON",
+            environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON,
+          ),
+        );
+  const productModelActorMappings =
+    environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON === undefined
+      ? []
+      : parseJson<readonly ProductModelActorMapping[]>(
+          "SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON",
+          environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON,
+        );
+  const platformConfig = await runRepositoryEffect(loadPlatformConfig(environment));
+  const productModelConfiguration = platformConfig.productModel;
+  const productOpened =
+    productModelConfiguration === undefined ||
+    productModelConfiguration.databaseUrl ===
+      required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL)
+      ? undefined
+      : openKnowledgePostgresDatabase(productModelConfiguration.databaseUrl, queryBudgetMs);
+  const productDatabase = productOpened?.database ?? opened.database;
   try {
-    return await runRepositoryEffect(
-      createDeliveryAssistant({
-        sources: [
-          createPostgresDeliveryQuerySource(opened.database, { entityCatalog }),
-          createStrategyKernelDeliveryQuerySource({
-            repository: createPostgresStrategyKernelRepository(opened.pool),
-            workspaceId: request.workspaceId,
-            allowedActorIds: new Set([request.actorId]),
-          }),
-          createDeliveryKnowledgeQuerySource({
-            repository: createPostgresKnowledgeRepository(opened.database),
-            workspaceId: request.workspaceId,
-            allowedActorIds: new Set([request.actorId]),
-            audienceIds: request.audienceIds ?? [],
-            allowedGitHubRepositories:
-              environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
-                ? []
-                : parseJson<readonly string[]>(
-                    "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
-                    environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
-                  ),
-          }),
-          ...liveSources(environment, request.actorId),
-        ],
-        answerComposer: createAiSdkDeliveryAnswerComposer(
-          createGroundedAnswerGeneratorFromEnvironment(environment),
+    const sources = [
+      createPostgresDeliveryQuerySource(opened.database, { entityCatalog }),
+      createStrategyKernelDeliveryQuerySource({
+        repository: createPostgresStrategyKernelRepository(opened.pool),
+        workspaceId: request.workspaceId,
+        allowedActorIds: new Set([request.actorId]),
+      }),
+      createDeliveryKnowledgeQuerySource({
+        repository: createPostgresKnowledgeRepository(opened.database),
+        workspaceId: request.workspaceId,
+        allowedActorIds: new Set([request.actorId]),
+        audienceIds: request.audienceIds ?? [],
+        allowedGitHubRepositories:
+          environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
+            ? []
+            : parseJson<readonly string[]>(
+                "SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON",
+                environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON,
+              ),
+      }),
+      ...liveSources(environment, request.actorId),
+    ];
+    const configuration = {
+      sources,
+      answerComposer: createAiSdkDeliveryAnswerComposer(
+        createGroundedAnswerGeneratorFromEnvironment(environment),
+      ),
+      capabilityLedger,
+      ...deliveryResponseBudget,
+    };
+    const assistant = (() => {
+      if (productModelConfiguration === undefined) return createDeliveryAssistant(configuration);
+      const mappedActorId =
+        productModelActorMappings.find(({ requestActorId }) => requestActorId === request.actorId)
+          ?.productModelActorId ?? request.actorId;
+      const actorMapping = productModelActorMappings.find(
+        ({ requestActorId }) => requestActorId === request.actorId,
+      );
+      const principal = productModelConfiguration.principals.find(
+        (candidate) =>
+          candidate.workspaceId === request.workspaceId && candidate.actorId === mappedActorId,
+      );
+      if (principal === undefined) return createDeliveryAssistant(configuration);
+      const security = createProductModelApiSecurity(productModelConfiguration.principals);
+      const graphRepository = createPostgresProductModelGraphRepository(productDatabase);
+      const detailsRepository = createPostgresProductModelDetailRepository(productDatabase);
+      const projection = createProductCapabilityLedgerProjection({
+        queries: createProductModelQueryService(security.queries, graphRepository),
+        details: createProductModelDetailQueryService(
+          security.queries,
+          graphRepository,
+          detailsRepository,
         ),
-        capabilityLedger,
-        ...deliveryResponseBudget,
-      }).answer(request),
-    );
+        contextFor: (assistantRequest) => ({
+          organizationId: principal.organizationId,
+          workspaceId: assistantRequest.workspaceId,
+          actorId: principal.actorId,
+          trustTier: principal.trustTier,
+          effectiveAudience: principal.effectiveAudience,
+          maximumSensitivity: isSensitivityAtOrBelow(
+            assistantRequest.maximumSensitivity,
+            principal.maximumSensitivity,
+          )
+            ? assistantRequest.maximumSensitivity
+            : principal.maximumSensitivity,
+          modelEgress: principal.modelEgress,
+          permittedCorpusScopes: principal.permittedCorpusScopes,
+          requestId: crypto.randomUUID(),
+          surface: "internal",
+        }),
+        legacyLedger: capabilityLedger,
+        ...(completionContracts === undefined ? {} : { completionContracts }),
+        authorizeContextDelegation: (assistantRequest, context) =>
+          actorMapping?.requestActorId === assistantRequest.actorId &&
+          actorMapping.productModelActorId === context.actorId &&
+          actorMapping.productModelAudienceIds.length === context.effectiveAudience.length &&
+          actorMapping.productModelAudienceIds.every((audienceId) =>
+            context.effectiveAudience.includes(audienceId),
+          ),
+      });
+      return createRegistryBackedDeliveryAssistant(configuration, projection);
+    })();
+    return await runRepositoryEffect(assistant.answer(request));
   } finally {
+    await productOpened?.pool.end();
     await opened.pool.end();
   }
 };
@@ -535,6 +629,9 @@ export const runDeliveryCommand = async (
             responseMode: answer.responseMode,
             responseProduct: answer.responseProduct,
             acceptance: answer.acceptance,
+            ...(answer.completionAssessment === undefined
+              ? {}
+              : { completionAssessment: answer.completionAssessment }),
           },
           intents: answer.plan.intents,
         },

@@ -14,6 +14,7 @@ Payload CMS is an optional human-surface adapter called Sarathi Product Studio. 
 - `product-model/api`: Hono transport contracts for the browser and machine clients.
 - `boundary-policy`: authorization before graph read, evidence expansion, preview, command, or model egress.
 - `delivery-intelligence`: consumes ratified registry IDs and produces the existing capability ledger and report inputs.
+- `delivery-intelligence/application`: resolves a named completion context through the registry projection, links bounded source observations to that identity, evaluates criteria, reconciles conflicts, records exclusions, and passes a completed assessment to the existing composer.
 - `knowledge-layer`: resolves authorized evidence and citations without owning product identity.
 - `strategy-kernel`: links goals, commitments, decisions, and policy to product entities.
 - Payload: renders maps, dossiers, proposals, diffs, and coverage; stores only editorial/UI state it owns.
@@ -50,6 +51,23 @@ Payload versions help recover editorial drafts. Sarathi revisions prove domain d
 6. Build Product Studio read-only map and dossier views.
 7. Enable governed edits after preview, audit, rollback, accessibility, and authorization acceptance.
 8. Add optional Backstage and runtime-observability projections after the registry is stable.
+9. Project ratified registry identity into named `operational_answer` requests without changing period or leadership report behavior.
+10. Add the completion contract and assessment domain, explicit external observation mappings, scope resolution, typed reconciliation, exclusions, and fail-closed semantic composition validation.
+11. Add private workspace contracts and evaluation expectations only through the private overlay; keep candidate seed proposals non-authoritative.
+
+## Named Completion Flow
+
+1. Parse the named completion question and preserve the full question through the CLI/runtime boundary.
+2. Resolve the canonical delivery change by exact name, ratified alias, or explicit external mapping. Return `scope_ambiguous` for multiple candidate matches.
+3. Load the authorized product graph and dossiers and verify that every affected entity and relation used by the contract is ratified and visible.
+4. Resolve the requested product and variant scope. Unspecified required scope remains explicit rather than silently meaning every tenant or environment.
+5. Retrieve bounded observations through existing authorized adapters. Explicit mappings bind source references to a subject, facet, scope, assertion type, relevance, and authority class.
+6. Exclude observations that merely share vocabulary or were investigated but are not attributable to the resolved boundary.
+7. Reconcile every required applicable criterion. Confirmed open work or contradiction produces `incomplete`; missing or stale evidence produces `not_established`.
+8. Pass the immutable assessment and only its selected evidence to the existing operational composer.
+9. Validate the direct opening disposition, criterion coverage, conflict/exclusion treatment, and authorized references. Publish only a validated composition or the existing safe failure.
+
+The operational path reuses product-model query authorization, source authorization, source adapters, model egress policy, and answer budgets. It does not create a second report generator, autonomous production browser, or vocabulary-specific public implementation.
 
 ## Verification Strategy
 
@@ -58,6 +76,9 @@ Payload versions help recover editorial drafts. Sarathi revisions prove domain d
 - Authorization tests: deny before storage/evidence/model access; claim/evidence sensitivity separation; audience-filtered impact previews.
 - Contract tests: stable query envelopes and exhaustive command outcomes.
 - Compatibility tests: current period census, capability grouping, citation validation, and safe-failure paths remain unchanged.
+- Completion domain tests: canonical and alias resolution, case and punctuation normalization, ambiguous identity, explicit scope, all four dispositions, missing evidence, open work, separate related changes, conflict reconciliation, multi-variant coverage, and excluded observations.
+- Completion application tests: registry projection on operational answers, unauthorized/unavailable registry failure, bounded evidence selection, semantic acceptance failure, and malformed model composition.
+- Private evaluation tests: exact named migration wording and variants, affected product entities, all required facets, explicit scope, unrelated-defect exclusion, conflict count, direct opening, compact references, and `acceptance.passed=false` on semantic failure.
 - UI tests: keyboard-accessible tree/table alternative, semantic zoom, large-map rendering, impact preview, and stale-revision recovery.
 - Exact-branch gate: `bun run check` before every implementation merge.
 

@@ -215,6 +215,24 @@ export type CompletionVerdictPresentation = {
   readonly kind: "completion_verdict";
   readonly subject: string;
   readonly requiredVerdict: "yes" | "no" | "cannot_verify";
+  readonly disposition?:
+    | "complete"
+    | "incomplete"
+    | "not_established"
+    | "scope_ambiguous"
+    | undefined;
+  readonly requestedScope?: string | undefined;
+  readonly affectedEntities?: readonly string[] | undefined;
+  readonly criteria?:
+    | readonly {
+        readonly title: string;
+        readonly facet: string;
+        readonly disposition: "satisfied" | "contradicted" | "unknown" | "not_applicable";
+        readonly reason: string;
+      }[]
+    | undefined;
+  readonly conflicts?: readonly string[] | undefined;
+  readonly excludedObservations?: readonly string[] | undefined;
 };
 
 export type AuthorizedContextEnvelope = {
