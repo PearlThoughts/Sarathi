@@ -256,3 +256,51 @@ export const productMapRows = (map: ProductMap): readonly ProductMapRow[] => {
 
 export const relationTypes = (map: ProductMap): readonly string[] =>
   [...new Set(map.relations.map(({ type }) => type))].toSorted();
+
+export const productMapMatching = (map: ProductMap, query: string | undefined): ProductMap => {
+  const normalizedQuery = query?.trim().toLocaleLowerCase();
+  if (normalizedQuery === undefined || normalizedQuery.length === 0) return map;
+
+  const entities = new Map(map.entities.map((node) => [node.entityId, node]));
+  const children = new Map<string, ProductHierarchyNode[]>();
+  for (const node of map.entities) {
+    if (node.parentId === undefined) continue;
+    const siblings = children.get(node.parentId) ?? [];
+    siblings.push(node);
+    children.set(node.parentId, siblings);
+  }
+
+  const included = new Set<string>();
+  const includeAncestors = (node: ProductHierarchyNode) => {
+    let current: ProductHierarchyNode | undefined = node;
+    while (current !== undefined && !included.has(current.entityId)) {
+      included.add(current.entityId);
+      current = current.parentId === undefined ? undefined : entities.get(current.parentId);
+    }
+  };
+  const includeDescendants = (node: ProductHierarchyNode) => {
+    for (const child of children.get(node.entityId) ?? []) {
+      if (included.has(child.entityId)) continue;
+      included.add(child.entityId);
+      includeDescendants(child);
+    }
+  };
+
+  for (const node of map.entities) {
+    const searchable = `${node.canonicalName}\n${node.description ?? ""}`.toLocaleLowerCase();
+    if (!searchable.includes(normalizedQuery)) continue;
+    includeAncestors(node);
+    includeDescendants(node);
+  }
+
+  const endpointIncluded = (endpoint: ProductMap["relations"][number]["source"]): boolean =>
+    endpoint.kind === "external" || included.has(endpoint.entityId);
+
+  return {
+    ...map,
+    entities: map.entities.filter(({ entityId }) => included.has(entityId)),
+    relations: map.relations.filter(
+      ({ source, target }) => endpointIncluded(source) && endpointIncluded(target),
+    ),
+  };
+};

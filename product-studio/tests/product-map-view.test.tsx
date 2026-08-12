@@ -42,7 +42,21 @@ const map = {
       depth: 1,
     },
   ],
-  relations: [],
+  relations: [
+    {
+      id: "relation-synthetic-dependency",
+      workspaceId: "workspace-synthetic",
+      type: "depends_on",
+      source: { kind: "entity", entityId: childId },
+      target: { kind: "entity", entityId: rootId },
+      registration: "ratified",
+      sourceClass: "user",
+      sensitivity: "internal",
+      audience: ["workspace:synthetic"],
+      validFrom: "2026-01-01T00:00:00.000Z",
+      createdRevision: 4,
+    },
+  ],
   page: { maximumDepth: 4, maximumNodes: 250, truncated: false },
   relationPage: { maximumRelations: 250, truncated: false },
   safeWarnings: [],
@@ -133,9 +147,12 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain('scope="row"');
     expect(markup).toContain('id="dossier-title"');
     expect(markup).toContain('id="coverage-heading"');
-    expect(markup).toContain("Coverage Review");
+    expect(markup).toContain("Product-owner review queue");
+    expect(markup).toContain("Capability Map");
+    expect(markup).toContain("Relationship Graph");
+    expect(markup).toContain("Interactive typed product relationship graph");
     expect(markup).toContain("weakly evidenced");
-    expect(markup).toContain("Evidence bodies are never shown");
+    expect(markup).toContain("evidence bodies are never shown");
     expect(markup).toContain("focus-visible:outline-2");
     expect(markup).not.toContain("<canvas");
     expect(getMap).toHaveBeenCalledOnce();
@@ -143,11 +160,19 @@ describe("Product Studio product map view", () => {
     expect(getCoverage).toHaveBeenCalledOnce();
   });
 
-  it("does not access Sarathi before Product Studio authentication", async () => {
+  it("redirects to sign-in with a safe local return before accessing Sarathi", async () => {
     const { ProductMapView } = await import("../src/views/ProductMapView");
-    const markup = renderToStaticMarkup(await ProductMapView(viewProps(undefined)));
+    const externalLookingQuery = "https://outside.invalid/product";
 
-    expect(markup).toContain("Sign in through the Product Studio identity boundary");
+    const markup = renderToStaticMarkup(
+      await ProductMapView(viewProps(undefined, { entity: childId, q: externalLookingQuery })),
+    );
+
+    const returnPath = `/admin/product-map?entity=${encodeURIComponent(childId)}&q=${encodeURIComponent(externalLookingQuery)}`;
+    const loginPath = `/admin/login?redirect=${encodeURIComponent(returnPath)}`;
+    expect(markup).toContain("Continuing to secure sign-in");
+    expect(markup).toContain(`href="${loginPath.replaceAll("&", "&amp;")}"`);
+    expect(markup).not.toContain(`href="${externalLookingQuery}"`);
     expect(getMap).not.toHaveBeenCalled();
     expect(getDossier).not.toHaveBeenCalled();
     expect(getCoverage).not.toHaveBeenCalled();

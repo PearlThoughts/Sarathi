@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   productDossierSchema,
+  productMapMatching,
   productMapRows,
   productMapSchema,
 } from "../src/domain/product-model";
@@ -53,6 +54,17 @@ describe("Product Studio product-model contract", () => {
 
   it("rejects unexpected map fields instead of rendering an expanded API payload", () => {
     expect(() => productMapSchema.parse({ ...map, evidenceBodies: ["must not render"] })).toThrow();
+  });
+
+  it("filters authorized metadata while retaining hierarchy context", () => {
+    const parsed = productMapSchema.parse(map);
+
+    expect(productMapMatching(parsed, "child").entities.map(({ entityId }) => entityId)).toEqual([
+      childId,
+      rootId,
+    ]);
+    expect(productMapMatching(parsed, "root").entities).toHaveLength(2);
+    expect(productMapMatching(parsed, "unavailable term").entities).toEqual([]);
   });
 
   it("rejects evidence bodies attached to dossier claim summaries", () => {

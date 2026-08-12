@@ -1,5 +1,6 @@
 import config from "@payload-config";
 import "@payloadcms/next/css";
+import "@xyflow/react/dist/style.css";
 import { handleServerFunctions, RootLayout } from "@payloadcms/next/layouts";
 import type { ServerFunctionClient } from "payload";
 import type { ReactNode } from "react";
