@@ -1,4 +1,5 @@
 import { stableSha256 } from "../../../domain/hash.ts";
+import type { CompletionDisposition, CriterionDisposition } from "../domain/completion-model.ts";
 import type { DeliverySourceKind } from "../domain/delivery-model.ts";
 import type { DeliveryQuestionIntent } from "../domain/delivery-query.ts";
 import type { DeliveryResponseMode } from "../domain/delivery-response-mode.ts";
@@ -24,6 +25,16 @@ export type DeliveryEvaluationCase = {
       readonly minimumInitiativeRecall: number;
     };
     readonly acceptancePassed?: boolean | undefined;
+    readonly completion?: {
+      readonly disposition: CompletionDisposition;
+      readonly deliveryChangeId?: string | undefined;
+      readonly affectedEntityIds?: readonly string[] | undefined;
+      readonly requiredFacets?: readonly string[] | undefined;
+      readonly criterionDispositions?: Readonly<Record<string, CriterionDisposition>> | undefined;
+      readonly minimumConflicts?: number | undefined;
+      readonly minimumExcludedObservations?: number | undefined;
+      readonly scopeRequired?: boolean | undefined;
+    };
     readonly ratedAnswerFingerprint?: string | undefined;
     readonly humanUsefulnessRating?: number | undefined;
   };
@@ -255,6 +266,38 @@ export const parseDeliveryEvaluationSet = (value: unknown): DeliveryEvaluationSe
     }
     if (expected.acceptancePassed !== undefined && typeof expected.acceptancePassed !== "boolean")
       throw new Error("Delivery evaluation acceptance expectation must be boolean.");
+    if (expected.completion !== undefined) {
+      if (
+        !isRecord(expected.completion) ||
+        !["complete", "incomplete", "not_established", "scope_ambiguous"].includes(
+          String(expected.completion.disposition),
+        ) ||
+        !optionalStrings(expected.completion.affectedEntityIds, 20, 120) ||
+        !optionalStrings(expected.completion.requiredFacets, 20, 80) ||
+        (expected.completion.deliveryChangeId !== undefined &&
+          (typeof expected.completion.deliveryChangeId !== "string" ||
+            expected.completion.deliveryChangeId.trim() === "")) ||
+        (expected.completion.scopeRequired !== undefined &&
+          typeof expected.completion.scopeRequired !== "boolean") ||
+        (expected.completion.minimumConflicts !== undefined &&
+          (!Number.isInteger(expected.completion.minimumConflicts) ||
+            Number(expected.completion.minimumConflicts) < 0)) ||
+        (expected.completion.minimumExcludedObservations !== undefined &&
+          (!Number.isInteger(expected.completion.minimumExcludedObservations) ||
+            Number(expected.completion.minimumExcludedObservations) < 0)) ||
+        (expected.completion.criterionDispositions !== undefined &&
+          (!isRecord(expected.completion.criterionDispositions) ||
+            Object.values(expected.completion.criterionDispositions).some(
+              (disposition) =>
+                !["satisfied", "contradicted", "unknown", "not_applicable"].includes(
+                  String(disposition),
+                ),
+            )))
+      )
+        throw new Error("Delivery evaluation completion expectation is invalid.");
+      if (expected.outcome !== "answer")
+        throw new Error("Delivery completion expectations require an answer outcome.");
+    }
     if (
       expected.humanUsefulnessRating !== undefined &&
       (typeof expected.humanUsefulnessRating !== "number" ||
@@ -372,6 +415,52 @@ export const evaluateDeliveryCase = (
     failures.push("forbidden_term_present");
   if (answer.acceptance.passed !== (evaluationCase.expected.acceptancePassed ?? true))
     failures.push("acceptance_mismatch");
+  const completionExpected = evaluationCase.expected.completion;
+  if (completionExpected !== undefined) {
+    const assessment = answer.completionAssessment;
+    if (assessment === undefined) failures.push("completion_assessment_missing");
+    else {
+      if (assessment.disposition !== completionExpected.disposition)
+        failures.push("completion_disposition_mismatch");
+      if (
+        completionExpected.deliveryChangeId !== undefined &&
+        (!("deliveryChangeId" in assessment.subject) ||
+          assessment.subject.deliveryChangeId !== completionExpected.deliveryChangeId)
+      )
+        failures.push("completion_subject_mismatch");
+      if (
+        completionExpected.affectedEntityIds !== undefined &&
+        (!("affectedEntities" in assessment.subject) ||
+          !sameSet(
+            assessment.subject.affectedEntities.map(({ id }) => id),
+            completionExpected.affectedEntityIds,
+          ))
+      )
+        failures.push("completion_entities_mismatch");
+      const facets = assessment.criteria.map(({ facet }) => facet);
+      if (
+        completionExpected.requiredFacets !== undefined &&
+        !sameSet(facets, completionExpected.requiredFacets)
+      )
+        failures.push("completion_facets_mismatch");
+      for (const [criterionId, disposition] of Object.entries(
+        completionExpected.criterionDispositions ?? {},
+      ))
+        if (assessment.criteria.find(({ id }) => id === criterionId)?.disposition !== disposition)
+          failures.push("completion_criterion_mismatch");
+      if (assessment.conflicts.length < (completionExpected.minimumConflicts ?? 0))
+        failures.push("completion_conflict_missing");
+      if (
+        assessment.excludedObservations.length <
+        (completionExpected.minimumExcludedObservations ?? 0)
+      )
+        failures.push("completion_exclusion_missing");
+      if (completionExpected.scopeRequired === true && assessment.requestedScope === undefined)
+        failures.push("completion_scope_missing");
+      if (answer.acceptance.semanticCompletionPassed !== true)
+        failures.push("completion_semantic_acceptance_failed");
+    }
+  }
   if (!ratingMatches) failures.push("human_rating_fingerprint_mismatch");
   const reconstruction =
     evaluationCase.expected.reconstruction === undefined

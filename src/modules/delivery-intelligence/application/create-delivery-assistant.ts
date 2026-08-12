@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
+import type { ProductCompletionResolution } from "../../product-model/index.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
 import type { DeliveryQueryPlan, DeliveryQuestionIntent } from "../domain/delivery-query.ts";
 import {
@@ -32,6 +33,7 @@ import type {
   DeliveryResponseAcceptance,
   DeliveryResultItem,
 } from "../ports/delivery-intelligence-ports.ts";
+import { reconcileProductCompletion } from "./reconcile-product-completion.ts";
 
 export type DeliveryAssistantConfiguration = {
   readonly sources: readonly DeliveryQuerySource[];
@@ -41,6 +43,7 @@ export type DeliveryAssistantConfiguration = {
   readonly compositionTimeoutMs?: number | undefined;
   readonly totalBudgetMs?: number | undefined;
   readonly capabilityLedger?: CapabilityLedger | undefined;
+  readonly completionResolution?: ProductCompletionResolution | undefined;
   readonly now?: (() => Date) | undefined;
 };
 
@@ -126,45 +129,16 @@ const answerFailureDraft = (
   };
 };
 
-const completionAssessment = (
-  question: string,
-  plan: DeliveryQueryPlan,
-  result: DeliveryQueryResult,
-): DeliveryCompletionAssessment | undefined => {
-  if (!plan.intents.includes("delivered") || !plan.intents.includes("status")) return undefined;
-  const subject = namedCompletionQuestionSubject(question);
-  if (subject === undefined) return undefined;
-  const stateBearingItems = result.items.filter(
-    (item) => item.lifecycleState !== undefined || item.completionStage !== undefined,
-  );
-  if (
-    stateBearingItems.some(
-      ({ lifecycleState }) =>
-        lifecycleState === "planned" ||
-        lifecycleState === "active" ||
-        lifecycleState === "blocked" ||
-        lifecycleState === "canceled",
-    )
-  )
-    return { subject, verdict: "no" };
-  if (
-    !result.complete ||
-    result.unavailableSources.length > 0 ||
-    (result.missingRequiredSources?.length ?? 0) > 0 ||
-    (result.missingRequiredIntents?.length ?? 0) > 0
-  )
-    return { subject, verdict: "cannot_verify" };
-  if (
-    stateBearingItems.length > 0 &&
-    stateBearingItems.every(({ completionStage }) => completionStage === "accepted")
-  )
-    return { subject, verdict: "yes" };
-  return { subject, verdict: "cannot_verify" };
-};
+const requiredCompletionVerdict = (
+  assessment: DeliveryCompletionAssessment,
+): "yes" | "no" | "cannot_verify" =>
+  assessment.disposition === "complete"
+    ? "yes"
+    : assessment.disposition === "incomplete"
+      ? "no"
+      : "cannot_verify";
 
-const renderedCompletionVerdict = (
-  text: string,
-): DeliveryCompletionAssessment["verdict"] | undefined =>
+const renderedCompletionVerdict = (text: string): "yes" | "no" | "cannot_verify" | undefined =>
   text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -173,26 +147,36 @@ const renderedCompletionVerdict = (
     .replaceAll("*", "")
     .match(/^(yes|no|cannot verify)\b/i)?.[1]
     ?.toLowerCase()
-    .replace(" ", "_") as DeliveryCompletionAssessment["verdict"] | undefined;
+    .replace(" ", "_") as "yes" | "no" | "cannot_verify" | undefined;
 
-const namedSubjectNoMatchDraft = (
-  plan: DeliveryQueryPlan,
-  result: DeliveryQueryResult,
-): DeliveryAnswerDraft => ({
-  text: [
-    "## Unable to verify",
-    "- **Cannot verify:** No authorized project evidence matched the named subject, so Sarathi cannot determine whether it is fully done.",
-  ].join("\n"),
-  citations: [],
-  status: "empty",
-  plan,
-  unavailableSources: result.unavailableSources,
-  conflicts: [],
-  missingRequiredSources: result.missingRequiredSources,
-  missingRequiredIntents: result.missingRequiredIntents,
-  periodCensus: result.periodCensus,
-  mentions: [],
-});
+const validatesCompletionSemantics = (
+  text: string,
+  assessment: DeliveryCompletionAssessment,
+): boolean => {
+  const normalizedText = text
+    .normalize("NFKC")
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, " ");
+  const includes = (value: string): boolean =>
+    normalizedText.includes(
+      value
+        .normalize("NFKC")
+        .toLocaleLowerCase("en")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim(),
+    );
+  return (
+    renderedCompletionVerdict(text) === requiredCompletionVerdict(assessment) &&
+    (!("affectedEntities" in assessment.subject) ||
+      assessment.subject.affectedEntities.every(({ canonicalName }) => includes(canonicalName))) &&
+    assessment.criteria.every(({ title }) => includes(title)) &&
+    (assessment.conflicts.length === 0 || includes("conflict")) &&
+    (assessment.excludedObservations.length === 0 ||
+      includes("excluded") ||
+      includes("not attributable") ||
+      includes("outside"))
+  );
+};
 
 const invalidReport = (operation: ReportFailureDiagnosticCode): never => {
   throw new RepositoryError({
@@ -844,14 +828,6 @@ const composeAnswer = (
   const missingIntents = new Set(result.missingRequiredIntents ?? []);
   let historicalStatusOnly = false;
 
-  if (
-    items.length === 0 &&
-    plan.subject !== undefined &&
-    plan.intents.includes("delivered") &&
-    plan.intents.includes("status")
-  )
-    return namedSubjectNoMatchDraft(plan, result);
-
   if (plan.intents.length === 1 && plan.intents[0] === "activity") {
     const activityLines: string[] = [];
     const groups = [
@@ -1129,10 +1105,10 @@ const composeWithModel = (
     readonly compositionTimeoutMs: number;
     readonly totalBudgetMs: number;
   },
+  requiredCompletionAssessment?: DeliveryCompletionAssessment,
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const reportComposition =
     responseProduct === "period_delivery_brief" || responseProduct === "leadership_report";
-  const requiredCompletionAssessment = completionAssessment(request.question, plan, result);
   const requiresSprintReview = plan.operations.some(({ time }) => time?.kind === "jira_sprint");
   if (
     reportComposition &&
@@ -1348,11 +1324,20 @@ const composeWithModel = (
               throw new Error("Composed delivery answer lacks a references footer.");
             if (
               requiredCompletionAssessment !== undefined &&
-              renderedCompletionVerdict(composed.text) !== requiredCompletionAssessment.verdict
+              renderedCompletionVerdict(composed.text) !==
+                requiredCompletionVerdict(requiredCompletionAssessment)
             )
               throw new RepositoryError({
                 message: "Delivery answer did not contain the required completion verdict.",
                 operation: "answer-completion-verdict-invalid",
+              });
+            if (
+              requiredCompletionAssessment !== undefined &&
+              !validatesCompletionSemantics(composed.text, requiredCompletionAssessment)
+            )
+              throw new RepositoryError({
+                message: "Delivery answer omitted required completion semantics.",
+                operation: "answer-completion-semantic-invalid",
               });
             if (
               composed.citations.some(
@@ -1365,6 +1350,9 @@ const composeWithModel = (
               text: lines.join("\n"),
               citations: citationsWithSourceProvenance(composed.citations, result),
               mentions: [],
+              ...(requiredCompletionAssessment === undefined
+                ? {}
+                : { completionAssessment: requiredCompletionAssessment }),
             };
           },
           catch: (error) =>
@@ -1412,6 +1400,7 @@ const composeWithModel = (
               error.operation === "delivery-answer-composition"
                 ? "SARATHI-ANSWER-COMPOSITION-TIMEOUT"
                 : error.operation === "answer-completion-verdict-invalid" ||
+                    error.operation === "answer-completion-semantic-invalid" ||
                     error.operation === "report-composition-invalid"
                   ? "SARATHI-ANSWER-COMPOSITION-INVALID"
                   : "SARATHI-ANSWER-PROVIDER-FAILED",
@@ -1419,9 +1408,11 @@ const composeWithModel = (
                 ? "answer-composition-timeout"
                 : error.operation === "answer-completion-verdict-invalid"
                   ? "answer-completion-verdict-invalid"
-                  : error.operation === "report-composition-invalid"
-                    ? "answer-composition-invalid"
-                    : "answer-provider",
+                  : error.operation === "answer-completion-semantic-invalid"
+                    ? "answer-completion-semantic-invalid"
+                    : error.operation === "report-composition-invalid"
+                      ? "answer-composition-invalid"
+                      : "answer-provider",
             ),
           ),
     ),
@@ -1549,6 +1540,10 @@ const responseAcceptance = (
   const formatPassed = structuredReportProduct
     ? reportHeadings.every((heading) => headings.has(heading))
     : headings.size > 0 && headings.has("### References");
+  const semanticCompletionPassed =
+    answer.completionAssessment === undefined ||
+    (answer.status !== "failed" &&
+      validatesCompletionSemantics(answer.text, answer.completionAssessment));
   const latencyPassed = policy.latencyTargetMs === undefined || elapsedMs <= policy.latencyTargetMs;
   return {
     mode: responseMode,
@@ -1570,6 +1565,7 @@ const responseAcceptance = (
     freshnessCoverage,
     freshnessPassed,
     formatPassed,
+    semanticCompletionPassed,
     passed:
       answer.status !== "failed" &&
       latencyPassed &&
@@ -1577,7 +1573,8 @@ const responseAcceptance = (
       citationPassed &&
       groundingPassed &&
       freshnessPassed &&
-      formatPassed,
+      formatPassed &&
+      semanticCompletionPassed,
   };
 };
 
@@ -1978,62 +1975,88 @@ export const createDeliveryAssistant = (
                 const reportProduct =
                   responseProduct === "period_delivery_brief" ||
                   responseProduct === "leadership_report";
-                const requiredCompletionAssessment = completionAssessment(
-                  request.question,
-                  plan,
-                  completed,
-                );
-                const namedSubjectHasNoEvidence =
-                  completed.items.length === 0 && requiredCompletionAssessment !== undefined;
-                const composed = namedSubjectHasNoEvidence
-                  ? Effect.succeed(namedSubjectNoMatchDraft(plan, completed))
-                  : configuration.answerComposer === undefined
+                const completionRequested =
+                  plan.intents.includes("delivered") &&
+                  plan.intents.includes("status") &&
+                  namedCompletionQuestionSubject(request.question) !== undefined;
+                const completionReconciliation =
+                  !completionRequested || configuration.completionResolution === undefined
+                    ? undefined
+                    : reconcileProductCompletion({
+                        resolution: configuration.completionResolution,
+                        result: completed,
+                        requestedAt: request.requestedAt,
+                      });
+                const requiredCompletionAssessment = completionReconciliation?.assessment;
+                const compositionResult: DeliveryQueryResult =
+                  completionReconciliation === undefined
+                    ? completed
+                    : {
+                        ...completed,
+                        items: completionReconciliation.selectedItems,
+                        conflicts: [],
+                      };
+                const composed =
+                  completionRequested && configuration.completionResolution === undefined
                     ? Effect.succeed(
-                        reportProduct
-                          ? reportFailureDraft(
-                              plan,
-                              "SARATHI-REPORT-PROVIDER-FAILED",
-                              "report-composer-unavailable",
-                            )
-                          : requiredCompletionAssessment === undefined
-                            ? composeAnswer(request, plan, completed, responseMode)
-                            : answerFailureDraft(
-                                plan,
-                                "SARATHI-ANSWER-PROVIDER-FAILED",
-                                "answer-composer-unavailable",
-                              ),
+                        answerFailureDraft(
+                          plan,
+                          "SARATHI-ANSWER-PROVIDER-FAILED",
+                          "answer-provider",
+                        ),
                       )
-                    : remainingCompositionBudgetMs <= 0
+                    : configuration.answerComposer === undefined
                       ? Effect.succeed(
                           reportProduct
                             ? reportFailureDraft(
                                 plan,
-                                "SARATHI-REPORT-COMPOSITION-TIMEOUT",
-                                "report-composition-timeout",
+                                "SARATHI-REPORT-PROVIDER-FAILED",
+                                "report-composer-unavailable",
                               )
-                            : answerFailureDraft(
-                                plan,
-                                "SARATHI-ANSWER-COMPOSITION-TIMEOUT",
-                                "answer-composition-timeout",
-                              ),
+                            : requiredCompletionAssessment === undefined
+                              ? composeAnswer(request, plan, compositionResult, responseMode)
+                              : answerFailureDraft(
+                                  plan,
+                                  "SARATHI-ANSWER-PROVIDER-FAILED",
+                                  "answer-composer-unavailable",
+                                ),
                         )
-                      : composeWithModel(
-                          configuration.answerComposer,
-                          request,
-                          plan,
-                          completed,
-                          Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
-                          responseMode,
-                          responseProduct,
-                          responseBudget,
-                        );
+                      : remainingCompositionBudgetMs <= 0
+                        ? Effect.succeed(
+                            reportProduct
+                              ? reportFailureDraft(
+                                  plan,
+                                  "SARATHI-REPORT-COMPOSITION-TIMEOUT",
+                                  "report-composition-timeout",
+                                )
+                              : answerFailureDraft(
+                                  plan,
+                                  "SARATHI-ANSWER-COMPOSITION-TIMEOUT",
+                                  "answer-composition-timeout",
+                                ),
+                          )
+                        : composeWithModel(
+                            configuration.answerComposer,
+                            request,
+                            plan,
+                            compositionResult,
+                            Math.min(compositionTimeoutMs, remainingCompositionBudgetMs),
+                            responseMode,
+                            responseProduct,
+                            responseBudget,
+                            requiredCompletionAssessment,
+                          );
                 return composed.pipe(
                   Effect.map((draft) => {
+                    const assessedDraft =
+                      requiredCompletionAssessment === undefined
+                        ? draft
+                        : { ...draft, completionAssessment: requiredCompletionAssessment };
                     const elapsedMs = Math.max(0, Date.now() - startedAt);
                     const rendered = renderResponseMode(
-                      draft,
+                      assessedDraft,
                       request,
-                      completed,
+                      compositionResult,
                       responseMode,
                       responseProduct,
                       elapsedMs,
@@ -2041,7 +2064,7 @@ export const createDeliveryAssistant = (
                     const acceptance = responseAcceptance(
                       rendered,
                       request,
-                      completed,
+                      compositionResult,
                       responseMode,
                       responseProduct,
                       elapsedMs,

@@ -64,6 +64,25 @@ The user previews a rename, move, relation change, merge, split, retirement, or 
 
 For a named capability or feature, Sarathi resolves canonical identities and aliases before collecting delivery evidence. Unrelated recent records cannot satisfy the question. A completion answer distinguishes implemented, deployed, verified, accepted, and impact-observed states for the requested variant and environment.
 
+### Sarathi answers a named-product completion question
+
+For a question such as whether a named migration or capability is fully complete, Sarathi MUST use the ratified registry before retrieval or composition. The operational-answer path resolves the delivery-change identity, affected product entities, and requested product, brand, tenant, environment, version, build, feature-flag, and time scope. Exact canonical identity has precedence over a ratified alias, which has precedence over an explicit external mapping. Candidate or semantic matches require disambiguation and cannot establish identity.
+
+The resolved identity selects a governed completion contract. A contract declares required lifecycle facets, product invariants, applicable variants, and relations to separate changes. A delivery migration and retirement of a legacy platform remain separate criteria unless a ratified contract explicitly combines them. Candidate seed data may propose a contract but cannot become runtime truth without governed review.
+
+Authorized source adapters provide observations, never a completion conclusion. Each observation identifies its subject, assertion type, lifecycle facet, scope, time, authority class, source reference, and whether it supports, contradicts, merely mentions, or is not attributable to a criterion. Delivery intelligence retrieves only observations bound to the resolved subject, reconciles them into criterion states, records conflicts and exclusions, and produces the structured assessment verbalized by the existing operational-answer composer.
+
+The assessment dispositions are:
+
+- `complete`: every required applicable criterion is satisfied;
+- `incomplete`: at least one required criterion is contradicted or confirmed open work remains;
+- `not_established`: required evidence is missing, unavailable, or too stale to decide;
+- `scope_ambiguous`: the named subject or requested variant cannot be resolved uniquely.
+
+Criterion dispositions are `satisfied`, `contradicted`, `unknown`, and `not_applicable`. Missing evidence is `unknown`, not `contradicted`. Jira Done, a merged change, a deployment record, or an informal claim cannot alone establish full completion. The assessment and its applicable criteria, conflicts, excluded observations, and requested scope are passed to the composer; the composer does not infer completion from raw text.
+
+Named completion composition MUST fail closed when the registry projection or governed contract is unavailable, the model output changes the required disposition, required facets are omitted, unrelated observations are presented as defects, or citations leave the authorized evidence envelope. A deterministic or raw-record fallback MUST NOT be published. Semantic validation participates in `acceptance.passed` even when citation, freshness, formatting, grounding, and latency checks pass.
+
 ### Sarathi learns tribal knowledge
 
 Authorized conversations, meeting transcripts, checklists, issues, emails, code, deployments, telemetry, and product observations may propose aliases, invariants, relationships, variants, or new entities. High-impact proposals require human ratification. Rejected proposals remain auditable and do not repeatedly reappear without materially new evidence.
@@ -85,6 +104,13 @@ Authorized conversations, meeting transcripts, checklists, issues, emails, code,
 - **FR-013**: Existing capability-ledger and report consumers MUST migrate additively to registry IDs and MUST retain current report validation, citation resolution, and safe-failure behavior.
 - **FR-014**: UI, QA, or runtime exploration MUST produce build-, environment-, tenant-, and anchor-qualified observations. Unbound observations MUST NOT auto-promote to product truth.
 - **FR-015**: Coverage queries MUST expose stale, contested, unmapped, weakly evidenced, unavailable, and variant-ambiguous areas without publishing raw evidence inventories.
+- **FR-016**: Named operational completion answers MUST resolve ratified product and delivery-change identity before bounded evidence retrieval.
+- **FR-017**: A governed completion contract MUST declare required criteria, invariants, applicable scope, and separate related delivery changes.
+- **FR-018**: Delivery intelligence MUST reconcile typed observations into `satisfied`, `contradicted`, `unknown`, or `not_applicable` criteria and one of the four completion dispositions.
+- **FR-019**: Contradictory source states MUST remain attributable and facet-specific; activity recorded for one facet MUST NOT overwrite an open or unknown state for another facet.
+- **FR-020**: Observations outside the resolved subject or migration boundary MUST be excluded or explicitly qualified, with the exclusion retained in the structured assessment.
+- **FR-021**: Named completion semantic validation MUST control `acceptance.passed` and MUST reject a composed answer that changes the disposition, omits required facets, or includes excluded observations as completion evidence.
+- **FR-022**: Registry, contract, authorization, scope, and composition failures MUST preserve the composed-answer-or-safe-failure invariant.
 
 ## Human Review Boundaries
 
@@ -104,7 +130,9 @@ Low-risk aliases, descriptive corrections, technical links, and additional evide
 - Rename and move retain entity identity; historical queries reproduce the hierarchy valid at the requested time.
 - Merge and split fixtures prove redirect and reference-reassignment behavior.
 - A named-feature completion query excludes unrelated work and resolves aliases deterministically.
+- A named delivery-change completion query projects ratified identity into `operational_answer`, evaluates every required facet, represents conflicts, and distinguishes incomplete from unverified.
 - A client-specific or environment-specific answer states the exact variant and availability evidence used.
+- Case, punctuation, canonical-name, ratified-alias, ambiguous-name, multi-brand, unavailable-registry, unauthorized-dossier, unrelated-defect, and malformed-composition fixtures all fail or resolve according to the structured completion contract.
 - Unauthorized actors receive no graph, preview, evidence, citation, or model call.
 - The existing governed period and leadership reports remain on their current application path.
 

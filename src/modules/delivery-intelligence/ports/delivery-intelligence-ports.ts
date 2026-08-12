@@ -2,6 +2,8 @@ import type { Effect } from "effect";
 import type { CollaborationSourceScope } from "../../../domain/collaboration-source-scope.ts";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
+import type { ProductCompletionResolution } from "../../product-model/index.ts";
+import type { CompletionAssessment } from "../domain/completion-model.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
 import type {
   DeliveryQueryPlan,
@@ -178,6 +180,7 @@ export type DeliveryResponseAcceptance = {
   readonly freshnessCoverage: number;
   readonly freshnessPassed: boolean;
   readonly formatPassed: boolean;
+  readonly semanticCompletionPassed?: boolean | undefined;
   readonly passed: boolean;
 };
 
@@ -204,6 +207,7 @@ export type DeliveryAssistantAnswer = {
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
   readonly periodCensus?: PeriodCensus | undefined;
   readonly periodDeliveryReport?: PeriodDeliveryReport | undefined;
+  readonly completionAssessment?: DeliveryCompletionAssessment | undefined;
   readonly failure?:
     | {
         readonly code: "SARATHI-REPORT-COMPOSITION-FAILED";
@@ -251,6 +255,7 @@ export type DeliveryAssistantAnswer = {
           | "answer-composition-timeout"
           | "answer-composition-invalid"
           | "answer-completion-verdict-invalid"
+          | "answer-completion-semantic-invalid"
           | undefined;
         readonly correlationCode: string;
       }
@@ -277,10 +282,7 @@ export type DeliveryAnswerCompositionInput = {
   };
 };
 
-export type DeliveryCompletionAssessment = {
-  readonly subject: string;
-  readonly verdict: "yes" | "no" | "cannot_verify";
-};
+export type DeliveryCompletionAssessment = CompletionAssessment;
 
 export type DeliveryAnswerComposition = {
   readonly text: string;
@@ -306,6 +308,12 @@ export type CapabilityLedgerProjection = {
   readonly project: (
     request: DeliveryAssistantRequest,
   ) => Effect.Effect<CapabilityLedger, RepositoryError>;
+  readonly resolveCompletion?:
+    | ((
+        request: DeliveryAssistantRequest,
+        phrase: string,
+      ) => Effect.Effect<ProductCompletionResolution, RepositoryError>)
+    | undefined;
 };
 
 export type DeliveryReportingConfiguration = {

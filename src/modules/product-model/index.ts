@@ -3,6 +3,7 @@ export * from "./api/register-product-model-routes.ts";
 export * from "./application/product-model-commands.ts";
 export * from "./application/product-model-detail-queries.ts";
 export * from "./application/product-model-queries.ts";
+export * from "./domain/product-completion.ts";
 export * from "./domain/product-identity-evolution.ts";
 export * from "./domain/product-model.ts";
 export * from "./ports/product-model-command-authorizer.ts";
