@@ -11,6 +11,7 @@ import {
 } from "../domain/product-model";
 import { createSarathiProductModelClientFromEnvironment } from "../server/sarathi-product-model-client";
 import { createUserBoundSarathiCredentialProvider } from "../server/user-bound-sarathi-credentials";
+import { ProductCapabilityExplorer } from "./ProductCapabilityExplorer";
 import { ProductRelationGraph } from "./ProductRelationGraph";
 import { ProductStudioLoginRedirect } from "./ProductStudioLoginRedirect";
 import { RenameEntityForm } from "./RenameEntityForm";
@@ -745,6 +746,28 @@ export const ProductMapView = async ({ initPageResult, searchParams }: AdminView
               </section>
             ) : (
               <>
+                <section aria-labelledby="capability-constellation-heading">
+                  <h2
+                    className="scroll-mt-6 text-balance text-2xl font-semibold"
+                    id="capability-constellation-heading"
+                  >
+                    Capability Constellation
+                  </h2>
+                  <p className="mb-4 mt-2 max-w-4xl text-pretty text-sm leading-relaxed text-stone-700">
+                    Explore from product areas into capabilities and customer-recognizable features.
+                    Cloud size reflects hierarchy role and direct children; color identifies the
+                    top-level product area. Neither represents priority, delivery progress, or
+                    evidence volume.
+                  </p>
+                  <ProductCapabilityExplorer
+                    map={map}
+                    {...(selectedEntity === undefined ? {} : { initialFocusId: selectedEntity })}
+                    {...(query === undefined ? {} : { initialQuery: query })}
+                    {...(relationFilter === undefined
+                      ? {}
+                      : { initialRelationType: relationFilter })}
+                  />
+                </section>
                 <section aria-labelledby="capability-map-heading">
                   <h2
                     className="scroll-mt-6 text-balance text-2xl font-semibold"
