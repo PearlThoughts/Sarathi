@@ -257,6 +257,124 @@ export const productMapRows = (map: ProductMap): readonly ProductMapRow[] => {
 export const relationTypes = (map: ProductMap): readonly string[] =>
   [...new Set(map.relations.map(({ type }) => type))].toSorted();
 
+type ProductExplorerRelatedEntity = {
+  readonly id: string;
+  readonly entityId?: string;
+  readonly kind: ProductHierarchyNode["kind"] | "external";
+  readonly label: string;
+};
+
+type ProductExplorerProjection = {
+  readonly focus?: ProductHierarchyNode;
+  readonly ancestors: readonly ProductHierarchyNode[];
+  readonly children: readonly ProductHierarchyNode[];
+  readonly relatedEntities: readonly ProductExplorerRelatedEntity[];
+  readonly relations: ProductMap["relations"];
+};
+
+const compareProductNodes = (left: ProductHierarchyNode, right: ProductHierarchyNode): number =>
+  left.canonicalName.localeCompare(right.canonicalName) ||
+  left.entityId.localeCompare(right.entityId);
+
+export const productExplorerSearch = (
+  map: ProductMap,
+  query: string,
+  maximumResults = 8,
+): readonly ProductHierarchyNode[] => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (normalizedQuery.length === 0) return [];
+
+  return map.entities
+    .filter((entity) =>
+      `${entity.canonicalName}\n${entity.description ?? ""}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery),
+    )
+    .toSorted(compareProductNodes)
+    .slice(0, maximumResults);
+};
+
+export const productExplorerProjection = (
+  map: ProductMap,
+  options: {
+    readonly focusEntityId?: string;
+    readonly includeRelations?: boolean;
+    readonly relationType?: string;
+  } = {},
+): ProductExplorerProjection => {
+  const entities = new Map(map.entities.map((entity) => [entity.entityId, entity]));
+  const roots = map.entities
+    .filter(({ parentId }) => parentId === undefined)
+    .toSorted(compareProductNodes);
+  const requestedFocus =
+    options.focusEntityId === undefined ? undefined : entities.get(options.focusEntityId);
+  const focus = requestedFocus ?? roots.find(({ kind }) => kind === "product") ?? roots[0];
+  if (focus === undefined)
+    return { ancestors: [], children: [], relatedEntities: [], relations: [] };
+
+  const ancestors: ProductHierarchyNode[] = [];
+  const visited = new Set([focus.entityId]);
+  let parentId = focus.parentId;
+  while (parentId !== undefined && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = entities.get(parentId);
+    if (parent === undefined) break;
+    ancestors.unshift(parent);
+    parentId = parent.parentId;
+  }
+
+  const children = map.entities
+    .filter(({ parentId: candidateParentId }) => candidateParentId === focus.entityId)
+    .toSorted(compareProductNodes);
+  const scope = new Set([focus.entityId, ...children.map(({ entityId }) => entityId)]);
+  const endpointTouchesScope = (endpoint: ProductMap["relations"][number]["source"]): boolean =>
+    endpoint.kind === "entity" && scope.has(endpoint.entityId);
+  const relations =
+    options.includeRelations === false
+      ? []
+      : map.relations.filter(
+          (relation) =>
+            (options.relationType === undefined || relation.type === options.relationType) &&
+            (endpointTouchesScope(relation.source) || endpointTouchesScope(relation.target)),
+        );
+
+  const related = new Map<string, ProductExplorerRelatedEntity>();
+  const includeRelatedEndpoint = (endpoint: ProductMap["relations"][number]["source"]) => {
+    if (endpoint.kind === "external") {
+      const id = `external:${endpoint.referenceKind}:${endpoint.referenceId}`;
+      related.set(id, {
+        id,
+        kind: "external",
+        label: endpoint.referenceKind.replaceAll("_", " "),
+      });
+      return;
+    }
+    if (scope.has(endpoint.entityId)) return;
+    const entity = entities.get(endpoint.entityId);
+    if (entity === undefined) return;
+    related.set(entity.entityId, {
+      id: entity.entityId,
+      entityId: entity.entityId,
+      kind: entity.kind,
+      label: entity.canonicalName,
+    });
+  };
+  for (const relation of relations) {
+    includeRelatedEndpoint(relation.source);
+    includeRelatedEndpoint(relation.target);
+  }
+
+  return {
+    focus,
+    ancestors,
+    children,
+    relatedEntities: [...related.values()].toSorted(
+      (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+    ),
+    relations,
+  };
+};
+
 export const productMapMatching = (map: ProductMap, query: string | undefined): ProductMap => {
   const normalizedQuery = query?.trim().toLocaleLowerCase();
   if (normalizedQuery === undefined || normalizedQuery.length === 0) return map;

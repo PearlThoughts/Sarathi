@@ -148,9 +148,9 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain('id="dossier-title"');
     expect(markup).toContain('id="coverage-heading"');
     expect(markup).toContain("Product-owner review queue");
-    expect(markup).toContain("Capability Map");
-    expect(markup).toContain("Relationship Graph");
-    expect(markup).toContain("Interactive typed product relationship graph");
+    expect(markup).toContain("Capability Constellation");
+    expect(markup).toContain("Interactive capability constellation");
+    expect(markup).toContain("Relationships on");
     expect(markup).toContain("weakly evidenced");
     expect(markup).toContain("evidence bodies are never shown");
     expect(markup).toContain("focus-visible:outline-2");
