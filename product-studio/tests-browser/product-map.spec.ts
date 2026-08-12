@@ -32,16 +32,18 @@ test("authenticated users can drill through the visual capability constellation"
   await page.getByRole("button", { name: "Login" }).click();
 
   await expect(page).toHaveURL(/\/admin\/product-map(?:\?|$)/);
-  await expect(page.getByRole("heading", { name: "Product Map", level: 1 })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Capability Constellation", level: 2 }),
+    page.getByRole("heading", { name: "Product Capability Graph", level: 1 }),
   ).toBeVisible();
 
   const explorer = page.getByTestId("product-capability-explorer");
   await expect(explorer).toBeVisible();
+  await expect(explorer).toHaveAttribute("data-renderer", "3d-force-graph");
+  await expect(page.getByTestId("product-capability-graph").locator("canvas")).toBeVisible();
   const initialDepth = await explorer.getAttribute("data-depth");
+  await explorer.getByText("Text navigator", { exact: true }).click();
   const firstChild = explorer
-    .locator('[data-testid="capability-cloud-node"][data-role="child"] button')
+    .locator('[data-testid="capability-text-node"][data-role="child"] button')
     .first();
   await expect(firstChild).toBeVisible();
   await firstChild.click();
@@ -51,5 +53,12 @@ test("authenticated users can drill through the visual capability constellation"
     "aria-pressed",
     "true",
   );
-  await expect(page.getByText("Product-owner review queue")).toBeVisible();
+  await expect(page.getByText("Product-owner review queue")).toHaveCount(0);
+
+  const screenshotPath = process.env.PRODUCT_STUDIO_BROWSER_SCREENSHOT_PATH;
+  if (screenshotPath !== undefined) {
+    await explorer.getByText("Text navigator", { exact: true }).click();
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: screenshotPath });
+  }
 });

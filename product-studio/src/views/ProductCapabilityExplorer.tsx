@@ -1,20 +1,7 @@
 "use client";
 
-import {
-  Background,
-  Controls,
-  type Edge,
-  Handle,
-  MiniMap,
-  type Node,
-  type NodeProps,
-  Panel,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  useReactFlow,
-} from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ForceGraph3DInstance, LinkObject, NodeObject } from "3d-force-graph";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type ProductHierarchyNode,
   type ProductMap,
@@ -23,21 +10,42 @@ import {
   relationTypes,
 } from "../domain/product-model";
 
-type ExplorerNodeData = {
+type GraphNodeRole = "focus" | "child" | "related";
+
+type CapabilityGraphNode = NodeObject & {
+  readonly id: string;
   readonly entityId?: string;
   readonly kind: ProductHierarchyNode["kind"] | "external";
   readonly label: string;
   readonly description?: string;
   readonly childCount: number;
   readonly relationCount: number;
-  readonly role: "focus" | "child" | "related";
-  readonly tone: number;
-  readonly onExplore?: (entityId: string) => void;
+  readonly role: GraphNodeRole;
+  readonly color: string;
 };
 
-type ExplorerNode = Node<ExplorerNodeData, "capabilityCloud">;
+type CapabilityGraphLink = LinkObject<CapabilityGraphNode> & {
+  readonly id: string;
+  readonly label: string;
+  readonly role: "hierarchy" | "relation";
+  readonly color: string;
+};
 
-const kindLabel: Readonly<Record<ExplorerNodeData["kind"], string>> = {
+type CapabilityGraph = ForceGraph3DInstance<CapabilityGraphNode, CapabilityGraphLink>;
+
+type CapabilityGraphConstructor = new (
+  element: HTMLElement,
+  options?: {
+    readonly controlType?: "trackball" | "orbit" | "fly";
+    readonly rendererConfig?: { readonly alpha?: boolean; readonly antialias?: boolean };
+  },
+) => CapabilityGraph;
+
+type StrengthForce = {
+  readonly strength: (value: number) => unknown;
+};
+
+const kindLabel: Readonly<Record<CapabilityGraphNode["kind"], string>> = {
   product: "Product",
   area: "Product area",
   capability: "Capability",
@@ -45,164 +53,210 @@ const kindLabel: Readonly<Record<ExplorerNodeData["kind"], string>> = {
   external: "Supporting link",
 };
 
-const toneClasses = [
-  "border-cyan-300 bg-cyan-50 text-cyan-950 shadow-cyan-950/20",
-  "border-violet-300 bg-violet-50 text-violet-950 shadow-violet-950/20",
-  "border-amber-300 bg-amber-50 text-amber-950 shadow-amber-950/20",
-  "border-emerald-300 bg-emerald-50 text-emerald-950 shadow-emerald-950/20",
-  "border-rose-300 bg-rose-50 text-rose-950 shadow-rose-950/20",
-  "border-sky-300 bg-sky-50 text-sky-950 shadow-sky-950/20",
-] as const;
-
-const cloudClass = (data: ExplorerNodeData): string => {
-  if (data.role === "focus")
-    return "w-72 border-teal-300 bg-stone-950 text-white shadow-teal-950/40";
-  if (data.kind === "external")
-    return "w-44 border-stone-500 bg-stone-800 text-stone-100 shadow-stone-950/30";
-  if (data.role === "related")
-    return "w-48 border-dashed border-stone-400 bg-white text-stone-900 shadow-stone-950/20";
-  const width = data.childCount >= 5 ? "w-64" : data.childCount >= 2 ? "w-56" : "w-48";
-  return `${width} ${toneClasses[data.tone % toneClasses.length]}`;
-};
-
-const CapabilityCloudNode = ({ data }: NodeProps<ExplorerNode>) => {
-  const interactive = data.entityId !== undefined && data.role !== "focus";
-  const content = (
-    <>
-      <span className="block font-mono text-[0.62rem] font-semibold uppercase tracking-[0.16em] opacity-65">
-        {data.role === "related" ? `Related ${kindLabel[data.kind]}` : kindLabel[data.kind]}
-      </span>
-      <span className="mt-1 block text-balance text-sm font-semibold leading-snug">
-        {data.label}
-      </span>
-      {data.childCount === 0 && data.relationCount === 0 ? null : (
-        <span className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 font-mono text-[0.62rem] opacity-70">
-          {data.childCount === 0 ? null : <span>{data.childCount} below</span>}
-          {data.relationCount === 0 ? null : <span>{data.relationCount} linked</span>}
-        </span>
-      )}
-    </>
-  );
-
-  return (
-    <article
-      className={`relative rounded-[2rem] border px-5 py-4 text-center shadow-xl transition-[border-color,box-shadow,transform] duration-200 motion-reduce:transition-none ${cloudClass(data)}`}
-      data-kind={data.kind}
-      data-role={data.role}
-      data-testid="capability-cloud-node"
-    >
-      <Handle className="!size-2 !border-0 !bg-teal-300" position={Position.Top} type="target" />
-      {interactive ? (
-        <button
-          aria-label={`Explore ${data.label}`}
-          className="nodrag block w-full rounded-[1.5rem] text-inherit focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700"
-          onClick={() => data.onExplore?.(data.entityId ?? "")}
-          type="button"
-        >
-          {content}
-        </button>
-      ) : (
-        content
-      )}
-      <Handle className="!size-2 !border-0 !bg-teal-300" position={Position.Bottom} type="source" />
-    </article>
-  );
-};
-
-const nodeTypes = { capabilityCloud: CapabilityCloudNode } as const;
-
-const ellipsePosition = (
-  index: number,
-  count: number,
-  radiusX: number,
-  radiusY: number,
-  offset = -Math.PI / 2,
-) => {
-  const angle = offset + (index / Math.max(count, 1)) * Math.PI * 2;
-  return { x: Math.cos(angle) * radiusX, y: Math.sin(angle) * radiusY };
-};
+const areaPalette = ["#4ee7d0", "#7dd3fc", "#fbbf24", "#a7f3d0", "#fda4af", "#c4b5fd"] as const;
 
 const relationEndpointId = (endpoint: ProductMap["relations"][number]["source"]): string =>
   endpoint.kind === "entity"
     ? endpoint.entityId
     : `external:${endpoint.referenceKind}:${endpoint.referenceId}`;
 
-const CapabilityCanvas = ({
-  edges,
-  focus,
+const nodeTextHeight = (node: CapabilityGraphNode): number => {
+  if (node.role === "focus") return 10;
+  if (node.kind === "product" || node.kind === "area") return 8;
+  if (node.kind === "capability") return 6.5;
+  return 5.5;
+};
+
+const focusCamera = (graph: CapabilityGraph, node: CapabilityGraphNode, reducedMotion: boolean) => {
+  const distance = 110;
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  const z = node.z ?? 0;
+  const magnitude = Math.hypot(x, y, z) || 1;
+  const ratio = 1 + distance / magnitude;
+  graph.cameraPosition(
+    { x: x * ratio, y: y * ratio, z: z * ratio },
+    { x, y, z },
+    reducedMotion ? 0 : 700,
+  );
+};
+
+const GraphCanvas = ({
+  links,
   nodes,
+  onExplore,
   prefersReducedMotion,
 }: {
-  readonly edges: readonly Edge[];
-  readonly focus: ProductHierarchyNode;
-  readonly nodes: readonly ExplorerNode[];
+  readonly links: readonly CapabilityGraphLink[];
+  readonly nodes: readonly CapabilityGraphNode[];
+  readonly onExplore: (entityId: string) => void;
   readonly prefersReducedMotion: boolean;
 }) => {
-  const { fitView } = useReactFlow();
-  const layoutKey = `${focus.entityId}:${nodes.map(({ id }) => id).join(",")}:${edges
-    .map(({ id }) => id)
-    .join(",")}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<CapabilityGraph | undefined>(undefined);
+  const exploreRef = useRef(onExplore);
+  const reducedMotionRef = useRef(prefersReducedMotion);
+  const [ready, setReady] = useState(false);
+  const [failure, setFailure] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (layoutKey.length === 0) return;
-    const frame = requestAnimationFrame(() => {
-      void fitView({ duration: prefersReducedMotion ? 0 : 180, padding: 0.18 });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [fitView, layoutKey, prefersReducedMotion]);
+    exploreRef.current = onExplore;
+  }, [onExplore]);
+
+  useEffect(() => {
+    reducedMotionRef.current = prefersReducedMotion;
+  }, [prefersReducedMotion]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (element === null) return;
+
+    let disposed = false;
+    let resizeObserver: ResizeObserver | undefined;
+
+    void Promise.all([import("3d-force-graph"), import("three-spritetext")])
+      .then(([forceGraphModule, spriteTextModule]) => {
+        if (disposed) return;
+        const ForceGraph3D = forceGraphModule.default as unknown as CapabilityGraphConstructor;
+        const SpriteText = spriteTextModule.default;
+        const graph = new ForceGraph3D(element, {
+          controlType: "orbit",
+          rendererConfig: { alpha: true, antialias: true },
+        });
+
+        graph
+          .backgroundColor("#080a0d")
+          .showNavInfo(false)
+          .enableNodeDrag(false)
+          .nodeColor((node) => node.color)
+          .nodeVal((node) => {
+            if (node.role === "focus") return 11;
+            return Math.max(2.5, Math.min(7, 2.5 + node.childCount * 0.65));
+          })
+          .nodeLabel(
+            (node) =>
+              `${kindLabel[node.kind]}: ${node.label}${node.childCount === 0 ? "" : ` · ${node.childCount} below`}`,
+          )
+          .nodeThreeObject((node) => {
+            const sprite = new SpriteText(node.label);
+            sprite.material.depthWrite = false;
+            sprite.color = node.role === "related" ? "#d6d3d1" : node.color;
+            sprite.textHeight = nodeTextHeight(node);
+            sprite.fontFace = "IBM Plex Sans";
+            sprite.fontWeight = node.role === "focus" ? "600" : "400";
+            sprite.strokeColor = "#080a0d";
+            sprite.strokeWidth = 0.6;
+            sprite.padding = 2;
+            sprite.center.y = -0.65;
+            return sprite;
+          })
+          .nodeThreeObjectExtend(true)
+          .linkColor((link) => link.color)
+          .linkOpacity(0.28)
+          .linkWidth((link) => (link.role === "relation" ? 1.4 : 0.45))
+          .linkCurvature((link) => (link.role === "relation" ? 0.16 : 0))
+          .linkLabel((link) => link.label)
+          .linkDirectionalArrowLength((link) => (link.role === "relation" ? 3 : 0))
+          .linkDirectionalArrowColor((link) => link.color)
+          .linkDirectionalParticles((link) =>
+            link.role === "relation" && !reducedMotionRef.current ? 1 : 0,
+          )
+          .linkDirectionalParticleColor((link) => link.color)
+          .linkDirectionalParticleWidth(1.3)
+          .linkDirectionalParticleSpeed(0.004)
+          .linkThreeObjectExtend(true)
+          .linkThreeObject((link) => {
+            const sprite = new SpriteText(link.role === "relation" ? link.label : "");
+            sprite.material.depthWrite = false;
+            sprite.color = "#99f6e4";
+            sprite.textHeight = 2.2;
+            sprite.fontFace = "IBM Plex Mono";
+            sprite.backgroundColor = false;
+            sprite.strokeColor = "#080a0d";
+            sprite.strokeWidth = 0.7;
+            return sprite;
+          })
+          .linkPositionUpdate((object, { start, end }) => {
+            Object.assign(object.position, {
+              x: start.x + (end.x - start.x) / 2,
+              y: start.y + (end.y - start.y) / 2,
+              z: start.z + (end.z - start.z) / 2,
+            });
+          })
+          .onNodeClick((node) => {
+            if (node.entityId === undefined) return;
+            focusCamera(graph, node, reducedMotionRef.current);
+            exploreRef.current(node.entityId);
+          })
+          .onNodeHover((node) => {
+            element.style.cursor = node?.entityId === undefined ? "grab" : "pointer";
+          })
+          .warmupTicks(80)
+          .cooldownTicks(160)
+          .onEngineStop(() => {
+            graph.zoomToFit(reducedMotionRef.current ? 0 : 650, 120);
+          });
+
+        const charge = graph.d3Force("charge") as StrengthForce | undefined;
+        charge?.strength(-190);
+
+        graphRef.current = graph;
+        resizeObserver = new ResizeObserver(([entry]) => {
+          if (entry === undefined) return;
+          graph.width(Math.max(1, entry.contentRect.width));
+          graph.height(Math.max(1, entry.contentRect.height));
+        });
+        resizeObserver.observe(element);
+        setReady(true);
+      })
+      .catch(() => {
+        if (disposed) return;
+        setFailure(
+          "The 3D renderer could not start. Use the text navigator while WebGL availability is checked.",
+        );
+      });
+
+    return () => {
+      disposed = true;
+      resizeObserver?.disconnect();
+      graphRef.current?._destructor();
+      graphRef.current = undefined;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const graph = graphRef.current;
+    if (graph === undefined) return;
+    graph.graphData({ nodes: [...nodes], links: [...links] });
+    graph.d3ReheatSimulation();
+    const refit = window.setTimeout(
+      () => graph.zoomToFit(prefersReducedMotion ? 0 : 650, 120),
+      prefersReducedMotion ? 0 : 500,
+    );
+    return () => window.clearTimeout(refit);
+  }, [links, nodes, prefersReducedMotion, ready]);
 
   return (
-    <ReactFlow
-      ariaLabelConfig={{
-        "controls.ariaLabel": "Capability map controls",
-        "minimap.ariaLabel": "Capability map overview",
-      }}
-      autoPanOnNodeFocus
-      colorMode="dark"
-      edges={[...edges]}
-      edgesFocusable
-      fitView
-      fitViewOptions={{ padding: 0.18 }}
-      maxZoom={1.6}
-      minZoom={0.18}
-      nodeTypes={nodeTypes}
-      nodes={[...nodes]}
-      nodesConnectable={false}
-      nodesDraggable={false}
-      nodesFocusable
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background color="#57534e" gap={28} size={1.2} />
-      <MiniMap
-        maskColor="rgba(12, 10, 9, 0.72)"
-        nodeColor={({ data }) =>
-          data.role === "focus" ? "#2dd4bf" : data.role === "related" ? "#a8a29e" : "#f5f5f4"
-        }
-        pannable
-        zoomable
+    <>
+      <div
+        aria-hidden="true"
+        className="absolute inset-0"
+        data-testid="product-capability-graph"
+        ref={containerRef}
       />
-      <Controls showInteractive={false} />
-      <Panel
-        className="max-w-xs rounded-2xl border border-stone-700 bg-stone-950/95 p-4 text-stone-100 shadow-2xl"
-        position="bottom-left"
-      >
-        <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-teal-300">
-          Current focus / {kindLabel[focus.kind]}
-        </p>
-        <p className="mt-1 text-sm font-semibold">{focus.canonicalName}</p>
-        {focus.description === undefined ? null : (
-          <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-stone-300">
-            {focus.description}
-          </p>
-        )}
-        <a
-          className="nodrag mt-3 inline-flex rounded-full border border-stone-600 px-3 py-1.5 text-xs font-semibold text-white hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
-          href={`/admin/product-map?entity=${encodeURIComponent(focus.entityId)}#dossier-title`}
+      <p className="sr-only" role="status">
+        {failure ?? (ready ? "Interactive 3D product capability graph ready." : "Loading graph.")}
+      </p>
+      {failure === undefined ? null : (
+        <p
+          className="absolute bottom-20 left-1/2 z-20 max-w-lg -translate-x-1/2 rounded-md border border-amber-300 bg-stone-950 px-4 py-3 text-pretty text-sm text-amber-100 shadow-md"
+          role="alert"
         >
-          Open full dossier
-        </a>
-      </Panel>
-    </ReactFlow>
+          {failure}
+        </p>
+      )}
+    </>
   );
 };
 
@@ -221,9 +275,12 @@ export const ProductCapabilityExplorer = ({
     map,
     initialFocusId === undefined ? {} : { focusEntityId: initialFocusId },
   );
+  const availableRelationTypes = useMemo(() => relationTypes(map), [map]);
   const [focusId, setFocusId] = useState(defaultProjection.focus?.entityId);
   const [query, setQuery] = useState(initialQuery);
-  const [relationType, setRelationType] = useState(initialRelationType ?? "");
+  const [relationType, setRelationType] = useState(
+    availableRelationTypes.includes(initialRelationType ?? "") ? (initialRelationType ?? "") : "",
+  );
   const [showRelations, setShowRelations] = useState(true);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(true);
 
@@ -239,6 +296,7 @@ export const ProductCapabilityExplorer = ({
     setFocusId(entityId);
     setQuery("");
   }, []);
+
   const projection = useMemo(
     () =>
       productExplorerProjection(map, {
@@ -249,13 +307,11 @@ export const ProductCapabilityExplorer = ({
     [focusId, map, relationType, showRelations],
   );
   const searchResults = useMemo(() => productExplorerSearch(map, query), [map, query]);
-  const availableRelationTypes = useMemo(() => relationTypes(map), [map]);
-
   const entities = useMemo(
     () => new Map(map.entities.map((entity) => [entity.entityId, entity])),
     [map],
   );
-  const directChildCount = useMemo(() => {
+  const childCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const entity of map.entities) {
       if (entity.parentId === undefined) continue;
@@ -263,7 +319,7 @@ export const ProductCapabilityExplorer = ({
     }
     return counts;
   }, [map]);
-  const relationCount = useMemo(() => {
+  const relationCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const relation of map.relations) {
       for (const endpoint of [relation.source, relation.target]) {
@@ -283,130 +339,87 @@ export const ProductCapabilityExplorer = ({
       ),
     [map],
   );
-  const toneFor = useCallback(
-    (entity: ProductHierarchyNode): number => {
+  const colorFor = useCallback(
+    (entity: ProductHierarchyNode): string => {
       const visited = new Set<string>();
       let current: ProductHierarchyNode | undefined = entity;
       while (current !== undefined && !visited.has(current.entityId)) {
         visited.add(current.entityId);
-        if (current.kind === "area") return areaTones.get(current.entityId) ?? 0;
+        if (current.kind === "area")
+          return (
+            areaPalette[(areaTones.get(current.entityId) ?? 0) % areaPalette.length] ??
+            areaPalette[0]
+          );
         current = current.parentId === undefined ? undefined : entities.get(current.parentId);
       }
-      return 0;
+      return "#f5f5f4";
     },
     [areaTones, entities],
   );
 
-  const nodes = useMemo<readonly ExplorerNode[]>(() => {
+  const graphNodes = useMemo<readonly CapabilityGraphNode[]>(() => {
     if (projection.focus === undefined) return [];
-    const focus: ExplorerNode = {
-      id: projection.focus.entityId,
-      type: "capabilityCloud",
-      position: { x: -144, y: -72 },
-      data: {
-        entityId: projection.focus.entityId,
-        kind: projection.focus.kind,
-        label: projection.focus.canonicalName,
-        ...(projection.focus.description === undefined
-          ? {}
-          : { description: projection.focus.description }),
-        childCount: directChildCount.get(projection.focus.entityId) ?? 0,
-        relationCount: relationCount.get(projection.focus.entityId) ?? 0,
-        role: "focus",
-        tone: toneFor(projection.focus),
-      },
-      ariaLabel: `Current ${kindLabel[projection.focus.kind]}: ${projection.focus.canonicalName}`,
-      draggable: false,
-      selectable: false,
-    };
-
-    const firstRingCount = Math.min(projection.children.length, 8);
-    const childNodes = projection.children.map((entity, index): ExplorerNode => {
-      const outerRing = index >= firstRingCount;
-      const ringIndex = outerRing ? index - firstRingCount : index;
-      const ringCount = outerRing ? projection.children.length - firstRingCount : firstRingCount;
-      const position = ellipsePosition(
-        ringIndex,
-        ringCount,
-        outerRing ? 720 : 430,
-        outerRing ? 430 : 265,
-      );
-      return {
-        id: entity.entityId,
-        type: "capabilityCloud",
-        position: { x: position.x - 100, y: position.y - 54 },
-        data: {
-          entityId: entity.entityId,
-          kind: entity.kind,
-          label: entity.canonicalName,
-          ...(entity.description === undefined ? {} : { description: entity.description }),
-          childCount: directChildCount.get(entity.entityId) ?? 0,
-          relationCount: relationCount.get(entity.entityId) ?? 0,
-          role: "child",
-          tone: toneFor(entity),
-          onExplore: explore,
-        },
-        ariaLabel: `${kindLabel[entity.kind]}: ${entity.canonicalName}. Activate to explore.`,
-        draggable: false,
-      };
+    const nodeFor = (entity: ProductHierarchyNode, role: GraphNodeRole): CapabilityGraphNode => ({
+      id: entity.entityId,
+      entityId: entity.entityId,
+      kind: entity.kind,
+      label: entity.canonicalName,
+      ...(entity.description === undefined ? {} : { description: entity.description }),
+      childCount: childCounts.get(entity.entityId) ?? 0,
+      relationCount: relationCounts.get(entity.entityId) ?? 0,
+      role,
+      color: role === "focus" ? "#ffffff" : colorFor(entity),
     });
-    const relatedNodes = projection.relatedEntities.map((entity, index): ExplorerNode => {
-      const position = ellipsePosition(index, projection.relatedEntities.length, 930, 570, 0);
-      const relatedEntity =
-        entity.entityId === undefined ? undefined : entities.get(entity.entityId);
-      return {
-        id: entity.id,
-        type: "capabilityCloud",
-        position: { x: position.x - 88, y: position.y - 48 },
-        data: {
-          ...(entity.entityId === undefined ? {} : { entityId: entity.entityId }),
-          kind: entity.kind,
-          label: entity.label,
-          childCount:
-            entity.entityId === undefined ? 0 : (directChildCount.get(entity.entityId) ?? 0),
+
+    return [
+      nodeFor(projection.focus, "focus"),
+      ...projection.children.map((entity) => nodeFor(entity, "child")),
+      ...projection.relatedEntities.map((related): CapabilityGraphNode => {
+        const entity = related.entityId === undefined ? undefined : entities.get(related.entityId);
+        return {
+          id: related.id,
+          ...(related.entityId === undefined ? {} : { entityId: related.entityId }),
+          kind: related.kind,
+          label: related.label,
+          childCount: related.entityId === undefined ? 0 : (childCounts.get(related.entityId) ?? 0),
           relationCount:
-            entity.entityId === undefined ? 0 : (relationCount.get(entity.entityId) ?? 0),
+            related.entityId === undefined ? 0 : (relationCounts.get(related.entityId) ?? 0),
           role: "related",
-          tone: relatedEntity === undefined ? 0 : toneFor(relatedEntity),
-          ...(entity.entityId === undefined ? {} : { onExplore: explore }),
-        },
-        ariaLabel: `Related ${kindLabel[entity.kind]}: ${entity.label}`,
-        draggable: false,
-      };
-    });
-    return [focus, ...childNodes, ...relatedNodes];
-  }, [directChildCount, entities, explore, projection, relationCount, toneFor]);
+          color: entity === undefined ? "#a8a29e" : colorFor(entity),
+        };
+      }),
+    ];
+  }, [childCounts, colorFor, entities, projection, relationCounts]);
 
-  const edges = useMemo<readonly Edge[]>(() => {
+  const graphLinks = useMemo<readonly CapabilityGraphLink[]>(() => {
     if (projection.focus === undefined) return [];
-    const hierarchyEdges: Edge[] = projection.children.map((child) => ({
-      id: `hierarchy:${projection.focus?.entityId}:${child.entityId}`,
-      source: projection.focus?.entityId ?? "",
-      target: child.entityId,
-      type: "default",
-      style: { stroke: "#78716c", strokeWidth: 1.25 },
-      ariaLabel: `${child.canonicalName} is contained by ${projection.focus?.canonicalName ?? "focus"}`,
-      selectable: false,
-    }));
-    const relationEdges: Edge[] = projection.relations.map((relation) => ({
-      id: `relation:${relation.id}`,
-      source: relationEndpointId(relation.source),
-      target: relationEndpointId(relation.target),
-      label: relation.type.replaceAll("_", " "),
-      type: "smoothstep",
-      animated: !prefersReducedMotion,
-      markerEnd: { type: "arrowclosed", color: "#2dd4bf" },
-      style: { stroke: "#2dd4bf", strokeWidth: 2 },
-      labelStyle: { fill: "#f5f5f4", fontFamily: "IBM Plex Mono", fontSize: 10 },
-      labelBgStyle: { fill: "#1c1917", fillOpacity: 0.92 },
-      ariaLabel: `${relation.type.replaceAll("_", " ")} relation`,
-    }));
-    return [...hierarchyEdges, ...relationEdges];
-  }, [prefersReducedMotion, projection]);
+    return [
+      ...projection.children.map(
+        (child): CapabilityGraphLink => ({
+          id: `hierarchy:${projection.focus?.entityId}:${child.entityId}`,
+          source: projection.focus?.entityId ?? "",
+          target: child.entityId,
+          label: "contains",
+          role: "hierarchy",
+          color: "#78716c",
+        }),
+      ),
+      ...projection.relations.map(
+        (relation): CapabilityGraphLink => ({
+          id: `relation:${relation.id}`,
+          source: relationEndpointId(relation.source),
+          target: relationEndpointId(relation.target),
+          label: relation.type.replaceAll("_", " "),
+          role: "relation",
+          color: "#2dd4bf",
+        }),
+      ),
+    ];
+  }, [projection]);
 
   if (projection.focus === undefined)
     return (
-      <p className="rounded-xl border border-stone-300 bg-white p-6 text-sm text-stone-700">
+      <p className="min-h-dvh bg-stone-950 p-8 text-pretty text-sm text-stone-300">
         No authorized entity is available for visual exploration.
       </p>
     );
@@ -417,65 +430,42 @@ export const ProductCapabilityExplorer = ({
 
   return (
     <section
-      aria-label="Interactive capability constellation"
-      className="overflow-hidden rounded-[1.5rem] border border-stone-800 bg-stone-950 shadow-2xl"
+      aria-label="Interactive 3D product capability graph"
+      className="relative h-dvh min-h-[42rem] overflow-hidden bg-stone-950 text-stone-100"
       data-depth={projection.focus.depth}
+      data-renderer="3d-force-graph"
       data-testid="product-capability-explorer"
     >
-      <div className="border-b border-stone-800 bg-stone-950 px-5 py-4 text-stone-100">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-teal-300">
-              Capability constellation
-            </p>
-            <p className="mt-1 max-w-2xl text-sm text-stone-300">
-              Select a cloud to move inward. Relationship lines reveal governed cross-links beyond
-              the hierarchy.
-            </p>
-          </div>
-          <dl className="flex gap-5 text-right text-xs">
-            <div>
-              <dt className="text-stone-500">Below</dt>
-              <dd className="mt-1 font-mono text-sm font-semibold text-white tabular-nums">
-                {projection.children.length}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500">Related</dt>
-              <dd className="mt-1 font-mono text-sm font-semibold text-white tabular-nums">
-                {projection.relatedEntities.length}
-              </dd>
-            </div>
-          </dl>
-        </div>
+      <GraphCanvas
+        links={graphLinks}
+        nodes={graphNodes}
+        onExplore={explore}
+        prefersReducedMotion={prefersReducedMotion}
+      />
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            className="rounded-full border border-stone-700 px-3 py-2 text-xs font-semibold hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={root === undefined || root.entityId === projection.focus.entityId}
-            onClick={() => root === undefined || explore(root.entityId)}
-            type="button"
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-3 p-4 sm:p-6">
+        <div className="pointer-events-auto max-w-2xl rounded-xl border border-stone-800 bg-stone-950/90 p-4 shadow-md">
+          <p className="font-mono text-xs text-teal-300">Sarathi / revision {map.revision}</p>
+          <h1
+            className="mt-1 text-balance text-2xl font-semibold sm:text-3xl"
+            id="product-map-title"
           >
-            Product home
-          </button>
-          <button
-            className="rounded-full border border-stone-700 px-3 py-2 text-xs font-semibold hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={parent === undefined}
-            onClick={() => parent === undefined || explore(parent.entityId)}
-            type="button"
-          >
-            Back one level
-          </button>
+            Product Capability Graph
+          </h1>
           <ol
             aria-label="Current product path"
-            className="flex flex-wrap items-center gap-1 text-xs"
+            className="mt-3 flex flex-wrap items-center gap-1 text-xs"
           >
             {path.map((entity, index) => (
               <li className="flex items-center gap-1" key={entity.entityId}>
-                {index === 0 ? null : <span className="text-stone-600">/</span>}
+                {index === 0 ? null : (
+                  <span aria-hidden="true" className="text-stone-600">
+                    /
+                  </span>
+                )}
                 <button
                   aria-current={entity.entityId === focusId ? "page" : undefined}
-                  className="rounded-full px-2 py-1 text-stone-300 hover:bg-stone-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-[current=page]:bg-teal-300 aria-[current=page]:font-semibold aria-[current=page]:text-stone-950"
+                  className="rounded-md px-2 py-1 text-stone-300 hover:bg-stone-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-[current=page]:bg-teal-300 aria-[current=page]:font-semibold aria-[current=page]:text-stone-950"
                   onClick={() => explore(entity.entityId)}
                   type="button"
                 >
@@ -486,36 +476,79 @@ export const ProductCapabilityExplorer = ({
           </ol>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_auto_auto]">
-          <div className="relative">
+        <div className="pointer-events-auto flex gap-2 rounded-xl border border-stone-800 bg-stone-950/90 p-2 shadow-md">
+          <button
+            className="rounded-md px-3 py-2 text-xs font-semibold hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={root === undefined || root.entityId === projection.focus.entityId}
+            onClick={() => root === undefined || explore(root.entityId)}
+            type="button"
+          >
+            Product home
+          </button>
+          <button
+            className="rounded-md px-3 py-2 text-xs font-semibold hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={parent === undefined}
+            onClick={() => parent === undefined || explore(parent.entityId)}
+            type="button"
+          >
+            Back one level
+          </button>
+        </div>
+      </header>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-wrap items-end justify-between gap-3 p-4 sm:p-6">
+        <article className="pointer-events-auto max-w-sm rounded-xl border border-stone-800 bg-stone-950/90 p-4 shadow-md">
+          <p className="font-mono text-xs text-teal-300">{kindLabel[projection.focus.kind]}</p>
+          <h2 className="mt-1 text-balance text-lg font-semibold">
+            {projection.focus.canonicalName}
+          </h2>
+          {projection.focus.description === undefined ? null : (
+            <p className="mt-2 line-clamp-2 text-pretty text-xs leading-relaxed text-stone-300">
+              {projection.focus.description}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-3 text-xs text-stone-400">
+            <span>{projection.children.length} below</span>
+            <span>{projection.relatedEntities.length} related</span>
+            <a
+              className="font-semibold text-stone-100 underline decoration-stone-600 underline-offset-4 hover:decoration-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+              href={`/admin/product-map?entity=${encodeURIComponent(projection.focus.entityId)}`}
+            >
+              Governed details
+            </a>
+          </div>
+        </article>
+
+        <div className="pointer-events-auto flex max-w-2xl flex-1 flex-wrap justify-end gap-2">
+          <div className="relative min-w-64 flex-1 sm:max-w-sm">
             <label className="sr-only" htmlFor="capability-search">
               Find a product area, capability, or feature
             </label>
             <input
               autoComplete="off"
-              className="w-full rounded-full border border-stone-700 bg-stone-900 px-4 py-2.5 text-sm text-white placeholder:text-stone-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+              className="w-full rounded-xl border border-stone-700 bg-stone-950/95 px-4 py-3 text-sm text-white shadow-md placeholder:text-stone-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
               id="capability-search"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Jump to any capability or feature"
+              placeholder="Find a capability or feature"
               type="search"
               value={query}
             />
             {query.trim().length === 0 ? null : (
-              <ul className="absolute inset-x-0 top-full z-20 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-stone-700 bg-stone-900 p-2 shadow-2xl">
+              <ul className="absolute inset-x-0 bottom-full z-30 mb-2 max-h-72 overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-2 shadow-md">
                 {searchResults.length === 0 ? (
                   <li className="px-3 py-2 text-sm text-stone-400">No authorized match</li>
                 ) : (
                   searchResults.map((entity) => (
                     <li key={entity.entityId}>
                       <button
-                        className="block w-full rounded-xl px-3 py-2 text-left hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                        className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
                         onClick={() => explore(entity.entityId)}
                         type="button"
                       >
                         <span className="block text-sm font-semibold text-white">
                           {entity.canonicalName}
                         </span>
-                        <span className="mt-0.5 block font-mono text-[0.65rem] uppercase tracking-[0.12em] text-stone-400">
+                        <span className="mt-0.5 block font-mono text-xs text-stone-400">
                           {kindLabel[entity.kind]}
                         </span>
                       </button>
@@ -525,42 +558,75 @@ export const ProductCapabilityExplorer = ({
               </ul>
             )}
           </div>
-          <label className="grid gap-1 font-mono text-[0.65rem] uppercase tracking-[0.12em] text-stone-400">
-            Relation type
-            <select
-              className="min-w-48 rounded-full border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-normal normal-case tracking-normal text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
-              disabled={!showRelations}
-              onChange={(event) => setRelationType(event.target.value)}
-              value={relationType}
-            >
-              <option value="">All relationship types</option>
-              {availableRelationTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
+
+          <label className="sr-only" htmlFor="capability-relation-type">
+            Relationship type
           </label>
+          <select
+            className="rounded-xl border border-stone-700 bg-stone-950/95 px-3 py-3 text-xs text-white shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 disabled:opacity-50"
+            disabled={!showRelations}
+            id="capability-relation-type"
+            onChange={(event) => setRelationType(event.target.value)}
+            value={relationType}
+          >
+            <option value="">All relationships</option>
+            {availableRelationTypes.map((type) => (
+              <option key={type} value={type}>
+                {type.replaceAll("_", " ")}
+              </option>
+            ))}
+          </select>
           <button
             aria-pressed={showRelations}
-            className="self-end rounded-full border border-stone-700 px-4 py-2.5 text-sm font-semibold text-white hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-pressed:border-teal-300 aria-pressed:bg-teal-300 aria-pressed:text-stone-950"
+            className="rounded-xl border border-stone-700 bg-stone-950/95 px-3 py-3 text-xs font-semibold text-white shadow-md hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-pressed:border-teal-300 aria-pressed:text-teal-200"
             onClick={() => setShowRelations((visible) => !visible)}
             type="button"
           >
             Relationships {showRelations ? "on" : "off"}
           </button>
+          <details className="group relative">
+            <summary className="cursor-pointer list-none rounded-xl border border-stone-700 bg-stone-950/95 px-3 py-3 text-xs font-semibold shadow-md hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300">
+              Text navigator
+            </summary>
+            <div className="absolute bottom-full right-0 mb-2 max-h-80 w-72 overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-3 shadow-md">
+              <p className="text-pretty text-xs text-stone-400">
+                Keyboard-accessible nodes in the current graph.
+              </p>
+              <ul className="mt-3 space-y-1">
+                {projection.children.map((entity) => (
+                  <li data-role="child" data-testid="capability-text-node" key={entity.entityId}>
+                    <button
+                      className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                      onClick={() => explore(entity.entityId)}
+                      type="button"
+                    >
+                      <span className="block text-sm font-semibold">{entity.canonicalName}</span>
+                      <span className="font-mono text-xs text-stone-500">
+                        {kindLabel[entity.kind]}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {projection.relatedEntities.map((entity) => (
+                  <li data-role="related" data-testid="capability-text-node" key={entity.id}>
+                    {entity.entityId === undefined ? (
+                      <span className="block px-3 py-2 text-sm text-stone-400">{entity.label}</span>
+                    ) : (
+                      <button
+                        className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                        onClick={() => explore(entity.entityId ?? "")}
+                        type="button"
+                      >
+                        <span className="block text-sm font-semibold">{entity.label}</span>
+                        <span className="font-mono text-xs text-stone-500">Related</span>
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
         </div>
-      </div>
-
-      <div className="h-[38rem] bg-stone-950 sm:h-[44rem]">
-        <ReactFlowProvider>
-          <CapabilityCanvas
-            edges={edges}
-            focus={projection.focus}
-            nodes={nodes}
-            prefersReducedMotion={prefersReducedMotion}
-          />
-        </ReactFlowProvider>
       </div>
     </section>
   );
