@@ -6,7 +6,7 @@ Product Studio is an optional human-facing adapter over Sarathi's Product Capabi
 
 The Payload/Next runtime owns only its authentication records and future editorial or saved-view state. The read-only product map and dossier call Sarathi's versioned HTTP API from a server component through `src/server/sarathi-product-model-client.ts`. The browser never receives the configured Sarathi read token and cannot select an actor or installed workspace.
 
-The first view provides hierarchy, relation filtering, a full-path table, and dossier summary. It uses native links, forms, lists, headings, and tables so keyboard and assistive-technology users do not depend on a visual graph interaction.
+The first view is an interactive capability constellation: users drill from product areas into capabilities and features, reveal typed cross-relations, jump through search, and open the governed dossier for the current focus. Deterministic cloud size represents hierarchy role and direct-child count, while stable color identifies the top-level product area; neither encodes delivery progress or evidence volume. Native links, forms, lists, headings, hierarchy, relationship list, and full-path table remain available so keyboard and assistive-technology users do not depend on visual graph interaction.
 
 ## Database isolation
 
