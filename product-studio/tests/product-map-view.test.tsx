@@ -3,11 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getMap = vi.fn();
 const getDossier = vi.fn();
-const getCoverage = vi.fn();
 
 vi.mock("server-only", () => ({}));
 vi.mock("../src/server/sarathi-product-model-client", () => ({
-  createSarathiProductModelClientFromEnvironment: () => ({ getCoverage, getDossier, getMap }),
+  createSarathiProductModelClientFromEnvironment: () => ({ getDossier, getMap }),
 }));
 
 const rootId = "00000000-0000-4000-8000-000000000301";
@@ -96,26 +95,6 @@ const dossier = {
   safeWarnings: [],
 };
 
-const coverage = {
-  workspaceId: "workspace-synthetic",
-  asOf: "2026-01-02T00:00:00.000Z",
-  revision: 4,
-  items: [
-    {
-      entityId: childId,
-      canonicalName: "Synthetic capability",
-      kind: "capability",
-      flags: ["stale", "weakly_evidenced"],
-      claimCount: 0,
-      referenceCount: 0,
-      variantCount: 1,
-      updatedRevision: 4,
-    },
-  ],
-  page: { maximumItems: 100, truncated: false },
-  safeWarnings: [],
-};
-
 const viewProps = (user: unknown, searchParams: Record<string, string> = {}) =>
   ({ initPageResult: { req: { user } }, searchParams }) as never;
 
@@ -123,14 +102,13 @@ describe("Product Studio product map view", () => {
   beforeEach(() => {
     getMap.mockReset().mockResolvedValue(map);
     getDossier.mockReset().mockResolvedValue(dossier);
-    getCoverage.mockReset().mockResolvedValue(coverage);
   });
 
   afterEach(() => {
     delete process.env.SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON;
   });
 
-  it("renders hierarchy, filter controls, an accessible registry table, and a dossier", async () => {
+  it("renders the 3D text graph shell, accessible navigator, and governed dossier", async () => {
     const { ProductMapView } = await import("../src/views/ProductMapView");
     const markup = renderToStaticMarkup(
       await ProductMapView(viewProps({ id: "studio-user" }, { entity: childId })),
@@ -139,25 +117,20 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain("<ol");
     expect(markup).toContain('href="#product-map-title"');
     expect(markup).toContain('id="main-content"');
-    expect(markup).toContain('aria-label="Product map filters"');
-    expect(markup).toContain('<label class="grid gap-1 text-sm font-semibold" for="depth">');
-    expect(markup).toContain("<table");
-    expect(markup).toContain("Authorized product registry entities and their hierarchy paths");
-    expect(markup).toContain('scope="col"');
-    expect(markup).toContain('scope="row"');
+    expect(markup).toContain('data-renderer="3d-force-graph"');
+    expect(markup).toContain('data-testid="product-capability-graph"');
     expect(markup).toContain('id="dossier-title"');
-    expect(markup).toContain('id="coverage-heading"');
-    expect(markup).toContain("Product-owner review queue");
-    expect(markup).toContain("Capability Constellation");
-    expect(markup).toContain("Interactive capability constellation");
+    expect(markup).toContain("Product Capability Graph");
+    expect(markup).toContain("Interactive 3D product capability graph");
+    expect(markup).toContain("Text navigator");
     expect(markup).toContain("Relationships on");
-    expect(markup).toContain("weakly evidenced");
-    expect(markup).toContain("evidence bodies are never shown");
     expect(markup).toContain("focus-visible:outline-2");
     expect(markup).not.toContain("<canvas");
+    expect(markup).not.toContain("Product-owner review queue");
+    expect(markup).not.toContain("Registry table");
+    expect(markup).not.toContain("Complete semantic hierarchy");
     expect(getMap).toHaveBeenCalledOnce();
     expect(getDossier).toHaveBeenCalledWith(childId);
-    expect(getCoverage).toHaveBeenCalledOnce();
   });
 
   it("redirects to sign-in with a safe local return before accessing Sarathi", async () => {
@@ -175,7 +148,6 @@ describe("Product Studio product map view", () => {
     expect(markup).not.toContain(`href="${externalLookingQuery}"`);
     expect(getMap).not.toHaveBeenCalled();
     expect(getDossier).not.toHaveBeenCalled();
-    expect(getCoverage).not.toHaveBeenCalled();
   });
 
   it("shows governed rename only when the authenticated user has a live credential", async () => {

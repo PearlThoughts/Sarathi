@@ -128,6 +128,10 @@ describe("Product Studio architecture adherence", () => {
 
   it("provides a semantic non-graph reading path and runs in the root check", async () => {
     const view = await readFile(new URL("src/views/ProductMapView.tsx", studioRoot), "utf8");
+    const explorer = await readFile(
+      new URL("src/views/ProductCapabilityExplorer.tsx", studioRoot),
+      "utf8",
+    );
     const adapter = await readFile(
       new URL("src/server/sarathi-product-model-client.ts", studioRoot),
       "utf8",
@@ -135,14 +139,13 @@ describe("Product Studio architecture adherence", () => {
     const rootPackage = await readFile(new URL("../package.json", studioRoot), "utf8");
     const testManifest = await readFile(new URL("../tests/manifest.json", studioRoot), "utf8");
 
-    expect(view).toContain("<Hierarchy map={visibleMap} />");
-    expect(view).toContain("<RegistryTable map={visibleMap} />");
-    expect(view).toContain("<CoverageReview coverage={coverage} />");
-    expect(view).toContain("evidence bodies are never shown.");
-    expect(view).toContain("Read relationships as a list");
+    expect(view).toContain("<ProductCapabilityExplorer");
+    expect(explorer).toContain("Text navigator");
+    expect(explorer).toContain('data-testid="capability-text-node"');
+    expect(explorer).toContain("Keyboard-accessible nodes in the current graph.");
+    expect(explorer).toContain('aria-label="Interactive 3D product capability graph"');
     expect(adapter).toContain("coverage?maximumItems=");
-    expect(view).toContain('<table className="w-full border-collapse text-left text-sm">');
-    expect(view).not.toContain("<canvas");
+    expect(explorer).not.toContain("<canvas");
     expect(rootPackage).toContain('"check:product-studio"');
     expect(rootPackage).toMatch(/"ci"[^\n]+check:product-studio/);
     expect(testManifest).toContain('"path": "tests/product-studio-architecture-adherence.test.ts"');

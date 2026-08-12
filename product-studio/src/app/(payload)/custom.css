@@ -15,10 +15,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .react-flow,
-  .react-flow * {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
+  [data-testid="product-capability-explorer"] *,
+  [data-testid="product-capability-explorer"] *::before,
+  [data-testid="product-capability-explorer"] *::after {
     scroll-behavior: auto;
     transition-duration: 0.01ms;
   }
