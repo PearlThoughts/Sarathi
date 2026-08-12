@@ -16,7 +16,9 @@ test("unauthenticated users reach sign-in with the Product Map return target", a
   await expect(page.getByRole("textbox", { name: "Email *" })).toBeVisible();
 });
 
-test("authenticated users can inspect the capability and relation views", async ({ page }) => {
+test("authenticated users can drill through the visual capability constellation", async ({
+  page,
+}) => {
   const email = process.env.PRODUCT_STUDIO_BROWSER_EMAIL;
   const password = process.env.PRODUCT_STUDIO_BROWSER_PASSWORD;
   test.skip(
@@ -31,10 +33,23 @@ test("authenticated users can inspect the capability and relation views", async 
 
   await expect(page).toHaveURL(/\/admin\/product-map(?:\?|$)/);
   await expect(page.getByRole("heading", { name: "Product Map", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Capability Map", level: 2 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Relationship Graph", level: 2 })).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Interactive typed product relationship graph" }),
+    page.getByRole("heading", { name: "Capability Constellation", level: 2 }),
   ).toBeVisible();
+
+  const explorer = page.getByTestId("product-capability-explorer");
+  await expect(explorer).toBeVisible();
+  const initialDepth = await explorer.getAttribute("data-depth");
+  const firstChild = explorer
+    .locator('[data-testid="capability-cloud-node"][data-role="child"] button')
+    .first();
+  await expect(firstChild).toBeVisible();
+  await firstChild.click();
+  await expect(explorer).not.toHaveAttribute("data-depth", initialDepth ?? "0");
+  await expect(page.getByRole("button", { name: "Back one level" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /Relationships on/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByText("Product-owner review queue")).toBeVisible();
 });
