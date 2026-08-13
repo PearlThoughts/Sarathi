@@ -398,6 +398,23 @@ describe("Teams knowledge source", () => {
     expect(document?.passages[0]?.body).toContain("Please test the publishing cron today.");
     expect(document?.passages[0]?.body).toContain("waiting for QA approval");
     expect(document?.passages[0]?.body).toContain("after the client confirms");
+    expect(document?.passages[0]).toMatchObject({
+      kind: "conversation-span",
+      hierarchy: ["Delivery Standup", "Delivery Standup"],
+      attributes: {
+        messageIds: ["chat-1", "chat-2", "chat-3"],
+        identifiers: expect.arrayContaining(["SAR-45"]),
+      },
+    });
+    expect(document?.passages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "message-status",
+          parentLocator: expect.stringMatching(/^#conversation-/),
+          attributes: { messageIds: ["chat-2"], identifiers: [], roles: ["status"] },
+        }),
+      ]),
+    );
     const referencedReply = snapshot.documents.find(({ externalId }) =>
       externalId.endsWith("chat-3"),
     );

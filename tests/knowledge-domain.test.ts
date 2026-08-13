@@ -55,6 +55,26 @@ describe("knowledge domain", () => {
     expect(new Set(passages.map((passage) => passage.locator)).size).toBe(passages.length);
   });
 
+  it("creates Vault section parents and paragraph children with heading hierarchy", () => {
+    const passages = chunkVaultMarkdown(
+      "# Product\nContext paragraph.\n\n## Acceptance\nQA approved.\n\nClient sign-off remains pending.",
+    );
+    expect(passages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "section-parent",
+          locator: "#acceptance",
+          hierarchy: ["Product", "Acceptance"],
+        }),
+        expect.objectContaining({
+          kind: "paragraph",
+          parentLocator: "#acceptance",
+          hierarchy: ["Product", "Acceptance"],
+        }),
+      ]),
+    );
+  });
+
   it("disambiguates repeated Vault headings with resolvable GitHub-style anchors", () => {
     const passages = chunkVaultMarkdown(
       "# Status\nFirst update.\n\n## Status\nSecond update.\n\n## Status\nThird update.",

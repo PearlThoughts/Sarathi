@@ -670,63 +670,100 @@ const contextualPassages = (
     (message) => message.deletedAt === undefined && !acknowledgement(message.content),
   );
   if (target.deletedAt !== undefined || acknowledgement(target.content)) return [];
-  if (isKnowledgeChat(conversation)) {
-    const targetIndex = active.findIndex((message) => message.id === target.id);
-    if (targetIndex < 0) return [];
-    const start = Math.max(0, Math.min(targetIndex - 2, active.length - 5));
-    const span = active.slice(start, start + 5);
-    const chatLine = (message: NormalizedMessage): string => {
-      const reference = message.attachments.find(
-        ({ messageReference: candidate }) => candidate !== undefined,
-      )?.messageReference;
-      return [
-        ...(reference === undefined
-          ? []
-          : [`Replying to ${reference.authorName ?? "team member"}: ${reference.preview}`]),
-        `${message.authorName ?? "Team member"}: ${message.content}`,
-      ].join("\n");
-    };
-    const passage = createTypedPassage(
-      "chat-window",
-      `#message-${encodeURIComponent(target.id)}`,
-      0,
-      target.title,
-      span.map(chatLine).join("\n"),
-    );
-    return passage === undefined ? [] : [passage];
+  const targetIndex = active.findIndex((message) => message.id === target.id);
+  if (targetIndex < 0) return [];
+  const identifiers = (message: NormalizedMessage): readonly string[] => [
+    ...new Set(
+      message.content.match(
+        /\b[A-Z][A-Z0-9]+-\d+\b|\b(?:PR|pull request)\s*#?\d+\b|\b[\w.-]+\/[\w.-]+\b/gi,
+      ) ?? [],
+    ),
+  ];
+  const hasSharedIdentifier = (left: NormalizedMessage, right: NormalizedMessage): boolean => {
+    const leftIds = new Set(identifiers(left).map((value) => value.toLocaleLowerCase("en")));
+    return identifiers(right).some((value) => leftIds.has(value.toLocaleLowerCase("en")));
+  };
+  const explicitlyRelated = (left: NormalizedMessage, right: NormalizedMessage): boolean =>
+    right.parentId === left.id ||
+    left.parentId === right.id ||
+    right.attachments.some(({ messageReference: reference }) => reference?.messageId === left.id) ||
+    left.attachments.some(({ messageReference: reference }) => reference?.messageId === right.id);
+  const spans: NormalizedMessage[][] = [];
+  for (const message of active) {
+    const current = spans.at(-1);
+    const previous = current?.at(-1);
+    const gapMilliseconds =
+      previous === undefined ? 0 : Date.parse(message.createdAt) - Date.parse(previous.createdAt);
+    const beginsNewSpan =
+      previous !== undefined &&
+      !explicitlyRelated(previous, message) &&
+      !hasSharedIdentifier(previous, message) &&
+      (gapMilliseconds > 6 * 60 * 60 * 1_000 ||
+        /\b(?:new topic|separately|unrelated|moving on)\b/i.test(message.content));
+    if (current === undefined || beginsNewSpan) spans.push([message]);
+    else current.push(message);
   }
-  const root = active.find((message) => message.id === target.rootId);
-  if (target.id !== target.rootId) {
-    const body = [
-      ...(root === undefined
+  const span = spans.find((candidate) => candidate.some((message) => message.id === target.id)) ?? [
+    target,
+  ];
+  const spanLocator = `#conversation-${encodeURIComponent(span[0]?.id ?? target.id)}-${encodeURIComponent(span.at(-1)?.id ?? target.id)}`;
+  const chatLine = (message: NormalizedMessage): string => {
+    const reference = message.attachments.find(
+      ({ messageReference: candidate }) => candidate !== undefined,
+    )?.messageReference;
+    return [
+      ...(reference === undefined
         ? []
-        : [`Thread: ${root.authorName ?? "Team member"}: ${root.content}`]),
-      `Reply: ${target.authorName ?? "Team member"}: ${target.content}`,
+        : [`Replying to ${reference.authorName ?? "team member"}: ${reference.preview}`]),
+      `[${message.createdAt}] ${message.authorName ?? "Team member"} (${messageRole(message.content)}): ${message.content}`,
     ].join("\n");
+  };
+  const parentBody = span.map(chatLine).join("\n");
+  const parentChunks = [] as KnowledgePassageDraft[];
+  const maximumCharacters = 6_000;
+  for (let offset = 0; offset < parentBody.length; offset += maximumCharacters) {
+    const chunk = parentBody.slice(offset, offset + maximumCharacters);
+    const part = Math.floor(offset / maximumCharacters) + 1;
     const passage = createTypedPassage(
-      "thread-reply",
-      `#message-${encodeURIComponent(target.id)}`,
-      0,
+      "conversation-span",
+      parentBody.length <= maximumCharacters ? spanLocator : `${spanLocator}:part-${part}`,
+      parentChunks.length,
       target.title,
-      body,
+      chunk,
+      {
+        hierarchy: [conversation.label, target.title],
+        attributes: {
+          participants: [
+            ...new Set(
+              span.flatMap(({ authorName }) => (authorName === undefined ? [] : [authorName])),
+            ),
+          ],
+          identifiers: [...new Set(span.flatMap(identifiers))],
+          messageIds: span.map(({ id }) => id),
+          roles: [...new Set(span.map(({ content }) => messageRole(content)))],
+        },
+      },
     );
-    return passage === undefined ? [] : [passage];
+    if (passage !== undefined) parentChunks.push(passage);
   }
-  const passages: KnowledgePassageDraft[] = [];
-  for (let offset = 0; offset < active.length; offset += 5) {
-    const span = active.slice(offset, offset + 5);
-    const passage = createTypedPassage(
-      "thread",
-      `#thread-${offset / 5 + 1}`,
-      passages.length,
-      target.title,
-      span
-        .map((message) => `${message.authorName ?? "Team member"}: ${message.content}`)
-        .join("\n"),
-    );
-    if (passage !== undefined) passages.push(passage);
-  }
-  return passages;
+  const atomic = createTypedPassage(
+    `message-${messageRole(target.content)}`,
+    `#message-${encodeURIComponent(target.id)}`,
+    parentChunks.length,
+    target.title,
+    chatLine(target),
+    {
+      parentLocator: spanLocator,
+      hierarchy: [conversation.label, target.title],
+      attributes: {
+        messageIds: [target.id],
+        identifiers: identifiers(target),
+        roles: [messageRole(target.content)],
+        ...(target.parentId === undefined ? {} : { repliesTo: target.parentId }),
+      },
+    },
+  );
+  return atomic === undefined ? parentChunks : [...parentChunks, atomic];
 };
 
 const asDocument = (
