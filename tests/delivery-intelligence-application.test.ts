@@ -299,13 +299,13 @@ describe("delivery intelligence application", () => {
             {
               source: "github",
               available: true,
-              checkpointAt: "2026-07-21T18:00:00.000Z",
+              checkpointAt: "2026-07-20T12:30:00.000Z",
               candidateCount: 20,
             },
             {
               source: "jira",
               available: true,
-              checkpointAt: "2026-07-21T18:00:00.000Z",
+              checkpointAt: "2026-07-20T12:30:00.000Z",
               candidateCount: 20,
             },
           ],
@@ -359,6 +359,10 @@ describe("delivery intelligence application", () => {
       acceptance: {
         product: "period_delivery_brief",
         mode: "deep_dive",
+        freshEvidence: 2,
+        evaluatedEvidence: 2,
+        freshnessPassed: true,
+        passed: true,
       },
     });
     expect(answer.text).toContain("## Delivered");

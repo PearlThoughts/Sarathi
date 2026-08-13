@@ -1613,7 +1613,7 @@ const responseAcceptance = (
   const requestedAt = Date.parse(request.requestedAt);
   const freshnessReferenceAt =
     structuredReportProduct && result.periodDeliveryReport?.census.boundary.kind === "absolute"
-      ? Date.parse(result.periodDeliveryReport.census.boundary.toExclusive)
+      ? Math.min(requestedAt, Date.parse(result.periodDeliveryReport.census.boundary.toExclusive))
       : requestedAt;
   const evaluatedFreshness = structuredReportProduct
     ? reportSourceCoverage.map(({ checkpointAt }) => checkpointAt)
