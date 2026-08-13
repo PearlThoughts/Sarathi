@@ -15,6 +15,7 @@ export type KnowledgeMigrationVerification = {
   readonly knowledgeTableCount: number;
   readonly deliveryTableCount: number;
   readonly productTableCount: number;
+  readonly answerFeedbackTableCount: number;
   readonly protectedAuditTablesPresent: readonly string[];
 };
 
@@ -23,6 +24,7 @@ export type KnowledgeMigrationStatus = {
   readonly knowledgeTableCount: number;
   readonly deliveryTableCount: number;
   readonly productTableCount: number;
+  readonly answerFeedbackTableCount: number;
   readonly appliedMigrationCount: number;
   readonly embeddingCacheProgress: readonly {
     readonly workspaceId: string;
@@ -104,6 +106,7 @@ export const knowledgeMigrationPlan = {
     "0007_restart-safe-embedding-cache",
     "0008_product-model-core",
     "0009_product-model-governance",
+    "0010_answer-feedback",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,
@@ -141,7 +144,7 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
       "select extversion from pg_extension where extname = 'vector'",
     ),
     pool.query<{ readonly table_name: string }>(
-      "select table_name from information_schema.tables where table_schema = 'public' and (table_name like 'knowledge_%' or table_name like 'delivery_%' or table_name like 'product_%' or table_name = any($1::text[])) order by table_name",
+      "select table_name from information_schema.tables where table_schema = 'public' and (table_name like 'knowledge_%' or table_name like 'delivery_%' or table_name like 'product_%' or table_name like 'answer_feedback_%' or table_name = any($1::text[])) order by table_name",
       [protectedAuditTableNames],
     ),
   ]);
@@ -162,11 +165,19 @@ const verifyMigration = async (pool: Pool): Promise<KnowledgeMigrationVerificati
     throw new Error(
       `Expected 16 product-model tables after migration; found ${productTableCount}.`,
     );
+  const answerFeedbackTableCount = names.filter((name) =>
+    name.startsWith("answer_feedback_"),
+  ).length;
+  if (answerFeedbackTableCount !== 3)
+    throw new Error(
+      `Expected 3 answer-feedback tables after migration; found ${answerFeedbackTableCount}.`,
+    );
   return {
     vectorExtensionVersion,
     knowledgeTableCount,
     deliveryTableCount,
     productTableCount,
+    answerFeedbackTableCount,
     protectedAuditTablesPresent: protectedAuditTableNames.filter((name) => names.includes(name)),
   };
 };
@@ -204,24 +215,33 @@ export const readKnowledgePostgresStatus = (
     (pool) =>
       Effect.tryPromise({
         try: async () => {
-          const [extension, tables, deliveryTables, productTables, journalExists] =
-            await Promise.all([
-              pool.query<{ readonly extversion: string }>(
-                "select extversion from pg_extension where extname = 'vector'",
-              ),
-              pool.query<{ readonly count: string }>(
-                "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'knowledge_%'",
-              ),
-              pool.query<{ readonly count: string }>(
-                "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'delivery_%'",
-              ),
-              pool.query<{ readonly count: string }>(
-                "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'product_%'",
-              ),
-              pool.query<{ readonly present: boolean }>(
-                "select to_regclass('drizzle.__drizzle_migrations') is not null as present",
-              ),
-            ]);
+          const [
+            extension,
+            tables,
+            deliveryTables,
+            productTables,
+            answerFeedbackTables,
+            journalExists,
+          ] = await Promise.all([
+            pool.query<{ readonly extversion: string }>(
+              "select extversion from pg_extension where extname = 'vector'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'knowledge_%'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'delivery_%'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'product_%'",
+            ),
+            pool.query<{ readonly count: string }>(
+              "select count(*) from information_schema.tables where table_schema = 'public' and table_name like 'answer_feedback_%'",
+            ),
+            pool.query<{ readonly present: boolean }>(
+              "select to_regclass('drizzle.__drizzle_migrations') is not null as present",
+            ),
+          ]);
           const appliedMigrationCount =
             journalExists.rows[0]?.present === true
               ? Number(
@@ -273,6 +293,7 @@ export const readKnowledgePostgresStatus = (
             knowledgeTableCount,
             deliveryTableCount: Number(deliveryTables.rows[0]?.count ?? 0),
             productTableCount: Number(productTables.rows[0]?.count ?? 0),
+            answerFeedbackTableCount: Number(answerFeedbackTables.rows[0]?.count ?? 0),
             appliedMigrationCount,
             embeddingCacheProgress,
             checkpoints,

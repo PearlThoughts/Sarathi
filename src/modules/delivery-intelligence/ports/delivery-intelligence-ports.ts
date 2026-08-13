@@ -203,6 +203,24 @@ export type DeliveryAssistantAnswer = {
   readonly plan: DeliveryQueryPlan;
   readonly unavailableSources: readonly DeliverySourceKind[];
   readonly conflicts: readonly DeliveryConflict[];
+  readonly relevanceDiagnostics?:
+    | {
+        readonly retrievalFingerprint: string;
+        readonly compositionEnvelopeFingerprint?: string | undefined;
+        readonly selectedCandidateCount: number;
+        readonly selectedEpisodeCount: number;
+        readonly modelUsage?:
+          | {
+              readonly model: string;
+              readonly reasoningEffort: "low" | "medium" | "high";
+              readonly inputTokens: number;
+              readonly outputTokens: number;
+              readonly reasoningTokens: number;
+              readonly totalTokens: number;
+            }
+          | undefined;
+      }
+    | undefined;
   readonly missingRequiredSources?: readonly DeliverySourceKind[] | undefined;
   readonly missingRequiredIntents?: readonly DeliveryQuestionIntent[] | undefined;
   readonly periodCensus?: PeriodCensus | undefined;
@@ -290,6 +308,7 @@ export type DeliveryAnswerComposition = {
     readonly label: string;
     readonly url: string;
   }[];
+  readonly modelUsage?: NonNullable<DeliveryAssistantAnswer["relevanceDiagnostics"]>["modelUsage"];
 };
 
 export type DeliveryAnswerComposer = {

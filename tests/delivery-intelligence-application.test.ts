@@ -2342,6 +2342,14 @@ describe("delivery intelligence application", () => {
           { label: "Code", url: "https://example.com/github/code" },
           { label: "Team", url: "https://example.com/teams/team" },
         ],
+        modelUsage: {
+          model: "openai/gpt-synthetic",
+          reasoningEffort: "medium",
+          inputTokens: 100,
+          outputTokens: 25,
+          reasoningTokens: 5,
+          totalTokens: 125,
+        },
       }),
     );
     const source: DeliveryQuerySource = {
@@ -2379,6 +2387,66 @@ describe("delivery intelligence application", () => {
     expect(composition?.items.map(({ id }) => id)).toEqual(["code", "team"]);
     expect(answer.text).toContain("Merged code and project activity");
     expect(answer.citations).toHaveLength(2);
+    expect(answer.relevanceDiagnostics).toMatchObject({
+      retrievalFingerprint: expect.stringMatching(/^sha256-[a-f0-9]{64}$/),
+      compositionEnvelopeFingerprint: expect.stringMatching(/^sha256-[a-f0-9]{64}$/),
+      selectedCandidateCount: 2,
+      selectedEpisodeCount: 0,
+      modelUsage: {
+        model: "openai/gpt-synthetic",
+        reasoningEffort: "medium",
+        totalTokens: 125,
+      },
+    });
+  });
+
+  it("uses composed-or-safe-failure semantics for a deep operational answer", async () => {
+    const plan = planDeliveryQuestion("What is the current status of DEMO-1?");
+    if (plan === undefined) throw new Error("Expected a deep-dive status plan");
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["objects", "knowledge"],
+      execute: () =>
+        Effect.succeed({
+          items: [
+            {
+              ...item("jira", "deep-status", "DEMO-1 is actively in review", "status"),
+              lifecycleState: "active" as const,
+            },
+          ],
+          conflicts: [],
+          unavailableSources: [],
+          complete: true,
+        }),
+    };
+    const compose = vi.fn<DeliveryAnswerComposer["compose"]>(() =>
+      Effect.fail(
+        new RepositoryError({
+          message: "Synthetic provider failure.",
+          operation: "openrouter-answer-generation",
+        }),
+      ),
+    );
+
+    const answer = await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source], answerComposer: { compose } }).answer({
+        ...request,
+        question: "Investigate DEMO-1 in a comprehensive deep dive",
+        responseMode: "deep_dive",
+        plan,
+      }),
+    );
+
+    expect(compose).toHaveBeenCalledTimes(1);
+    expect(answer).toMatchObject({
+      status: "failed",
+      citations: [],
+      failure: {
+        code: "SARATHI-ANSWER-COMPOSITION-FAILED",
+        classification: "SARATHI-ANSWER-PROVIDER-FAILED",
+      },
+    });
+    expect(answer.text).not.toContain("DEMO-1 is actively in review");
   });
 
   it("fails closed instead of publishing deterministic records for an invented model citation", async () => {

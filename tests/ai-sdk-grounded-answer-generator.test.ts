@@ -67,6 +67,7 @@ const configuration = {
   provider: "openrouter" as const,
   apiKey: "test-only-secret",
   model: "openai/gpt-synthetic",
+  reasoningEffort: "medium" as const,
   baseUrl: "https://openrouter.ai/api/v1",
   timeoutMs: 1_000,
 };
@@ -109,13 +110,81 @@ describe("AI SDK OpenRouter answer generator", () => {
         SARATHI_MODEL_PROVIDER: "openrouter",
         SARATHI_MODEL_API_KEY: "not-logged",
         SARATHI_MODEL_NAME: "openai/gpt-synthetic",
+        SARATHI_MODEL_REASONING_EFFORT: "medium",
       }),
     ).toMatchObject({
       provider: "openrouter",
       model: "openai/gpt-synthetic",
+      reasoningEffort: "medium",
       baseUrl: "https://openrouter.ai/api/v1",
-      timeoutMs: 2_500,
+      timeoutMs: 30_000,
     });
+  });
+
+  it("requires an explicit supported reasoning effort", () => {
+    const base = {
+      SARATHI_MODEL_PROVIDER: "openrouter",
+      SARATHI_MODEL_API_KEY: "not-logged",
+      SARATHI_MODEL_NAME: "openai/gpt-synthetic",
+    };
+    expect(() => openRouterModelConfigurationFromEnvironment(base)).toThrow(
+      "OpenRouter model configuration is required",
+    );
+    expect(() =>
+      openRouterModelConfigurationFromEnvironment({
+        ...base,
+        SARATHI_MODEL_REASONING_EFFORT: "provider-default",
+      }),
+    ).toThrow("OpenRouter model configuration is required");
+  });
+
+  it("sends the selected model and medium reasoning at the provider request boundary", async () => {
+    const requests: { readonly url: string; readonly body: Record<string, unknown> }[] = [];
+    const providerFetch = (async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      requests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      return new Response(
+        JSON.stringify({
+          id: "generation-test",
+          object: "chat.completion",
+          created: 1,
+          model: configuration.model,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content:
+                  "## Status\n- Delivery is current.\n### References\n- [Jira](https://jira.example.test/DEMO-754)",
+              },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+    const generator = createGroundedAnswerGenerator(configuration, undefined, (resolved) =>
+      createOpenRouterLanguageModel(resolved, providerFetch),
+    );
+
+    await Effect.runPromise(generator.generate(envelope));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(requests[0]?.body).toMatchObject({
+      model: "openai/gpt-synthetic",
+      reasoning: { effort: "medium" },
+      seed: 0,
+    });
+    expect(requests[0]?.body).not.toHaveProperty("temperature");
+    expect(JSON.stringify(requests)).not.toContain("test-only-secret");
   });
 
   it("constructs only an OpenRouter language model", () => {

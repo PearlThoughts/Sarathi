@@ -250,6 +250,16 @@ export type GroundedAnswer = {
     readonly url: string;
   }[];
   readonly unavailableSources: readonly string[];
+  readonly modelUsage?:
+    | {
+        readonly model: string;
+        readonly reasoningEffort: "low" | "medium" | "high";
+        readonly inputTokens: number;
+        readonly outputTokens: number;
+        readonly reasoningTokens: number;
+        readonly totalTokens: number;
+      }
+    | undefined;
   readonly mentions?: readonly {
     readonly source: "teams";
     readonly externalId: string;

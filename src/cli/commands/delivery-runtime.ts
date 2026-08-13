@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import {
   type CollaborationSourceScope,
   collaborationSourceScopes,
@@ -19,6 +20,7 @@ import {
   createGroundedAnswerGeneratorFromEnvironment,
 } from "../../infrastructure/model/index.ts";
 import {
+  createPostgresAnswerFeedbackRepository,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   createPostgresProductModelDetailRepository,
@@ -33,6 +35,10 @@ import {
   workspaceProjectionDeliveryChannels,
   workspaceProjectionFromEnvironment,
 } from "../../infrastructure/teams/index.ts";
+import {
+  type AnswerFeedbackAggregate,
+  createAnswerFeedbackService,
+} from "../../modules/answer-feedback/index.ts";
 import {
   type CapabilityLedger,
   createDeliveryAssistant,
@@ -78,6 +84,9 @@ type DeliveryCliDependencies = {
   readonly runKnowledge?: typeof runKnowledgeCommand | undefined;
   readonly runSync?: typeof runDeliverySyncCommand | undefined;
   readonly runIntent?: typeof runDeclaredInitiativeCommand | undefined;
+  readonly feedbackMetrics?:
+    | ((workspaceId: string) => Promise<AnswerFeedbackAggregate>)
+    | undefined;
 };
 
 type JiraProjection = { readonly projectKey: string };
@@ -496,6 +505,23 @@ const deliveryStatus = async (environment: DeliveryRuntimeEnvironment): Promise<
     ),
   );
 
+const deliveryFeedbackMetrics = async (
+  workspaceId: string,
+  environment: DeliveryRuntimeEnvironment,
+): Promise<AnswerFeedbackAggregate> => {
+  const opened = openKnowledgePostgresDatabase(
+    required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
+  );
+  try {
+    const service = createAnswerFeedbackService(
+      createPostgresAnswerFeedbackRepository(opened.database),
+    );
+    return await Effect.runPromise(service.metrics(workspaceId));
+  } finally {
+    await opened.pool.end();
+  }
+};
+
 export const runDeliveryCommand = async (
   args: readonly string[],
   environment: DeliveryRuntimeEnvironment = process.env,
@@ -515,6 +541,24 @@ export const runDeliveryCommand = async (
           status: await (dependencies.readStatus ?? (() => deliveryStatus(environment)))(),
         },
       };
+    if (args[0] === "feedback" && args[1] === "metrics") {
+      const workspaceId = required(
+        "--workspace-id",
+        option(args, "--workspace-id") ?? environment.SARATHI_KNOWLEDGE_WORKSPACE_ID,
+      );
+      return {
+        exitCode: 0,
+        output: {
+          ok: true,
+          operation: "delivery-feedback-metrics",
+          workspaceId,
+          report: await (
+            dependencies.feedbackMetrics ??
+            ((requestedWorkspaceId) => deliveryFeedbackMetrics(requestedWorkspaceId, environment))
+          )(workspaceId),
+        },
+      };
+    }
     if (["ingest", "reconcile", "rebuild"].includes(args[0] ?? "")) {
       const operation = args[0] ?? "";
       const source = operation === "rebuild" ? "all" : args[1];
@@ -642,7 +686,7 @@ export const runDeliveryCommand = async (
       output: {
         ok: false,
         message:
-          "Use delivery status, intent import|status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone> [--source-scopes-json <json>], or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive] [--source-scopes-json <json>].",
+          "Use delivery status, feedback metrics --workspace-id <id>, intent import|status, sync backfill|events|reconcile|status, ingest|reconcile jira|vault|all, rebuild, evaluate --set-json <json> --actor-id <id> --time-zone <iana-zone> [--source-scopes-json <json>], or query --question <text> --actor-id <id> --time-zone <iana-zone> [--response-mode fast|structured|deep_dive] [--source-scopes-json <json>].",
       },
     };
   } catch (error) {

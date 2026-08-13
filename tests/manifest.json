@@ -1,6 +1,13 @@
 {
   "suites": [
     {
+      "id": "answer-feedback",
+      "path": "tests/answer-feedback-*.test.ts",
+      "command": "bunx vitest run tests/answer-feedback-domain.test.ts tests/answer-feedback-application.test.ts tests/answer-feedback-card.test.ts tests/teams-mention.test.ts tests/teams-ingress.test.ts tests/delivery-cli.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Exact-answer feedback domain, immutable snapshots, multi-reason revisions, idempotency, Teams cards and authorized actions, privacy-safe diagnostics, reviewed-training boundary, and aggregate metrics."
+    },
+    {
       "id": "teams-ingress",
       "path": "tests/teams-ingress.test.ts",
       "command": "bun run test",

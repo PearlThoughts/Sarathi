@@ -45,7 +45,7 @@ product-studio/src/
 product-studio/tests-browser/
 tests/
 
-specs/008-product-capability-graph-exploration/
+specs/009-product-capability-graph-exploration/
 ```
 
 **Structure decision**: Extend established bounded contexts and the current Product Studio rather than creating a graph subsystem. Presentation-specific lens definitions live in Product Studio; semantic relation labels live with the public product vocabulary.

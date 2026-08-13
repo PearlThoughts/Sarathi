@@ -163,13 +163,21 @@ other provider value.
 - `SARATHI_MODEL_PROVIDER` (`openrouter`)
 - `SARATHI_MODEL_API_KEY`
 - `SARATHI_MODEL_NAME`
+- `SARATHI_MODEL_REASONING_EFFORT` (`low`, `medium`, or `high`; set explicitly)
 - optional `SARATHI_MODEL_BASE_URL`
 - optional `SARATHI_MODEL_TIMEOUT_MS`
+- optional `SARATHI_MODEL_REASONING_EFFORT` (recorded with response feedback)
+- optional `SARATHI_MODEL_PROMPT_REVISION` (recorded when available)
+- optional `SARATHI_PRODUCT_REGISTRY_REVISION` (recorded when available)
 
 No fallback provider is configured. Provider diagnostics contain only the
 OpenRouter provider name and outcome; prompts, answers, identifiers, and
 credentials are excluded. SDK-internal retries remain disabled so the runtime
 stays inside the Teams response budget.
+
+OpenRouter reasoning is sent through the provider-specific Vercel AI SDK request
+options. Sarathi never relies on a provider default for reasoning effort and never
+falls back to another answer model.
 
 The inbound workspace projection must explicitly map every admitted standard channel or group/meeting chat. Standard channels use a team-membership policy; chats use current chat-roster membership and a distinct chat audience. A knowledge-source chat mapping alone does not create an inbound answering route. The repository fails closed when admission, roster evidence, audience grants, required installation, or credentials are unavailable.
 
@@ -221,6 +229,8 @@ For a Teams delivery-assistant pilot, acceptance should include:
 - duplicate delivery does not produce another answer;
 - restricted and cross-workspace verification remain excluded;
 - the pilot sponsor accepts or corrects the result.
+
+When response feedback is enabled, the same controlled acceptance should also verify that the unchanged answer carries the three feedback choices; useful-as-is records immediately; partial feedback opens the multi-reason and optional-correction form; submission confirms in place without a new channel message; a second submission changes the current projection while retaining history; and `bun run delivery feedback metrics --workspace-id <workspace-id>` reflects only privacy-safe aggregates. This feedback is not the governed 1–5 human acceptance rating.
 
 Test each response product on its own contract. Fast operational answers use their declared fast budget. Weekly, sprint, recent-period, and leadership reports are model-composed and may take roughly 40–60 seconds; they must not be judged against an obsolete universal ten-second or line-count target. If composition or report validation fails, the only user-visible result is the short safe failure notice, never deterministic or partial report content.
 

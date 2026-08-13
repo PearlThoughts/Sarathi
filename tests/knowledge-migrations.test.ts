@@ -36,6 +36,7 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 7, tag: "0007_restart-safe-embedding-cache" },
       { idx: 8, tag: "0008_product-model-core" },
       { idx: 9, tag: "0009_product-model-governance" },
+      { idx: 10, tag: "0010_answer-feedback" },
     ]);
   });
 
@@ -223,5 +224,25 @@ describe("knowledge Drizzle migrations", () => {
     expect(alteredTables.every((table) => table?.startsWith("product_"))).toBe(true);
     expect(schema).not.toContain("teams_mention_audit");
     expect(schema).not.toContain("compliance_reminder_audit");
+  });
+
+  it("adds immutable answers, append-only revisions, and one current feedback pointer", async () => {
+    const schema = await migration("0010_answer-feedback.sql");
+    const createdTables = [...schema.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]);
+
+    expect(createdTables).toEqual([
+      "answer_feedback_answer",
+      "answer_feedback_revision",
+      "answer_feedback_current",
+    ]);
+    expect(schema).toContain('CONSTRAINT "answer_feedback_answer_state"');
+    expect(schema).toContain('CONSTRAINT "answer_feedback_revision_rating"');
+    expect(schema).toContain('CONSTRAINT "answer_feedback_revision_correction_length"');
+    expect(schema).toContain('CREATE UNIQUE INDEX "answer_feedback_revision_idempotency"');
+    expect(schema).toContain('CONSTRAINT "answer_feedback_current_revision_fk"');
+    expect(schema).not.toContain("retrieval_body");
+    expect(schema).not.toContain("source_body");
+    expect(schema).not.toContain("prompt_content");
+    expect(schema).not.toMatch(/\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM|ALTER TYPE)\b/i);
   });
 });

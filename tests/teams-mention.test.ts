@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { RepositoryError } from "../src/domain/errors.ts";
+import { AnswerFeedbackError } from "../src/modules/answer-feedback/index.ts";
 import {
   handleTeamsMention,
   stripSarathiMention,
@@ -150,6 +151,82 @@ describe("teams mention", () => {
     });
     expect(fixture.state()).toBe("delivered");
     expect(fixture.calls.delivered()).toBe(1);
+  });
+
+  it("prepares feedback before delivery, attaches its opaque identifier, and marks it delivered", async () => {
+    const fixture = dependencies();
+    const calls: string[] = [];
+    let deliveredInvitation: unknown;
+    const feedbackDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      answerFeedback: {
+        prepareAnswer: (input) =>
+          Effect.sync(() => {
+            expect(input).toMatchObject({
+              workspaceId: "workspace-1",
+              recipientActorId: "actor-1",
+              answerText: "Known fact.",
+              questionText: "What is the goal?",
+              responseProduct: "grounded_answer",
+              queryFamily: "general_question",
+            });
+            expect(input.conversationBoundaryHash).toMatch(/^sha256-[a-f0-9]{64}$/);
+            calls.push("prepare");
+            return { answerId: "af_11111111-1111-4111-8111-111111111111" };
+          }),
+        markAnswerDelivered: () => Effect.sync(() => calls.push("mark")),
+        abandonAnswer: () => Effect.sync(() => calls.push("abandon")),
+        submit: () => Effect.die("not used"),
+        metrics: () => Effect.die("not used"),
+      },
+      feedbackGenerationContext: {
+        modelName: "model-a",
+        reasoningConfiguration: "medium",
+        applicationRevision: "revision-a",
+      },
+      delivery: {
+        reply: (_command, _answer, invitation) =>
+          Effect.sync(() => {
+            calls.push("deliver");
+            deliveredInvitation = invitation;
+          }),
+      },
+    };
+
+    await Effect.runPromise(handleTeamsMention(command, feedbackDependencies));
+
+    expect(deliveredInvitation).toEqual({
+      answerId: "af_11111111-1111-4111-8111-111111111111",
+    });
+    expect(calls).toEqual(["prepare", "deliver", "mark"]);
+  });
+
+  it("delivers the original answer when feedback preparation is unavailable", async () => {
+    const fixture = dependencies();
+    const diagnostics: string[] = [];
+    const feedbackDependencies: TeamsMentionDependencies = {
+      ...fixture.dependencies,
+      answerFeedback: {
+        prepareAnswer: () =>
+          Effect.fail(new AnswerFeedbackError("persistence_unavailable", "unavailable")),
+        markAnswerDelivered: () => Effect.void,
+        abandonAnswer: () => Effect.void,
+        submit: () => Effect.die("not used"),
+        metrics: () => Effect.die("not used"),
+      },
+      feedbackGenerationContext: {
+        modelName: "model-a",
+        reasoningConfiguration: "medium",
+        applicationRevision: "revision-a",
+      },
+      feedbackDiagnostic: (stage, reason) => diagnostics.push(`${stage}:${reason}`),
+    };
+
+    await expect(
+      Effect.runPromise(handleTeamsMention(command, feedbackDependencies)),
+    ).resolves.toMatchObject({ kind: "answered", answer: { text: "Known fact." } });
+    expect(fixture.calls.delivered()).toBe(1);
+    expect(diagnostics).toEqual(["prepare:persistence_unavailable"]);
   });
 
   it("does not answer a duplicate after successful delivery", async () => {

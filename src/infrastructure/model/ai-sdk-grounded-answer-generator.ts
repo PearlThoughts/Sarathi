@@ -13,6 +13,7 @@ type OpenRouterModelConfiguration = {
   readonly provider: "openrouter";
   readonly apiKey: string;
   readonly model: string;
+  readonly reasoningEffort: "low" | "medium" | "high";
   readonly baseUrl: string;
   readonly timeoutMs: number;
 };
@@ -55,11 +56,22 @@ export const openRouterModelConfigurationFromEnvironment = (
       provider: "openrouter",
       apiKey: required("SARATHI_MODEL_API_KEY", environment.SARATHI_MODEL_API_KEY),
       model: required("SARATHI_MODEL_NAME", environment.SARATHI_MODEL_NAME),
+      reasoningEffort: (() => {
+        const effort = required(
+          "SARATHI_MODEL_REASONING_EFFORT",
+          environment.SARATHI_MODEL_REASONING_EFFORT,
+        );
+        if (effort !== "low" && effort !== "medium" && effort !== "high")
+          throw new RepositoryError({
+            message: "SARATHI_MODEL_REASONING_EFFORT must be low, medium, or high.",
+          });
+        return effort;
+      })(),
       baseUrl: environment.SARATHI_MODEL_BASE_URL ?? "https://openrouter.ai/api/v1",
       timeoutMs: positiveInteger(
         "SARATHI_MODEL_TIMEOUT_MS",
         environment.SARATHI_MODEL_TIMEOUT_MS,
-        2_500,
+        30_000,
       ),
     };
   } catch {
@@ -72,11 +84,13 @@ export const openRouterModelConfigurationFromEnvironment = (
 
 export const createOpenRouterLanguageModel = (
   configuration: OpenRouterModelConfiguration,
+  fetchImplementation?: typeof fetch,
 ): ResolvedLanguageModel =>
   createOpenRouter({
     apiKey: configuration.apiKey,
     baseURL: configuration.baseUrl,
     compatibility: "strict",
+    ...(fetchImplementation === undefined ? {} : { fetch: fetchImplementation }),
   }).chat(configuration.model);
 
 const markdownCitationUrls = (text: string): readonly string[] =>
@@ -294,7 +308,7 @@ const validateDeliveryReport = (
 };
 
 const noModelProviderDiagnostics: ModelProviderDiagnosticSink = () => undefined;
-const deliveryReportModelTimeoutMs = 120_000;
+const deliveryReportModelTimeoutMs = 180_000;
 const deliveryReportMaximumOutputTokens = 12_000;
 
 const conciseSystemPrompt =
@@ -340,7 +354,12 @@ export const createGroundedAnswerGenerator = (
                   : { title, excerpt, sourceUrl },
               ),
             }),
-            temperature: 0,
+            providerOptions: {
+              openrouter: {
+                reasoning: { effort: configuration.reasoningEffort },
+              },
+            },
+            seed: 0,
             maxRetries: 0,
             ...(deliveryReport ? { maxOutputTokens: deliveryReportMaximumOutputTokens } : {}),
             abortSignal: AbortSignal.timeout(
@@ -381,6 +400,14 @@ export const createGroundedAnswerGenerator = (
               return source === undefined ? [] : [{ label: source.title, url }];
             }),
             unavailableSources: [],
+            modelUsage: {
+              model: configuration.model,
+              reasoningEffort: configuration.reasoningEffort,
+              inputTokens: result.usage.inputTokens ?? 0,
+              outputTokens: result.usage.outputTokens ?? 0,
+              reasoningTokens: result.usage.outputTokenDetails.reasoningTokens ?? 0,
+              totalTokens: result.usage.totalTokens ?? 0,
+            },
           };
         } catch (error) {
           diagnostics({

@@ -44,6 +44,7 @@ describe("knowledge CLI", () => {
             "0007_restart-safe-embedding-cache",
             "0008_product-model-core",
             "0009_product-model-governance",
+            "0010_answer-feedback",
           ],
           protectedTables: [
             "compliance_reminder_audit",
