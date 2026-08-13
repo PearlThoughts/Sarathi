@@ -1,8 +1,8 @@
 # Feature Specification: Product Capability Graph Exploration
 
-**Feature Branch**: `feat/it-126-capability-graph`  
-**Created**: 2026-08-13  
-**Status**: Approved for implementation  
+**Feature Branch**: `feat/it-126-capability-graph`
+**Created**: 2026-08-13
+**Status**: Approved for implementation
 **Work tracking**: Jira `IT-126`; Beads `sar-ebu`
 
 ## 1) Purpose
@@ -21,17 +21,17 @@ Objective:
 
 ## 3) Principles
 
-1. **One governed model**  
+1. **One governed model**
    Every visual lens and alternative view projects the same authorized Sarathi entities, relations, claims, variants, history, and delivery summaries.
-2. **Identity is not delivery activity**  
+2. **Identity is not delivery activity**
    Work items, repositories, services, and deployments support product understanding but never become primary capabilities or acceptance proof.
-3. **Selection is reversible presentation state**  
+3. **Selection is reversible presentation state**
    Selecting, comparing, changing lenses, moving the camera, or expanding a branch cannot mutate registry semantics.
-4. **Bounded and privacy-safe by construction**  
+4. **Bounded and privacy-safe by construction**
    Traversal limits and audience filtering are application/API contracts, not browser conventions; errors never reveal hidden identifiers or evidence bodies.
-5. **Equivalent access, not a fallback afterthought**  
+5. **Equivalent access, not a fallback afterthought**
    The hierarchy, structured list, relationship list, and inspectors share selection and remain operational when WebGL is unavailable.
-6. **Motion communicates state**  
+6. **Motion communicates state**
    Camera movement and path animation occur only for deliberate focus changes and selected paths, and stop under reduced-motion preferences.
 
 ## 4) Authority and Architecture

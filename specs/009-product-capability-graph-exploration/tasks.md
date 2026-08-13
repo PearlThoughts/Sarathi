@@ -1,6 +1,6 @@
 # Tasks: Product Capability Graph Exploration
 
-**Input**: [spec.md](./spec.md), [plan.md](./plan.md)  
+**Input**: [spec.md](./spec.md), [plan.md](./plan.md)
 **Tracking**: Jira `IT-126`; Beads `sar-ebu`
 
 ## Phase 1: Governed readiness
@@ -48,8 +48,8 @@
 
 - [x] T027 [Verify] Add synthetic deep-slice fixtures including migration/deployed/compatible/verified/accepted distinctions, unauthorized evidence, and unrelated work distractors.
 - [x] T028 [Verify] Run all focused domain/API/Product Studio tests and resolve failures.
-- [ ] T029 [Verify] Run root `bun run check` and `bun run runtime:smoke` on the exact branch.
-- [ ] T030 [Verify] Run Product Studio complete check/build/browser suite on desktop and tablet; inspect console/network and performance instrumentation.
+- [x] T029 [Verify] Run root `bun run check` and `bun run runtime:smoke` on the exact branch.
+- [x] T030 [Verify] Run Product Studio complete check/build/browser suite on desktop and tablet; inspect console/network and performance instrumentation.
 - [ ] T031 [Review] Run direct final-diff self-review, architecture re-check, public/private boundary check, secret scan, and repository status checks.
 
 ## Phase 7: Governed release and acceptance handoff

@@ -8,11 +8,11 @@ Implement the feature in one governed public-repository worktree with checkpoint
 
 ## 2) Technical Context
 
-**Language/Version**: TypeScript 5.x on Bun 1.3; React 19 / Next.js 15  
-**Primary Dependencies**: Effect, Hono, Payload, `3d-force-graph`, Three.js, Playwright, Vitest  
-**Storage**: Existing Sarathi SQLite/D1-compatible product-model repositories; Payload only for Product Studio presentation/auth concerns  
-**Testing**: Vitest/domain contract tests, architecture tests, Next build/check, Playwright browser suite, runtime smoke  
-**Target Platform**: Railway-hosted Sarathi API and Product Studio; modern desktop/tablet browsers  
+**Language/Version**: TypeScript 5.x on Bun 1.3; React 19 / Next.js 15
+**Primary Dependencies**: Effect, Hono, Payload, `3d-force-graph`, Three.js, Playwright, Vitest
+**Storage**: Existing Sarathi SQLite/D1-compatible product-model repositories; Payload only for Product Studio presentation/auth concerns
+**Testing**: Vitest/domain contract tests, architecture tests, Next build/check, Playwright browser suite, runtime smoke
+**Target Platform**: Railway-hosted Sarathi API and Product Studio; modern desktop/tablet browsers
 **Constraints**: audience-filtered bounded traversal; no new authority/store; synthetic public fixtures; WebGL-independent operation
 
 ## 3) Architecture Fitness Check
