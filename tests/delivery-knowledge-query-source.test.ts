@@ -5,6 +5,71 @@ import { planDeliveryQuestion } from "../src/modules/delivery-intelligence/index
 import type { KnowledgeRepository } from "../src/modules/knowledge-layer/index.ts";
 
 describe("delivery knowledge query source", () => {
+  it("uses indexed hybrid retrieval with explicit subject and facets when embeddings are available", async () => {
+    const search = vi.fn<KnowledgeRepository["search"]>((query) =>
+      Effect.succeed([
+        {
+          id: "atlas-status",
+          source: "teams",
+          sourceId: "atlas-status",
+          title: "Atlas rollout",
+          excerpt:
+            query.expandParents === true
+              ? "Deployment accepted. Parent context: QA handoff."
+              : "Deployment accepted.",
+          citationUrl: "https://example.test/teams/atlas-status",
+          sourceUpdatedAt: "2026-07-20T10:00:00.000Z",
+          sensitivity: "internal",
+          authority: 0.9,
+          freshness: 1,
+          componentRanks: { vector: 1 },
+          score: 1,
+          parentLocator: "#conversation-atlas",
+        },
+      ]),
+    );
+    const embed = vi.fn(() => Effect.succeed([[0.1, 0.2]]));
+    const plan = planDeliveryQuestion("Is Atlas Site Composer fully deployed?");
+    if (plan === undefined) throw new Error("Expected a completion plan");
+    const source = createDeliveryKnowledgeQuerySource({
+      repository: {
+        reconcile: () => Effect.die("not used"),
+        search,
+        searchLexical: () => Effect.die("hybrid retrieval must not use lexical-only search"),
+      },
+      embeddings: { model: "synthetic", dimensions: 2, embed },
+      workspaceId: "workspace-atlas",
+      allowedActorIds: new Set(["actor-atlas"]),
+      audienceIds: ["team-atlas"],
+    });
+    await Effect.runPromise(
+      source.execute(
+        {
+          workspaceId: "workspace-atlas",
+          actorId: "actor-atlas",
+          maximumSensitivity: "internal",
+          financeAccess: false,
+          requestedAt: "2026-07-20T10:00:00.000Z",
+          timeZone: "Asia/Kolkata",
+          deadlineAt: "2026-07-20T10:00:30.000Z",
+          question: "Is Atlas Site Composer fully deployed?",
+        },
+        plan,
+      ),
+    );
+    expect(embed).toHaveBeenCalledWith(["Is Atlas Site Composer fully deployed?"]);
+    expect(embed).toHaveBeenCalledOnce();
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[0]?.[0]).toMatchObject({
+      subject: "Atlas Site Composer",
+      facets: expect.arrayContaining(["identity", "deployment", "lifecycle"]),
+      topK: 25,
+      expandParents: false,
+    });
+    expect(search.mock.calls[1]?.[0]).toMatchObject({ expandParents: true });
+    expect(search.mock.calls[0]?.[1]).toEqual([0.1, 0.2]);
+  });
+
   it("passes actor, workspace, audience, and sensitivity into lexical retrieval", async () => {
     const searchLexical = vi.fn<KnowledgeRepository["searchLexical"]>(() =>
       Effect.succeed([

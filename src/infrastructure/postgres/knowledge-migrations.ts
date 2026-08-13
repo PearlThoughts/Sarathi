@@ -107,6 +107,7 @@ export const knowledgeMigrationPlan = {
     "0008_product-model-core",
     "0009_product-model-governance",
     "0010_answer-feedback",
+    "0011_semantic-knowledge-passages",
   ],
   additive: true,
   protectedTables: protectedAuditTableNames,

@@ -121,6 +121,11 @@ export const knowledgePassageTable = pgTable(
     workspaceId: text("workspace_id").notNull(),
     kind: text("kind").notNull(),
     locator: text("locator").notNull(),
+    parentLocator: text("parent_locator"),
+    hierarchy: jsonb("hierarchy").$type<readonly string[]>(),
+    lineStart: integer("line_start"),
+    lineEnd: integer("line_end"),
+    attributes: jsonb("attributes").$type<Readonly<Record<string, string | readonly string[]>>>(),
     ordinal: integer("ordinal").notNull(),
     title: text("title").notNull(),
     body: text("body").notNull(),
@@ -133,6 +138,7 @@ export const knowledgePassageTable = pgTable(
   (table) => [
     uniqueIndex("knowledge_passage_version_locator").on(table.versionId, table.locator),
     index("knowledge_passage_workspace_active").on(table.workspaceId, table.active),
+    index("knowledge_passage_parent").on(table.versionId, table.parentLocator),
     index("knowledge_passage_search").using(
       "gin",
       sql`to_tsvector('english', ${table.title} || ' ' || ${table.body})`,

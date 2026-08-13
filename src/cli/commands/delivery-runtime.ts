@@ -17,7 +17,9 @@ import { createJiraDeliveryQuerySource } from "../../infrastructure/jira/index.t
 import { createDeliveryKnowledgeQuerySource } from "../../infrastructure/knowledge/index.ts";
 import {
   createAiSdkDeliveryAnswerComposer,
+  createAiSdkKnowledgeEmbedding,
   createGroundedAnswerGeneratorFromEnvironment,
+  knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../../infrastructure/model/index.ts";
 import {
   createPostgresAnswerFeedbackRepository,
@@ -49,6 +51,7 @@ import {
   type DeliveryQuerySource,
   type DeliveryResponseMode,
   type DeliveryResponseProduct,
+  deliveryRelevanceProfileFromEnvironment,
   deliveryResponseBudget,
   deliveryResponseModePolicies,
   deliveryResponseProductPolicies,
@@ -400,6 +403,7 @@ const answerFromRuntime = async (
           environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON,
         );
   const platformConfig = await runRepositoryEffect(loadPlatformConfig(environment));
+  const relevanceProfile = deliveryRelevanceProfileFromEnvironment(environment);
   const productModelConfiguration = platformConfig.productModel;
   const productOpened =
     productModelConfiguration === undefined ||
@@ -418,9 +422,13 @@ const answerFromRuntime = async (
       }),
       createDeliveryKnowledgeQuerySource({
         repository: createPostgresKnowledgeRepository(opened.database),
+        embeddings: createAiSdkKnowledgeEmbedding(
+          knowledgeEmbeddingConfigurationFromEnvironment(environment),
+        ),
         workspaceId: request.workspaceId,
         allowedActorIds: new Set([request.actorId]),
         audienceIds: request.audienceIds ?? [],
+        relevanceProfile,
         allowedGitHubRepositories:
           environment.SARATHI_GITHUB_ALLOWED_REPOSITORIES_JSON === undefined
             ? []

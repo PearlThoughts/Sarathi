@@ -59,9 +59,12 @@ export type KnowledgeEmbeddingPort = {
 
 export type KnowledgeQuery = {
   readonly question: string;
+  readonly subject?: string | undefined;
+  readonly facets?: readonly string[] | undefined;
   readonly audience: KnowledgeAudience;
   readonly sources?: readonly KnowledgeSourceKind[] | undefined;
   readonly topK: number;
+  readonly expandParents?: boolean | undefined;
 };
 
 export type KnowledgeSearchResult = {
@@ -77,6 +80,12 @@ export type KnowledgeSearchResult = {
   readonly freshness: number;
   readonly componentRanks: Readonly<Record<string, number>>;
   readonly score: number;
+  readonly passageKind?: string | undefined;
+  readonly parentLocator?: string | undefined;
+  readonly hierarchy?: readonly string[] | undefined;
+  readonly attributes?: Readonly<Record<string, string | readonly string[]>> | undefined;
+  readonly lineStart?: number | undefined;
+  readonly lineEnd?: number | undefined;
 };
 
 export type KnowledgeRepository = {

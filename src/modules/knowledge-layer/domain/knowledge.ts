@@ -30,6 +30,11 @@ export type KnowledgeCandidateMetadata = {
 export type KnowledgePassageDraft = {
   readonly kind: string;
   readonly locator: string;
+  readonly parentLocator?: string | undefined;
+  readonly hierarchy?: readonly string[] | undefined;
+  readonly lineStart?: number | undefined;
+  readonly lineEnd?: number | undefined;
+  readonly attributes?: Readonly<Record<string, string | readonly string[]>> | undefined;
   readonly ordinal: number;
   readonly title: string;
   readonly body: string;
@@ -114,20 +119,35 @@ export const chunkVaultMarkdown = (
   overlapCharacters = 300,
 ): readonly KnowledgePassageDraft[] => {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const sections: { title: string; anchor: string; lines: string[] }[] = [];
+  const sections: {
+    title: string;
+    anchor: string;
+    hierarchy: readonly string[];
+    lines: string[];
+  }[] = [];
   const headingOccurrences = new Map<string, number>();
-  let current = { title: "Document", anchor: "document", lines: [] as string[] };
+  const headingStack: { level: number; title: string }[] = [];
+  let current = {
+    title: "Document",
+    anchor: "document",
+    hierarchy: ["Document"] as readonly string[],
+    lines: [] as string[],
+  };
   for (const line of lines) {
     const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (heading?.[2] !== undefined) {
       if (current.lines.some((entry) => entry.trim() !== "")) sections.push(current);
       const title = normalizeWhitespace(heading[2]);
+      const level = heading[1]?.length ?? 1;
+      while ((headingStack.at(-1)?.level ?? 0) >= level) headingStack.pop();
+      headingStack.push({ level, title });
       const baseAnchor = slug(title) || "section";
       const occurrence = headingOccurrences.get(baseAnchor) ?? 0;
       headingOccurrences.set(baseAnchor, occurrence + 1);
       current = {
         title,
         anchor: occurrence === 0 ? baseAnchor : `${baseAnchor}-${occurrence}`,
+        hierarchy: headingStack.map((entry) => entry.title),
         lines: [],
       };
       continue;
@@ -141,21 +161,70 @@ export const chunkVaultMarkdown = (
   for (const section of sections) {
     const body = section.lines.join("\n").trim();
     const embeddableBody = body === "" && section.title !== "Document" ? section.title : body;
-    const chunks = splitWithOverlap(embeddableBody, maximumCharacters, overlapCharacters);
-    chunks.forEach((chunk, chunkIndex) => {
-      const locator =
-        chunks.length === 1 ? `#${section.anchor}` : `#${section.anchor}:part-${chunkIndex + 1}`;
-      passages.push({
-        kind: "heading",
-        locator,
-        ordinal: passages.length,
-        title: section.title,
-        body: chunk,
-        contentHash: stableSha256(`${section.title}\n${chunk}`),
+    const semanticBlocks = embeddableBody
+      .split(/\n\s*\n/g)
+      .map((block) => block.trim())
+      .filter(Boolean);
+    const parentLocator = `#${section.anchor}`;
+    if (semanticBlocks.length <= 1) {
+      const chunks = splitWithOverlap(embeddableBody, maximumCharacters, overlapCharacters);
+      chunks.forEach((chunk, chunkIndex) => {
+        const locator =
+          chunks.length === 1 ? parentLocator : `${parentLocator}:part-${chunkIndex + 1}`;
+        passages.push({
+          kind: /\b(?:decision|requirement|risk|acceptance)\b/i.test(section.title)
+            ? "typed-section"
+            : "section",
+          locator,
+          ...(chunks.length === 1 ? {} : { parentLocator }),
+          hierarchy: section.hierarchy,
+          ordinal: passages.length,
+          title: section.title,
+          body: chunk,
+          contentHash: stableSha256(`${section.hierarchy.join(" > ")}\n${section.title}\n${chunk}`),
+        });
+      });
+      continue;
+    }
+
+    const parentBody = boundedParentContext(semanticBlocks.join("\n\n"), maximumCharacters);
+    passages.push({
+      kind: "section-parent",
+      locator: parentLocator,
+      hierarchy: section.hierarchy,
+      ordinal: passages.length,
+      title: section.title,
+      body: parentBody,
+      contentHash: stableSha256(
+        `${section.hierarchy.join(" > ")}\n${section.title}\n${parentBody}`,
+      ),
+    });
+    semanticBlocks.forEach((block, blockIndex) => {
+      const chunks = splitWithOverlap(block, maximumCharacters, overlapCharacters);
+      chunks.forEach((chunk, chunkIndex) => {
+        const unitLocator = `${parentLocator}:unit-${blockIndex + 1}`;
+        passages.push({
+          kind: /^\s*(?:[-*+] |\d+[.)] )/m.test(block) ? "list" : "paragraph",
+          locator: chunks.length === 1 ? unitLocator : `${unitLocator}:part-${chunkIndex + 1}`,
+          parentLocator,
+          hierarchy: section.hierarchy,
+          ordinal: passages.length,
+          title: section.title,
+          body: chunk,
+          contentHash: stableSha256(
+            `${section.hierarchy.join(" > ")}\n${section.title}\n${blockIndex}\n${chunk}`,
+          ),
+        });
       });
     });
   }
   return passages;
+};
+
+const boundedParentContext = (body: string, maximumCharacters: number): string => {
+  if (body.length <= maximumCharacters) return body;
+  const end = body.lastIndexOf("\n\n", maximumCharacters);
+  return body.slice(0, end > maximumCharacters / 2 ? end : maximumCharacters).trim();
 };
 
 export const createTypedPassage = (
@@ -164,12 +233,17 @@ export const createTypedPassage = (
   ordinal: number,
   title: string,
   body: string,
+  metadata: Pick<
+    KnowledgePassageDraft,
+    "parentLocator" | "hierarchy" | "lineStart" | "lineEnd" | "attributes"
+  > = {},
 ): KnowledgePassageDraft | undefined => {
   const normalizedBody = normalizeWhitespace(body);
   if (normalizedBody === "") return undefined;
   return {
     kind,
     locator,
+    ...metadata,
     ordinal,
     title: normalizeWhitespace(title),
     body: normalizedBody,
