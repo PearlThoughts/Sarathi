@@ -209,6 +209,7 @@ export type DeliveryAssistantAnswer = {
         readonly compositionEnvelopeFingerprint?: string | undefined;
         readonly selectedCandidateCount: number;
         readonly selectedEpisodeCount: number;
+        readonly missingFacetCount?: number | undefined;
         readonly modelUsage?:
           | {
               readonly model: string;
@@ -309,6 +310,12 @@ export type DeliveryAnswerComposition = {
     readonly url: string;
   }[];
   readonly modelUsage?: NonNullable<DeliveryAssistantAnswer["relevanceDiagnostics"]>["modelUsage"];
+  readonly compositionDiagnostics?:
+    | {
+        readonly selectedEpisodeCount: number;
+        readonly missingFacetCount: number;
+      }
+    | undefined;
 };
 
 export type DeliveryAnswerComposer = {

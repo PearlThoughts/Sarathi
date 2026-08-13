@@ -753,6 +753,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               createGroundedAnswerGeneratorFromEnvironment(environment, (event) =>
                 console.info(JSON.stringify(event)),
               ),
+              { relevanceProfile },
             ),
             capabilityLedger,
             ...deliveryResponseBudget,

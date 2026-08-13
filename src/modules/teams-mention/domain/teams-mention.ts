@@ -142,6 +142,8 @@ export type DeliveryReportPresentation = {
     readonly changeCount: number;
     readonly evidencedInitiatives: readonly string[];
   }[];
+  /** Question facets absent from the selected episode/evidence envelope. */
+  readonly missingFacets?: readonly string[] | undefined;
   readonly episodes: readonly {
     readonly id: string;
     readonly capability: string;

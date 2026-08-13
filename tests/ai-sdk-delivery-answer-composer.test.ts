@@ -111,6 +111,7 @@ describe("AI SDK delivery answer composer", () => {
         answerMode: "model_assisted",
         maximumLines: 3,
         requiresFinance: false,
+        facets: ["capability", "implementation", "deployment", "acceptance"],
         requiredSources: ["github", "vault", "teams"],
       },
       items: [
@@ -214,6 +215,10 @@ describe("AI SDK delivery answer composer", () => {
                 source: "github",
                 url: "https://github.com/example/product/pull/101",
               },
+              {
+                source: "teams",
+                url: "https://teams.example.test/messages/acceptance-101",
+              },
             ],
             dependencies: [],
             jiraAdvisories: [],
@@ -245,6 +250,10 @@ describe("AI SDK delivery answer composer", () => {
                   {
                     source: "github",
                     url: "https://github.com/example/product/pull/101",
+                  },
+                  {
+                    source: "teams",
+                    url: "https://teams.example.test/messages/acceptance-101",
                   },
                 ],
                 dependencies: [],
@@ -279,7 +288,7 @@ describe("AI SDK delivery answer composer", () => {
       },
     };
 
-    await Effect.runPromise(composer.compose(input));
+    const composition = await Effect.runPromise(composer.compose(input));
 
     const envelope = generate.mock.calls[0]?.[0];
     expect(envelope?.presentation).toMatchObject({
@@ -297,6 +306,7 @@ describe("AI SDK delivery answer composer", () => {
           evidencedInitiatives: ["SEO publishing"],
         },
       ],
+      missingFacets: ["implementation", "deployment", "acceptance"],
       episodes: [
         expect.objectContaining({
           capability: "Atlas Site Composer",
@@ -305,16 +315,22 @@ describe("AI SDK delivery answer composer", () => {
         }),
       ],
     });
-    expect(envelope?.evidence.slice(0, 3).map(({ source }) => source)).toEqual([
-      "github",
-      "vault",
-      "teams",
-    ]);
+    expect(envelope?.evidence.slice(0, 2).map(({ source }) => source)).toEqual(["github", "teams"]);
+    expect(envelope?.evidence.some(({ source }) => source === "vault")).toBe(true);
     expect(envelope?.evidence[0]).toMatchObject({
       title: "Delivery episode — Atlas Site Composer: SEO metadata publishing",
       sourceUrl: "https://github.com/example/product/pull/101",
     });
-    expect(envelope?.evidence).toHaveLength(37);
+    expect(envelope?.evidence[0]?.excerpt).toContain("Lifecycle facets: not recorded");
+    expect(envelope?.evidence.slice(0, 2).map(({ sourceUrl }) => sourceUrl)).toEqual([
+      "https://github.com/example/product/pull/101",
+      "https://teams.example.test/messages/acceptance-101",
+    ]);
+    expect(envelope?.evidence).toHaveLength(26);
+    expect(composition.compositionDiagnostics).toEqual({
+      selectedEpisodeCount: 1,
+      missingFacetCount: 3,
+    });
     expect(
       envelope?.evidence
         .slice(1)
@@ -324,12 +340,26 @@ describe("AI SDK delivery answer composer", () => {
     await Effect.runPromise(composer.compose({ ...input, compositionAttempt: "reduced" }));
 
     const reducedEnvelope = generate.mock.calls[1]?.[0];
-    expect(reducedEnvelope?.evidence).toHaveLength(19);
-    expect(reducedEnvelope?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(450);
+    expect(reducedEnvelope?.evidence).toHaveLength(14);
+    expect(reducedEnvelope?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(550);
     expect(
       reducedEnvelope?.presentation?.kind === "delivery_report"
         ? reducedEnvelope.presentation.episodes
         : undefined,
     ).toHaveLength(1);
+
+    const legacyComposer = createAiSdkDeliveryAnswerComposer(
+      { generate },
+      { relevanceProfile: "legacy" },
+    );
+    await Effect.runPromise(legacyComposer.compose(input));
+
+    const legacyEnvelope = generate.mock.calls[2]?.[0];
+    expect(legacyEnvelope?.evidence.slice(0, 3).map(({ source }) => source)).toEqual([
+      "github",
+      "vault",
+      "teams",
+    ]);
+    expect(legacyEnvelope?.evidence).toHaveLength(37);
   });
 });

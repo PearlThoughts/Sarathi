@@ -150,6 +150,7 @@ Store secret values in the hosting platform. The current hosted Teams compositio
 - `SARATHI_KNOWLEDGE_WORKSPACE_ID`
 - `SARATHI_KNOWLEDGE_AUDIENCE_IDS_JSON`
 - `SARATHI_WORKSPACE_TIMEZONE`
+- `SARATHI_RELEVANCE_PROFILE` (`legacy`, `semantic`, `reranked`, or `expanded`; govern production explicitly)
 - `SARATHI_EMBEDDING_PROVIDER` (`openrouter`)
 - `SARATHI_EMBEDDING_MODEL`
 - `SARATHI_EMBEDDING_API_KEY`
