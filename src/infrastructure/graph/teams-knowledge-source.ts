@@ -56,6 +56,7 @@ export type TeamsKnowledgeSourceConfiguration = {
   readonly fetcher?: Fetcher | undefined;
   readonly retryDelay?: ((milliseconds: number) => Promise<void>) | undefined;
   readonly minimumRequestIntervalMilliseconds?: number | undefined;
+  readonly requestTimeoutMilliseconds?: number | undefined;
 };
 
 type TeamsIdentity = {
@@ -265,14 +266,32 @@ const retryDelayMilliseconds = (
 const delay = (
   configuration: TeamsKnowledgeSourceConfiguration,
   milliseconds: number,
-): Promise<void> =>
-  (
+  interruptSignal: AbortSignal,
+): Promise<void> => {
+  const wait = (
     configuration.retryDelay ??
     ((duration) => new Promise((resolve) => setTimeout(resolve, duration)))
   )(milliseconds);
+  if (interruptSignal.aborted) return Promise.reject(interruptSignal.reason);
+  return new Promise<void>((resolve, reject) => {
+    const aborted = () => reject(interruptSignal.reason);
+    interruptSignal.addEventListener("abort", aborted, { once: true });
+    void wait.then(
+      () => {
+        interruptSignal.removeEventListener("abort", aborted);
+        resolve();
+      },
+      (error: unknown) => {
+        interruptSignal.removeEventListener("abort", aborted);
+        reject(error);
+      },
+    );
+  });
+};
 
 const createConversationRequestGate = (
   configuration: TeamsKnowledgeSourceConfiguration,
+  interruptSignal: AbortSignal,
 ): (() => Promise<void>) => {
   const minimumInterval = configuration.minimumRequestIntervalMilliseconds ?? 1_100;
   if (!Number.isFinite(minimumInterval) || minimumInterval < 0 || minimumInterval > 60_000)
@@ -284,7 +303,7 @@ const createConversationRequestGate = (
     const turn = queue.then(async () => {
       const wait =
         lastStartedAt === undefined ? 0 : Math.max(0, lastStartedAt + minimumInterval - now());
-      if (wait > 0) await delay(configuration, wait);
+      if (wait > 0) await delay(configuration, wait, interruptSignal);
       lastStartedAt = now();
     });
     queue = turn.catch(() => undefined);
@@ -297,6 +316,7 @@ const readPages = async (
   accessToken: string,
   initialUrl: string,
   beforeRequest: () => Promise<void>,
+  interruptSignal: AbortSignal,
   maximumPages = 100,
   stopAfterPage?: ((messages: readonly TeamsMessage[]) => boolean) | undefined,
 ): Promise<readonly TeamsMessage[]> => {
@@ -310,15 +330,25 @@ const readPages = async (
     await beforeRequest();
     let response: Response;
     try {
+      const requestTimeoutMilliseconds = configuration.requestTimeoutMilliseconds ?? 15_000;
+      if (
+        !Number.isInteger(requestTimeoutMilliseconds) ||
+        requestTimeoutMilliseconds < 10 ||
+        requestTimeoutMilliseconds > 60_000
+      )
+        throw new Error("Teams Graph request timeout is invalid.");
       response = await (configuration.fetcher ?? fetch)(next, {
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        signal: AbortSignal.any([interruptSignal, AbortSignal.timeout(requestTimeoutMilliseconds)]),
       });
     } catch {
+      if (interruptSignal.aborted) throw interruptSignal.reason;
       if (transientRetries >= 8)
         throw new Error("Teams message pagination exceeded its transient retry bound.");
       await delay(
         configuration,
         retryDelayMilliseconds(undefined, transientRetries, configuration.now?.() ?? new Date()),
+        interruptSignal,
       );
       transientRetries += 1;
       continue;
@@ -329,6 +359,7 @@ const readPages = async (
       await delay(
         configuration,
         retryDelayMilliseconds(response, transientRetries, configuration.now?.() ?? new Date()),
+        interruptSignal,
       );
       transientRetries += 1;
       continue;
@@ -434,6 +465,7 @@ const readChannelMessages = async (
   accessToken: string,
   historySince: string,
   beforeRequest: () => Promise<void>,
+  interruptSignal: AbortSignal,
 ): Promise<readonly NormalizedMessage[]> => {
   if (
     channel.teamId.trim() === "" ||
@@ -450,6 +482,7 @@ const readChannelMessages = async (
     accessToken,
     `${baseUrl}?%24top=50`,
     beforeRequest,
+    interruptSignal,
     100,
     (page) =>
       page.length > 0 &&
@@ -470,6 +503,7 @@ const readChannelMessages = async (
           accessToken,
           `${baseUrl}/${encodeURIComponent(rootId)}/replies?%24top=50`,
           beforeRequest,
+          interruptSignal,
         );
         return [root, ...replies].flatMap((message) => {
           const normalized = normalizeMessage(configuration, channel, message, rootId);
@@ -502,6 +536,7 @@ const readChatMessages = async (
   accessToken: string,
   historySince: string,
   beforeRequest: () => Promise<void>,
+  interruptSignal: AbortSignal,
 ): Promise<readonly NormalizedMessage[]> => {
   if (
     chat.chatId.trim() === "" ||
@@ -519,7 +554,13 @@ const readChatMessages = async (
   url.searchParams.set("$top", "50");
   url.searchParams.set("$orderby", "lastModifiedDateTime desc");
   url.searchParams.set("$filter", `lastModifiedDateTime gt ${historySince}`);
-  const messages = await readPages(configuration, accessToken, url.toString(), beforeRequest);
+  const messages = await readPages(
+    configuration,
+    accessToken,
+    url.toString(),
+    beforeRequest,
+    interruptSignal,
+  );
   return messages
     .flatMap((message) => {
       const rootId = message.replyToId ?? message.id;
@@ -833,21 +874,30 @@ const readConversation = async (
   conversation: TeamsKnowledgeConversation,
   accessToken: string,
   historySince: string,
+  interruptSignal: AbortSignal,
   previous?: ChannelCursor,
 ): Promise<{
   readonly documents: readonly KnowledgeSourceDocument[];
   readonly retiredExternalIds: readonly string[];
   readonly cursor: ChannelCursor;
 }> => {
-  const beforeRequest = createConversationRequestGate(configuration);
+  const beforeRequest = createConversationRequestGate(configuration, interruptSignal);
   const messages = isKnowledgeChat(conversation)
-    ? await readChatMessages(configuration, conversation, accessToken, historySince, beforeRequest)
+    ? await readChatMessages(
+        configuration,
+        conversation,
+        accessToken,
+        historySince,
+        beforeRequest,
+        interruptSignal,
+      )
     : await readChannelMessages(
         configuration,
         conversation,
         accessToken,
         historySince,
         beforeRequest,
+        interruptSignal,
       );
   const threads = new Map<string, NormalizedMessage[]>();
   for (const message of messages) {
@@ -897,7 +947,7 @@ export const createTeamsKnowledgeSource = (
 ): KnowledgeSourceReader => ({
   readSnapshot: (workspaceId, previousCursor) =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (interruptSignal) => {
         if (workspaceId !== configuration.workspaceId)
           throw new Error("Teams knowledge source was requested for another workspace.");
         const configuredChats = configuration.chats ?? [];
@@ -980,6 +1030,7 @@ export const createTeamsKnowledgeSource = (
                   conversation,
                   accessToken,
                   historySince,
+                  interruptSignal,
                   isKnowledgeChat(conversation)
                     ? previous?.chats?.[conversationIdentity(conversation)]
                     : previous?.channels[conversationIdentity(conversation)],

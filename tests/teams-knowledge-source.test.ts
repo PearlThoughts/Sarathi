@@ -247,6 +247,75 @@ describe("Teams knowledge source", () => {
     expect(retryDelays).toEqual([1_000, 2_000]);
   });
 
+  it("bounds a hung Graph request with the configured transport deadline", async () => {
+    const fetcher = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(resolve, 100);
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timeout);
+              reject(init.signal?.reason);
+            },
+            { once: true },
+          );
+        });
+        return Response.json({ value: [] });
+      },
+    );
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      requestTimeoutMilliseconds: 20,
+      retryDelay: async () => undefined,
+    });
+
+    await expect(Effect.runPromise(source.readSnapshot("example"))).rejects.toThrow(
+      "Configured Teams knowledge synchronization failed",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(9);
+  });
+
+  it("cancels Graph work when the owning source Effect is interrupted", async () => {
+    const fetcher = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(resolve, 500);
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timeout);
+              reject(init.signal?.reason);
+            },
+            { once: true },
+          );
+        });
+        return Response.json({ value: [] });
+      },
+    );
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+      requestTimeoutMilliseconds: 1_000,
+    });
+    const startedAt = performance.now();
+
+    await expect(
+      Effect.runPromise(source.readSnapshot("example").pipe(Effect.timeout(20))),
+    ).rejects.toThrow();
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("fails deterministic Graph authorization errors without retrying", async () => {
     const retryDelay = vi.fn(async () => undefined);
     const fetcher = vi.fn(async () => Response.json({ error: {} }, { status: 403 }));
