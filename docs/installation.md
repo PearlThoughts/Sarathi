@@ -163,6 +163,7 @@ other provider value.
 - `SARATHI_MODEL_PROVIDER` (`openrouter`)
 - `SARATHI_MODEL_API_KEY`
 - `SARATHI_MODEL_NAME`
+- `SARATHI_MODEL_REASONING_EFFORT` (`low`, `medium`, or `high`; set explicitly)
 - optional `SARATHI_MODEL_BASE_URL`
 - optional `SARATHI_MODEL_TIMEOUT_MS`
 
@@ -170,6 +171,10 @@ No fallback provider is configured. Provider diagnostics contain only the
 OpenRouter provider name and outcome; prompts, answers, identifiers, and
 credentials are excluded. SDK-internal retries remain disabled so the runtime
 stays inside the Teams response budget.
+
+OpenRouter reasoning is sent through the provider-specific Vercel AI SDK request
+options. Sarathi never relies on a provider default for reasoning effort and never
+falls back to another answer model.
 
 The inbound workspace projection must explicitly map every admitted standard channel or group/meeting chat. Standard channels use a team-membership policy; chats use current chat-roster membership and a distinct chat audience. A knowledge-source chat mapping alone does not create an inbound answering route. The repository fails closed when admission, roster evidence, audience grants, required installation, or credentials are unavailable.
 

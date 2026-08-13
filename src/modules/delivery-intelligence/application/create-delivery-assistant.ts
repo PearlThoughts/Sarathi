@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
+import { stableSha256 } from "../../../domain/hash.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
 import type { ProductCompletionResolution } from "../../product-model/index.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
@@ -1201,21 +1202,16 @@ const composeWithModel = (
         );
   }
   const deterministic = composeAnswer(request, plan, result, responseMode);
-  if (responseMode !== "fast" && !reportComposition) return Effect.succeed(deterministic);
   const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");
   const maximumItems = deliveryResponseModePolicies[responseMode].maximumItems;
   const items =
     maximumItems === undefined
       ? rankedItems.filter((item) => item.selector !== "period_census")
       : rankedItems.slice(0, maximumItems);
-  const hasSourceBackedAction = items.some((item) => item.intent === "next_actions");
   if (
-    responseMode === "fast" &&
+    !reportComposition &&
     requiredCompletionAssessment === undefined &&
-    (items.length < 2 ||
-      !hasSourceBackedAction ||
-      (result.missingRequiredIntents?.length ?? 0) > 0 ||
-      (deterministic.mentions?.length ?? 0) > 0)
+    (items.length === 0 || (deterministic.mentions?.length ?? 0) > 0)
   )
     return Effect.succeed(deterministic);
   const allowedCitationUrls = new Set([
@@ -1227,25 +1223,44 @@ const composeWithModel = (
       conflict.claims.map((claim) => claim.source.citationUrl),
     ),
   ]);
-  const composition = (compositionAttempt: "full" | "reduced") =>
-    Effect.suspend(() =>
-      composer.compose({
-        compositionAttempt,
-        workspaceId: request.workspaceId,
-        question: request.question,
-        requestedAt: request.requestedAt,
-        plan,
-        items,
-        conflicts: result.conflicts,
-        periodDeliveryReport: result.periodDeliveryReport,
-        responseProduct,
-        responseMode,
-        responseBudget,
-        ...(requiredCompletionAssessment === undefined
-          ? {}
-          : { completionAssessment: requiredCompletionAssessment }),
+  const composition = (compositionAttempt: "full" | "reduced") => {
+    const compositionInput = {
+      compositionAttempt,
+      workspaceId: request.workspaceId,
+      question: request.question,
+      requestedAt: request.requestedAt,
+      plan,
+      items,
+      conflicts: result.conflicts,
+      periodDeliveryReport: result.periodDeliveryReport,
+      responseProduct,
+      responseMode,
+      responseBudget,
+      ...(requiredCompletionAssessment === undefined
+        ? {}
+        : { completionAssessment: requiredCompletionAssessment }),
+    } as const;
+    const compositionEnvelopeFingerprint = stableSha256(
+      JSON.stringify({
+        ...compositionInput,
+        requestedAt: undefined,
+        workspaceId: undefined,
       }),
-    ).pipe(
+    );
+    const retrievalFingerprint = stableSha256(
+      JSON.stringify({
+        items: result.items.map(({ id, source, selector, intent, dedupeKey, citationUrl }) => ({
+          id,
+          source,
+          selector,
+          intent,
+          dedupeKey,
+          citationUrl,
+        })),
+        episodes: result.periodDeliveryReport?.capsules.map(({ id }) => id) ?? [],
+      }),
+    );
+    return Effect.suspend(() => composer.compose(compositionInput)).pipe(
       Effect.flatMap((composed) =>
         Effect.try({
           try: () => {
@@ -1373,6 +1388,13 @@ const composeWithModel = (
                   plan.requiredSources ?? [],
                 ),
                 mentions: [],
+                relevanceDiagnostics: {
+                  retrievalFingerprint,
+                  compositionEnvelopeFingerprint,
+                  selectedCandidateCount: items.length,
+                  selectedEpisodeCount: result.periodDeliveryReport?.capsules.length ?? 0,
+                  ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
+                },
                 ...(result.periodDeliveryReport === undefined
                   ? {}
                   : { periodDeliveryReport: result.periodDeliveryReport }),
@@ -1416,6 +1438,13 @@ const composeWithModel = (
               text: lines.join("\n"),
               citations: citationsWithSourceProvenance(composed.citations, result),
               mentions: [],
+              relevanceDiagnostics: {
+                retrievalFingerprint,
+                compositionEnvelopeFingerprint,
+                selectedCandidateCount: items.length,
+                selectedEpisodeCount: result.periodDeliveryReport?.capsules.length ?? 0,
+                ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
+              },
               ...(requiredCompletionAssessment === undefined
                 ? {}
                 : { completionAssessment: requiredCompletionAssessment }),
@@ -1431,6 +1460,7 @@ const composeWithModel = (
         }),
       ),
     );
+  };
   const retriedComposition = reportComposition
     ? composition("full").pipe(Effect.catchAll(() => composition("reduced")))
     : composition("full");
