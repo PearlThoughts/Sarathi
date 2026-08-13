@@ -3,6 +3,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { Effect } from "effect";
 import { extract } from "tar-stream";
+import ts from "typescript";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
@@ -422,7 +423,13 @@ const isCodePath = (path: string): boolean => {
 
 const languageFromPath = (path: string): string => path.split(".").at(-1)?.toLowerCase() ?? "text";
 
-type SymbolSection = { readonly name: string; readonly start: number; readonly end: number };
+type SymbolSection = {
+  readonly name: string;
+  readonly kind: string;
+  readonly start: number;
+  readonly end: number;
+  readonly parentName?: string | undefined;
+};
 
 const maximumPassageCharacters = 6_000;
 
@@ -448,33 +455,107 @@ const boundedTypedPassages = (
   });
 };
 
-const symbolSections = (body: string): readonly SymbolSection[] => {
-  const lines = body.split(/\r?\n/);
-  const starts = lines.flatMap((line, index) => {
-    const match = line.match(
-      /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:class|interface|enum|type|function|def|func|struct|trait|impl)\s+([A-Za-z_$][\w$]*)|^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?:=|:)/,
-    );
-    const name = match?.[1] ?? match?.[2];
-    return name === undefined ? [] : [{ name, start: index + 1 }];
-  });
-  if (starts.length === 0) return [{ name: "file", start: 1, end: Math.max(lines.length, 1) }];
-  return starts.map((section, index) => ({
-    ...section,
-    end: (starts[index + 1]?.start ?? lines.length + 1) - 1,
-  }));
+const scriptKindFor = (path: string): ts.ScriptKind | undefined => {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  if (["ts", "mts", "cts"].includes(extension ?? "")) return ts.ScriptKind.TS;
+  if (extension === "tsx") return ts.ScriptKind.TSX;
+  if (["js", "mjs", "cjs"].includes(extension ?? "")) return ts.ScriptKind.JS;
+  if (extension === "jsx") return ts.ScriptKind.JSX;
+  return undefined;
+};
+
+const declarationName = (node: ts.Node): string | undefined => {
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isClassDeclaration(node) ||
+    ts.isInterfaceDeclaration(node) ||
+    ts.isTypeAliasDeclaration(node) ||
+    ts.isEnumDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isPropertyDeclaration(node)
+  )
+    return node.name?.getText();
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text;
+  return undefined;
+};
+
+const declarationKind = (node: ts.Node): string | undefined => {
+  if (ts.isFunctionDeclaration(node)) return "function";
+  if (ts.isClassDeclaration(node)) return "class";
+  if (ts.isInterfaceDeclaration(node)) return "interface";
+  if (ts.isTypeAliasDeclaration(node)) return "type";
+  if (ts.isEnumDeclaration(node)) return "enum";
+  if (ts.isMethodDeclaration(node)) return "method";
+  if (ts.isPropertyDeclaration(node)) return "property";
+  if (ts.isVariableDeclaration(node)) return "variable";
+  return undefined;
+};
+
+const symbolSections = (body: string, path: string): readonly SymbolSection[] => {
+  const scriptKind = scriptKindFor(path);
+  if (scriptKind === undefined) return [];
+  const source = ts.createSourceFile(path, body, ts.ScriptTarget.Latest, true, scriptKind);
+  const sections: SymbolSection[] = [];
+  const visit = (node: ts.Node, parentName?: string): void => {
+    const name = declarationName(node);
+    const kind = declarationKind(node);
+    const start = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+    const end = source.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+    if (name !== undefined && kind !== undefined)
+      sections.push({
+        name,
+        kind,
+        start,
+        end,
+        ...(parentName === undefined ? {} : { parentName }),
+      });
+    const nextParent = name ?? parentName;
+    ts.forEachChild(node, (child) => visit(child, nextParent));
+  };
+  visit(source);
+  return sections
+    .filter(
+      (section, index, values) =>
+        values.findIndex(
+          (candidate) =>
+            candidate.name === section.name &&
+            candidate.start === section.start &&
+            candidate.end === section.end,
+        ) === index,
+    )
+    .sort((left, right) => left.start - right.start || right.end - left.end);
 };
 
 const codePassages = (body: string, path: string): readonly KnowledgePassageDraft[] => {
   const lines = body.split(/\r?\n/);
-  const symbols = symbolSections(body);
+  const symbols = symbolSections(body, path);
+  const firstChunkEnd = (start: number, end: number): number => {
+    let next = start;
+    let characters = 0;
+    while (next <= end) {
+      const length = (lines[next - 1]?.length ?? 0) + 1;
+      if (characters > 0 && characters + length > maximumPassageCharacters) break;
+      characters += length;
+      next += 1;
+    }
+    return Math.max(start, next - 1);
+  };
+  const symbolLocator = new Map(
+    symbols.map(({ name, start, end }) => [
+      name,
+      `#L${start}-L${firstChunkEnd(start, end)}:${encodeURIComponent(name)}`,
+    ]),
+  );
   const sections = [
     ...(symbols[0]?.start !== undefined && symbols[0].start > 1
-      ? [{ name: "file-preamble", start: 1, end: symbols[0].start - 1 }]
+      ? [{ name: "file-preamble", kind: "module-preamble", start: 1, end: symbols[0].start - 1 }]
       : []),
-    ...symbols,
+    ...(symbols.length === 0
+      ? [{ name: "file", kind: "bounded-file", start: 1, end: Math.max(lines.length, 1) }]
+      : symbols),
   ];
   let ordinal = 0;
-  return sections.flatMap(({ name, start, end }) => {
+  return sections.flatMap(({ name, kind, start, end, parentName }) => {
     const passages: KnowledgePassageDraft[] = [];
     let chunkStart = start;
     while (chunkStart <= end) {
@@ -488,13 +569,29 @@ const codePassages = (body: string, path: string): readonly KnowledgePassageDraf
       }
       const inclusiveEnd = Math.max(chunkStart, chunkEnd - 1);
       const bounded = boundedTypedPassages(
-        "symbol",
+        kind,
         `#L${chunkStart}-L${inclusiveEnd}:${encodeURIComponent(name)}`,
         ordinal,
         `${path} — ${name}`,
         lines.slice(chunkStart - 1, inclusiveEnd).join("\n"),
       );
-      passages.push(...bounded);
+      passages.push(
+        ...bounded.map((passage) => ({
+          ...passage,
+          ...(parentName === undefined || symbolLocator.get(parentName) === undefined
+            ? {}
+            : { parentLocator: symbolLocator.get(parentName) }),
+          hierarchy: [path, ...(parentName === undefined ? [] : [parentName]), name],
+          lineStart: chunkStart,
+          lineEnd: inclusiveEnd,
+          attributes: {
+            language: languageFromPath(path),
+            symbol: name,
+            symbolKind: kind,
+            module: path,
+          },
+        })),
+      );
       ordinal += bounded.length;
       chunkStart = inclusiveEnd + 1;
     }

@@ -56,6 +56,13 @@ type SearchRow = {
   readonly source_updated_at: string | Date;
   readonly sensitivity: SensitivityTier;
   readonly authority: number;
+  readonly kind: string;
+  readonly parent_locator: string | null;
+  readonly hierarchy: readonly string[] | null;
+  readonly line_start: number | null;
+  readonly line_end: number | null;
+  readonly attributes: Readonly<Record<string, string | readonly string[]>> | null;
+  readonly parent_body: string | null;
 };
 
 const postgresBindBatchSize = 1_000;
@@ -378,6 +385,22 @@ const authorizedPassages = (
       s.kind as source,
       s.id as source_id,
       p.title,
+      p.kind,
+      p.parent_locator,
+      p.hierarchy,
+      p.line_start,
+      p.line_end,
+      p.attributes,
+      (
+        select parent.body
+        from ${knowledgePassageTable} parent
+        where parent.version_id = p.version_id
+          and p.parent_locator is not null
+          and (parent.locator = p.parent_locator or parent.locator like p.parent_locator || ':part-%')
+          and parent.active = true
+        order by parent.ordinal
+        limit 1
+      ) as parent_body,
       p.canonical_url,
       p.source_updated_at,
       p.sensitivity,
@@ -499,6 +522,7 @@ const readLexicalSearchLists = async (
 const fuseSearchRows = (
   lists: Readonly<Record<string, readonly SearchRow[]>>,
   limit: number,
+  expandParents = false,
 ): readonly KnowledgeSearchResult[] => {
   const rowsById = new Map<string, SearchRow>();
   for (const rows of Object.values(lists)) for (const row of rows) rowsById.set(row.id, row);
@@ -518,7 +542,14 @@ const fuseSearchRows = (
               source: row.source,
               sourceId: row.external_id,
               title: row.title,
-              excerpt: row.body.replace(/\s+/g, " ").trim().slice(0, 1200),
+              excerpt: [
+                row.body.replace(/\s+/g, " ").trim(),
+                ...(!expandParents || row.parent_body === null || row.parent_body === row.body
+                  ? []
+                  : [`Parent context: ${row.parent_body.replace(/\s+/g, " ").trim()}`]),
+              ]
+                .join("\n")
+                .slice(0, 2400),
               citationUrl: row.canonical_url,
               sourceUpdatedAt: new Date(row.source_updated_at).toISOString(),
               sensitivity: row.sensitivity,
@@ -526,6 +557,12 @@ const fuseSearchRows = (
               freshness: freshness(row.source_updated_at),
               componentRanks: candidate.componentRanks,
               score: candidate.fusedScore,
+              passageKind: row.kind,
+              ...(row.parent_locator === null ? {} : { parentLocator: row.parent_locator }),
+              ...(row.hierarchy === null ? {} : { hierarchy: row.hierarchy }),
+              ...(row.attributes === null ? {} : { attributes: row.attributes }),
+              ...(row.line_start === null ? {} : { lineStart: Number(row.line_start) }),
+              ...(row.line_end === null ? {} : { lineEnd: Number(row.line_end) }),
             },
           ];
     });
@@ -1405,6 +1442,11 @@ const reconcileSnapshot = async (
               workspaceId: document.workspaceId,
               kind: passage.kind,
               locator: passage.locator,
+              parentLocator: passage.parentLocator ?? null,
+              hierarchy: passage.hierarchy ?? null,
+              lineStart: passage.lineStart ?? null,
+              lineEnd: passage.lineEnd ?? null,
+              attributes: passage.attributes ?? null,
               ordinal: passage.ordinal,
               title: passage.title,
               body: passage.body,
@@ -1784,6 +1826,7 @@ export const createPostgresKnowledgeRepository = (
             vector: valuesFromResult(vectorResult),
           },
           limit,
+          query.expandParents === true,
         );
       },
       catch: () =>
@@ -1796,7 +1839,11 @@ export const createPostgresKnowledgeRepository = (
     Effect.tryPromise({
       try: async () => {
         const limit = Math.max(1, Math.min(query.topK, 50));
-        return fuseSearchRows(await readLexicalSearchLists(database, query, limit), limit);
+        return fuseSearchRows(
+          await readLexicalSearchLists(database, query, limit),
+          limit,
+          query.expandParents === true,
+        );
       },
       catch: () =>
         new RepositoryError({

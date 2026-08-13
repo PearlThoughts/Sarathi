@@ -45,6 +45,7 @@ describe("knowledge CLI", () => {
             "0008_product-model-core",
             "0009_product-model-governance",
             "0010_answer-feedback",
+            "0011_semantic-knowledge-passages",
           ],
           protectedTables: [
             "compliance_reminder_audit",

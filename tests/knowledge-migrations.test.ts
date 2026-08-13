@@ -37,7 +37,18 @@ describe("knowledge Drizzle migrations", () => {
       { idx: 8, tag: "0008_product-model-core" },
       { idx: 9, tag: "0009_product-model-governance" },
       { idx: 10, tag: "0010_answer-feedback" },
+      { idx: 11, tag: "0011_semantic-knowledge-passages" },
     ]);
+  });
+
+  it("adds optional semantic hierarchy metadata without rewriting indexed passages", async () => {
+    const migrationSql = await migration("0011_semantic-knowledge-passages.sql");
+    expect(migrationSql).toContain('ADD COLUMN "parent_locator" text');
+    expect(migrationSql).toContain('ADD COLUMN "hierarchy" jsonb');
+    expect(migrationSql).toContain('ADD COLUMN "line_start" integer');
+    expect(migrationSql).toContain('ADD COLUMN "line_end" integer');
+    expect(migrationSql).toContain('ADD COLUMN "attributes" jsonb');
+    expect(migrationSql).not.toMatch(/\b(?:UPDATE|DELETE|DROP|TRUNCATE)\b/i);
   });
 
   it("adds only the seven knowledge tables and contains no destructive statements", async () => {

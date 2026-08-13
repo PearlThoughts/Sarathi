@@ -153,9 +153,21 @@ describe("GitHub knowledge source", () => {
       acl: [{ subjectId: "delivery" }],
     });
     expect(code?.passages.map(({ locator }) => locator)).toEqual([
-      "#L1-L4:synchronize",
+      "#L1-L3:synchronize",
       "#L5-L5:RepairWorker",
     ]);
+    expect(code?.passages[0]).toMatchObject({
+      kind: "function",
+      lineStart: 1,
+      lineEnd: 3,
+      hierarchy: ["src/service.ts", "synchronize"],
+      attributes: {
+        language: "ts",
+        symbol: "synchronize",
+        symbolKind: "function",
+        module: "src/service.ts",
+      },
+    });
     const pull = snapshot.documents.find(({ sourceType }) => sourceType === "pull_request");
     expect(pull).toMatchObject({
       provenance: { changedFiles: "src/service.ts" },
