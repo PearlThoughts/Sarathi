@@ -1392,7 +1392,11 @@ const composeWithModel = (
                   retrievalFingerprint,
                   compositionEnvelopeFingerprint,
                   selectedCandidateCount: items.length,
-                  selectedEpisodeCount: result.periodDeliveryReport?.capsules.length ?? 0,
+                  selectedEpisodeCount:
+                    composed.compositionDiagnostics?.selectedEpisodeCount ??
+                    result.periodDeliveryReport?.capsules.length ??
+                    0,
+                  missingFacetCount: composed.compositionDiagnostics?.missingFacetCount ?? 0,
                   ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
                 },
                 ...(result.periodDeliveryReport === undefined
@@ -1442,7 +1446,8 @@ const composeWithModel = (
                 retrievalFingerprint,
                 compositionEnvelopeFingerprint,
                 selectedCandidateCount: items.length,
-                selectedEpisodeCount: result.periodDeliveryReport?.capsules.length ?? 0,
+                selectedEpisodeCount: composed.compositionDiagnostics?.selectedEpisodeCount ?? 0,
+                missingFacetCount: composed.compositionDiagnostics?.missingFacetCount ?? 0,
                 ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
               },
               ...(requiredCompletionAssessment === undefined
