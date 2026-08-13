@@ -673,21 +673,44 @@ export const ProductCapabilityExplorer = ({
         : undefined,
     );
   };
-  const rootId = path[0]?.entityId;
-
-  if (projection.focus === undefined)
+  const focusEntity = projection.focus;
+  if (focusEntity === undefined)
     return (
       <p className="min-h-dvh bg-stone-950 p-8 text-sm text-stone-300">
         No authorized entity is available for exploration.
       </p>
     );
+  const rootId = path[0]?.entityId;
+  const endpointDisplayName = (endpoint: ProductRelation["source"]): string =>
+    endpoint.kind === "entity"
+      ? (entities.get(endpoint.entityId)?.canonicalName ?? "Authorized entity")
+      : `${endpoint.referenceKind.replaceAll("_", " ")} reference`;
+  const textNavigatorEntities = [
+    { entity: focusEntity, role: "focus" as const },
+    ...projection.children.map((entity) => ({ entity, role: "child" as const })),
+    ...projection.relatedEntities.flatMap((related) => {
+      const entity = related.entityId === undefined ? undefined : entities.get(related.entityId);
+      return entity === undefined ? [] : [{ entity, role: "related" as const }];
+    }),
+  ].filter(
+    ({ entity }, index, candidates) =>
+      candidates.findIndex(({ entity: candidate }) => candidate.entityId === entity.entityId) ===
+      index,
+  );
+
   return (
     <section
       aria-label="Interactive 3D product capability graph"
       className="relative h-dvh min-h-[42rem] overflow-hidden bg-stone-950 text-stone-100"
-      data-depth={projection.focus.depth}
+      data-compare-count={state.compareIds.length}
+      data-depth={focusEntity.depth}
+      data-lens={state.lens}
+      data-reduced-motion={prefersReducedMotion}
       data-renderer="3d-force-graph"
+      data-selected-entity={state.selectedEntityId}
+      data-selected-relation={state.selectedRelationId}
       data-testid="product-capability-explorer"
+      data-view={state.view}
     >
       {state.view === "graph" ? (
         <GraphCanvas
@@ -925,25 +948,41 @@ export const ProductCapabilityExplorer = ({
                 Keyboard-accessible nodes and relationships in the current graph.
               </p>
               <ul className="mt-3 space-y-1">
-                {[
-                  projection.focus,
-                  ...projection.children,
-                  ...projection.relatedEntities.flatMap((related) =>
-                    related.entityId === undefined ? [] : (entities.get(related.entityId) ?? []),
-                  ),
-                ].map((entity) => (
-                  <li data-testid="capability-text-node" key={entity.entityId}>
+                {textNavigatorEntities.map(({ entity, role }) => (
+                  <li
+                    className="grid grid-cols-[1fr_auto_auto] gap-1"
+                    data-entity-id={entity.entityId}
+                    data-role={role}
+                    data-testid="capability-text-node"
+                    key={entity.entityId}
+                  >
                     <button
                       aria-current={entity.entityId === state.selectedEntityId}
                       className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-[current=true]:bg-teal-950"
-                      onClick={() => selectEntity(entity.entityId)}
-                      onDoubleClick={() => explore(entity.entityId)}
+                      onClick={(event) => selectEntity(entity.entityId, event.shiftKey)}
                       type="button"
                     >
                       <span className="block text-sm font-semibold">{entity.canonicalName}</span>
                       <span className="font-mono text-xs text-stone-500">
-                        {kindLabel[entity.kind]} · Enter selects · Explore button changes focus
+                        {kindLabel[entity.kind]} · Enter selects
                       </span>
+                    </button>
+                    <button
+                      aria-label={`Explore ${entity.canonicalName}`}
+                      className="rounded-md border border-stone-800 px-2 text-xs hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                      onClick={() => explore(entity.entityId)}
+                      type="button"
+                    >
+                      Explore
+                    </button>
+                    <button
+                      aria-label={`${state.compareIds.includes(entity.entityId) ? "Remove" : "Add"} ${entity.canonicalName} ${state.compareIds.includes(entity.entityId) ? "from" : "to"} comparison`}
+                      aria-pressed={state.compareIds.includes(entity.entityId)}
+                      className="rounded-md border border-stone-800 px-2 text-xs hover:border-teal-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-pressed:border-teal-300 aria-pressed:bg-teal-950"
+                      onClick={() => selectEntity(entity.entityId, true)}
+                      type="button"
+                    >
+                      Compare
                     </button>
                   </li>
                 ))}
@@ -957,8 +996,10 @@ export const ProductCapabilityExplorer = ({
                   return (
                     <li key={relation.id}>
                       <button
+                        aria-label={`${semantics?.label ?? relation.type.replaceAll("_", " ")} relationship from ${endpointDisplayName(relation.source)} to ${endpointDisplayName(relation.target)}`}
                         aria-current={relation.id === state.selectedRelationId}
                         className="block w-full rounded-md px-3 py-2 text-left text-xs hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300 aria-[current=true]:bg-teal-950"
+                        data-testid="capability-text-relation"
                         onClick={() => selectRelation(relation.id)}
                         type="button"
                       >
@@ -990,7 +1031,10 @@ export const ProductCapabilityExplorer = ({
             selectRelation(relationId);
             dispatch({ type: "close-dossier" });
           }}
-          onViewRevision={viewRevision}
+          onViewRevision={(revision) => {
+            viewRevision(revision);
+            dispatch({ type: "close-dossier" });
+          }}
           relationCatalog={relationCatalog}
         />
       ) : null}
