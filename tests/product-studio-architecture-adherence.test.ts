@@ -150,4 +150,24 @@ describe("Product Studio architecture adherence", () => {
     expect(rootPackage).toMatch(/"ci"[^\n]+check:product-studio/);
     expect(testManifest).toContain('"path": "tests/product-studio-architecture-adherence.test.ts"');
   });
+
+  it("keeps remembered sessions inside Payload authentication", async () => {
+    const collection = await readFile(
+      new URL("src/collections/StudioUsers.ts", studioRoot),
+      "utf8",
+    );
+    const handler = await readFile(
+      new URL("src/server/remember-login-handler.ts", studioRoot),
+      "utf8",
+    );
+    const session = await readFile(new URL("src/domain/studio-session.ts", studioRoot), "utf8");
+
+    expect(collection).toContain('path: "/remember-login"');
+    expect(handler).toContain("addDataAndFileToRequest");
+    expect(handler).toContain("loginOperation");
+    expect(handler).toContain("generatePayloadCookie");
+    expect(handler).not.toMatch(/\.insert\(|\.update\(|sql`/);
+    expect(session).toContain("365 * 24 * 60 * 60");
+    expect(session).toContain("remember === true");
+  });
 });

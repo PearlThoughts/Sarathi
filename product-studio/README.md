@@ -6,6 +6,8 @@ Product Studio is an optional human-facing adapter over Sarathi's Product Capabi
 
 The Payload/Next runtime owns only its authentication records and future editorial or saved-view state. The read-only product map and dossier call Sarathi's versioned HTTP API from a server component through `src/server/sarathi-product-model-client.ts`. The browser never receives the configured Sarathi read token and cannot select an actor or installed workspace.
 
+Product Studio login uses Payload's own secure HttpOnly cookie and database-backed session. The unchecked default retains Payload's two-hour lifetime. An editor may explicitly select **Remember me** to extend only that login to 365 days; the request-scoped duration applies to the signed token, cookie, and session record without changing the shared authentication configuration. Standard Payload logout revokes the session and clears the same cookie.
+
 The first view is an interactive 3D text capability graph: users orbit the governed product model, drill from product areas into capabilities and features, reveal typed cross-relations, jump through search, and open the governed dossier for the current focus. Text height and node size represent hierarchy role and direct-child count, while stable color identifies the top-level product area; neither encodes delivery progress or evidence volume. A compact text navigator remains available so keyboard and assistive-technology users do not depend on WebGL graph interaction.
 
 ## Database isolation
