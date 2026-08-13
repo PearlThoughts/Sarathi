@@ -51,8 +51,32 @@ describe("Teams knowledge source", () => {
             message("root-1", "Decision: ship SAR-42 after QA.", {
               createdDateTime: "2025-12-01T10:00:00.000Z",
               lastModifiedDateTime: "2025-12-01T10:00:00.000Z",
+              replies: [
+                message("reply-1", "We will finish SAR-42 verification tomorrow.", {
+                  replyToId: "root-1",
+                  createdDateTime: "2026-07-20T10:05:00.000Z",
+                  lastModifiedDateTime: "2026-07-20T10:06:00.000Z",
+                  mentions: [{ mentioned: { user: { id: "person-2", displayName: "Reviewer" } } }],
+                  attachments: [
+                    {
+                      id: "attachment-1",
+                      contentType: "reference",
+                      name: "Acceptance.md",
+                      contentUrl: "https://example.sharepoint.com/acceptance",
+                    },
+                  ],
+                }),
+                message("reply-ack", "Thanks", { replyToId: "root-1" }),
+                message("reply-finance", "The project budget is confidential", {
+                  replyToId: "root-1",
+                }),
+                message("reply-bot", "Automated project status", {
+                  replyToId: "root-1",
+                  from: { application: { id: "bot-1", displayName: "Bot" } },
+                }),
+              ],
             }),
-            message("root-2", "Testing bot"),
+            message("root-2", "Testing bot", { replies: [] }),
           ],
         });
       if (url.includes("root-1"))
@@ -137,6 +161,47 @@ describe("Teams knowledge source", () => {
     });
     expect(reply?.provenance.attachments).toContain("Acceptance.md");
     expect(requests.every((url) => url.startsWith("https://graph.microsoft.com/"))).toBe(true);
+    expect(requests[0]).toContain("%24top=20&%24expand=replies");
+    expect(requests.some((url) => url.includes("/replies?"))).toBe(false);
+  });
+
+  it("follows trusted overflow pages for expanded thread replies", async () => {
+    const requests: string[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("reply-page=2"))
+        return Response.json({
+          value: [message("reply-2", "SAR-43 is ready for QA.", { replyToId: "root-1" })],
+        });
+      return Response.json({
+        value: [
+          message("root-1", "Delivery thread", {
+            replies: [message("reply-1", "SAR-42 is in review.", { replyToId: "root-1" })],
+            "replies@odata.nextLink":
+              "https://graph.microsoft.com/v1.0/teams/team-1/channels/channel-1/messages/root-1/replies?reply-page=2",
+          }),
+        ],
+      });
+    });
+    const source = createTeamsKnowledgeSource({
+      sourceId: "teams-example",
+      workspaceId: "example",
+      tokenProvider: { getAccessToken: async () => "synthetic-token" },
+      channels: [channel()],
+      historySince: "2026-01-20T00:00:00.000Z",
+      fetcher,
+      minimumRequestIntervalMilliseconds: 0,
+    });
+
+    const snapshot = await Effect.runPromise(source.readSnapshot("example"));
+
+    expect(snapshot.documents.map(({ externalId }) => externalId)).toEqual([
+      "team-1:19:delivery@thread.tacv2:reply-1",
+      "team-1:19:delivery@thread.tacv2:reply-2",
+      "team-1:19:delivery@thread.tacv2:root-1",
+    ]);
+    expect(requests).toHaveLength(2);
   });
 
   it("versions edits, retires deletions, and repairs a missed notification from full inventory", async () => {

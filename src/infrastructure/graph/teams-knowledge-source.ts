@@ -91,6 +91,8 @@ type TeamsMessage = {
     readonly content?: string | null;
   }[];
   readonly webUrl?: string | null;
+  readonly replies?: readonly TeamsMessage[] | undefined;
+  readonly "replies@odata.nextLink"?: string | undefined;
 };
 
 type TeamsPage = {
@@ -480,7 +482,7 @@ const readChannelMessages = async (
   const roots = await readPages(
     configuration,
     accessToken,
-    `${baseUrl}?%24top=50`,
+    `${baseUrl}?%24top=20&%24expand=replies`,
     beforeRequest,
     interruptSignal,
     100,
@@ -492,19 +494,35 @@ const readChannelMessages = async (
           Date.parse(historySince),
       ),
   );
+  const expandedRepliesAvailable = roots.every(({ replies }) => replies !== undefined);
   const threads: NormalizedMessage[] = [];
   for (let offset = 0; offset < roots.length; offset += 4) {
     const batch = roots.slice(offset, offset + 4).filter((root) => root.id !== undefined);
     const results = await Promise.all(
       batch.map(async (root) => {
         const rootId = root.id as string;
-        const replies = await readPages(
-          configuration,
-          accessToken,
-          `${baseUrl}/${encodeURIComponent(rootId)}/replies?%24top=50`,
-          beforeRequest,
-          interruptSignal,
-        );
+        const overflowUrl = root["replies@odata.nextLink"];
+        const expandedReplies = root.replies ?? [];
+        const replies = !expandedRepliesAvailable
+          ? await readPages(
+              configuration,
+              accessToken,
+              `${baseUrl}/${encodeURIComponent(rootId)}/replies?%24top=50`,
+              beforeRequest,
+              interruptSignal,
+            )
+          : overflowUrl === undefined
+            ? expandedReplies
+            : [
+                ...expandedReplies,
+                ...(await readPages(
+                  configuration,
+                  accessToken,
+                  validGraphNextLink(overflowUrl),
+                  beforeRequest,
+                  interruptSignal,
+                )),
+              ];
         return [root, ...replies].flatMap((message) => {
           const normalized = normalizeMessage(configuration, channel, message, rootId);
           return normalized === undefined ? [] : [normalized];
