@@ -4,6 +4,7 @@ import {
   compilePeriodCensus,
   type DeliveryClaim,
   deliveryClaimValueHash,
+  deliveryRelevanceProfileFromEnvironment,
   deliveryTransportTimeoutMs,
   findDeliveryConflicts,
   normalizeDeliveryEntityAlias,
@@ -18,6 +19,16 @@ import {
 } from "../src/modules/delivery-intelligence/index.ts";
 
 describe("delivery intelligence domain", () => {
+  it("uses an explicit typed relevance ablation profile", () => {
+    expect(deliveryRelevanceProfileFromEnvironment({ SARATHI_RELEVANCE_PROFILE: "reranked" })).toBe(
+      "reranked",
+    );
+    expect(deliveryRelevanceProfileFromEnvironment({})).toBe("expanded");
+    expect(() =>
+      deliveryRelevanceProfileFromEnvironment({ SARATHI_RELEVANCE_PROFILE: "experimental" }),
+    ).toThrow("must be legacy, semantic, reranked, or expanded");
+  });
+
   it("plans one bounded cross-source Sprint Review and Outlook for compound sprint questions", () => {
     const question =
       "What did we commit to in the previous sprint, what was completed, what was added during the sprint, and what rolled over?";
@@ -51,6 +62,9 @@ describe("delivery intelligence domain", () => {
       ]),
     );
     expect(plan?.operations).toHaveLength(11);
+    expect(plan?.facets).toEqual(
+      expect.arrayContaining(["period", "episode", "lifecycle", "materiality", "dependency"]),
+    );
   });
 
   it("selects the shared reporting product for the leadership Sprint Review and Outlook", () => {
