@@ -28,6 +28,7 @@ export {
   isKnowledgeCandidateAuthorized,
   reciprocalRankFusion,
 } from "./domain/knowledge.ts";
+export { rerankKnowledgeCandidates } from "./domain/knowledge-reranker.ts";
 export type {
   SynchronizationCheckpoint,
   SynchronizationDeliveryStatus,

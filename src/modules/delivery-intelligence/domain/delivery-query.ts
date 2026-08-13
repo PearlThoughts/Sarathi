@@ -29,6 +29,23 @@ export type DeliveryQuestionIntent =
   | "activity"
   | "implementation";
 
+export type DeliveryQuestionFacet =
+  | "identity"
+  | "capability"
+  | "implementation"
+  | "deployment"
+  | "rollout"
+  | "compatibility"
+  | "verification"
+  | "acceptance"
+  | "period"
+  | "episode"
+  | "lifecycle"
+  | "materiality"
+  | "initiative"
+  | "dependency"
+  | "conflict";
+
 export type DeliveryQuerySubject = {
   readonly externalKey?: string | undefined;
   readonly phrase?: string | undefined;
@@ -141,7 +158,43 @@ export type DeliveryQueryPlan = {
   readonly maximumLines: 2 | 3 | 4 | 5 | 6;
   readonly requiresFinance: boolean;
   readonly subject?: DeliveryQuerySubject | undefined;
+  readonly facets?: readonly DeliveryQuestionFacet[] | undefined;
   readonly requiredSources?: readonly DeliverySourceKind[] | undefined;
+};
+
+export const deliveryQuestionFacets = (
+  question: string,
+  intents: readonly DeliveryQuestionIntent[],
+): readonly DeliveryQuestionFacet[] => {
+  const value = question.toLocaleLowerCase("en");
+  const facets = new Set<DeliveryQuestionFacet>();
+  if (
+    /\b(?:status|complete|completion|done|finished|ready|product|feature|deployed|released|shipped)\b/.test(
+      value,
+    )
+  ) {
+    facets.add("identity");
+    facets.add("lifecycle");
+  }
+  if (/\b(?:capability|initiative|alignment|goal)\b/.test(value)) facets.add("capability");
+  if (/\b(?:implement|code|repository|module|handler|service)\b/.test(value))
+    facets.add("implementation");
+  if (/\bdeploy/.test(value)) facets.add("deployment");
+  if (/\b(?:rollout|brand|variant|environment)\b/.test(value)) facets.add("rollout");
+  if (/\bcompatib/.test(value)) facets.add("compatibility");
+  if (/\b(?:test|verify|qa|proof)\b/.test(value)) facets.add("verification");
+  if (/\b(?:accept|approval|sign[ -]?off)\b/.test(value)) facets.add("acceptance");
+  if (/\b(?:week|sprint|month|quarter|period|recent|last|current)\b/.test(value))
+    facets.add("period");
+  if (intents.some((intent) => ["delivered", "current_work", "activity"].includes(intent))) {
+    facets.add("episode");
+    facets.add("lifecycle");
+    facets.add("materiality");
+  }
+  if (intents.includes("dependencies") || intents.includes("blockers")) facets.add("dependency");
+  if (intents.includes("conflicts")) facets.add("conflict");
+  if (intents.includes("goals") || intents.includes("commitments")) facets.add("initiative");
+  return [...facets];
 };
 
 const selectors = new Set<DeliveryQuerySelector>([
@@ -178,6 +231,23 @@ const purposes = new Set<DeliveryQuestionIntent>([
   "finance",
   "activity",
   "implementation",
+]);
+const questionFacets = new Set<DeliveryQuestionFacet>([
+  "identity",
+  "capability",
+  "implementation",
+  "deployment",
+  "rollout",
+  "compatibility",
+  "verification",
+  "acceptance",
+  "period",
+  "episode",
+  "lifecycle",
+  "materiality",
+  "initiative",
+  "dependency",
+  "conflict",
 ]);
 
 class DeliveryQueryPlanValidationError extends Error {
@@ -300,6 +370,11 @@ export const validateDeliveryQueryPlan = (input: unknown): DeliveryQueryPlan => 
     if ((key === undefined || key === "") && (phrase === undefined || phrase === ""))
       throw new DeliveryQueryPlanValidationError("Delivery query subject is empty.");
   }
+  if (
+    plan.facets !== undefined &&
+    (!Array.isArray(plan.facets) || !plan.facets.every((facet) => questionFacets.has(facet)))
+  )
+    throw new DeliveryQueryPlanValidationError("Delivery question facets are invalid.");
   return plan as DeliveryQueryPlan;
 };
 
@@ -499,6 +574,15 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
       maximumLines: 6,
       requiresFinance: false,
       requiredSources: ["jira", "strategy", "teams", "vault", "github"],
+      facets: deliveryQuestionFacets(question, [
+        "commitments",
+        "delivered",
+        "current_work",
+        "dependencies",
+        "blockers",
+        "goals",
+        "activity",
+      ]),
     });
   }
   const intents: DeliveryQuestionIntent[] = [];
@@ -1047,6 +1131,7 @@ export const planDeliveryQuestion = (question: string): DeliveryQueryPlan | unde
     maximumLines: Math.max(3, Math.min(intents.length, 6)) as 3 | 4 | 5 | 6,
     requiresFinance: intents.includes("finance"),
     subject,
+    facets: deliveryQuestionFacets(question, intents),
     requiredSources: requiredSources.length === 0 ? undefined : requiredSources,
   });
 };

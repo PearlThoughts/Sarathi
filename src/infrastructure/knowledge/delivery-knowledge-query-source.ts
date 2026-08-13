@@ -1,19 +1,26 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../domain/errors.ts";
 import { isSensitivityAtOrBelow } from "../../domain/policy.ts";
-import type { DeliveryQuerySource } from "../../modules/delivery-intelligence/index.ts";
+import type {
+  DeliveryQuerySource,
+  DeliveryRelevanceProfile,
+} from "../../modules/delivery-intelligence/index.ts";
 import {
+  type KnowledgeEmbeddingPort,
   type KnowledgeRepository,
   queryKnowledgeLexically,
+  rerankKnowledgeCandidates,
 } from "../../modules/knowledge-layer/index.ts";
 import { repositoryFromGitHubHtmlUrl } from "../github/github-repository-scope.ts";
 
 type DeliveryKnowledgeQuerySourceConfiguration = {
   readonly repository: KnowledgeRepository;
+  readonly embeddings?: KnowledgeEmbeddingPort | undefined;
   readonly workspaceId: string;
   readonly allowedActorIds: ReadonlySet<string>;
   readonly audienceIds: readonly string[];
   readonly allowedGitHubRepositories?: readonly string[] | undefined;
+  readonly relevanceProfile?: DeliveryRelevanceProfile | undefined;
 };
 
 const operationalMetadata = (title: string, citationUrl: string): boolean => {
@@ -37,6 +44,7 @@ const allowedKnowledgeCitation = (
 export const createDeliveryKnowledgeQuerySource = (
   configuration: DeliveryKnowledgeQuerySourceConfiguration,
 ): DeliveryQuerySource => {
+  const relevanceProfile = configuration.relevanceProfile ?? "expanded";
   const allowedRepositories =
     configuration.allowedGitHubRepositories === undefined
       ? undefined
@@ -75,7 +83,9 @@ export const createDeliveryKnowledgeQuerySource = (
                 context.audienceIds?.includes(audienceId),
               );
         const sources = context.permittedSourceScopes?.filter((scope) => scope !== "strategy");
-        const results = yield* queryKnowledgeLexically(configuration.repository, {
+        const candidateLimit =
+          relevanceProfile === "legacy" ? operation.limit : Math.min(50, operation.limit * 5);
+        const query = {
           question: context.question,
           audience: {
             workspaceId: context.workspaceId,
@@ -84,10 +94,58 @@ export const createDeliveryKnowledgeQuerySource = (
             maximumSensitivity: context.maximumSensitivity,
           },
           ...(sources === undefined ? {} : { sources }),
-          topK: operation.limit,
-        });
+          topK: candidateLimit,
+          ...(plan.subject?.externalKey !== undefined
+            ? { subject: plan.subject.externalKey }
+            : plan.subject?.phrase !== undefined
+              ? { subject: plan.subject.phrase }
+              : {}),
+          ...(plan.facets === undefined ? {} : { facets: plan.facets }),
+          expandParents: false,
+        } as const;
+        const queryVector = yield* (() => {
+          if (configuration.embeddings === undefined || relevanceProfile === "legacy")
+            return Effect.succeed(undefined);
+          return configuration.embeddings.embed([query.question]).pipe(
+            Effect.flatMap((vectors) =>
+              vectors[0] === undefined
+                ? Effect.fail(
+                    new RepositoryError({
+                      message: "Embedding provider returned no query vector.",
+                      operation: "knowledge-query",
+                    }),
+                  )
+                : Effect.succeed(vectors[0]),
+            ),
+          );
+        })();
+        const results = yield* queryVector === undefined
+          ? queryKnowledgeLexically(configuration.repository, query)
+          : configuration.repository.search(query, queryVector);
+        const reranked =
+          relevanceProfile === "reranked" || relevanceProfile === "expanded"
+            ? rerankKnowledgeCandidates(query, results)
+            : results;
+        const selected = reranked.slice(0, operation.limit);
+        const contextualized = yield* (() => {
+          if (relevanceProfile !== "expanded" || queryVector === undefined || selected.length === 0)
+            return Effect.succeed(selected);
+          return Effect.gen(function* () {
+            const expanded = yield* configuration.repository.search(
+              { ...query, expandParents: true },
+              queryVector,
+            );
+            const expandedById = new Map(expanded.map((candidate) => [candidate.id, candidate]));
+            return selected.map((candidate) => {
+              const context = expandedById.get(candidate.id);
+              return context === undefined
+                ? candidate
+                : { ...context, componentRanks: candidate.componentRanks, score: candidate.score };
+            });
+          });
+        })();
         return {
-          items: results
+          items: contextualized
             .filter(
               (result) =>
                 (sources === undefined || sources.includes(result.source)) &&
@@ -108,6 +166,12 @@ export const createDeliveryKnowledgeQuerySource = (
               authority: result.authority,
               observedAt: result.sourceUpdatedAt,
               dedupeKey: result.citationUrl,
+              subjectAliases: [
+                ...(result.hierarchy ?? []),
+                ...Object.values(result.attributes ?? {}).flatMap((value) =>
+                  typeof value === "string" ? [value] : value,
+                ),
+              ],
             })),
           conflicts: [],
           unavailableSources: [],

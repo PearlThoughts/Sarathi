@@ -93,6 +93,7 @@ import {
   createDeliveryAssistant,
   defaultDeliveryMaxConcurrency,
   defaultDeliveryMaxQueueDepth,
+  deliveryRelevanceProfileFromEnvironment,
   deliveryResponseBudget,
   parseDeliveryEntityCatalog,
   validateCapabilityLedger,
@@ -616,6 +617,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
             topK: 10,
           });
     const deliveryIntelligenceEnabled = knowledgeEnabled;
+    const relevanceProfile = deliveryRelevanceProfileFromEnvironment(environment);
     const deliveryTimeZone = deliveryIntelligenceEnabled
       ? required(
           "SARATHI_WORKSPACE_TIMEZONE",
@@ -692,9 +694,11 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
                 : [
                     createDeliveryKnowledgeQuerySource({
                       repository: knowledgeRepository,
+                      embeddings: knowledgeEmbeddings,
                       workspaceId,
                       allowedActorIds,
                       audienceIds: knowledgeAudienceIds,
+                      relevanceProfile,
                       allowedGitHubRepositories: allowedRepositories,
                     }),
                   ]),

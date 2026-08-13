@@ -115,11 +115,13 @@ export type {
   DeliveryQueryPredicate,
   DeliveryQuerySelector,
   DeliveryQuerySubject,
+  DeliveryQuestionFacet,
   DeliveryQuestionIntent,
   DeliveryRelationTraversal,
   DeliveryTimeConstraint,
 } from "./domain/delivery-query.ts";
 export {
+  deliveryQuestionFacets,
   namedCompletionQuestionSubject,
   planDeliveryQuestion,
   validateDeliveryQueryPlan,
@@ -161,6 +163,8 @@ export {
   buildPeriodDeliveryReport,
   validateCapabilityLedger,
 } from "./domain/period-delivery-report.ts";
+export type { DeliveryRelevanceProfile } from "./domain/relevance-profile.ts";
+export { deliveryRelevanceProfileFromEnvironment } from "./domain/relevance-profile.ts";
 export type {
   CapabilityLedgerProjection,
   DeliveryActionTarget,
