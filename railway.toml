@@ -2,6 +2,7 @@
 builder = "RAILPACK"
 
 [deploy]
+preDeployCommand = "bun run knowledge migrate apply"
 startCommand = "bun run teams:ingress"
 healthcheckPath = "/health"
 healthcheckTimeout = 300

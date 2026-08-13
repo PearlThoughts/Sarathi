@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   decimal,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -14,6 +15,11 @@ import {
   uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
+import type {
+  AnswerFeedbackRating,
+  AnswerFeedbackReason,
+  FeedbackReviewDisposition,
+} from "../../modules/answer-feedback/index.ts";
 import {
   productChangeProposalTable,
   productClaimTable,
@@ -769,6 +775,123 @@ export const deliveryAclBindingTable = pgTable(
   ],
 );
 
+export const answerFeedbackAnswerTable = pgTable(
+  "answer_feedback_answer",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    recipientActorId: text("recipient_actor_id").notNull(),
+    conversationBoundaryHash: text("conversation_boundary_hash").notNull(),
+    sourceActivityHash: text("source_activity_hash").notNull(),
+    answerFingerprint: text("answer_fingerprint").notNull(),
+    queryFingerprint: text("query_fingerprint").notNull(),
+    answerText: text("answer_text").notNull(),
+    questionText: text("question_text").notNull(),
+    modelName: text("model_name").notNull(),
+    reasoningConfiguration: text("reasoning_configuration").notNull(),
+    applicationRevision: text("application_revision").notNull(),
+    promptConfigurationRevision: text("prompt_configuration_revision"),
+    productRegistryRevision: text("product_registry_revision"),
+    retrievalFingerprint: text("retrieval_fingerprint"),
+    responseProduct: text("response_product").notNull(),
+    queryFamily: text("query_family").notNull(),
+    generatedAt: timestampColumn("generated_at").notNull(),
+    state: text("state").notNull(),
+  },
+  (table) => [
+    uniqueIndex("answer_feedback_answer_source_activity").on(
+      table.workspaceId,
+      table.sourceActivityHash,
+    ),
+    index("answer_feedback_answer_fingerprint").on(table.workspaceId, table.answerFingerprint),
+    check(
+      "answer_feedback_answer_state",
+      sql`${table.state} in ('prepared', 'delivered', 'abandoned')`,
+    ),
+  ],
+);
+
+export const answerFeedbackRevisionTable = pgTable(
+  "answer_feedback_revision",
+  {
+    id: text("id").primaryKey(),
+    answerId: text("answer_id")
+      .notNull()
+      .references(() => answerFeedbackAnswerTable.id),
+    workspaceId: text("workspace_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    revision: integer("revision").notNull(),
+    rating: text("rating").$type<AnswerFeedbackRating>().notNull(),
+    reasons: jsonb("reasons").$type<readonly AnswerFeedbackReason[]>().notNull(),
+    correction: text("correction"),
+    idempotencyKeyHash: text("idempotency_key_hash").notNull(),
+    submittedAt: timestampColumn("submitted_at").notNull(),
+    reviewDisposition: text("review_disposition")
+      .$type<FeedbackReviewDisposition>()
+      .notNull()
+      .default("unreviewed"),
+    reviewedByActorId: text("reviewed_by_actor_id"),
+    reviewedAt: timestampColumn("reviewed_at"),
+  },
+  (table) => [
+    uniqueIndex("answer_feedback_revision_sequence").on(
+      table.answerId,
+      table.actorId,
+      table.revision,
+    ),
+    uniqueIndex("answer_feedback_revision_identity").on(table.answerId, table.actorId, table.id),
+    uniqueIndex("answer_feedback_revision_idempotency").on(
+      table.answerId,
+      table.actorId,
+      table.idempotencyKeyHash,
+    ),
+    index("answer_feedback_revision_workspace_review").on(
+      table.workspaceId,
+      table.reviewDisposition,
+      table.submittedAt,
+    ),
+    check("answer_feedback_revision_number", sql`${table.revision} > 0`),
+    check(
+      "answer_feedback_revision_rating",
+      sql`${table.rating} in ('useful_as_is', 'partly_useful', 'not_useful')`,
+    ),
+    check(
+      "answer_feedback_revision_disposition",
+      sql`${table.reviewDisposition} in ('unreviewed', 'accepted_for_evaluation', 'accepted_for_training', 'rejected')`,
+    ),
+    check(
+      "answer_feedback_revision_correction_length",
+      sql`${table.correction} is null or char_length(${table.correction}) <= 2000`,
+    ),
+    check(
+      "answer_feedback_revision_review",
+      sql`(${table.reviewDisposition} = 'unreviewed' and ${table.reviewedByActorId} is null and ${table.reviewedAt} is null) or (${table.reviewDisposition} <> 'unreviewed' and ${table.reviewedByActorId} is not null and ${table.reviewedAt} is not null)`,
+    ),
+  ],
+);
+
+export const answerFeedbackCurrentTable = pgTable(
+  "answer_feedback_current",
+  {
+    answerId: text("answer_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    updatedAt: timestampColumn("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.answerId, table.actorId] }),
+    foreignKey({
+      name: "answer_feedback_current_revision_fk",
+      columns: [table.answerId, table.actorId, table.revisionId],
+      foreignColumns: [
+        answerFeedbackRevisionTable.answerId,
+        answerFeedbackRevisionTable.actorId,
+        answerFeedbackRevisionTable.id,
+      ],
+    }),
+  ],
+);
+
 export const knowledgePostgresSchema = {
   knowledgeSourceTable,
   knowledgeItemTable,
@@ -790,6 +913,9 @@ export const knowledgePostgresSchema = {
   deliveryFinanceMetricTable,
   deliveryClaimTable,
   deliveryAclBindingTable,
+  answerFeedbackAnswerTable,
+  answerFeedbackRevisionTable,
+  answerFeedbackCurrentTable,
   productRevisionTable,
   productEntityTable,
   productEntityStateTable,
