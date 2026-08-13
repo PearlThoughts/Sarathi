@@ -205,7 +205,7 @@ export type ProductExplorationState = {
   readonly dossierOpen: boolean;
 };
 
-export type ProductExplorationAction =
+type ProductExplorationAction =
   | { readonly type: "select-entity"; readonly entityId: string; readonly compare?: boolean }
   | { readonly type: "select-relation"; readonly relationId: string }
   | { readonly type: "explore"; readonly entityId: string }

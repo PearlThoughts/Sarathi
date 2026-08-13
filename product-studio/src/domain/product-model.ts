@@ -479,9 +479,6 @@ export const productMapRows = (map: ProductMap): readonly ProductMapRow[] => {
     );
 };
 
-export const relationTypes = (map: ProductMap): readonly string[] =>
-  [...new Set(map.relations.map(({ type }) => type))].toSorted();
-
 type ProductExplorerRelatedEntity = {
   readonly id: string;
   readonly entityId?: string;

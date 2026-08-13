@@ -952,7 +952,7 @@ export const ProductCapabilityExplorer = ({
             </summary>
             <div className="absolute bottom-full right-0 mb-2 max-h-96 w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 p-3 shadow-2xl">
               <p className="text-xs text-stone-400">
-                Keyboard-accessible nodes and relationships in the current graph.
+                Keyboard-accessible nodes in the current graph. Relationships follow below.
               </p>
               <ul className="mt-3 space-y-1">
                 {textNavigatorEntities.map(({ entity, role }) => (
