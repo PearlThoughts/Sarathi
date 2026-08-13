@@ -1,5 +1,12 @@
 # Test Index
 
+## answer-feedback
+
+- Command: `bunx vitest run tests/answer-feedback-domain.test.ts tests/answer-feedback-application.test.ts tests/answer-feedback-card.test.ts tests/teams-mention.test.ts tests/teams-ingress.test.ts tests/delivery-cli.test.ts`
+- Location: `tests/answer-feedback-*.test.ts` plus Teams and operator integration suites.
+- Scope: Ratings, multi-select reasons, optional correction, immutable answer snapshots, append-only revision/idempotency behavior, authorization, Adaptive Card serialization and routing, privacy-safe diagnostics and metrics, and the reviewed-training boundary.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-assistant
 
 - Command: `bun run test`

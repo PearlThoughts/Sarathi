@@ -159,6 +159,7 @@ Production use should be treated capability by capability. A successful deployme
 - [How Sarathi works](docs/product/how.md)
 - [Delivery synthesis architecture](docs/architecture/delivery-synthesis.md)
 - [Delivery evaluation](docs/delivery-evaluation.md)
+- [Response feedback](docs/answer-feedback.md)
 - [Organization installation and activation](docs/installation.md)
 - [Local Product Registry and Product Studio](docs/local-product-registry.md)
 - [Documentation index](docs/README.md)

@@ -1,5 +1,6 @@
 import type { Effect } from "effect";
 import type { RepositoryError } from "../../../domain/errors.ts";
+import type { AnswerFeedbackInvitation } from "../../answer-feedback/index.ts";
 import type {
   AuthorizedContextEnvelope,
   GroundedAnswer,
@@ -51,6 +52,7 @@ export type TeamsMentionDelivery = {
   readonly reply: (
     command: TeamsMentionCommand,
     answer: GroundedAnswer,
+    feedback?: AnswerFeedbackInvitation | undefined,
   ) => Effect.Effect<void, RepositoryError>;
 };
 

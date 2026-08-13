@@ -31,3 +31,5 @@ Evaluation evidence is reported at three distinct levels:
 - **Human acceptance:** the required usefulness ratings were recorded against the exact answer fingerprints and the human threshold passed.
 
 A set of individually successful production cases is not automatically an accepted governed evaluation. Deployment liveness/readiness, automated evaluation, and human acceptance must be recorded separately. Deployment-specific questions, terms, ratings, fingerprints, and current pass status remain in the private overlay or live evidence system, never in this public repository.
+
+The three-button response-feedback control is a separate product-feedback signal. It never creates or updates `humanUsefulnessRating`, and useful-as-is feedback is not governed human acceptance. See [Response Feedback](answer-feedback.md).
