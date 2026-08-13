@@ -14,6 +14,42 @@ body {
   font-family: var(--font-body);
 }
 
+.remember-login__brand {
+  align-items: baseline;
+  display: flex;
+  gap: 0.7rem;
+}
+
+.remember-login__brand-mark {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.remember-login__brand-context {
+  color: var(--theme-elevation-500);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.remember-login__choice {
+  border-block: 1px solid var(--theme-elevation-150);
+  margin-block: 0.4rem 1.2rem;
+  padding-block: 1rem 0.85rem;
+}
+
+.remember-login__choice .field-type.checkbox {
+  margin: 0;
+}
+
+.remember-login__shared-device-note {
+  color: var(--theme-elevation-500);
+  font-size: 0.75rem;
+  margin: 0.5rem 0 0 2rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-testid="product-capability-explorer"] *,
   [data-testid="product-capability-explorer"] *::before,

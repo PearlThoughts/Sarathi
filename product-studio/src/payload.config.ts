@@ -16,9 +16,15 @@ const required = (name: string, value: string | undefined): string => {
 export default buildConfig({
   admin: {
     user: StudioUsers.slug,
-    importMap: { baseDir: dirname },
+    importMap: {
+      baseDir: dirname,
+      importMapFile: path.resolve(dirname, "app/(payload)/admin/importMap.ts"),
+    },
     components: {
       views: {
+        login: {
+          Component: "/views/RememberLoginView#RememberLoginView",
+        },
         dashboard: {
           Component: "/views/ProductMapView#ProductMapView",
         },
