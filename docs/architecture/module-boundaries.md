@@ -19,6 +19,8 @@ Do not create placeholder folders. A layer exists only when there is production 
 
 `src/modules/product-model` owns the slower-changing business product vocabulary: stable product, area, capability, and feature identity; its primary hierarchy; aliases; registration and lifecycle; variants; revisions; and governed identity evolution. It does not own delivery state or report composition.
 
+`src/modules/answer-feedback` owns exact-answer feedback snapshots, append-only actor revisions, current projections, privacy-safe aggregates, review dispositions, and reviewed corrected-answer candidates. Teams owns neither this domain nor its persistence. Feedback cannot mutate the original answer, product model, lifecycle state, evaluation rating, or source systems.
+
 `src/modules/delivery-intelligence` owns the reusable project operating model and safe delivery-query grammar. Time windows are optional query constraints, not a separate bounded context. `src/modules/knowledge-layer` supports it with versioned unstructured content, retrieval, provenance, citations, and reconciliation. Neither module may deep-import the other; cross-capability composition uses public ports and result contracts.
 
 ## Cross-Boundary Rules

@@ -6,6 +6,65 @@ import { RepositoryError } from "../src/domain/errors.ts";
 import { stableSha256 } from "../src/domain/hash.ts";
 
 describe("delivery CLI", () => {
+  it("reports privacy-safe response feedback aggregates without response text", async () => {
+    const feedbackMetrics = vi.fn(async (_workspaceId: string) => ({
+      total: 4,
+      ratings: {
+        useful_as_is: { count: 2, rate: 0.5 },
+        partly_useful: { count: 1, rate: 0.25 },
+        not_useful: { count: 1, rate: 0.25 },
+      },
+      reasons: {
+        irrelevant: 0,
+        missing_material_work: 1,
+        wrong_capability_mapping: 0,
+        wrong_delivery_status: 1,
+        wrong_owner_or_dependency: 0,
+        duplicate_activity: 0,
+        difficult_to_understand: 0,
+        too_detailed: 0,
+        insufficient_detail: 0,
+        stale: 0,
+        other: 0,
+      },
+      corrections: { count: 1, rate: 0.25 },
+      byQueryFamily: [{ queryFamily: "status", count: 4 }],
+      byModelConfiguration: [
+        {
+          modelName: "model-a",
+          reasoningConfiguration: "medium",
+          applicationRevision: "revision-a",
+          count: 4,
+        },
+      ],
+      reviews: {
+        unreviewed: 4,
+        accepted_for_evaluation: 0,
+        accepted_for_training: 0,
+        rejected: 0,
+      },
+    }));
+
+    const result = await runDeliveryCommand(
+      ["feedback", "metrics", "--workspace-id", "workspace-1"],
+      {},
+      { feedbackMetrics },
+    );
+
+    expect(feedbackMetrics).toHaveBeenCalledWith("workspace-1");
+    expect(result).toMatchObject({
+      exitCode: 0,
+      output: {
+        ok: true,
+        operation: "delivery-feedback-metrics",
+        workspaceId: "workspace-1",
+        report: { total: 4, corrections: { count: 1, rate: 0.25 } },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("answerText");
+    expect(JSON.stringify(result)).not.toContain("correction text");
+  });
+
   it("imports a private snapshot through the hosted operator surface", async () => {
     const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toEqual({

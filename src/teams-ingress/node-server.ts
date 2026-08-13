@@ -46,6 +46,7 @@ import {
 import {
   applyStrategyKernelPostgresMigrations,
   closeStrategyKernelPostgresDatabase,
+  createPostgresAnswerFeedbackRepository,
   createPostgresComplianceReminderAudit,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
@@ -56,6 +57,13 @@ import {
   openKnowledgePostgresDatabase,
   openStrategyKernelPostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
+import {
+  type AdaptiveCardPayload,
+  answerFeedbackActionVerb,
+  renderAnswerFeedbackAttachment,
+  renderAnswerFeedbackCard,
+  renderAnswerFeedbackFailureCard,
+} from "../infrastructure/teams/answer-feedback-card.ts";
 import {
   createKnowledgeTeamsContextSearch,
   createWorkspaceProjectionResolver,
@@ -68,6 +76,10 @@ import {
   createGitHubVaultAllowlistReader,
   vaultAllowlistFromEnvironment,
 } from "../infrastructure/vault/index.ts";
+import {
+  createAnswerFeedbackService,
+  decodeAnswerFeedbackAction,
+} from "../modules/answer-feedback/index.ts";
 import {
   type ComplianceReminderRequest,
   manualComplianceReminderRequest,
@@ -95,6 +107,7 @@ import {
   stripSarathiMention,
   type TeamsMentionCommand,
   type TeamsMentionDependencies,
+  teamsConversationBoundaryHash,
 } from "../modules/teams-mention/index.ts";
 import { makeSarathiRuntime } from "../platform/runtime.ts";
 import {
@@ -557,6 +570,10 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
     const knowledgeDatabase = knowledgeEnabled
       ? openKnowledgePostgresDatabase(databaseUrl)
       : undefined;
+    const feedbackDatabase = knowledgeDatabase ?? openKnowledgePostgresDatabase(databaseUrl);
+    const answerFeedback = createAnswerFeedbackService(
+      createPostgresAnswerFeedbackRepository(feedbackDatabase.database),
+    );
     const knowledgeAudienceIds = knowledgeEnabled
       ? (JSON.parse(
           required(
@@ -773,6 +790,28 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
         delivery: { reply: () => Effect.void },
         audit: createPostgresTeamsMentionAudit(openStrategyKernelPostgresDatabase(databaseUrl)),
         helloDiagnosticEnabled: enabled(environment.SARATHI_TEAMS_HELLO_DIAGNOSTIC_ENABLED),
+        answerFeedback,
+        feedbackGenerationContext: {
+          modelName: required("SARATHI_MODEL_NAME", environment.SARATHI_MODEL_NAME),
+          reasoningConfiguration:
+            environment.SARATHI_MODEL_REASONING_EFFORT?.trim() ||
+            environment.SARATHI_MODEL_REASONING_CONFIGURATION?.trim() ||
+            "provider_default",
+          applicationRevision:
+            environment.RAILWAY_GIT_COMMIT_SHA?.trim() ||
+            environment.SARATHI_APPLICATION_REVISION?.trim() ||
+            "local_unversioned",
+          ...(environment.SARATHI_MODEL_PROMPT_REVISION?.trim()
+            ? { promptConfigurationRevision: environment.SARATHI_MODEL_PROMPT_REVISION.trim() }
+            : {}),
+          ...(environment.SARATHI_PRODUCT_REGISTRY_REVISION?.trim()
+            ? { productRegistryRevision: environment.SARATHI_PRODUCT_REGISTRY_REVISION.trim() }
+            : {}),
+        },
+        feedbackDiagnostic: (stage, reason) =>
+          console.info(
+            JSON.stringify({ event: "answer_feedback", stage, outcome: "failed", reason }),
+          ),
         ...(deliveryAssistant === undefined || deliveryTimeZone === undefined
           ? {}
           : {
@@ -858,7 +897,7 @@ type DirectTeamsMentionGate =
 
 export type TeamsIngressDiagnosticEvent = {
   readonly event: "teams_ingress";
-  readonly stage: "http" | "activity" | "handler";
+  readonly stage: "http" | "activity" | "handler" | "feedback";
   readonly outcome: string;
   readonly activityHash?: string;
   readonly reason?: string;
@@ -1000,6 +1039,83 @@ export const teamsMentionCommandFromActivity = (
   };
 };
 
+const feedbackFailureMessage = (reason: string): string => {
+  switch (reason) {
+    case "unknown_answer":
+    case "answer_not_delivered":
+      return "That answer is no longer available for feedback.";
+    case "actor_not_permitted":
+    case "workspace_mismatch":
+    case "conversation_mismatch":
+      return "You cannot submit feedback for this answer.";
+    case "persistence_unavailable":
+      return "Sarathi could not save feedback right now. Please try again.";
+    default:
+      return "Sarathi could not read that feedback. Please try again.";
+  }
+};
+
+const feedbackActionData = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const data = (value as { readonly data?: unknown }).data;
+  return data ?? value;
+};
+
+export const handleTeamsAnswerFeedbackAction = async (
+  activity: Activity,
+  value: unknown,
+  dependencies: Pick<TeamsMentionDependencies, "resolver" | "authorizer" | "answerFeedback">,
+  diagnostics: TeamsIngressDiagnosticSink = noTeamsIngressDiagnostics,
+): Promise<AdaptiveCardPayload> => {
+  const hash = activityHash(activity.id);
+  const reportFailure = (reason: string): AdaptiveCardPayload => {
+    diagnostics({
+      event: "teams_ingress",
+      stage: "feedback",
+      outcome: "denied",
+      ...(hash === undefined ? {} : { activityHash: hash }),
+      reason,
+    });
+    return renderAnswerFeedbackFailureCard(feedbackFailureMessage(reason));
+  };
+  const decoded = decodeAnswerFeedbackAction(feedbackActionData(value));
+  if (decoded._tag === "Left") return reportFailure(decoded.left.code);
+  if (dependencies.answerFeedback === undefined) return reportFailure("persistence_unavailable");
+  const command = teamsMentionCommandFromActivity(activity, "answer feedback");
+  try {
+    const resolved = await Effect.runPromise(dependencies.resolver.resolve(command));
+    if (resolved === undefined) return reportFailure("actor_not_permitted");
+    const authorization = await Effect.runPromise(
+      dependencies.authorizer.authorizeContext(command, resolved),
+    );
+    const submitted = await Effect.runPromise(
+      dependencies.answerFeedback.submit(decoded.right, {
+        workspaceId: resolved.workspaceId,
+        actorId: resolved.callerId,
+        conversationBoundaryHash: teamsConversationBoundaryHash(command),
+        permitted: authorization.allowed,
+      }),
+    );
+    diagnostics({
+      event: "teams_ingress",
+      stage: "feedback",
+      outcome: submitted.idempotent ? "idempotent" : "recorded",
+      ...(hash === undefined ? {} : { activityHash: hash }),
+    });
+    return renderAnswerFeedbackCard(
+      { answerId: submitted.answer.id },
+      () => crypto.randomUUID(),
+      submitted.revision,
+    );
+  } catch (error) {
+    const reason =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "persistence_unavailable";
+    return reportFailure(reason);
+  }
+};
+
 export const createTeamsIngressApplication = (
   dependencies: TeamsMentionDependencies = failClosedDependencies,
   adapter?: CloudAdapter,
@@ -1009,6 +1125,11 @@ export const createTeamsIngressApplication = (
     storage: new MemoryStorage(),
     ...(adapter === undefined ? {} : { adapter }),
   });
+  application.adaptiveCards.actionExecute<unknown>(
+    answerFeedbackActionVerb,
+    async (context, _state, data) =>
+      handleTeamsAnswerFeedbackAction(context.activity, data, dependencies, diagnostics),
+  );
   application.onActivity("message", async (context: TurnContext) => {
     const activity = context.activity;
     const hash = activityHash(activity.id);
@@ -1067,7 +1188,7 @@ export const createTeamsIngressApplication = (
     const turnDependencies: TeamsMentionDependencies = {
       ...dependencies,
       delivery: {
-        reply: (_replyCommand, answer) =>
+        reply: (_replyCommand, answer, feedback) =>
           Effect.tryPromise({
             try: async () => {
               await context.sendActivity(
@@ -1076,8 +1197,9 @@ export const createTeamsIngressApplication = (
                       command.replyTarget.rootActivityId,
                       answer.text,
                       answer.mentions,
+                      feedback,
                     )
-                  : sameChatReplyActivity(answer.text, answer.mentions),
+                  : sameChatReplyActivity(answer.text, answer.mentions, feedback),
               );
             },
             catch: () => new RepositoryError({ message: "Teams delivery failed" }),
@@ -1147,11 +1269,13 @@ export const sameThreadReplyActivity = (
     readonly externalId: string;
     readonly displayName: string;
   }[] = [],
+  feedback?: { readonly answerId: string } | undefined,
 ): Activity =>
   Activity.fromObject({
     type: ActivityTypes.Message,
     replyToId,
     text,
+    ...(feedback === undefined ? {} : { attachments: [renderAnswerFeedbackAttachment(feedback)] }),
     entities: mentions
       .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
       .map(({ externalId, displayName }) => ({
@@ -1168,10 +1292,12 @@ export const sameChatReplyActivity = (
     readonly externalId: string;
     readonly displayName: string;
   }[] = [],
+  feedback?: { readonly answerId: string } | undefined,
 ): Activity =>
   Activity.fromObject({
     type: ActivityTypes.Message,
     text,
+    ...(feedback === undefined ? {} : { attachments: [renderAnswerFeedbackAttachment(feedback)] }),
     entities: mentions
       .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
       .map(({ externalId, displayName }) => ({

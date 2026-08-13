@@ -1,5 +1,11 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
+import { stableSha256 } from "../../../domain/hash.ts";
+import type {
+  AnswerFeedbackGenerationContext,
+  AnswerFeedbackInvitation,
+  AnswerFeedbackService,
+} from "../../answer-feedback/index.ts";
 import {
   type DeliveryAssistant,
   deliveryTransportTimeoutMs,
@@ -7,6 +13,7 @@ import {
   selectDeliveryResponseProduct,
 } from "../../delivery-intelligence/index.ts";
 import {
+  type GroundedAnswer,
   type TeamsMentionCommand,
   type TeamsMentionOutcome,
   teamsConversationRootActivityId,
@@ -33,9 +40,121 @@ export type TeamsMentionDependencies = {
   readonly deliveryTimeZone?: string | undefined;
   readonly deliveryAnswerTimeoutMs?: number | undefined;
   readonly deliveryFinanceActorIds?: ReadonlySet<string> | undefined;
+  readonly answerFeedback?: AnswerFeedbackService | undefined;
+  readonly feedbackGenerationContext?:
+    | Omit<
+        AnswerFeedbackGenerationContext,
+        "responseProduct" | "queryFamily" | "retrievalFingerprint"
+      >
+    | undefined;
+  readonly feedbackDiagnostic?:
+    | ((stage: "prepare" | "mark" | "abandon", reason: string) => void)
+    | undefined;
 };
 
 const isHelloDiagnostic = (question: string): boolean => question.trim().toLowerCase() === "hello";
+
+export const teamsConversationBoundaryHash = (command: TeamsMentionCommand): string =>
+  stableSha256(
+    command.conversation.kind === "team_channel"
+      ? [
+          command.conversation.kind,
+          command.conversation.tenantId,
+          command.conversation.graphTeamId,
+          command.conversation.channelId,
+          command.replyTarget.conversationId,
+        ].join("\u001f")
+      : [
+          command.conversation.kind,
+          command.conversation.tenantId,
+          command.conversation.chatId,
+          command.replyTarget.conversationId,
+        ].join("\u001f"),
+  );
+
+type FeedbackEligibleAnswer = GroundedAnswer & {
+  readonly status?: string | undefined;
+  readonly responseProduct?: string | undefined;
+  readonly plan?: { readonly intents?: readonly string[] | undefined } | undefined;
+};
+
+const prepareFeedback = (
+  command: TeamsMentionCommand,
+  resolved: { readonly workspaceId: string; readonly callerId: string },
+  answer: FeedbackEligibleAnswer,
+  dependencies: TeamsMentionDependencies,
+): Effect.Effect<AnswerFeedbackInvitation | undefined, never> => {
+  if (
+    dependencies.answerFeedback === undefined ||
+    dependencies.feedbackGenerationContext === undefined ||
+    answer.status === "failed"
+  )
+    return Effect.succeed(undefined);
+  const responseProduct = answer.responseProduct ?? "grounded_answer";
+  const queryFamily = answer.plan?.intents?.slice().sort().join("+") || "general_question";
+  const retrievalFingerprint = stableSha256(
+    JSON.stringify({
+      citations: answer.citations.map((citation) => ({
+        label: citation.label,
+        url: citation.url,
+        ...("source" in citation ? { source: citation.source } : {}),
+      })),
+      unavailableSources: answer.unavailableSources,
+      responseProduct,
+    }),
+  );
+  return dependencies.answerFeedback
+    .prepareAnswer({
+      workspaceId: resolved.workspaceId,
+      recipientActorId: resolved.callerId,
+      conversationBoundaryHash: teamsConversationBoundaryHash(command),
+      sourceActivityId: command.activityId,
+      answerText: answer.text,
+      questionText: command.question,
+      generatedAt: command.receivedAt,
+      responseProduct,
+      queryFamily,
+      retrievalFingerprint,
+      ...dependencies.feedbackGenerationContext,
+    })
+    .pipe(
+      Effect.catchAll((error) => {
+        dependencies.feedbackDiagnostic?.("prepare", error.code);
+        return Effect.succeed(undefined);
+      }),
+    );
+};
+
+const deliverAnswer = (
+  command: TeamsMentionCommand,
+  resolved: { readonly workspaceId: string; readonly callerId: string },
+  answer: FeedbackEligibleAnswer,
+  dependencies: TeamsMentionDependencies,
+): Effect.Effect<boolean, never> =>
+  Effect.gen(function* () {
+    const invitation = yield* prepareFeedback(command, resolved, answer, dependencies);
+    const delivery = yield* Effect.either(dependencies.delivery.reply(command, answer, invitation));
+    if (delivery._tag === "Left") {
+      if (invitation !== undefined && dependencies.answerFeedback !== undefined) {
+        yield* dependencies.answerFeedback.abandonAnswer(invitation.answerId).pipe(
+          Effect.catchAll((error) => {
+            dependencies.feedbackDiagnostic?.("abandon", error.code);
+            return Effect.void;
+          }),
+        );
+      }
+      return false;
+    }
+    if (invitation !== undefined && dependencies.answerFeedback !== undefined) {
+      yield* dependencies.answerFeedback.markAnswerDelivered(invitation.answerId).pipe(
+        Effect.catchAll((error) => {
+          dependencies.feedbackDiagnostic?.("mark", error.code);
+          return Effect.void;
+        }),
+      );
+    }
+    return true;
+  });
 
 export const handleTeamsMention = (
   command: TeamsMentionCommand | undefined,
@@ -237,8 +356,8 @@ export const handleTeamsMention = (
       }
       const answer = reportResult.right;
       if (!(yield* renewLease())) return { kind: "ignored", reason: "duplicate" } as const;
-      const deliveryResult = yield* Effect.either(dependencies.delivery.reply(command, answer));
-      if (deliveryResult._tag === "Left") {
+      const delivered = yield* deliverAnswer(command, resolved, answer, dependencies);
+      if (!delivered) {
         yield* markFailed("failed-retryable", resolved.workspaceId);
         return {
           kind: "denied",
@@ -266,8 +385,8 @@ export const handleTeamsMention = (
     }
     const answer = answerResult.right;
     if (!(yield* renewLease())) return { kind: "ignored", reason: "duplicate" } as const;
-    const deliveryResult = yield* Effect.either(dependencies.delivery.reply(command, answer));
-    if (deliveryResult._tag === "Left") {
+    const delivered = yield* deliverAnswer(command, resolved, answer, dependencies);
+    if (!delivered) {
       yield* markFailed("failed-retryable", resolved.workspaceId);
       return {
         kind: "denied",

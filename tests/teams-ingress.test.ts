@@ -2,11 +2,13 @@ import { Activity } from "@microsoft/agents-activity";
 import { CloudAdapter } from "@microsoft/agents-hosting";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import type { AnswerFeedbackService } from "../src/modules/answer-feedback/index.ts";
 import {
   createPrivacySafeTeamsIngressDiagnosticSink,
   createTeamsIngressApplication,
   directTeamsMentionQuestion,
   financeReminderKindFromBody,
+  handleTeamsAnswerFeedbackAction,
   hostedFinanceReminderCompositionFromEnvironment,
   hostedTeamsIngressCompositionFromEnvironment,
   sameChatReplyActivity,
@@ -367,6 +369,179 @@ describe("Teams ingress configuration", () => {
       replyToId: "root-activity",
       text: "Hello from Sarathi.",
     });
+  });
+
+  it("attaches feedback controls without changing the Markdown answer", () => {
+    const activity = sameThreadReplyActivity(
+      "root-activity",
+      "**Status:** Ready\n\n- Existing high-quality answer",
+      [],
+      { answerId: "af_11111111-1111-4111-8111-111111111111" },
+    );
+
+    expect(activity.text).toBe("**Status:** Ready\n\n- Existing high-quality answer");
+    expect(activity.attachments).toHaveLength(1);
+    expect(activity.attachments?.[0]?.content).toMatchObject({
+      type: "AdaptiveCard",
+      body: [{ text: "Was this answer useful?" }],
+    });
+    expect(JSON.stringify(activity.attachments)).not.toContain(activity.text);
+  });
+
+  it("authorizes a feedback action and returns a quiet replacement confirmation card", async () => {
+    const diagnostics: unknown[] = [];
+    const activity = Activity.fromObject({
+      type: "invoke",
+      id: "feedback-activity",
+      replyToId: "answer-activity",
+      serviceUrl: "https://service.example.test",
+      conversation: { id: "conversation" },
+      from: { aadObjectId: "entra", name: "Caller" },
+      channelData: {
+        tenant: { id: "tenant" },
+        team: { id: "team", aadGroupId: "graph-team" },
+        channel: { id: "channel" },
+      },
+    });
+    const answerFeedback = {
+      prepareAnswer: () => Effect.die("not used"),
+      markAnswerDelivered: () => Effect.die("not used"),
+      abandonAnswer: () => Effect.die("not used"),
+      metrics: () => Effect.die("not used"),
+      submit: (action, actor) => {
+        expect(action).toMatchObject({
+          rating: "partly_useful",
+          reasons: ["missing_material_work", "wrong_delivery_status"],
+          correction: "Mention the acceptance gap.",
+        });
+        expect(actor).toMatchObject({
+          workspaceId: "workspace",
+          actorId: "actor",
+          permitted: true,
+        });
+        return Effect.succeed({
+          idempotent: false,
+          answer: {
+            id: action.answerId,
+            workspaceId: "workspace",
+            recipientActorId: "actor",
+            conversationBoundaryHash: actor.conversationBoundaryHash,
+            sourceActivityHash: "sha256-source",
+            answerFingerprint: "sha256-answer",
+            queryFingerprint: "sha256-query",
+            answerText: "Original answer",
+            questionText: "Original question",
+            modelName: "model-a",
+            reasoningConfiguration: "medium",
+            applicationRevision: "revision-a",
+            responseProduct: "operational_answer",
+            queryFamily: "status",
+            generatedAt: "2026-08-13T10:00:00.000Z",
+            state: "delivered",
+          },
+          revision: {
+            id: "fr_22222222-2222-4222-8222-222222222222",
+            answerId: action.answerId,
+            workspaceId: "workspace",
+            actorId: "actor",
+            revision: 1,
+            rating: action.rating,
+            reasons: action.reasons,
+            correction: action.correction,
+            idempotencyKeyHash: "sha256-idempotency",
+            submittedAt: "2026-08-13T10:01:00.000Z",
+            reviewDisposition: "unreviewed",
+          },
+        });
+      },
+    } satisfies AnswerFeedbackService;
+
+    const result = await handleTeamsAnswerFeedbackAction(
+      activity,
+      {
+        data: {
+          answerId: "af_11111111-1111-4111-8111-111111111111",
+          idempotencyKey: "fi_33333333-3333-4333-8333-333333333333",
+          rating: "partly_useful",
+          feedbackReasons: "missing_material_work,wrong_delivery_status",
+          feedbackCorrection: "Mention the acceptance gap.",
+        },
+      },
+      {
+        resolver: {
+          resolve: (command) =>
+            Effect.succeed({
+              workspaceId: "workspace",
+              conversation: {
+                kind: "standard_team_channel" as const,
+                tenantId: "tenant",
+                teamId: "team",
+                graphTeamId: "graph-team",
+                channelId: "channel",
+              },
+              replyTarget: command.replyTarget,
+              authenticatedActorId: "entra:synthetic",
+              callerId: "actor",
+              callerTrustTier: "trusted",
+              channelSensitivity: "internal",
+              boundary: {
+                sensitivity: "internal",
+                minimumTrustTier: "member",
+                allowedDelegationStages: ["answer"],
+                modelEgress: "allow",
+                requiresHumanApproval: false,
+                requiresPreRetrievalAuthorization: true,
+                requiresToolAuthorization: true,
+              },
+              authorization: {
+                effectiveAudience: {
+                  id: "audience",
+                  kind: "team",
+                  membership: {
+                    member: true,
+                    source: "explicit_actor_mapping",
+                    resolvedAt: "2026-08-13T10:00:00.000Z",
+                  },
+                },
+                permittedAudienceIds: ["audience"],
+                permittedSourceScopes: ["legacy_workspace"],
+              },
+            }),
+        },
+        authorizer: { authorizeContext: () => Effect.succeed({ allowed: true }) },
+        answerFeedback,
+      },
+      (event) => diagnostics.push(event),
+    );
+
+    expect(result.body[0]).toMatchObject({
+      text: "Feedback recorded: Partly useful. You can revise it below.",
+    });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ stage: "feedback", outcome: "recorded" }),
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("Original answer");
+    expect(JSON.stringify(diagnostics)).not.toContain("Mention the acceptance gap");
+  });
+
+  it("fails malformed feedback safely without calling the resolver", async () => {
+    let resolverCalls = 0;
+    const result = await handleTeamsAnswerFeedbackAction(
+      Activity.fromObject({ type: "invoke", id: "feedback-activity" }),
+      { data: { answerId: "private answer body", arbitraryUrl: "https://private.example" } },
+      {
+        resolver: {
+          resolve: () => {
+            resolverCalls += 1;
+            return Effect.succeed(undefined);
+          },
+        },
+        authorizer: { authorizeContext: () => Effect.succeed({ allowed: false }) },
+      },
+    );
+
+    expect(result.body[0]).toMatchObject({ color: "Attention" });
+    expect(resolverCalls).toBe(0);
   });
 
   it("builds a flat chat reply without inventing a channel thread", () => {
