@@ -229,6 +229,73 @@ describe("AI SDK OpenRouter answer generator", () => {
     );
   });
 
+  it("bounds report model work by the supplied composition budget", async () => {
+    const reportText = [
+      "## Delivered",
+      "- Publishing is live.",
+      "## In progress",
+      "- No active work.",
+      "## Waiting or blocked",
+      "- No active waits.",
+      "## Decisions needed",
+      "- No decisions.",
+      "## References",
+      "- [R1]",
+    ].join("\n");
+    const generator = createGroundedAnswerGenerator(
+      { ...configuration, timeoutMs: 1_000 },
+      undefined,
+      () => delayedModel(reportText, 100),
+    );
+
+    await expect(
+      Effect.runPromise(
+        generator.generate({
+          ...envelope,
+          modelTimeoutMs: 40,
+          presentation: {
+            kind: "delivery_report",
+            requiredCitationSources: ["jira"],
+            period: {
+              kind: "absolute",
+              fromInclusive: "2026-07-01T00:00:00.000Z",
+              toExclusive: "2026-07-31T00:00:00.000Z",
+              timeZone: "Asia/Kolkata",
+            },
+            coverage: {
+              complete: true,
+              examinedRecords: 1,
+              acceptedChanges: 1,
+              duplicateRecords: 0,
+              excludedRecords: 0,
+              unmappedChanges: 0,
+              unavailableSources: [],
+            },
+            capabilitySections: [],
+            episodes: [],
+            dependencies: [],
+            decisionsNeeded: [],
+            jiraAdvisories: [],
+          },
+        }),
+      ),
+    ).rejects.toThrow("OpenRouter answer generation is unavailable");
+  });
+
+  it("cancels provider work when the owning Effect is interrupted", async () => {
+    const text =
+      "## Status\n- Delivery is current.\n### References\n- [Jira](https://jira.example.test/DEMO-754)";
+    const generator = createGroundedAnswerGenerator(configuration, undefined, () =>
+      delayedModel(text, 500),
+    );
+    const startedAt = performance.now();
+
+    await expect(
+      Effect.runPromise(generator.generate(envelope).pipe(Effect.timeout(20))),
+    ).rejects.toThrow();
+    expect(performance.now() - startedAt).toBeLessThan(200);
+  });
+
   it("requires the governed verdict for a named completion answer", async () => {
     const completionEnvelope = {
       ...envelope,

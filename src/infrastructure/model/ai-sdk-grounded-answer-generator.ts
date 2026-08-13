@@ -308,7 +308,7 @@ const validateDeliveryReport = (
 };
 
 const noModelProviderDiagnostics: ModelProviderDiagnosticSink = () => undefined;
-const deliveryReportModelTimeoutMs = 180_000;
+const deliveryReportMaximumModelTimeoutMs = 180_000;
 const deliveryReportMaximumOutputTokens = 12_000;
 
 const conciseSystemPrompt =
@@ -327,9 +327,13 @@ export const createGroundedAnswerGenerator = (
 ): GroundedAnswerGenerator => ({
   generate: (envelope) =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (interruptSignal) => {
         try {
           const deliveryReport = envelope.presentation?.kind === "delivery_report";
+          const requestedModelTimeoutMs = envelope.modelTimeoutMs ?? configuration.timeoutMs;
+          const governedModelTimeoutMs = deliveryReport
+            ? Math.min(deliveryReportMaximumModelTimeoutMs, requestedModelTimeoutMs)
+            : requestedModelTimeoutMs;
           const completionPresentation =
             envelope.presentation?.kind === "completion_verdict"
               ? envelope.presentation
@@ -362,11 +366,10 @@ export const createGroundedAnswerGenerator = (
             seed: 0,
             maxRetries: 0,
             ...(deliveryReport ? { maxOutputTokens: deliveryReportMaximumOutputTokens } : {}),
-            abortSignal: AbortSignal.timeout(
-              deliveryReport
-                ? Math.max(configuration.timeoutMs, deliveryReportModelTimeoutMs)
-                : Math.max(configuration.timeoutMs, envelope.modelTimeoutMs ?? 0),
-            ),
+            abortSignal: AbortSignal.any([
+              interruptSignal,
+              AbortSignal.timeout(governedModelTimeoutMs),
+            ]),
             experimental_telemetry: { isEnabled: false },
           });
           const answer = (() => {
