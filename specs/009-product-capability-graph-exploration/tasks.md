@@ -50,7 +50,7 @@
 - [x] T028 [Verify] Run all focused domain/API/Product Studio tests and resolve failures.
 - [x] T029 [Verify] Run root `bun run check` and `bun run runtime:smoke` on the exact branch.
 - [x] T030 [Verify] Run Product Studio complete check/build/browser suite on desktop and tablet; inspect console/network and performance instrumentation.
-- [ ] T031 [Review] Run direct final-diff self-review, architecture re-check, public/private boundary check, secret scan, and repository status checks.
+- [x] T031 [Review] Run direct final-diff self-review, architecture re-check, public/private boundary check, secret scan, and repository status checks.
 
 ## Phase 7: Governed release and acceptance handoff
 

@@ -37,6 +37,7 @@ const endpointName = (map: ProductMap, endpoint: ProductRelation["source"]): str
 };
 
 export const CompactInspector = ({
+  delivery,
   dossier,
   loading,
   map,
@@ -47,6 +48,7 @@ export const CompactInspector = ({
   relationCatalog,
   selectedEntityId,
 }: {
+  readonly delivery?: ProductDelivery | undefined;
   readonly dossier?: ProductDossier | undefined;
   readonly loading: boolean;
   readonly map: ProductMap;
@@ -62,6 +64,8 @@ export const CompactInspector = ({
     const semantics = relationCatalog.relations.find(({ type }) => type === relation.type);
     const sourceName = endpointName(map, relation.source);
     const targetName = endpointName(map, relation.target);
+    const observedDeliveryStages =
+      delivery?.stages.filter(({ state }) => state === "observed") ?? [];
     return (
       <article
         aria-labelledby="relation-inspector-title"
@@ -76,7 +80,7 @@ export const CompactInspector = ({
         <p className="mt-2 text-sm leading-relaxed text-stone-300">
           {semantics?.definition ?? "A governed typed product relationship."}
         </p>
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
           <div>
             <dt className="text-stone-500">Family</dt>
             <dd className="mt-1 capitalize">{semantics?.family ?? "product"}</dd>
@@ -93,10 +97,46 @@ export const CompactInspector = ({
             <dt className="text-stone-500">Created revision</dt>
             <dd className="mt-1 font-mono">{relation.createdRevision}</dd>
           </div>
+          <div>
+            <dt className="text-stone-500">Valid to</dt>
+            <dd className="mt-1">
+              {relation.validTo === undefined
+                ? "Open-ended"
+                : new Date(relation.validTo).toLocaleDateString()}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-stone-500">Provenance class</dt>
+            <dd className="mt-1 capitalize">{relation.sourceClass.replaceAll("_", " ")}</dd>
+          </div>
+          <div>
+            <dt className="text-stone-500">Audience-safe scope</dt>
+            <dd className="mt-1 capitalize">
+              {relation.sensitivity} · {relation.audience.length} scope
+              {relation.audience.length === 1 ? "" : "s"}
+            </dd>
+          </div>
         </dl>
         <p className="mt-3 rounded-lg border border-stone-800 bg-stone-900/70 p-3 text-xs text-stone-300">
           Reverse: {targetName} {semantics?.reverseLabel ?? "relates to"} {sourceName}.
         </p>
+        <div className="mt-3 grid gap-2 text-xs text-stone-300 sm:grid-cols-2">
+          <p className="rounded-lg border border-stone-800 p-3">
+            <span className="block text-stone-500">Variant qualifiers</span>
+            Base relation; no qualifier scope is registered on this visible edge.
+          </p>
+          <p className="rounded-lg border border-stone-800 p-3">
+            <span className="block text-stone-500">Supporting evidence coverage</span>
+            Privacy-safe provenance metadata only; evidence bodies and hidden identifiers are not
+            exposed here.
+          </p>
+          <p className="rounded-lg border border-stone-800 p-3 sm:col-span-2">
+            <span className="block text-stone-500">Related authorized delivery context</span>
+            {observedDeliveryStages.length === 0
+              ? "No delivery stage is observed for the current graph focus."
+              : `${observedDeliveryStages.map(({ stage }) => stage.replaceAll("_", " ")).join(", ")} observed for the current graph focus; this does not make the edge delivery evidence.`}
+          </p>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {[relation.source, relation.target].map((endpoint) =>
             endpoint.kind === "entity" ? (
@@ -243,6 +283,30 @@ export const FullDossier = ({
   );
   const claims = (type: ProductDossier["claims"][number]["type"]) =>
     dossier.claims.filter((claim) => claim.type === type);
+  const descendants = (() => {
+    const result: Array<ProductMap["entities"][number]> = [];
+    const queued = [...children];
+    const visited = new Set<string>();
+    while (queued.length > 0) {
+      const entity = queued.shift();
+      if (entity === undefined || visited.has(entity.entityId)) continue;
+      visited.add(entity.entityId);
+      result.push(entity);
+      queued.push(...map.entities.filter(({ parentId }) => parentId === entity.entityId));
+    }
+    return result;
+  })();
+  const subfeatures = descendants.filter(({ kind }) => kind === "feature");
+  const relationshipGroups = [
+    ...dossier.relations.reduce((groups, relation) => {
+      const semantics = relationCatalog.relations.find(({ type }) => type === relation.type);
+      const outgoing =
+        relation.source.kind === "entity" && relation.source.entityId === dossier.entity.id;
+      const group = `${semantics?.family ?? "product"}:${outgoing ? "outgoing" : "incoming"}`;
+      groups.set(group, [...(groups.get(group) ?? []), relation]);
+      return groups;
+    }, new Map<string, ProductDossier["relations"][number][]>()),
+  ].toSorted(([left], [right]) => left.localeCompare(right));
   const canonicalAliasId = dossier.aliases.find(({ kind }) => kind === "canonical")?.id;
 
   return (
@@ -362,6 +426,15 @@ export const FullDossier = ({
                 <EntityButtons entities={children} onSelect={onSelectEntity} />
               </section>
               <section>
+                <h3 className="text-lg font-semibold">Descendants · {descendants.length}</h3>
+                <p className="mt-2 text-sm text-stone-400">
+                  {subfeatures.length} visible subfeature{subfeatures.length === 1 ? "" : "s"} in
+                  the current bounded graph. Explicit skipped-level metadata is shown only when
+                  registered; none is present in this projection.
+                </p>
+                <EntityButtons entities={subfeatures} onSelect={onSelectEntity} />
+              </section>
+              <section>
                 <h3 className="text-lg font-semibold">Siblings · {siblings.length}</h3>
                 <EntityButtons entities={siblings} onSelect={onSelectEntity} />
               </section>
@@ -372,41 +445,54 @@ export const FullDossier = ({
               <h3 className="text-lg font-semibold">
                 Typed directional relationships · {dossier.relations.length}
               </h3>
-              <ul className="mt-4 space-y-3">
-                {dossier.relations.map((relation) => {
-                  const semantics = relationCatalog.relations.find(
-                    ({ type }) => type === relation.type,
-                  );
-                  const outgoing =
-                    relation.source.kind === "entity" &&
-                    relation.source.entityId === dossier.entity.id;
-                  const target = outgoing ? relation.target : relation.source;
+              <div className="mt-4 space-y-6">
+                {relationshipGroups.map(([group, relations]) => {
+                  const [family, direction] = group.split(":");
                   return (
-                    <li key={relation.id}>
-                      <button
-                        className="block w-full rounded-xl border border-stone-800 p-4 text-left hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
-                        onClick={() => onSelectRelation(relation.id)}
-                        type="button"
-                      >
-                        <span className="font-mono text-xs uppercase tracking-wider text-teal-300">
-                          {semantics?.family ?? "product"} · {outgoing ? "outgoing" : "incoming"}
-                        </span>
-                        <span className="mt-1 block font-semibold">
-                          {outgoing ? semantics?.label : semantics?.reverseLabel}{" "}
-                          {endpointName(map, target)}
-                        </span>
-                        <span className="mt-2 block text-xs text-stone-400">
-                          {relation.registration} · valid{" "}
-                          {new Date(relation.validFrom).toLocaleDateString()}
-                          {relation.validTo === undefined
-                            ? " onward"
-                            : ` to ${new Date(relation.validTo).toLocaleDateString()}`}
-                        </span>
-                      </button>
-                    </li>
+                    <section key={group}>
+                      <h4 className="font-mono text-xs uppercase tracking-wider text-stone-400">
+                        {family} · {direction}
+                      </h4>
+                      <ul className="mt-2 space-y-3">
+                        {(relations ?? []).map((relation) => {
+                          const semantics = relationCatalog.relations.find(
+                            ({ type }) => type === relation.type,
+                          );
+                          const outgoing =
+                            relation.source.kind === "entity" &&
+                            relation.source.entityId === dossier.entity.id;
+                          const target = outgoing ? relation.target : relation.source;
+                          return (
+                            <li key={relation.id}>
+                              <button
+                                className="block w-full rounded-xl border border-stone-800 p-4 text-left hover:border-teal-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                                onClick={() => onSelectRelation(relation.id)}
+                                type="button"
+                              >
+                                <span className="font-mono text-xs uppercase tracking-wider text-teal-300">
+                                  {semantics?.family ?? "product"} ·{" "}
+                                  {outgoing ? "outgoing" : "incoming"}
+                                </span>
+                                <span className="mt-1 block font-semibold">
+                                  {outgoing ? semantics?.label : semantics?.reverseLabel}{" "}
+                                  {endpointName(map, target)}
+                                </span>
+                                <span className="mt-2 block text-xs text-stone-400">
+                                  {relation.registration} · valid{" "}
+                                  {new Date(relation.validFrom).toLocaleDateString()}
+                                  {relation.validTo === undefined
+                                    ? " onward"
+                                    : ` to ${new Date(relation.validTo).toLocaleDateString()}`}
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
                   );
                 })}
-              </ul>
+              </div>
             </div>
           ) : null}
           {section === "boundaries" ? (

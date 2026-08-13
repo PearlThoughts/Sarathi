@@ -895,6 +895,7 @@ export const ProductCapabilityExplorer = ({
             </p>
           )}
           <CompactInspector
+            delivery={delivery}
             dossier={dossier}
             loading={loading}
             map={map}

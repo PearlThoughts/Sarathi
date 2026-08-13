@@ -170,6 +170,13 @@ test("typed edges, lenses, compare, and path commands stay synchronized", async 
   await relationButton.click();
   await expect(explorer).toHaveAttribute("data-selected-relation", /.+/);
   await expect(page.getByText("Selected relationship", { exact: true })).toBeVisible();
+  await expect(page.getByText("Provenance class", { exact: true })).toBeVisible();
+  await expect(page.getByText("Audience-safe scope", { exact: true })).toBeVisible();
+  await expect(page.getByText("Variant qualifiers", { exact: true })).toBeVisible();
+  await expect(page.getByText("Supporting evidence coverage", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Related authorized delivery context", { exact: true }),
+  ).toBeVisible();
 
   await page.getByLabel("Visual lens").selectOption("relationships");
   await expect(explorer).toHaveAttribute("data-lens", "relationships");
