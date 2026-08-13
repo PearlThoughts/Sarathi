@@ -41,7 +41,7 @@ export const ProductAlternativeViews = ({
   return (
     <section
       aria-label={`${view.replaceAll("-", " ")} view`}
-      className="absolute inset-x-4 bottom-24 top-32 z-10 overflow-auto rounded-2xl border border-stone-800 bg-stone-950/95 p-5 shadow-2xl backdrop-blur sm:inset-x-6 sm:bottom-28 sm:top-28 lg:left-6 lg:right-[27rem]"
+      className="absolute inset-3 z-10 overflow-auto rounded-xl border border-stone-800 bg-stone-950 p-5 shadow-xl"
     >
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-stone-800 pb-4">
         <div>

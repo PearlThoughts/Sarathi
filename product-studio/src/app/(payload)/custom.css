@@ -14,6 +14,58 @@ body {
   font-family: var(--font-body);
 }
 
+.product-twin-workspace {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(20rem, 23rem);
+  min-height: 0;
+}
+
+@media (max-width: 74rem) {
+  [data-testid="product-capability-explorer"] {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .product-twin-workspace {
+    grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+    grid-template-rows: minmax(20rem, 1fr) minmax(16rem, 19rem);
+    min-height: 0;
+  }
+
+  .product-twin-workspace [data-panel="inspector"] {
+    border-left: 0;
+    border-top: 1px solid rgb(41 37 36);
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 47rem) {
+  [data-testid="product-capability-explorer"] {
+    height: auto;
+    overflow: auto;
+  }
+
+  .product-twin-workspace {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+  }
+
+  .product-twin-workspace [data-testid="product-model-tree"] {
+    min-height: 20rem;
+  }
+
+  .product-twin-workspace [data-panel="model"] {
+    min-height: 32rem;
+  }
+
+  .product-twin-workspace [data-panel="inspector"] {
+    min-height: 28rem;
+  }
+}
+
 .remember-login__brand {
   align-items: baseline;
   display: flex;

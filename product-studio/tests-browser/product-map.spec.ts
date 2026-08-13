@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 const configuredSessionSeconds = 2 * 60 * 60;
 const rememberedSessionSeconds = 365 * 24 * 60 * 60;
@@ -42,13 +42,6 @@ const openAuthenticatedMap = async (page: Page, path = "/admin/product-map") => 
   await expect(page).toHaveURL(/\/admin\/product-map(?:\?|$)/);
   await expect(explorer).toBeVisible();
   return explorer;
-};
-
-const openTextNavigator = async (page: Page): Promise<Locator> => {
-  const summary = page.getByText("Text navigator", { exact: true });
-  const details = summary.locator("xpath=..");
-  if ((await details.getAttribute("open")) === null) await summary.click();
-  return details;
 };
 
 test.beforeAll(() => {
@@ -107,8 +100,10 @@ test("selection, exploration, history, and browser navigation preserve the graph
     if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
   });
   await expect(
-    page.getByRole("heading", { name: "Product Capability Graph", level: 1 }),
+    page.getByRole("heading", { name: "Product capability explorer", level: 1 }),
   ).toBeVisible();
+  await expect(page.getByTestId("product-model-tree")).toBeVisible();
+  await expect(page.getByTestId("contextual-inspector")).toBeVisible();
   await expect(explorer).toHaveAttribute("data-renderer", "3d-force-graph");
   const graph = page.getByTestId("product-capability-graph");
   await expect(graph.locator("canvas")).toBeVisible();
@@ -117,22 +112,20 @@ test("selection, exploration, history, and browser navigation preserve the graph
 
   const initialDepth = await explorer.getAttribute("data-depth");
   const initialSceneSignature = await graph.getAttribute("data-scene-signature");
-  const navigator = await openTextNavigator(page);
-  const child = navigator
-    .locator('[data-testid="capability-text-node"][data-role="child"]')
-    .first();
+  const tree = page.getByTestId("product-model-tree");
+  const child = tree.getByTestId("product-tree-node").nth(1);
   const childId = await child.getAttribute("data-entity-id");
   expect(childId).not.toBeNull();
 
   const selectionStartedAt = performance.now();
-  await child.locator("button").first().click();
+  await child.locator(':scope > div > [data-testid="product-tree-select"]').click();
   await expect(explorer).toHaveAttribute("data-selected-entity", childId ?? "");
   expect(performance.now() - selectionStartedAt).toBeLessThan(5_000);
   await expect(explorer).toHaveAttribute("data-depth", initialDepth ?? "0");
   await expect(graph).toHaveAttribute("data-scene-signature", initialSceneSignature ?? "");
   await expect(page).toHaveURL((url) => url.searchParams.get("selected") === childId);
 
-  await child.getByRole("button", { name: /^Explore / }).click();
+  await tree.getByRole("button", { name: "Zoom to selected" }).click();
   await expect(explorer).not.toHaveAttribute("data-depth", initialDepth ?? "0");
   await expect(page).toHaveURL((url) => url.searchParams.get("focus") === childId);
 
@@ -141,9 +134,10 @@ test("selection, exploration, history, and browser navigation preserve the graph
   await page.goForward();
   await expect(explorer).toHaveAttribute("data-selected-entity", childId ?? "");
 
-  await page.getByRole("button", { name: "Full dossier" }).click();
-  const dossier = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Open full dossier" }).click();
+  const dossier = page.getByTestId("full-dossier");
   await expect(dossier).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await dossier.getByRole("button", { name: "delivery", exact: true }).click();
   await expect(dossier.getByRole("heading", { name: "Delivery stages" })).toBeVisible();
   await expect(dossier.getByText("deployed", { exact: true })).toBeVisible();
@@ -162,10 +156,70 @@ test("selection, exploration, history, and browser navigation preserve the graph
   expect(serverErrors).toEqual([]);
 });
 
+test("the digital twin workspace teaches through synchronized explain, tour, and delivery modes", async ({
+  page,
+}) => {
+  const explorer = await openAuthenticatedMap(page);
+  const tree = page.getByTestId("product-model-tree");
+  const model = page.getByRole("region", { name: "Product model" });
+  const inspector = page.getByTestId("contextual-inspector");
+  await expect(tree).toBeVisible();
+  await expect(model).toBeVisible();
+  await expect(inspector).toBeVisible();
+  const graph = page.getByTestId("product-capability-graph");
+  await expect(graph).toHaveAttribute("data-render-state", "ready", { timeout: 12_000 });
+
+  const [treeBox, modelBox, inspectorBox] = await Promise.all([
+    tree.boundingBox(),
+    model.boundingBox(),
+    inspector.boundingBox(),
+  ]);
+  expect(treeBox).not.toBeNull();
+  expect(modelBox).not.toBeNull();
+  expect(inspectorBox).not.toBeNull();
+  expect((treeBox?.x ?? 0) + (treeBox?.width ?? 0)).toBeLessThanOrEqual((modelBox?.x ?? 0) + 1);
+  expect((modelBox?.x ?? 0) + (modelBox?.width ?? 0)).toBeLessThanOrEqual(
+    (inspectorBox?.x ?? 0) + 1,
+  );
+  const reviewArtifactDirectory = process.env.PRODUCT_STUDIO_BROWSER_REVIEW_ARTIFACT_DIRECTORY;
+  if (reviewArtifactDirectory !== undefined) {
+    await page.waitForTimeout(750);
+    await page.screenshot({
+      animations: "disabled",
+      path: `${reviewArtifactDirectory}/product-digital-twin-desktop.png`,
+    });
+  }
+
+  await page.getByRole("button", { name: "explain", exact: true }).click();
+  await expect(explorer).toHaveAttribute("data-learning-mode", "explain");
+  await expect(page.getByTestId("explain-panel")).toContainText("Explain this capability");
+
+  await page.getByRole("button", { name: "tour", exact: true }).click();
+  await expect(explorer).toHaveAttribute("data-learning-mode", "tour");
+  const tour = page.getByTestId("guided-tour");
+  await expect(tour).toContainText("Product orientation");
+  const firstSelection = await explorer.getAttribute("data-selected-entity");
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(explorer).not.toHaveAttribute("data-selected-entity", firstSelection ?? "");
+  await tour.getByRole("button", { name: "Exit tour" }).click();
+  await expect(explorer).toHaveAttribute("data-learning-mode", "explore");
+
+  const currentInspector = page.getByTestId("contextual-inspector");
+  await currentInspector.getByRole("tab", { name: "Delivery" }).click();
+  await expect(currentInspector.getByText("Active sprint", { exact: true })).toBeVisible();
+  await expect(currentInspector.getByText(/Q[1-4] relevance/)).toBeVisible();
+  await expect(
+    currentInspector.getByText(
+      "Deployment, compatibility, verification, and acceptance are never collapsed.",
+    ),
+  ).toBeVisible();
+});
+
 test("typed edges, lenses, compare, and path commands stay synchronized", async ({ page }) => {
   const explorer = await openAuthenticatedMap(page);
-  const navigator = await openTextNavigator(page);
-  const relationButton = navigator.getByTestId("capability-text-relation").first();
+  const inspector = page.getByTestId("contextual-inspector");
+  await inspector.getByRole("tab", { name: /Relations/ }).click();
+  const relationButton = inspector.getByTestId("inspector-relation").first();
   await expect(relationButton).toBeVisible();
   await relationButton.click();
   await expect(explorer).toHaveAttribute("data-selected-relation", /.+/);
@@ -182,16 +236,14 @@ test("typed edges, lenses, compare, and path commands stay synchronized", async 
   await expect(explorer).toHaveAttribute("data-lens", "relationships");
   await expect(explorer).toHaveAttribute("data-view", "graph");
 
-  const entityNodes = navigator.getByTestId("capability-text-node");
-  await entityNodes
-    .nth(0)
-    .getByRole("button", { name: /comparison$/ })
-    .click();
-  await entityNodes
-    .nth(1)
-    .getByRole("button", { name: /comparison$/ })
-    .click();
+  const tree = page.getByTestId("product-model-tree");
+  const entityNodes = tree.getByTestId("product-tree-node");
+  await entityNodes.nth(0).locator(':scope > div > [data-testid="product-tree-select"]').click();
+  await tree.getByRole("button", { name: "Add to comparison" }).click();
+  await entityNodes.nth(1).locator(':scope > div > [data-testid="product-tree-select"]').click();
+  await tree.getByRole("button", { name: "Add to comparison" }).click();
   await expect(explorer).toHaveAttribute("data-compare-count", "2");
+  await page.getByText("Analysis tools", { exact: true }).click();
   const findPath = page.getByRole("button", { name: "Find path (2/2)" });
   await expect(findPath).toBeEnabled();
   await findPath.click();
@@ -200,8 +252,8 @@ test("typed edges, lenses, compare, and path commands stay synchronized", async 
   await expect(explorer).toHaveAttribute("data-lens", "dependencies");
   await expect(explorer).toHaveAttribute("data-view", "matrix");
   await expect(page.getByRole("heading", { name: "matrix" })).toBeVisible();
-  await page.getByRole("button", { name: "Show impact" }).click();
-  await page.getByRole("button", { name: "Show prerequisites" }).click();
+  await page.getByRole("button", { name: "Downstream impact" }).click();
+  await page.getByRole("button", { name: "Prerequisites" }).click();
 
   await page.getByLabel("Visual lens").selectOption("delivery");
   await expect(explorer).toHaveAttribute("data-view", "timeline");
@@ -226,11 +278,16 @@ test("the keyboard and tablet hierarchy remain operational without relying on We
   await page.keyboard.press("Enter");
   await expect(explorer).toHaveAttribute("data-selected-entity", /.+/);
 
-  const navigator = await openTextNavigator(page);
-  const accessibleNode = navigator
-    .getByTestId("capability-text-node")
-    .first()
-    .locator("button")
+  const reviewArtifactDirectory = process.env.PRODUCT_STUDIO_BROWSER_REVIEW_ARTIFACT_DIRECTORY;
+  if (reviewArtifactDirectory !== undefined)
+    await page.screenshot({
+      animations: "disabled",
+      path: `${reviewArtifactDirectory}/product-digital-twin-tablet.png`,
+    });
+
+  const accessibleNode = page
+    .getByTestId("product-model-tree")
+    .getByTestId("product-tree-select")
     .first();
   await accessibleNode.focus();
   await page.keyboard.press("Enter");
@@ -249,8 +306,7 @@ test("WebGL failure leaves an operational structured navigator", async ({ page }
   await expect(
     page.getByRole("alert").filter({ hasText: "The 3D renderer could not start" }),
   ).toBeVisible();
-  const navigator = await openTextNavigator(page);
-  const node = navigator.getByTestId("capability-text-node").first().locator("button").first();
+  const node = page.getByTestId("product-model-tree").getByTestId("product-tree-select").first();
   await node.focus();
   await page.keyboard.press("Enter");
   await expect(explorer).toHaveAttribute("data-selected-entity", /.+/);

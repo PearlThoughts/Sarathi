@@ -69,3 +69,15 @@
 - T029-T031 are mandatory preconditions for T032-T033.
 - T033 is a mandatory precondition for deployment and live verification.
 - Product-owner acceptance is external to engineering completion and remains open after T037.
+
+## Phase 8: Product-owner usability recovery
+
+- [x] T038 [Review] Record rejected product-owner acceptance and preserve `IT-126` / `sar-ebu` as open work.
+- [x] T039 [Setup] Create a fresh `feat/it-126-product-digital-twin` worktree from the deployed merged revision.
+- [x] T040 [UX] Implement the persistent synchronized product tree, central model, and contextual inspector workspace.
+- [x] T041 [UX] Replace the crowded toolbar with novice-safe Explore, Explain, and Tour entry points plus contextual analysis actions.
+- [x] T042 [UX] Improve text hierarchy, clustering, selection halo, hover/selected edge labels, camera framing, and intentional selected-path animation.
+- [x] T043 [UX] Show named children, named relations, active/recent sprint work, current-quarter relevance, and distinct delivery stages in the persistent inspector.
+- [x] T044 [Test] Add permanent component and browser regression tests for synchronization, learning modes, motion, delivery distinctions, tablet behavior, and WebGL fallback.
+- [ ] T045 [Verify] Run focused Product Studio tests and browser proof, self-review the interaction slice, and push a reviewable prototype branch.
+- [ ] T046 [Accept] Obtain explicit product-owner interaction acceptance before PR merge or another production deployment.

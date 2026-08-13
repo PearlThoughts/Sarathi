@@ -1,6 +1,6 @@
 # Implementation Plan: Product Capability Graph Exploration
 
-**Branch**: `feat/it-126-capability-graph` | **Date**: 2026-08-13 | **Spec**: [spec.md](./spec.md)
+**Branch**: `feat/it-126-product-digital-twin` | **Date**: 2026-08-13 | **Spec**: [spec.md](./spec.md)
 
 ## 1) Execution Goals
 
@@ -144,3 +144,36 @@ full local CI -> self-review -> PR checks -> merge -> deploy -> live verify
 - [ ] Merged SHA deployed through Railway and live-verified.
 - [ ] Beads/Jira updated with exact evidence.
 - [ ] Product owner asked to review; acceptance not inferred.
+
+## 12) Usability-recovery milestone
+
+The first merged release satisfied technical contracts but failed product-owner interaction
+acceptance. The recovery slice changes presentation architecture only; Sarathi and
+`delivery-intelligence` ownership remain unchanged.
+
+### Workspace composition
+
+```text
+compact global header: search | breadcrumbs | lens | revision | Explore / Explain / Tour
+
+product tree             uninterrupted model              contextual inspector
+hierarchy and status     3D text constellation            about / contains /
+selection and isolate    direct node + edge selection     relationships / delivery
+
+contextual analysis drawer: dependency path | timeline | coverage | variants | history
+```
+
+### Implementation sequence
+
+1. Extract a persistent hierarchy-tree view from the existing accessible hierarchy projection.
+2. Convert the floating inspector into a persistent, tabbed contextual panel and show named
+   children/relations immediately.
+3. Reduce the global toolbar to novice-safe controls and move expert actions into the inspector or
+   analysis drawer.
+4. Improve graph clustering, label hierarchy, selection affordance, hover labels, camera framing,
+   and selected-path animation without adding ambient motion.
+5. Add Explain and Tour presentation state over existing authorized entity IDs and projections.
+6. Add component and browser tests for synchronization, panel persistence, intentional motion,
+   delivery distinctions, and non-WebGL equivalence.
+7. Publish a reviewable branch/prototype. Do not merge or deploy before product-owner interaction
+   acceptance.

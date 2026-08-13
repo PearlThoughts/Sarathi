@@ -132,6 +132,11 @@ describe("Product Studio architecture adherence", () => {
       new URL("src/views/ProductCapabilityExplorer.tsx", studioRoot),
       "utf8",
     );
+    const modelTree = await readFile(new URL("src/views/ProductModelTree.tsx", studioRoot), "utf8");
+    const alternativeViews = await readFile(
+      new URL("src/views/ProductAlternativeViews.tsx", studioRoot),
+      "utf8",
+    );
     const adapter = await readFile(
       new URL("src/server/sarathi-product-model-client.ts", studioRoot),
       "utf8",
@@ -140,10 +145,14 @@ describe("Product Studio architecture adherence", () => {
     const testManifest = await readFile(new URL("../tests/manifest.json", studioRoot), "utf8");
 
     expect(view).toContain("<ProductCapabilityExplorer");
-    expect(explorer).toContain("Text navigator");
-    expect(explorer).toContain('data-testid="capability-text-node"');
-    expect(explorer).toContain("Keyboard-accessible nodes in the current graph.");
-    expect(explorer).toContain('aria-label="Interactive 3D product capability graph"');
+    expect(explorer).toContain("<ProductModelTree");
+    expect(explorer).toContain('aria-label="Interactive product digital twin"');
+    expect(explorer).toContain('aria-live="polite"');
+    expect(modelTree).toContain('aria-label="Product model tree"');
+    expect(modelTree).toContain('data-testid="product-tree-select"');
+    expect(modelTree).toContain('type="button"');
+    expect(alternativeViews).toContain("Complete keyboard-accessible authorized hierarchy");
+    expect(alternativeViews).toContain('view.replaceAll("-", " ")');
     expect(adapter).toContain("coverage?maximumItems=");
     expect(explorer).not.toContain("<canvas");
     expect(rootPackage).toContain('"check:product-studio"');

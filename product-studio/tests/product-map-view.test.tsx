@@ -139,7 +139,7 @@ describe("Product Studio product map view", () => {
     delete process.env.SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON;
   });
 
-  it("renders the 3D text graph shell, accessible navigator, and governed dossier", async () => {
+  it("renders synchronized tree, 3D model, and governed contextual inspector", async () => {
     const { ProductMapView } = await import("../src/views/ProductMapView");
     const markup = renderToStaticMarkup(
       await ProductMapView(viewProps({ id: "studio-user" }, { entity: childId })),
@@ -151,11 +151,17 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain('data-renderer="3d-force-graph"');
     expect(markup).toContain('data-testid="product-capability-graph"');
     expect(markup).toContain('id="entity-inspector-title"');
-    expect(markup).toContain("Product Capability Graph");
-    expect(markup).toContain("Interactive 3D product capability graph");
-    expect(markup).toContain("Text navigator");
-    expect(markup).toContain("Relationships");
-    expect(markup).toContain("depends on");
+    expect(markup).toContain("Product capability explorer");
+    expect(markup).toContain("Interactive product digital twin");
+    expect(markup).toContain('data-testid="product-model-tree"');
+    expect(markup).toContain('data-testid="contextual-inspector"');
+    expect(markup).toContain("Find in product");
+    expect(markup).toContain("Synthetic capability");
+    expect(markup).toContain("Relations 1");
+    expect(markup).toContain("No governed DDD boundary is registered");
+    expect(markup).toContain("Add to comparison");
+    expect(markup).toContain("explain");
+    expect(markup).toContain("tour");
     expect(markup).toContain("focus-visible:outline-2");
     expect(markup).not.toContain("<canvas");
     expect(markup).not.toContain("Product-owner review queue");
@@ -195,7 +201,7 @@ describe("Product Studio product map view", () => {
       await ProductMapView(viewProps({ id: "studio-user" }, { entity: childId })),
     );
 
-    expect(markup).toContain("Full dossier");
+    expect(markup).toContain("Open full dossier");
     expect(markup).not.toContain("user-access-token-synthetic");
   });
 
