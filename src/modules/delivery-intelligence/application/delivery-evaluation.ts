@@ -67,6 +67,7 @@ export type DeliveryEvaluationResult = {
   readonly acceptance?: DeliveryAssistantAnswer["acceptance"] | undefined;
   readonly humanUsefulnessRating?: number | undefined;
   readonly failureOperation?: string | undefined;
+  readonly relevanceDiagnostics?: DeliveryAssistantAnswer["relevanceDiagnostics"] | undefined;
   readonly reconstruction?: {
     readonly matchedThemes: number;
     readonly totalThemes: number;
@@ -500,6 +501,9 @@ export const evaluateDeliveryCase = (
     intents: answer.plan.intents,
     citationCount: answer.citations.length,
     acceptance: answer.acceptance,
+    ...(answer.relevanceDiagnostics === undefined
+      ? {}
+      : { relevanceDiagnostics: answer.relevanceDiagnostics }),
     humanUsefulnessRating: ratingMatches
       ? evaluationCase.expected.humanUsefulnessRating
       : undefined,
