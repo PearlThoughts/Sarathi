@@ -10,11 +10,16 @@ import {
   makeYamlWorkspaceOverlaySource,
 } from "../infrastructure/overlay/yaml-workspace-overlay.ts";
 import {
+  createPostgresDeliveryQuerySource,
   createPostgresProductModelCommandRepository,
   createPostgresProductModelDetailRepository,
   createPostgresProductModelGraphRepository,
   openKnowledgePostgresDatabase,
 } from "../infrastructure/postgres/index.ts";
+import {
+  createProductDeliveryExplorationProjection,
+  parseDeliveryEntityCatalog,
+} from "../modules/delivery-intelligence/index.ts";
 import type { AuthorizationService, AuthService } from "../modules/identity-access/index.ts";
 import {
   createProductModelCommandService,
@@ -24,7 +29,11 @@ import {
 } from "../modules/product-model/index.ts";
 import type { WorkspaceSourceSnapshot } from "../modules/workspace-model/contracts.ts";
 import type { WorkspaceOverlaySource } from "../modules/workspace-model/ports/workspace-overlay-source.ts";
-import type { ProductModelRuntimeConfiguration, SarathiConfig } from "./config.ts";
+import type {
+  DeliveryExplorationRuntimeConfiguration,
+  ProductModelRuntimeConfiguration,
+  SarathiConfig,
+} from "./config.ts";
 import { loadPlatformConfig } from "./config.ts";
 import { defaultSourceSnapshot } from "./source-snapshot.ts";
 
@@ -69,21 +78,38 @@ const makeOverlaySource = (config: SarathiConfig): WorkspaceOverlaySource =>
 
 const composeProductModelApi = (
   configuration: ProductModelRuntimeConfiguration,
+  deliveryConfiguration: DeliveryExplorationRuntimeConfiguration | undefined,
   now: () => string,
 ): { readonly api: ProductModelApiDependencies; readonly close: () => Promise<void> } => {
   const opened = openKnowledgePostgresDatabase(configuration.databaseUrl);
   const security = createProductModelApiSecurity(configuration.principals);
   const graphRepository = createPostgresProductModelGraphRepository(opened.database);
   const detailRepository = createPostgresProductModelDetailRepository(opened.database);
+  const details = createProductModelDetailQueryService(
+    security.queries,
+    graphRepository,
+    detailRepository,
+  );
   const commandRepository = createPostgresProductModelCommandRepository(opened.database);
+  const deliveryOpened =
+    deliveryConfiguration === undefined
+      ? undefined
+      : openKnowledgePostgresDatabase(deliveryConfiguration.databaseUrl);
+  const delivery =
+    deliveryOpened === undefined || deliveryConfiguration === undefined
+      ? undefined
+      : createProductDeliveryExplorationProjection({
+          source: createPostgresDeliveryQuerySource(deliveryOpened.database, {
+            entityCatalog: parseDeliveryEntityCatalog(deliveryConfiguration.entityCatalogJson),
+          }),
+          details,
+          timeZone: deliveryConfiguration.timeZone,
+        });
   return {
     api: {
       queries: createProductModelQueryService(security.queries, graphRepository),
-      details: createProductModelDetailQueryService(
-        security.queries,
-        graphRepository,
-        detailRepository,
-      ),
+      details,
+      ...(delivery === undefined ? {} : { delivery }),
       commands: createProductModelCommandService(security.commands, commandRepository, {
         now,
         newId: () => globalThis.crypto.randomUUID(),
@@ -92,7 +118,9 @@ const composeProductModelApi = (
       context: security.context,
       now,
     },
-    close: () => opened.pool.end(),
+    close: async () => {
+      await Promise.all([opened.pool.end(), deliveryOpened?.pool.end()]);
+    },
   };
 };
 
@@ -104,7 +132,7 @@ export const makeSarathiRuntime = (overrides: RuntimeOverrides = {}): SarathiRun
       ? { api: overrides.productModelApi, close: () => Promise.resolve() }
       : config.productModel === undefined
         ? undefined
-        : composeProductModelApi(config.productModel, clock.now);
+        : composeProductModelApi(config.productModel, config.deliveryExploration, clock.now);
 
   return {
     config,

@@ -79,6 +79,7 @@ const dossier = {
 const queries = (overrides: Partial<ProductModelQueryService> = {}): ProductModelQueryService => ({
   getProductMap: () => Effect.succeed(graph),
   getProductGraphAtTime: () => Effect.die("not used"),
+  getProductGraphAtRevision: () => Effect.die("not used"),
   getCapabilitySubgraph: () =>
     Effect.succeed({
       workspaceId,
@@ -128,6 +129,16 @@ const details = (
       availabilityClaims: [],
       availabilityReferences: [],
       deliveryStages: [],
+      safeWarnings: [],
+    }),
+  getEntityHistory: () =>
+    Effect.succeed({
+      workspaceId,
+      asOf: at,
+      revision: 4,
+      entityId,
+      events: [],
+      page: { maximumItems: 100, truncated: false },
       safeWarnings: [],
     }),
   ...overrides,
@@ -191,6 +202,28 @@ describe("product-model HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({
       data: { workspaceId, revision: 4, entities: [{ entityId }] },
     });
+  });
+
+  it("exposes the exhaustive relation semantic catalog after server-owned authorization", async () => {
+    const app = createApp(runtime(dependencies()));
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/relation-semantics`,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      readonly data: { readonly relations: readonly Record<string, unknown>[] };
+    };
+    expect(body.data.relations).toHaveLength(18);
+    expect(body.data.relations).toContainEqual(
+      expect.objectContaining({
+        type: "depends_on",
+        label: "depends on",
+        reverseLabel: "is depended on by",
+        family: "product",
+      }),
+    );
   });
 
   it("denies before map, dossier, or repository-adjacent service access", async () => {
@@ -274,6 +307,105 @@ describe("product-model HTTP API", () => {
     });
     await expect(response.json()).resolves.toMatchObject({
       data: { workspaceId, revision: 4 },
+    });
+  });
+
+  it("exposes bounded revision history without translating revision into valid time", async () => {
+    const getProductGraphAtRevision = vi.fn(() => Effect.succeed(graph));
+    const app = createApp(
+      runtime(dependencies({ queries: queries({ getProductGraphAtRevision }) })),
+    );
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/history?revision=3&maximumDepth=2&maximumNodes=20&maximumRelations=30`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getProductGraphAtRevision).toHaveBeenCalledWith(context, {
+      revision: 3,
+      requestedAt: at,
+      maximumDepth: 2,
+      maximumNodes: 20,
+      maximumRelations: 30,
+    });
+  });
+
+  it("exposes bounded privacy-safe entity history after server-owned authorization", async () => {
+    const getEntityHistory = vi.fn(() =>
+      Effect.succeed({
+        workspaceId,
+        asOf: at,
+        revision: 4,
+        entityId,
+        events: [
+          {
+            id: "event-synthetic",
+            revision: 3,
+            type: "renamed" as const,
+            validFrom: at,
+            recordedAt: at,
+          },
+        ],
+        page: { maximumItems: 20, truncated: false },
+        safeWarnings: [],
+      }),
+    );
+    const app = createApp(runtime(dependencies({ details: details({ getEntityHistory }) })));
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/entities/${entityId}/history?maximumItems=20`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getEntityHistory).toHaveBeenCalledWith(context, { entityId, at, maximumItems: 20 });
+    await expect(response.json()).resolves.toMatchObject({
+      data: { entityId, events: [{ type: "renamed", revision: 3 }] },
+    });
+  });
+
+  it("returns an explicit unavailable delivery projection when enrichment is not composed", async () => {
+    const app = createApp(runtime(dependencies()));
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/entities/${entityId}/delivery`,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        entityId,
+        availability: "unavailable",
+        supportingWork: [],
+      },
+    });
+  });
+
+  it("passes bounded delivery exploration through the authorized application projection", async () => {
+    const getProductDelivery = vi.fn(() =>
+      Effect.succeed({
+        workspaceId,
+        entityId,
+        asOf: at,
+        availability: "available" as const,
+        stages: [],
+        supportingWork: [],
+        sourceCoverage: [],
+        truncated: false,
+        safeWarnings: [],
+      }),
+    );
+    const app = createApp(runtime(dependencies({ delivery: { getProductDelivery } })));
+
+    const response = await app.request(
+      `/v1/workspaces/${workspaceId}/product-model/entities/${entityId}/delivery?lookbackDays=30&maximumItems=20`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getProductDelivery).toHaveBeenCalledWith(context, {
+      entityId,
+      at,
+      lookbackDays: 30,
+      maximumItems: 20,
     });
   });
 

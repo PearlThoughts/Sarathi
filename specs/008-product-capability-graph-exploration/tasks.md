@@ -13,11 +13,11 @@
 
 ## Phase 2: Product and delivery query contracts
 
-- [ ] T006 [US2] Add table-driven tests and an exhaustive semantic catalog for product relation labels, reverse labels, families, definitions, and lens membership.
-- [ ] T007 [US4] Add revision-addressable historical graph and entity-history query/API tests and implementation under existing authorization/bounds.
-- [ ] T008 [US4] Extend availability tests/contracts for base claims, qualifiers, precedence, validity, ambiguity, and safe warnings.
-- [ ] T009 [US4] Add a narrow `delivery-intelligence` product exploration projection with distinct stages, safe grouped supporting work, citations/coverage, and unavailable behavior.
-- [ ] T010 [US1] Extend Product Studio server schemas/client and authenticated same-origin query routes for subgraph, availability, coverage, history, relation metadata, and delivery.
+- [x] T006 [US2] Add table-driven tests and an exhaustive semantic catalog for product relation labels, reverse labels, families, definitions, and lens membership.
+- [x] T007 [US4] Add revision-addressable historical graph and entity-history query/API tests and implementation under existing authorization/bounds.
+- [x] T008 [US4] Extend availability tests/contracts for base claims, qualifiers, precedence, validity, ambiguity, and safe warnings.
+- [x] T009 [US4] Add a narrow `delivery-intelligence` product exploration projection with distinct stages, safe grouped supporting work, citations/coverage, and unavailable behavior.
+- [x] T010 [US1] Extend Product Studio server schemas/client and authenticated same-origin query routes for subgraph, availability, coverage, history, relation metadata, and delivery.
 - [ ] T011 [US1] Run focused domain/API/client contract tests and commit/push the contract checkpoint.
 
 ## Phase 3: Exploration state and stable graph

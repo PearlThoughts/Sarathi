@@ -167,6 +167,34 @@ describe("product-model application queries", () => {
     expect(result.asOf).toBe("2025-06-01T00:00:00.000Z");
   });
 
+  it("reconstructs an explicitly requested historical revision under the same bounds", async () => {
+    const events: string[] = [];
+    const service = createProductModelQueryService(allowedAuthorizer(events), repository(events));
+
+    const result = await Effect.runPromise(
+      service.getProductGraphAtRevision(context, {
+        revision: 2,
+        requestedAt: "2026-01-02T00:00:00.000Z",
+        maximumDepth: 3,
+        maximumNodes: 20,
+        maximumRelations: 30,
+      }),
+    );
+
+    expect(events).toEqual([
+      "authorize:get-historical-graph",
+      "revision:revision",
+      "traverse:descendants:revision",
+      "relations:revision",
+    ]);
+    expect(result).toMatchObject({
+      revision: 3,
+      asOf: "2026-01-02T00:00:00.000Z",
+      page: { maximumDepth: 3, maximumNodes: 20 },
+      relationPage: { maximumRelations: 30 },
+    });
+  });
+
   it("authorizes before resolving a bounded ancestor and descendant subgraph", async () => {
     const events: string[] = [];
     const service = createProductModelQueryService(allowedAuthorizer(events), repository(events));

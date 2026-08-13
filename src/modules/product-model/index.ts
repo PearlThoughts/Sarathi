@@ -6,6 +6,8 @@ export * from "./application/product-model-queries.ts";
 export * from "./domain/product-completion.ts";
 export * from "./domain/product-identity-evolution.ts";
 export * from "./domain/product-model.ts";
+export * from "./domain/product-relation-semantics.ts";
+export * from "./ports/product-delivery-projection.ts";
 export * from "./ports/product-model-command-authorizer.ts";
 export * from "./ports/product-model-command-repository.ts";
 export * from "./ports/product-model-detail-repository.ts";

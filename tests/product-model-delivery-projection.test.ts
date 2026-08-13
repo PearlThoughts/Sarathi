@@ -120,6 +120,7 @@ const queryService = (getProductMap: ProductModelQueryService["getProductMap"]) 
   ({
     getProductMap,
     getProductGraphAtTime: () => Effect.die("not used"),
+    getProductGraphAtRevision: () => Effect.die("not used"),
     getCapabilitySubgraph: () => Effect.die("not used"),
   }) satisfies ProductModelQueryService;
 
@@ -128,6 +129,7 @@ const detailService = (getFeatureDossier: ProductModelDetailQueryService["getFea
     getFeatureDossier,
     getProductCoverage: () => Effect.die("not used"),
     getProductAvailability: () => Effect.die("not used"),
+    getEntityHistory: () => Effect.die("not used"),
   }) satisfies ProductModelDetailQueryService;
 
 const legacyLedger: CapabilityLedger = {

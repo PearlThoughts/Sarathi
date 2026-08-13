@@ -242,11 +242,25 @@
       "description": "Authorization-first projection of ratified registry identity into the existing delivery CapabilityLedger, explicit legacy alias migration, bounded safe failure, and unchanged report-path delegation."
     },
     {
+      "id": "product-delivery-exploration",
+      "path": "tests/product-delivery-exploration.test.ts",
+      "command": "bunx vitest run tests/product-delivery-exploration.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Audience-bound Product Studio delivery exploration over the existing delivery projection, with explicit unavailable behavior and distinct deployed, verified, and accepted stages."
+    },
+    {
       "id": "product-model-authorized-queries",
       "path": "tests/product-model-queries.test.ts",
       "command": "bunx vitest run tests/product-model-queries.test.ts",
       "prerequisites": ["bun install"],
       "description": "Authorization-before-access map, historical graph, subgraph, revision, relation-overlay, truncation, and unavailable-revision application coverage."
+    },
+    {
+      "id": "product-model-relation-semantics",
+      "path": "tests/product-model-relation-semantics.test.ts",
+      "command": "bunx vitest run tests/product-model-relation-semantics.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Exhaustive governed relation labels, reverse labels, semantic families, explanations, lens membership, and derived directional statement coverage."
     },
     {
       "id": "product-model-detail-queries",

@@ -96,6 +96,14 @@ export type ProductHistoricalGraphQuery = {
   readonly maximumRelations?: number | undefined;
 };
 
+export type ProductHistoricalRevisionQuery = {
+  readonly revision: number;
+  readonly requestedAt: string;
+  readonly maximumDepth?: number | undefined;
+  readonly maximumNodes?: number | undefined;
+  readonly maximumRelations?: number | undefined;
+};
+
 export type ProductSubgraphQuery = {
   readonly rootEntityId: ProductEntityId;
   readonly at: string;
@@ -113,6 +121,10 @@ export type ProductModelQueryService = {
   readonly getProductGraphAtTime: (
     context: ProductModelRequestContext,
     query: ProductHistoricalGraphQuery,
+  ) => Effect.Effect<ProductGraphEnvelope, ProductModelQueryError>;
+  readonly getProductGraphAtRevision: (
+    context: ProductModelRequestContext,
+    query: ProductHistoricalRevisionQuery,
   ) => Effect.Effect<ProductGraphEnvelope, ProductModelQueryError>;
   readonly getCapabilitySubgraph: (
     context: ProductModelRequestContext,
@@ -233,6 +245,20 @@ export const createProductModelQueryService = (
         "get-historical-graph",
         { kind: "valid_time", at: query.validAt },
         query.validAt,
+        maximumDepth,
+        maximumNodes,
+        maximumRelations,
+      );
+    },
+    getProductGraphAtRevision: (context, query) => {
+      const maximumDepth = query.maximumDepth ?? 4;
+      const maximumNodes = query.maximumNodes ?? 250;
+      const maximumRelations = query.maximumRelations ?? 250;
+      return graph(
+        context,
+        "get-historical-graph",
+        { kind: "revision", revision: query.revision },
+        query.requestedAt,
         maximumDepth,
         maximumNodes,
         maximumRelations,

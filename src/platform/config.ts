@@ -33,6 +33,12 @@ export type ProductModelRuntimeConfiguration = {
   readonly principals: readonly ProductModelPrincipalConfiguration[];
 };
 
+export type DeliveryExplorationRuntimeConfiguration = {
+  readonly databaseUrl: string;
+  readonly timeZone: string;
+  readonly entityCatalogJson?: string | undefined;
+};
+
 export type SarathiConfig = {
   readonly serviceName: "sarathi";
   readonly environment: PlatformEnvironment;
@@ -41,6 +47,7 @@ export type SarathiConfig = {
   };
   readonly overlayPath: string;
   readonly productModel?: ProductModelRuntimeConfiguration | undefined;
+  readonly deliveryExploration?: DeliveryExplorationRuntimeConfiguration | undefined;
   readonly auth:
     | {
         readonly provider: "better-auth-postgres";
@@ -121,6 +128,30 @@ const parseProductModelConfiguration = (
   };
 };
 
+const parseDeliveryExplorationConfiguration = (
+  environment: Record<string, string | undefined>,
+): DeliveryExplorationRuntimeConfiguration | undefined => {
+  const databaseUrl = environment.SARATHI_STRATEGY_DATABASE_URL;
+  if (databaseUrl === undefined || databaseUrl.trim() === "") return undefined;
+  const timeZone = environment.SARATHI_WORKSPACE_TIMEZONE;
+  if (timeZone === undefined || timeZone.trim() === "")
+    throw new Error(
+      "Delivery exploration requires SARATHI_WORKSPACE_TIMEZONE with the strategy database.",
+    );
+  try {
+    new Intl.DateTimeFormat("en", { timeZone }).format(new Date(0));
+  } catch {
+    throw new Error("SARATHI_WORKSPACE_TIMEZONE must be a valid IANA time zone.");
+  }
+  return {
+    databaseUrl,
+    timeZone,
+    ...(environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON === undefined
+      ? {}
+      : { entityCatalogJson: environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON }),
+  };
+};
+
 const environmentFrom = (value: string | undefined): PlatformEnvironment => {
   if (value === "production" || value === "test") {
     return value;
@@ -179,5 +210,6 @@ export const loadPlatformConfig = (
       overlayPath: source.SARATHI_WORKSPACE_OVERLAY_PATH ?? "config/workspace.overlay.yaml",
       auth,
       productModel: parseProductModelConfiguration(source),
+      deliveryExploration: parseDeliveryExplorationConfiguration(source),
     };
   });
