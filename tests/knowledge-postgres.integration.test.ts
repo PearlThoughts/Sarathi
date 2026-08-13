@@ -9,6 +9,7 @@ import { RepositoryError } from "../src/domain/errors.ts";
 import { createDeterministicKnowledgeEmbedding } from "../src/infrastructure/model/index.ts";
 import {
   applyKnowledgePostgresMigrations,
+  createPostgresAnswerFeedbackRepository,
   createPostgresDeliveryQuerySource,
   createPostgresKnowledgeRepository,
   createPostgresSynchronizationControlRepository,
@@ -23,6 +24,7 @@ import {
   deliveryObservationTable,
   deliveryRelationTable,
 } from "../src/infrastructure/postgres/knowledge-schema.ts";
+import { createAnswerFeedbackService } from "../src/modules/answer-feedback/index.ts";
 import {
   createDeliveryAssistant,
   type DeliveryEntityCatalog,
@@ -181,13 +183,14 @@ describeDatabase("knowledge PostgreSQL integration", () => {
     expect(verification.knowledgeTableCount).toBe(12);
     expect(verification.deliveryTableCount).toBe(8);
     expect(verification.productTableCount).toBe(16);
+    expect(verification.answerFeedbackTableCount).toBe(3);
     expect(verification.protectedAuditTablesPresent).toEqual([
       "compliance_reminder_audit",
       "compliance_reminder_dry_run_evidence",
       "teams_mention_audit",
     ]);
     await pool.query(
-      "truncate table knowledge_sync_event_delivery, knowledge_sync_subscription, knowledge_sync_lease, knowledge_sync_run, knowledge_embedding_cache, knowledge_source cascade",
+      "truncate table answer_feedback_answer, knowledge_sync_event_delivery, knowledge_sync_subscription, knowledge_sync_lease, knowledge_sync_run, knowledge_embedding_cache, knowledge_source cascade",
     );
     opened = openKnowledgePostgresDatabase(databaseUrl);
   });
@@ -195,6 +198,108 @@ describeDatabase("knowledge PostgreSQL integration", () => {
   afterAll(async () => {
     await opened?.pool.end();
     await pool?.end();
+  });
+
+  test("persists immutable answer feedback, revision history, and current aggregates across repository restart", async () => {
+    const repository = createPostgresAnswerFeedbackRepository(opened.database);
+    let uuidIndex = 0;
+    const ids = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ];
+    const service = createAnswerFeedbackService(repository, {
+      now: () => new Date("2026-08-13T10:00:00.000Z"),
+      randomUuid: () => ids[uuidIndex++] ?? ids[2] ?? "",
+    });
+    const invitation = await Effect.runPromise(
+      service.prepareAnswer({
+        workspaceId: "answer-feedback-integration",
+        recipientActorId: "recipient",
+        conversationBoundaryHash: "sha256-conversation",
+        sourceActivityId: "activity",
+        answerText: "The original answer remains immutable.",
+        questionText: "What changed?",
+        modelName: "integration-model",
+        reasoningConfiguration: "medium",
+        applicationRevision: "integration-revision",
+        promptConfigurationRevision: "prompt-revision",
+        retrievalFingerprint: "sha256-envelope",
+        responseProduct: "operational_answer",
+        queryFamily: "status",
+      }),
+    );
+    await Effect.runPromise(service.markAnswerDelivered(invitation.answerId));
+    const actor = {
+      workspaceId: "answer-feedback-integration",
+      actorId: "actor",
+      conversationBoundaryHash: "sha256-conversation",
+      permitted: true,
+    } as const;
+    const first = await Effect.runPromise(
+      service.submit(
+        {
+          answerId: invitation.answerId,
+          idempotencyKey: "fi_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          rating: "useful_as_is",
+          reasons: [],
+        },
+        actor,
+      ),
+    );
+    const duplicate = await Effect.runPromise(
+      service.submit(
+        {
+          answerId: invitation.answerId,
+          idempotencyKey: "fi_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          rating: "useful_as_is",
+          reasons: [],
+        },
+        actor,
+      ),
+    );
+    const revised = await Effect.runPromise(
+      service.submit(
+        {
+          answerId: invitation.answerId,
+          idempotencyKey: "fi_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          rating: "not_useful",
+          reasons: ["missing_material_work", "wrong_delivery_status"],
+          correction: "Include the missing deployment evidence.",
+        },
+        actor,
+      ),
+    );
+
+    expect(duplicate.idempotent).toBe(true);
+    expect(duplicate.revision.id).toBe(first.revision.id);
+    expect(revised.revision.revision).toBe(2);
+
+    const restarted = createPostgresAnswerFeedbackRepository(opened.database);
+    const restoredAnswer = await Effect.runPromise(restarted.findAnswer(invitation.answerId));
+    const restoredRevisions = await Effect.runPromise(
+      restarted.listRevisions(invitation.answerId, "actor"),
+    );
+    const metrics = await Effect.runPromise(
+      createAnswerFeedbackService(restarted).metrics("answer-feedback-integration"),
+    );
+
+    expect(restoredAnswer).toMatchObject({
+      answerText: "The original answer remains immutable.",
+      questionText: "What changed?",
+      state: "delivered",
+      answerFingerprint: expect.stringMatching(/^sha256-/),
+      queryFingerprint: expect.stringMatching(/^sha256-/),
+    });
+    expect(restoredRevisions.map(({ revision, rating }) => ({ revision, rating }))).toEqual([
+      { revision: 1, rating: "useful_as_is" },
+      { revision: 2, rating: "not_useful" },
+    ]);
+    expect(metrics.total).toBe(1);
+    expect(metrics.ratings.not_useful.count).toBe(1);
+    expect(metrics.ratings.useful_as_is.count).toBe(0);
+    expect(metrics.reasons.missing_material_work).toBe(1);
+    expect(metrics.corrections).toEqual({ count: 1, rate: 1 });
   });
 
   test("migrates additively, deduplicates replay, versions edits, filters ACL, and tombstones deletion", async () => {
@@ -567,7 +672,7 @@ describeDatabase("knowledge PostgreSQL integration", () => {
       output: {
         status: {
           knowledgeTableCount: 12,
-          appliedMigrationCount: 10,
+          appliedMigrationCount: 11,
           checkpoints: [
             expect.objectContaining({
               sourceId: "jira-example-test",
