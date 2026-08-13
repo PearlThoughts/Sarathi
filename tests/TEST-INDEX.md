@@ -251,11 +251,25 @@
 - Scope: Authorization-first projection of ratified registry identities into the existing delivery CapabilityLedger, explicit legacy alias/correction migration, bounded fail-closed behavior, and delegation through the unchanged delivery assistant/report-composition path.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## product-delivery-exploration
+
+- Command: `bunx vitest run tests/product-delivery-exploration.test.ts`
+- Location: `tests/product-delivery-exploration.test.ts`
+- Scope: Audience-bound Product Studio delivery exploration over the existing delivery and completion-contract projections, quarter relevance, explicit unavailable behavior, and distinct migrated, deployed, compatible, verified, and accepted stages.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## product-model-authorized-queries
 
 - Command: `bunx vitest run tests/product-model-queries.test.ts`
 - Location: `tests/product-model-queries.test.ts`
 - Scope: Authorization before revision or repository access, current and historical map envelopes, bounded ancestor/descendant subgraphs, induced relation overlays, truncation warnings, and unavailable revisions.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
+## product-model-relation-semantics
+
+- Command: `bunx vitest run tests/product-model-relation-semantics.test.ts`
+- Location: `tests/product-model-relation-semantics.test.ts`
+- Scope: Exhaustive governed relation labels, reverse labels, semantic families, explanations, lens membership, and directional statements derived without inverse-edge storage.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## product-model-detail-queries

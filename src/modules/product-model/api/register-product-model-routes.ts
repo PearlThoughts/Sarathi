@@ -20,6 +20,11 @@ import {
   type ProductVariantAxis,
   parseProductEntityId,
 } from "../domain/product-model.ts";
+import { productRelationSemantics } from "../domain/product-relation-semantics.ts";
+import {
+  type ProductDeliveryProjection,
+  unavailableProductDelivery,
+} from "../ports/product-delivery-projection.ts";
 import { ProductCommandPersistenceError } from "../ports/product-model-command-repository.ts";
 import type { ProductModelRequestContext } from "../ports/product-model-query-authorizer.ts";
 import { parseProductModelCommand } from "./product-model-command-transport.ts";
@@ -39,6 +44,7 @@ export type ProductModelApiDependencies = {
   readonly queries: ProductModelQueryService;
   readonly details: ProductModelDetailQueryService;
   readonly commands?: ProductModelCommandService | undefined;
+  readonly delivery?: ProductDeliveryProjection | undefined;
   readonly context: ProductModelApiContextResolver;
   readonly now: () => string;
 };
@@ -301,6 +307,20 @@ export const registerProductModelRoutes = (
     return result.ok ? context.json({ data: result.value }) : respondError(context, result.error);
   });
 
+  app.get(`${base}/relation-semantics`, async (context) => {
+    if (dependencies === undefined) return unavailable(context);
+    const workspaceId = context.req.param("workspaceId");
+    const result = await runEffect(
+      authorizedContext(dependencies, context, workspaceId).pipe(
+        Effect.map((requestContext) => ({
+          workspaceId: requestContext.workspaceId,
+          relations: Object.values(productRelationSemantics),
+        })),
+      ),
+    );
+    return result.ok ? context.json({ data: result.value }) : respondError(context, result.error);
+  });
+
   app.get(`${base}/history`, async (context) => {
     if (dependencies === undefined) return unavailable(context);
     const workspaceId = context.req.param("workspaceId");
@@ -315,16 +335,27 @@ export const registerProductModelRoutes = (
           500,
         );
         const validAt = context.req.query("validAt");
-        if (validAt === undefined)
+        const revision = context.req.query("revision");
+        if ((validAt === undefined) === (revision === undefined))
           return yield* Effect.fail(
             new ValidationError({
-              message: "validAt is required.",
-              field: "validAt",
+              message: "Exactly one of validAt or revision is required.",
+              field: "historyPoint",
             }),
           );
-        const parsedValidAt = yield* parseInstant(validAt, validAt, "validAt");
-        return yield* dependencies.queries.getProductGraphAtTime(requestContext, {
-          validAt: parsedValidAt,
+        if (validAt !== undefined) {
+          const parsedValidAt = yield* parseInstant(validAt, validAt, "validAt");
+          return yield* dependencies.queries.getProductGraphAtTime(requestContext, {
+            validAt: parsedValidAt,
+            maximumDepth,
+            maximumNodes,
+            maximumRelations,
+          });
+        }
+        const parsedRevision = yield* boundedInteger(revision, 0, 2_147_483_647);
+        return yield* dependencies.queries.getProductGraphAtRevision(requestContext, {
+          revision: parsedRevision,
+          requestedAt: dependencies.now(),
           maximumDepth,
           maximumNodes,
           maximumRelations,
@@ -345,6 +376,48 @@ export const registerProductModelRoutes = (
         return yield* dependencies.details.getFeatureDossier(requestContext, {
           entityId,
           at,
+        });
+      }),
+    );
+    return result.ok ? context.json({ data: result.value }) : respondError(context, result.error);
+  });
+
+  app.get(`${base}/entities/:entityId/history`, async (context) => {
+    if (dependencies === undefined) return unavailable(context);
+    const workspaceId = context.req.param("workspaceId");
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const requestContext = yield* authorizedContext(dependencies, context, workspaceId);
+        const entityId = yield* parseProductEntityId(context.req.param("entityId"));
+        const maximumItems = yield* boundedInteger(context.req.query("maximumItems"), 100, 100);
+        const at = yield* parseInstant(context.req.query("at"), dependencies.now(), "at");
+        return yield* dependencies.details.getEntityHistory(requestContext, {
+          entityId,
+          at,
+          maximumItems,
+        });
+      }),
+    );
+    return result.ok ? context.json({ data: result.value }) : respondError(context, result.error);
+  });
+
+  app.get(`${base}/entities/:entityId/delivery`, async (context) => {
+    if (dependencies === undefined) return unavailable(context);
+    const workspaceId = context.req.param("workspaceId");
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const requestContext = yield* authorizedContext(dependencies, context, workspaceId);
+        const entityId = yield* parseProductEntityId(context.req.param("entityId"));
+        const at = yield* parseInstant(context.req.query("at"), dependencies.now(), "at");
+        const lookbackDays = yield* boundedInteger(context.req.query("lookbackDays"), 90, 366);
+        const maximumItems = yield* boundedInteger(context.req.query("maximumItems"), 50, 100);
+        if (dependencies.delivery === undefined)
+          return unavailableProductDelivery(requestContext.workspaceId, entityId, at);
+        return yield* dependencies.delivery.getProductDelivery(requestContext, {
+          entityId,
+          at,
+          lookbackDays,
+          maximumItems,
         });
       }),
     );

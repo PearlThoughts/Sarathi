@@ -151,6 +151,22 @@ const detailRepository = (events: string[]): ProductModelDetailRepository => ({
         truncated: false,
       };
     }),
+  readEntityHistory: () =>
+    Effect.sync(() => {
+      events.push("history");
+      return {
+        events: [
+          {
+            id: "event-synthetic",
+            revision: 3,
+            type: "renamed" as const,
+            validFrom: "2026-01-01T05:30:00+05:30",
+            recordedAt: "2026-01-01T05:31:00+05:30",
+          },
+        ],
+        truncated: false,
+      };
+    }),
 });
 
 describe("product-model detail queries", () => {
@@ -253,5 +269,31 @@ describe("product-model detail queries", () => {
     expect(result.safeWarnings).toEqual([
       "Delivery and verification stages are supplied by the existing delivery-intelligence projection.",
     ]);
+  });
+
+  it("authorizes and proves entity visibility before returning privacy-safe history metadata", async () => {
+    const events: string[] = [];
+    const service = createProductModelDetailQueryService(
+      authorizer(events),
+      graphRepository(events),
+      detailRepository(events),
+    );
+
+    const result = await Effect.runPromise(
+      service.getEntityHistory(context, { entityId, at, maximumItems: 20 }),
+    );
+
+    expect(events).toEqual(["authorize:get-historical-graph", "revision", "dossier", "history"]);
+    expect(result.events).toEqual([
+      {
+        id: "event-synthetic",
+        revision: 3,
+        type: "renamed",
+        validFrom: "2026-01-01T00:00:00.000Z",
+        recordedAt: "2026-01-01T00:01:00.000Z",
+      },
+    ]);
+    expect(result.events[0]).not.toHaveProperty("actorId");
+    expect(result.events[0]).not.toHaveProperty("details");
   });
 });

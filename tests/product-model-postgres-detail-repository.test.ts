@@ -5,6 +5,7 @@ import type { KnowledgePostgresDatabase } from "../src/infrastructure/postgres/k
 import {
   buildProductCoverageQuery,
   buildProductDossierQuery,
+  buildProductEntityHistoryQuery,
   createPostgresProductModelDetailRepository,
 } from "../src/infrastructure/postgres/product-model-detail-repository.ts";
 import { parseProductEntityId } from "../src/modules/product-model/index.ts";
@@ -62,6 +63,19 @@ describe("PostgreSQL product-model detail repository", () => {
     expect(compiled.params).toContain(26);
   });
 
+  it("builds bounded entity history metadata without actor or raw event details", () => {
+    const compiled = new PgDialect().sqlToQuery(
+      buildProductEntityHistoryQuery({ workspaceId, entityId, maximumItems: 20 }),
+    );
+
+    expect(compiled.sql).toContain("from product_identity_event");
+    expect(compiled.sql).toContain("entity_ids ?");
+    expect(compiled.sql).toContain("order by revision desc");
+    expect(compiled.sql).not.toContain("actor_id");
+    expect(compiled.sql).not.toContain("details");
+    expect(compiled.params).toContain(21);
+  });
+
   it("maps dossier metadata and signals bounded coverage truncation", async () => {
     const dossierRow = {
       entity: {
@@ -107,7 +121,25 @@ describe("PostgreSQL product-model detail repository", () => {
     const execute = vi
       .fn()
       .mockResolvedValueOnce({ rows: [dossierRow] })
-      .mockResolvedValueOnce({ rows: coverageRows });
+      .mockResolvedValueOnce({ rows: coverageRows })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "event-synthetic",
+            revision: 4,
+            type: "moved",
+            validFrom: at,
+            recordedAt: at,
+          },
+          {
+            id: "event-overflow",
+            revision: 3,
+            type: "renamed",
+            validFrom: at,
+            recordedAt: at,
+          },
+        ],
+      });
     const repository = createPostgresProductModelDetailRepository({
       execute,
     } as unknown as KnowledgePostgresDatabase);
@@ -124,9 +156,24 @@ describe("PostgreSQL product-model detail repository", () => {
         visibility,
       }),
     );
+    const history = await Effect.runPromise(
+      repository.readEntityHistory({ workspaceId, entityId, maximumItems: 1 }),
+    );
 
     expect(dossier).toEqual(dossierRow);
     expect(coverage).toEqual({ items: [coverageRows[0]], truncated: true });
+    expect(history).toEqual({
+      events: [
+        {
+          id: "event-synthetic",
+          revision: 4,
+          type: "moved",
+          validFrom: at,
+          recordedAt: at,
+        },
+      ],
+      truncated: true,
+    });
   });
 
   it("rejects invalid bounds and instants before database access", async () => {
@@ -149,9 +196,13 @@ describe("PostgreSQL product-model detail repository", () => {
         }),
       ),
     );
+    const history = await Effect.runPromise(
+      Effect.either(repository.readEntityHistory({ workspaceId, entityId, maximumItems: 101 })),
+    );
 
     expect(dossier._tag).toBe("Left");
     expect(coverage._tag).toBe("Left");
+    expect(history._tag).toBe("Left");
     expect(execute).not.toHaveBeenCalled();
   });
 });

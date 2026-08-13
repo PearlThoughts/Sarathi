@@ -32,7 +32,7 @@ const relationEndpointSchema = z.union([
     .strict(),
 ]);
 
-const productRelationSchema = z
+export const productRelationSchema = z
   .object({
     id: z.string().min(1),
     workspaceId: z.string().min(1),
@@ -220,10 +220,235 @@ export const productDossierSchema = z
   })
   .strict();
 
+export const productSubgraphSchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    asOf: z.string().datetime(),
+    revision: z.number().int().nonnegative(),
+    rootEntityId: entityId,
+    ancestors: z.array(productHierarchyNodeSchema),
+    descendants: z.array(productHierarchyNodeSchema),
+    relations: z.array(productRelationSchema),
+    pages: z
+      .object({
+        ancestors: z
+          .object({
+            maximumDepth: z.number().int().positive(),
+            maximumNodes: z.number().int().positive(),
+            truncated: z.boolean(),
+          })
+          .strict(),
+        descendants: z
+          .object({
+            maximumDepth: z.number().int().positive(),
+            maximumNodes: z.number().int().positive(),
+            truncated: z.boolean(),
+          })
+          .strict(),
+        relations: z
+          .object({
+            maximumRelations: z.number().int().positive(),
+            truncated: z.boolean(),
+          })
+          .strict(),
+      })
+      .strict(),
+    safeWarnings: z.array(z.string()),
+  })
+  .strict();
+
+const variantAxis = z.enum([
+  "client",
+  "tenant",
+  "brand",
+  "role",
+  "environment",
+  "version",
+  "build",
+  "feature_flag",
+]);
+
+export const productAvailabilitySchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    asOf: z.string().datetime(),
+    revision: z.number().int().nonnegative(),
+    entityId,
+    lifecycle,
+    resolvedVariant: z
+      .object({
+        entityId,
+        qualifiers: z.partialRecord(variantAxis, z.string()),
+        appliedVariantIds: z.array(z.string().min(1)),
+        appliedVariants: z.array(
+          z
+            .object({
+              id: z.string().min(1),
+              qualifiers: z.partialRecord(variantAxis, z.string()),
+              fields: z.array(z.string().min(1)),
+            })
+            .strict(),
+        ),
+        delta: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+      })
+      .strict(),
+    availabilityClaims: z.array(productClaimSchema),
+    availabilityReferences: z.array(productExternalReferenceSchema),
+    deliveryStages: z.array(z.unknown()),
+    safeWarnings: z.array(z.string()),
+  })
+  .strict();
+
+export const productEntityHistorySchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    asOf: z.string().datetime(),
+    revision: z.number().int().nonnegative(),
+    entityId,
+    events: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          revision: z.number().int().nonnegative(),
+          type: z.enum([
+            "registered",
+            "renamed",
+            "moved",
+            "redirected",
+            "merged",
+            "split",
+            "retired",
+            "superseded",
+          ]),
+          validFrom: z.string().datetime(),
+          recordedAt: z.string().datetime(),
+        })
+        .strict(),
+    ),
+    page: z
+      .object({
+        maximumItems: z.number().int().positive(),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    safeWarnings: z.array(z.string()),
+  })
+  .strict();
+
+export const productDeliverySchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    entityId,
+    asOf: z.string().datetime(),
+    availability: z.enum(["available", "partial", "unavailable"]),
+    stages: z.array(
+      z
+        .object({
+          stage: z.enum([
+            "proposed",
+            "planned",
+            "being_implemented",
+            "implemented",
+            "reviewed",
+            "merged",
+            "checked",
+            "released",
+            "migrated",
+            "deployed",
+            "compatible",
+            "verified",
+            "accepted",
+            "impact_observed",
+            "retired",
+          ]),
+          state: z.enum(["observed", "not_observed"]),
+          supportingWorkCount: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+    supportingWork: z.array(
+      z
+        .object({
+          title: z.string().min(1),
+          summary: z.string(),
+          latestActivityAt: z.string().datetime(),
+          lifecycle: z.enum([
+            "scoped",
+            "implementing",
+            "development_ready",
+            "qa",
+            "production",
+            "accepted",
+          ]),
+          blocked: z.boolean(),
+          currentSprint: z.boolean(),
+          recentlyCompletedSprint: z.boolean(),
+          quarterRelevant: z.boolean(),
+          sources: z.array(
+            z.enum(["jira", "vault", "github", "teams", "email", "strategy", "telemetry"]),
+          ),
+          citations: z.array(
+            z
+              .object({
+                source: z.enum([
+                  "jira",
+                  "vault",
+                  "github",
+                  "teams",
+                  "email",
+                  "strategy",
+                  "telemetry",
+                ]),
+                url: z.string().url(),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
+    sourceCoverage: z.array(
+      z
+        .object({
+          source: z.enum(["jira", "vault", "github", "teams", "email", "strategy", "telemetry"]),
+          available: z.boolean(),
+          checkpointAt: z.string().datetime().optional(),
+        })
+        .strict(),
+    ),
+    truncated: z.boolean(),
+    safeWarnings: z.array(z.string()),
+  })
+  .strict();
+
+export const productRelationCatalogSchema = z
+  .object({
+    workspaceId: z.string().min(1),
+    relations: z.array(
+      z
+        .object({
+          type: z.string().min(1),
+          label: z.string().min(1),
+          reverseLabel: z.string().min(1),
+          family: z.enum(["product", "delivery", "realization", "assurance", "variation"]),
+          definition: z.string().min(1),
+          directional: z.literal(true),
+          lenses: z.array(z.string().min(1)),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 export type ProductHierarchyNode = z.infer<typeof productHierarchyNodeSchema>;
 export type ProductMap = z.infer<typeof productMapSchema>;
 export type ProductCoverage = z.infer<typeof productCoverageSchema>;
 export type ProductDossier = z.infer<typeof productDossierSchema>;
+export type ProductRelation = z.infer<typeof productRelationSchema>;
+export type ProductSubgraph = z.infer<typeof productSubgraphSchema>;
+export type ProductAvailability = z.infer<typeof productAvailabilitySchema>;
+export type ProductEntityHistory = z.infer<typeof productEntityHistorySchema>;
+export type ProductDelivery = z.infer<typeof productDeliverySchema>;
+export type ProductRelationCatalog = z.infer<typeof productRelationCatalogSchema>;
 
 type ProductMapRow = ProductHierarchyNode & {
   readonly path: readonly string[];
@@ -253,9 +478,6 @@ export const productMapRows = (map: ProductMap): readonly ProductMapRow[] => {
         left.entityId.localeCompare(right.entityId),
     );
 };
-
-export const relationTypes = (map: ProductMap): readonly string[] =>
-  [...new Set(map.relations.map(({ type }) => type))].toSorted();
 
 type ProductExplorerRelatedEntity = {
   readonly id: string;

@@ -3,10 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getMap = vi.fn();
 const getDossier = vi.fn();
+const getCoverage = vi.fn();
+const getRelationCatalog = vi.fn();
 
 vi.mock("server-only", () => ({}));
 vi.mock("../src/server/sarathi-product-model-client", () => ({
-  createSarathiProductModelClientFromEnvironment: () => ({ getDossier, getMap }),
+  createSarathiProductModelClientFromEnvironment: () => ({
+    getCoverage,
+    getDossier,
+    getMap,
+    getRelationCatalog,
+  }),
 }));
 
 const rootId = "00000000-0000-4000-8000-000000000301";
@@ -94,6 +101,28 @@ const dossier = {
   relations: [],
   safeWarnings: [],
 };
+const coverage = {
+  workspaceId: "workspace-synthetic",
+  asOf: "2026-01-02T00:00:00.000Z",
+  revision: 4,
+  items: [],
+  page: { maximumItems: 100, truncated: false },
+  safeWarnings: [],
+};
+const relationCatalog = {
+  workspaceId: "workspace-synthetic",
+  relations: [
+    {
+      type: "depends_on",
+      label: "depends on",
+      reverseLabel: "is depended on by",
+      family: "product",
+      definition: "The source requires the target.",
+      directional: true,
+      lenses: ["relationships", "dependencies", "constellation"],
+    },
+  ],
+};
 
 const viewProps = (user: unknown, searchParams: Record<string, string> = {}) =>
   ({ initPageResult: { req: { user } }, searchParams }) as never;
@@ -102,6 +131,8 @@ describe("Product Studio product map view", () => {
   beforeEach(() => {
     getMap.mockReset().mockResolvedValue(map);
     getDossier.mockReset().mockResolvedValue(dossier);
+    getCoverage.mockReset().mockResolvedValue(coverage);
+    getRelationCatalog.mockReset().mockResolvedValue(relationCatalog);
   });
 
   afterEach(() => {
@@ -119,18 +150,19 @@ describe("Product Studio product map view", () => {
     expect(markup).toContain('id="main-content"');
     expect(markup).toContain('data-renderer="3d-force-graph"');
     expect(markup).toContain('data-testid="product-capability-graph"');
-    expect(markup).toContain('id="dossier-title"');
+    expect(markup).toContain('id="entity-inspector-title"');
     expect(markup).toContain("Product Capability Graph");
     expect(markup).toContain("Interactive 3D product capability graph");
     expect(markup).toContain("Text navigator");
-    expect(markup).toContain("Relationships on");
+    expect(markup).toContain("Relationships");
+    expect(markup).toContain("depends on");
     expect(markup).toContain("focus-visible:outline-2");
     expect(markup).not.toContain("<canvas");
     expect(markup).not.toContain("Product-owner review queue");
     expect(markup).not.toContain("Registry table");
     expect(markup).not.toContain("Complete semantic hierarchy");
     expect(getMap).toHaveBeenCalledOnce();
-    expect(getDossier).toHaveBeenCalledWith(childId);
+    expect(getDossier).not.toHaveBeenCalled();
   });
 
   it("redirects to sign-in with a safe local return before accessing Sarathi", async () => {
@@ -150,7 +182,7 @@ describe("Product Studio product map view", () => {
     expect(getDossier).not.toHaveBeenCalled();
   });
 
-  it("shows governed rename only when the authenticated user has a live credential", async () => {
+  it("keeps governed mutation availability server-resolved without exposing credentials", async () => {
     process.env.SARATHI_PRODUCT_STUDIO_USER_CREDENTIALS_JSON = JSON.stringify({
       "studio-user": {
         actorId: "sarathi-actor-synthetic",
@@ -163,8 +195,7 @@ describe("Product Studio product map view", () => {
       await ProductMapView(viewProps({ id: "studio-user" }, { entity: childId })),
     );
 
-    expect(markup).toContain("Governed Rename");
-    expect(markup).toContain("Preview Rename");
+    expect(markup).toContain("Full dossier");
     expect(markup).not.toContain("user-access-token-synthetic");
   });
 

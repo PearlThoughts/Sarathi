@@ -8,6 +8,8 @@ import {
   type ProductCoverageReadRequest,
   type ProductDetailReadRequest,
   type ProductDossierSnapshot,
+  type ProductEntityHistoryEvent,
+  type ProductEntityHistoryReadRequest,
   type ProductEntityId,
   type ProductModelDetailRepository,
   ProductModelError,
@@ -35,6 +37,8 @@ type ProductCoverageRow = Omit<ProductCoverageItem, "entityId" | "flags"> & {
   readonly entityId: string;
   readonly flags: readonly ProductCoverageFlag[];
 };
+
+type ProductEntityHistoryRow = ProductEntityHistoryEvent;
 
 const invalid = (message: string, reference?: string) =>
   Effect.fail(new ProductModelError("invalid_input", message, reference));
@@ -238,6 +242,22 @@ export const buildProductDossierQuery = (
   `;
 };
 
+export const buildProductEntityHistoryQuery = (
+  request: ProductEntityHistoryReadRequest,
+): SQL<ProductEntityHistoryRow> => sql<ProductEntityHistoryRow>`
+  select
+    id,
+    revision,
+    event_type as type,
+    valid_from as "validFrom",
+    recorded_at as "recordedAt"
+  from product_identity_event
+  where workspace_id = ${request.workspaceId}
+    and entity_ids ? ${request.entityId}
+  order by revision desc, id
+  limit ${request.maximumItems + 1}
+`;
+
 export const buildProductCoverageQuery = (
   request: ProductCoverageReadRequest,
 ): SQL<ProductCoverageRow> => {
@@ -415,6 +435,33 @@ export const createPostgresProductModelDetailRepository = (
           ...row,
           entityId: row.entityId as ProductEntityId,
         })),
+        truncated: rows.length > request.maximumItems,
+      };
+    }),
+  readEntityHistory: (request) =>
+    Effect.gen(function* () {
+      if (request.workspaceId.trim() === "")
+        return yield* invalid("Entity history requires a workspace.");
+      if (
+        !Number.isSafeInteger(request.maximumItems) ||
+        request.maximumItems < 1 ||
+        request.maximumItems > 100
+      )
+        return yield* invalid(
+          "Entity history item limit must be between 1 and 100.",
+          String(request.maximumItems),
+        );
+      const result = yield* Effect.tryPromise({
+        try: () => database.execute(buildProductEntityHistoryQuery(request)),
+        catch: () =>
+          new RepositoryError({
+            message: "Product entity history read failed.",
+            operation: "product-model-read-entity-history",
+          }),
+      });
+      const rows = result.rows as unknown as readonly ProductEntityHistoryRow[];
+      return {
+        events: rows.slice(0, request.maximumItems),
         truncated: rows.length > request.maximumItems,
       };
     }),

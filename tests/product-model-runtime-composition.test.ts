@@ -78,6 +78,43 @@ describe("product-model runtime composition", () => {
         }),
       ),
     ).toThrow(/workspace and actor identities must be unique/);
+    expect(() =>
+      Effect.runSync(
+        loadPlatformConfig({ SARATHI_STRATEGY_DATABASE_URL: "postgresql://example/delivery" }),
+      ),
+    ).toThrow(/requires SARATHI_WORKSPACE_TIMEZONE/);
+  });
+
+  it("composes delivery exploration from the existing strategy projection only when configured", () => {
+    const config = Effect.runSync(
+      loadPlatformConfig({
+        ...environment(),
+        SARATHI_STRATEGY_DATABASE_URL: "postgresql://127.0.0.1:1/unreachable-delivery",
+        SARATHI_WORKSPACE_TIMEZONE: "Asia/Kolkata",
+      }),
+    );
+    const runtime = makeSarathiRuntime({ config });
+
+    expect(config.deliveryExploration).toEqual({
+      databaseUrl: "postgresql://127.0.0.1:1/unreachable-delivery",
+      timeZone: "Asia/Kolkata",
+    });
+    expect(runtime.productModelApi?.delivery).toBeDefined();
+    return runtime.close();
+  });
+
+  it("forwards governed completion contracts into delivery exploration configuration", () => {
+    const completionContractsJson = JSON.stringify([{ synthetic: "contract" }]);
+    const config = Effect.runSync(
+      loadPlatformConfig({
+        ...environment(),
+        SARATHI_STRATEGY_DATABASE_URL: "postgresql://127.0.0.1:1/unreachable-delivery",
+        SARATHI_WORKSPACE_TIMEZONE: "UTC",
+        SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON: completionContractsJson,
+      }),
+    );
+
+    expect(config.deliveryExploration?.completionContractsJson).toBe(completionContractsJson);
   });
 
   it("resolves server-owned principals and separates read from command authority", async () => {

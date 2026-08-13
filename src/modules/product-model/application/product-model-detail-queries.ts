@@ -12,6 +12,7 @@ import {
 import type {
   ProductCoverageItem,
   ProductDossierSnapshot,
+  ProductEntityHistoryEvent,
   ProductModelDetailRepository,
 } from "../ports/product-model-detail-repository.ts";
 import type { ProductModelGraphRepository } from "../ports/product-model-graph-repository.ts";
@@ -58,6 +59,16 @@ export type ProductAvailability = {
   readonly safeWarnings: readonly string[];
 };
 
+export type ProductEntityHistory = {
+  readonly workspaceId: string;
+  readonly asOf: string;
+  readonly revision: number;
+  readonly entityId: ProductEntityId;
+  readonly events: readonly ProductEntityHistoryEvent[];
+  readonly page: { readonly maximumItems: number; readonly truncated: boolean };
+  readonly safeWarnings: readonly string[];
+};
+
 export type ProductModelDetailQueryService = {
   readonly getFeatureDossier: (
     context: ProductModelRequestContext,
@@ -79,12 +90,20 @@ export type ProductModelDetailQueryService = {
       readonly qualifiers: Readonly<Partial<Record<ProductVariantAxis, string>>>;
     },
   ) => Effect.Effect<ProductAvailability, ProductModelDetailQueryError>;
+  readonly getEntityHistory: (
+    context: ProductModelRequestContext,
+    query: {
+      readonly entityId: ProductEntityId;
+      readonly at: string;
+      readonly maximumItems?: number | undefined;
+    },
+  ) => Effect.Effect<ProductEntityHistory, ProductModelDetailQueryError>;
 };
 
 const authorize = (
   authorizer: ProductModelQueryAuthorizer,
   context: ProductModelRequestContext,
-  operation: "get-dossier" | "get-coverage" | "get-availability",
+  operation: "get-dossier" | "get-coverage" | "get-availability" | "get-historical-graph",
 ) =>
   authorizer
     .authorize(context, operation)
@@ -246,6 +265,33 @@ export const createProductModelDetailQueryService = (
         safeWarnings: [
           "Delivery and verification stages are supplied by the existing delivery-intelligence projection.",
         ],
+      };
+    }),
+  getEntityHistory: (context, query) =>
+    Effect.gen(function* () {
+      yield* authorize(authorizer, context, "get-historical-graph");
+      const revisionValue = yield* revision(graphRepository, context, query.at, "get-dossier");
+      yield* requiredDossier(detailRepository, context, query.entityId, query.at, "get-dossier");
+      const maximumItems = query.maximumItems ?? 100;
+      const result = yield* detailRepository.readEntityHistory({
+        workspaceId: context.workspaceId,
+        entityId: query.entityId,
+        maximumItems,
+      });
+      return {
+        workspaceId: context.workspaceId,
+        asOf: query.at,
+        revision: revisionValue,
+        entityId: query.entityId,
+        events: result.events.map((event) => ({
+          ...event,
+          validFrom: new Date(event.validFrom).toISOString(),
+          recordedAt: new Date(event.recordedAt).toISOString(),
+        })),
+        page: { maximumItems, truncated: result.truncated },
+        safeWarnings: result.truncated
+          ? ["Product entity history was truncated at the authorized query bound."]
+          : [],
       };
     }),
 });

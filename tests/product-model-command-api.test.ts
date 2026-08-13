@@ -33,6 +33,7 @@ const requestContext: ProductModelRequestContext = {
 const unusedQueries: ProductModelQueryService = {
   getProductMap: () => Effect.die("not used"),
   getProductGraphAtTime: () => Effect.die("not used"),
+  getProductGraphAtRevision: () => Effect.die("not used"),
   getCapabilitySubgraph: () => Effect.die("not used"),
 };
 
@@ -40,6 +41,7 @@ const unusedDetails: ProductModelDetailQueryService = {
   getFeatureDossier: () => Effect.die("not used"),
   getProductCoverage: () => Effect.die("not used"),
   getProductAvailability: () => Effect.die("not used"),
+  getEntityHistory: () => Effect.die("not used"),
 };
 
 const renameCommand = {

@@ -32,6 +32,8 @@ export {
   createProductCapabilityLedgerProjection,
   createRegistryBackedDeliveryAssistant,
 } from "./application/project-product-capability-ledger.ts";
+export type { ProductDeliveryExplorationConfiguration } from "./application/project-product-delivery-exploration.ts";
+export { createProductDeliveryExplorationProjection } from "./application/project-product-delivery-exploration.ts";
 export type { CompletionReconciliation } from "./application/reconcile-product-completion.ts";
 export { reconcileProductCompletion } from "./application/reconcile-product-completion.ts";
 export type { AttributedDeliveryAssertionEnvelope } from "./domain/attributed-assertion.ts";

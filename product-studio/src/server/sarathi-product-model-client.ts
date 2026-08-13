@@ -1,11 +1,21 @@
 import "server-only";
 import {
+  type ProductAvailability,
   type ProductCoverage,
+  type ProductDelivery,
   type ProductDossier,
+  type ProductEntityHistory,
   type ProductMap,
+  type ProductRelationCatalog,
+  type ProductSubgraph,
+  productAvailabilitySchema,
   productCoverageSchema,
+  productDeliverySchema,
   productDossierSchema,
+  productEntityHistorySchema,
   productMapSchema,
+  productRelationCatalogSchema,
+  productSubgraphSchema,
 } from "../domain/product-model";
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -75,6 +85,46 @@ const createSarathiProductModelClient = (configuration: SarathiClientConfigurati
       productMapSchema.parse(await read(`map?maximumDepth=${maximumDepth}`)),
     getDossier: async (entityId: string): Promise<ProductDossier> =>
       productDossierSchema.parse(await read(`entities/${encodeURIComponent(entityId)}`)),
+    getSubgraph: async (entityId: string): Promise<ProductSubgraph> =>
+      productSubgraphSchema.parse(
+        await read(
+          `entities/${encodeURIComponent(entityId)}/subgraph?maximumAncestorDepth=4&maximumDescendantDepth=4&maximumNodesPerDirection=100&maximumRelations=250`,
+        ),
+      ),
+    getAvailability: async (
+      entityId: string,
+      qualifiers: Readonly<Record<string, string>> = {},
+    ): Promise<ProductAvailability> => {
+      const query = new URLSearchParams();
+      for (const [axis, value] of Object.entries(qualifiers).toSorted(([left], [right]) =>
+        left.localeCompare(right),
+      ))
+        query.append("qualifier", `${axis}:${value}`);
+      const serialized = query.toString();
+      return productAvailabilitySchema.parse(
+        await read(
+          `availability/${encodeURIComponent(entityId)}${serialized === "" ? "" : `?${serialized}`}`,
+        ),
+      );
+    },
+    getHistoryAtRevision: async (revision: number): Promise<ProductMap> =>
+      productMapSchema.parse(
+        await read(
+          `history?revision=${revision}&maximumDepth=8&maximumNodes=500&maximumRelations=500`,
+        ),
+      ),
+    getEntityHistory: async (entityId: string): Promise<ProductEntityHistory> =>
+      productEntityHistorySchema.parse(
+        await read(`entities/${encodeURIComponent(entityId)}/history?maximumItems=100`),
+      ),
+    getDelivery: async (entityId: string): Promise<ProductDelivery> =>
+      productDeliverySchema.parse(
+        await read(
+          `entities/${encodeURIComponent(entityId)}/delivery?lookbackDays=90&maximumItems=50`,
+        ),
+      ),
+    getRelationCatalog: async (): Promise<ProductRelationCatalog> =>
+      productRelationCatalogSchema.parse(await read("relation-semantics")),
     getCoverage: async (maximumItems = 100): Promise<ProductCoverage> => {
       const staleBefore = new Date(now().getTime() - 90 * 24 * 60 * 60 * 1_000).toISOString();
       return productCoverageSchema.parse(

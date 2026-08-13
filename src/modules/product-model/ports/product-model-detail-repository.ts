@@ -5,6 +5,7 @@ import type {
   ProductEntity,
   ProductEntityAlias,
   ProductEntityId,
+  ProductIdentityEventType,
   ProductModelError,
   ProductRegistration,
   ProductVariant,
@@ -110,6 +111,25 @@ export type ProductCoverageReadResult = {
   readonly truncated: boolean;
 };
 
+export type ProductEntityHistoryEvent = {
+  readonly id: string;
+  readonly revision: number;
+  readonly type: ProductIdentityEventType;
+  readonly validFrom: string;
+  readonly recordedAt: string;
+};
+
+export type ProductEntityHistoryReadRequest = {
+  readonly workspaceId: string;
+  readonly entityId: ProductEntityId;
+  readonly maximumItems: number;
+};
+
+export type ProductEntityHistoryReadResult = {
+  readonly events: readonly ProductEntityHistoryEvent[];
+  readonly truncated: boolean;
+};
+
 export type ProductModelDetailRepository = {
   readonly readDossier: (
     request: ProductDetailReadRequest,
@@ -117,4 +137,7 @@ export type ProductModelDetailRepository = {
   readonly readCoverage: (
     request: ProductCoverageReadRequest,
   ) => Effect.Effect<ProductCoverageReadResult, ProductModelError | RepositoryError>;
+  readonly readEntityHistory: (
+    request: ProductEntityHistoryReadRequest,
+  ) => Effect.Effect<ProductEntityHistoryReadResult, ProductModelError | RepositoryError>;
 };
