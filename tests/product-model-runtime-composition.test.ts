@@ -103,6 +103,20 @@ describe("product-model runtime composition", () => {
     return runtime.close();
   });
 
+  it("forwards governed completion contracts into delivery exploration configuration", () => {
+    const completionContractsJson = JSON.stringify([{ synthetic: "contract" }]);
+    const config = Effect.runSync(
+      loadPlatformConfig({
+        ...environment(),
+        SARATHI_STRATEGY_DATABASE_URL: "postgresql://127.0.0.1:1/unreachable-delivery",
+        SARATHI_WORKSPACE_TIMEZONE: "UTC",
+        SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON: completionContractsJson,
+      }),
+    );
+
+    expect(config.deliveryExploration?.completionContractsJson).toBe(completionContractsJson);
+  });
+
   it("resolves server-owned principals and separates read from command authority", async () => {
     const writer = principal({
       accessToken: "synthetic-write-token-0000001",

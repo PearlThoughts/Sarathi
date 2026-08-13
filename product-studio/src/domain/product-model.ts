@@ -246,7 +246,10 @@ export const productSubgraphSchema = z
           })
           .strict(),
         relations: z
-          .object({ maximumRelations: z.number().int().positive(), truncated: z.boolean() })
+          .object({
+            maximumRelations: z.number().int().positive(),
+            truncated: z.boolean(),
+          })
           .strict(),
       })
       .strict(),
@@ -322,7 +325,12 @@ export const productEntityHistorySchema = z
         })
         .strict(),
     ),
-    page: z.object({ maximumItems: z.number().int().positive(), truncated: z.boolean() }).strict(),
+    page: z
+      .object({
+        maximumItems: z.number().int().positive(),
+        truncated: z.boolean(),
+      })
+      .strict(),
     safeWarnings: z.array(z.string()),
   })
   .strict();
@@ -375,6 +383,7 @@ export const productDeliverySchema = z
           blocked: z.boolean(),
           currentSprint: z.boolean(),
           recentlyCompletedSprint: z.boolean(),
+          quarterRelevant: z.boolean(),
           sources: z.array(
             z.enum(["jira", "vault", "github", "teams", "email", "strategy", "telemetry"]),
           ),

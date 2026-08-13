@@ -1,21 +1,28 @@
 import { Effect } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import {
+  type CompletionLifecycleFacet,
+  type ProductCompletionContract,
   type ProductDeliveryExploration,
   type ProductDeliveryProjection,
   type ProductDeliveryStage,
   type ProductFeatureDossier,
   type ProductModelDetailQueryService,
+  type ProductModelQueryService,
   productDeliveryStages,
+  resolveProductCompletionContract,
 } from "../../product-model/index.ts";
 import type { DeliveryQueryPlan } from "../domain/delivery-query.ts";
 import { buildPeriodDeliveryReport } from "../domain/period-delivery-report.ts";
 import type { DeliveryQuerySource } from "../ports/delivery-intelligence-ports.ts";
+import { reconcileProductCompletion } from "./reconcile-product-completion.ts";
 
 export type ProductDeliveryExplorationConfiguration = {
   readonly source: DeliveryQuerySource;
   readonly details: ProductModelDetailQueryService;
+  readonly queries?: ProductModelQueryService | undefined;
   readonly timeZone: string;
+  readonly completionContracts?: readonly ProductCompletionContract[] | undefined;
 };
 
 const planFor = (lookbackDays: number, maximumItems: number): DeliveryQueryPlan => ({
@@ -57,7 +64,11 @@ const planFor = (lookbackDays: number, maximumItems: number): DeliveryQueryPlan 
       id: "product-dependencies",
       purpose: "dependencies",
       select: "relations",
-      traversal: { kinds: ["depends_on", "blocks"], direction: "both", maximumDepth: 2 },
+      traversal: {
+        kinds: ["depends_on", "blocks"],
+        direction: "both",
+        maximumDepth: 2,
+      },
       limit: maximumItems,
     },
     {
@@ -88,6 +99,8 @@ const ledgerFor = (dossier: ProductFeatureDossier) => ({
   ],
 });
 
+const isoTimestamp = (value: string): string => new Date(value).toISOString();
+
 const stageMap = {
   planned: "planned",
   implemented: "implemented",
@@ -99,6 +112,34 @@ const stageMap = {
   accepted: "accepted",
   impact_observed: "impact_observed",
 } as const satisfies Readonly<Record<string, ProductDeliveryStage>>;
+
+const completionFacetStage = {
+  migrated_population: "migrated",
+  application_deployment: "deployed",
+  hostname_compatibility: "compatible",
+  rollout_coverage: "deployed",
+  legacy_retirement: "retired",
+  regression_verification: "verified",
+  human_acceptance: "accepted",
+} as const satisfies Readonly<Record<CompletionLifecycleFacet, ProductDeliveryStage>>;
+
+const ratifiedDeliveryRelations = (
+  relations: ProductFeatureDossier["relations"],
+): readonly {
+  readonly deliveryChangeId: string;
+  readonly entityId: ProductFeatureDossier["entity"]["id"];
+}[] =>
+  relations.flatMap((relation) => {
+    if (relation.registration !== "ratified") return [];
+    const endpoints = [relation.source, relation.target];
+    const delivery = endpoints.find(
+      (endpoint) => endpoint.kind === "external" && endpoint.referenceKind === "delivery",
+    );
+    const entity = endpoints.find((endpoint) => endpoint.kind === "entity");
+    return delivery?.kind === "external" && entity?.kind === "entity"
+      ? [{ deliveryChangeId: delivery.referenceId, entityId: entity.entityId }]
+      : [];
+  });
 
 export const createProductDeliveryExplorationProjection = (
   configuration: ProductDeliveryExplorationConfiguration,
@@ -158,14 +199,24 @@ export const createProductDeliveryExplorationProjection = (
       });
       const section = report.capabilitySections.find(({ key }) => key === query.entityId);
       const capsules = section?.capsules ?? [];
+      const quarterRelevantCapsuleIds = new Set(
+        (report.sprintReview?.initiatives ?? [])
+          .flatMap((initiative) => [
+            ...initiative.currentSprintCapsules,
+            ...initiative.completedQuarterToDateCapsules,
+            ...initiative.activeCapsules,
+          ])
+          .map(({ id }) => id),
+      );
       const supportingWork = capsules.slice(0, query.maximumItems).map((capsule) => ({
         title: capsule.title,
         summary: capsule.summary,
-        latestActivityAt: capsule.latestActivityAt,
+        latestActivityAt: isoTimestamp(capsule.latestActivityAt),
         lifecycle: capsule.lifecycleState,
         blocked: capsule.blocked,
         currentSprint: capsule.sprintClassifications.includes("current_sprint"),
         recentlyCompletedSprint: capsule.sprintClassifications.includes("completed_during_sprint"),
+        quarterRelevant: quarterRelevantCapsuleIds.has(capsule.id),
         sources: capsule.sources,
         citations: capsule.citations,
       }));
@@ -180,6 +231,48 @@ export const createProductDeliveryExplorationProjection = (
           if (chain.state !== "observed") continue;
           const stage = stageMap[chain.stage];
           observedCounts.set(stage, (observedCounts.get(stage) ?? 0) + 1);
+        }
+      }
+      if (
+        configuration.queries !== undefined &&
+        (configuration.completionContracts?.length ?? 0) > 0
+      ) {
+        const graph = yield* configuration.queries.getProductMap(context, {
+          at: query.at,
+          maximumDepth: 4,
+          maximumNodes: 250,
+          maximumRelations: 250,
+        });
+        if (!graph.page.truncated && !graph.relationPage.truncated) {
+          const relations = ratifiedDeliveryRelations(dossier.relations);
+          for (const contract of configuration.completionContracts ?? []) {
+            if (!contract.affectedEntityIds.includes(query.entityId)) continue;
+            const resolution = resolveProductCompletionContract({
+              phrase: contract.deliveryChange.canonicalName,
+              requestedAt: query.at,
+              contracts: [contract],
+              visibleEntities: graph.entities.map((entity) => ({
+                entityId: entity.entityId,
+                canonicalName: entity.canonicalName,
+                registration: entity.registration,
+                lifecycle: entity.lifecycle,
+              })),
+              ratifiedDeliveryRelations: relations,
+            });
+            const reconciliation = reconcileProductCompletion({
+              resolution,
+              result,
+              requestedAt: query.at,
+            });
+            for (const criterion of reconciliation.assessment.criteria) {
+              if (criterion.disposition !== "satisfied") continue;
+              const stage = completionFacetStage[criterion.facet];
+              observedCounts.set(
+                stage,
+                (observedCounts.get(stage) ?? 0) + criterion.observations.length,
+              );
+            }
+          }
         }
       }
       const availability: ProductDeliveryExploration["availability"] = result.complete
@@ -200,7 +293,7 @@ export const createProductDeliveryExplorationProjection = (
           ({ source, available, checkpointAt }) => ({
             source,
             available,
-            ...(checkpointAt === undefined ? {} : { checkpointAt }),
+            ...(checkpointAt === undefined ? {} : { checkpointAt: isoTimestamp(checkpointAt) }),
           }),
         ),
         truncated: capsules.length > query.maximumItems,

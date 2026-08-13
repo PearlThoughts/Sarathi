@@ -255,7 +255,7 @@
 
 - Command: `bunx vitest run tests/product-delivery-exploration.test.ts`
 - Location: `tests/product-delivery-exploration.test.ts`
-- Scope: Audience-bound Product Studio delivery exploration over the existing delivery projection, explicit unavailable behavior, and distinct deployed, verified, and accepted stages.
+- Scope: Audience-bound Product Studio delivery exploration over the existing delivery and completion-contract projections, quarter relevance, explicit unavailable behavior, and distinct migrated, deployed, compatible, verified, and accepted stages.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
 ## product-model-authorized-queries

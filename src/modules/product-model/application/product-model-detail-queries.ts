@@ -283,7 +283,11 @@ export const createProductModelDetailQueryService = (
         asOf: query.at,
         revision: revisionValue,
         entityId: query.entityId,
-        events: result.events,
+        events: result.events.map((event) => ({
+          ...event,
+          validFrom: new Date(event.validFrom).toISOString(),
+          recordedAt: new Date(event.recordedAt).toISOString(),
+        })),
         page: { maximumItems, truncated: result.truncated },
         safeWarnings: result.truncated
           ? ["Product entity history was truncated at the authorized query bound."]

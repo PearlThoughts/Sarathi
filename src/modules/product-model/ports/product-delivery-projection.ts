@@ -52,8 +52,12 @@ export type ProductDeliveryWorkSummary = {
   readonly blocked: boolean;
   readonly currentSprint: boolean;
   readonly recentlyCompletedSprint: boolean;
+  readonly quarterRelevant: boolean;
   readonly sources: readonly ProductDeliverySource[];
-  readonly citations: readonly { readonly source: ProductDeliverySource; readonly url: string }[];
+  readonly citations: readonly {
+    readonly source: ProductDeliverySource;
+    readonly url: string;
+  }[];
 };
 
 export type ProductDeliveryExploration = {

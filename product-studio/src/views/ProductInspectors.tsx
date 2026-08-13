@@ -429,7 +429,8 @@ export const FullDossier = ({
                             </dd>
                             <dd className="mt-1 text-xs text-stone-500">
                               {claim.registration} · {claim.evidenceReferenceCount} evidence
-                              reference{claim.evidenceReferenceCount === 1 ? "" : "s"}
+                              reference
+                              {claim.evidenceReferenceCount === 1 ? "" : "s"}
                             </dd>
                           </div>
                         ))}
@@ -670,6 +671,7 @@ const DeliverySection = ({ delivery }: { readonly delivery?: ProductDelivery | u
                 {work.blocked ? "Blocked · " : ""}
                 {work.currentSprint ? "Active sprint · " : ""}
                 {work.recentlyCompletedSprint ? "Recently completed · " : ""}
+                {work.quarterRelevant ? "Current-quarter relevance · " : ""}
                 {new Date(work.latestActivityAt).toLocaleString()}
               </p>
             </li>

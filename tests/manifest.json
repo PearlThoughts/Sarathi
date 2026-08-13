@@ -253,7 +253,7 @@
       "path": "tests/product-delivery-exploration.test.ts",
       "command": "bunx vitest run tests/product-delivery-exploration.test.ts",
       "prerequisites": ["bun install"],
-      "description": "Audience-bound Product Studio delivery exploration over the existing delivery projection, with explicit unavailable behavior and distinct deployed, verified, and accepted stages."
+      "description": "Audience-bound Product Studio delivery exploration over the existing delivery and completion-contract projections, with quarter relevance, explicit unavailable behavior, and distinct migrated, deployed, compatible, verified, and accepted stages."
     },
     {
       "id": "product-model-authorized-queries",

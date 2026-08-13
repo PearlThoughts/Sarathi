@@ -37,6 +37,7 @@ export type DeliveryExplorationRuntimeConfiguration = {
   readonly databaseUrl: string;
   readonly timeZone: string;
   readonly entityCatalogJson?: string | undefined;
+  readonly completionContractsJson?: string | undefined;
 };
 
 export type SarathiConfig = {
@@ -148,7 +149,14 @@ const parseDeliveryExplorationConfiguration = (
     timeZone,
     ...(environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON === undefined
       ? {}
-      : { entityCatalogJson: environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON }),
+      : {
+          entityCatalogJson: environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+        }),
+    ...(environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON === undefined
+      ? {}
+      : {
+          completionContractsJson: environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON,
+        }),
   };
 };
 

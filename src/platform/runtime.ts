@@ -26,6 +26,7 @@ import {
   createProductModelDetailQueryService,
   createProductModelQueryService,
   type ProductModelApiDependencies,
+  parseProductCompletionContracts,
 } from "../modules/product-model/index.ts";
 import type { WorkspaceSourceSnapshot } from "../modules/workspace-model/contracts.ts";
 import type { WorkspaceOverlaySource } from "../modules/workspace-model/ports/workspace-overlay-source.ts";
@@ -80,7 +81,10 @@ const composeProductModelApi = (
   configuration: ProductModelRuntimeConfiguration,
   deliveryConfiguration: DeliveryExplorationRuntimeConfiguration | undefined,
   now: () => string,
-): { readonly api: ProductModelApiDependencies; readonly close: () => Promise<void> } => {
+): {
+  readonly api: ProductModelApiDependencies;
+  readonly close: () => Promise<void>;
+} => {
   const opened = openKnowledgePostgresDatabase(configuration.databaseUrl);
   const security = createProductModelApiSecurity(configuration.principals);
   const graphRepository = createPostgresProductModelGraphRepository(opened.database);
@@ -91,6 +95,7 @@ const composeProductModelApi = (
     detailRepository,
   );
   const commandRepository = createPostgresProductModelCommandRepository(opened.database);
+  const queries = createProductModelQueryService(security.queries, graphRepository);
   const deliveryOpened =
     deliveryConfiguration === undefined
       ? undefined
@@ -103,11 +108,19 @@ const composeProductModelApi = (
             entityCatalog: parseDeliveryEntityCatalog(deliveryConfiguration.entityCatalogJson),
           }),
           details,
+          queries,
           timeZone: deliveryConfiguration.timeZone,
+          ...(deliveryConfiguration.completionContractsJson === undefined
+            ? {}
+            : {
+                completionContracts: parseProductCompletionContracts(
+                  JSON.parse(deliveryConfiguration.completionContractsJson) as unknown,
+                ),
+              }),
         });
   return {
     api: {
-      queries: createProductModelQueryService(security.queries, graphRepository),
+      queries,
       details,
       ...(delivery === undefined ? {} : { delivery }),
       commands: createProductModelCommandService(security.commands, commandRepository, {

@@ -397,12 +397,18 @@ export const ProductCapabilityExplorer = ({
     return () => preference.removeEventListener("change", update);
   }, []);
   const lastUrlRef = useRef(productExplorationUrl(initialState));
+  const restoringUrlRef = useRef(false);
   useEffect(() => {
     const restored = productExplorationFromUrl(new URL(window.location.href), fallbackFocus);
     lastUrlRef.current = productExplorationUrl(restored);
+    restoringUrlRef.current = true;
     dispatch({ type: "restore", state: restored });
   }, [fallbackFocus]);
   useEffect(() => {
+    if (restoringUrlRef.current) {
+      restoringUrlRef.current = false;
+      return;
+    }
     const path = productExplorationUrl(state);
     if (path === lastUrlRef.current) return;
     lastUrlRef.current = path;
@@ -412,6 +418,7 @@ export const ProductCapabilityExplorer = ({
     const restore = () => {
       const restored = productExplorationFromUrl(new URL(window.location.href), fallbackFocus);
       lastUrlRef.current = productExplorationUrl(restored);
+      restoringUrlRef.current = true;
       dispatch({ type: "restore", state: restored });
     };
     window.addEventListener("popstate", restore);

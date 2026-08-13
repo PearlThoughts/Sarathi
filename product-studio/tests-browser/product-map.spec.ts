@@ -35,10 +35,11 @@ const openAuthenticatedMap = async (page: Page, path = "/admin/product-map") => 
   const user = credentials();
   test.skip(user === undefined, "Browser credentials were not supplied.");
   await page.goto(path);
-  if (/\/admin\/login(?:\?|$)/.test(page.url()))
-    await signIn(page, user ?? { email: "", password: "" }, false);
-  await expect(page).toHaveURL(/\/admin\/product-map(?:\?|$)/);
   const explorer = page.getByTestId("product-capability-explorer");
+  const email = page.getByRole("textbox", { name: "Email *" });
+  await expect(explorer.or(email)).toBeVisible();
+  if (await email.isVisible()) await signIn(page, user ?? { email: "", password: "" }, false);
+  await expect(page).toHaveURL(/\/admin\/product-map(?:\?|$)/);
   await expect(explorer).toBeVisible();
   return explorer;
 };
@@ -91,14 +92,31 @@ test("ordinary login retains the configured session lifetime", async ({ page }) 
 test("selection, exploration, history, and browser navigation preserve the graph scene", async ({
   page,
 }) => {
+  const graphLoadStartedAt = performance.now();
   const explorer = await openAuthenticatedMap(page);
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const serverErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("requestfailed", (request) => failedRequests.push(request.url()));
+  page.on("response", (response) => {
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  });
   await expect(
     page.getByRole("heading", { name: "Product Capability Graph", level: 1 }),
   ).toBeVisible();
   await expect(explorer).toHaveAttribute("data-renderer", "3d-force-graph");
-  await expect(page.getByTestId("product-capability-graph").locator("canvas")).toBeVisible();
+  const graph = page.getByTestId("product-capability-graph");
+  await expect(graph.locator("canvas")).toBeVisible();
+  const graphLoadDurationMs = performance.now() - graphLoadStartedAt;
+  expect(graphLoadDurationMs).toBeLessThan(15_000);
 
   const initialDepth = await explorer.getAttribute("data-depth");
+  const initialSceneSignature = await graph.getAttribute("data-scene-signature");
   const navigator = await openTextNavigator(page);
   const child = navigator
     .locator('[data-testid="capability-text-node"][data-role="child"]')
@@ -106,9 +124,12 @@ test("selection, exploration, history, and browser navigation preserve the graph
   const childId = await child.getAttribute("data-entity-id");
   expect(childId).not.toBeNull();
 
+  const selectionStartedAt = performance.now();
   await child.locator("button").first().click();
   await expect(explorer).toHaveAttribute("data-selected-entity", childId ?? "");
+  expect(performance.now() - selectionStartedAt).toBeLessThan(5_000);
   await expect(explorer).toHaveAttribute("data-depth", initialDepth ?? "0");
+  await expect(graph).toHaveAttribute("data-scene-signature", initialSceneSignature ?? "");
   await expect(page).toHaveURL((url) => url.searchParams.get("selected") === childId);
 
   await child.getByRole("button", { name: /^Explore / }).click();
@@ -121,20 +142,24 @@ test("selection, exploration, history, and browser navigation preserve the graph
   await expect(explorer).toHaveAttribute("data-selected-entity", childId ?? "");
 
   await page.getByRole("button", { name: "Full dossier" }).click();
-  const dossier = page.getByRole("dialog", { name: /Governed entity dossier|./ });
+  const dossier = page.getByRole("dialog");
   await expect(dossier).toBeVisible();
-  await dossier.getByRole("button", { name: "Delivery", exact: true }).click();
+  await dossier.getByRole("button", { name: "delivery", exact: true }).click();
   await expect(dossier.getByRole("heading", { name: "Delivery stages" })).toBeVisible();
   await expect(dossier.getByText("deployed", { exact: true })).toBeVisible();
   await expect(dossier.getByText("verified", { exact: true })).toBeVisible();
   await expect(dossier.getByText("accepted", { exact: true })).toBeVisible();
-  await dossier.getByRole("button", { name: "History", exact: true }).click();
+  await dossier.getByRole("button", { name: "history", exact: true }).click();
   await expect(dossier.getByRole("heading", { name: "Identity evolution" })).toBeVisible();
   await dossier.getByRole("button", { name: "View current revision" }).click();
   await expect(dossier).toBeHidden();
   await expect(explorer).toHaveAttribute("data-lens", "history");
   await expect(explorer).toHaveAttribute("data-view", "revision-diff");
   await expect(page.getByRole("heading", { name: "revision diff" })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(failedRequests).toEqual([]);
+  expect(serverErrors).toEqual([]);
 });
 
 test("typed edges, lenses, compare, and path commands stay synchronized", async ({ page }) => {
