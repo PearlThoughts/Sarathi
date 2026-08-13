@@ -443,6 +443,7 @@ const answerFromRuntime = async (
       sources,
       answerComposer: createAiSdkDeliveryAnswerComposer(
         createGroundedAnswerGeneratorFromEnvironment(environment),
+        { relevanceProfile },
       ),
       capabilityLedger,
       ...deliveryResponseBudget,

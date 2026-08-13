@@ -24,6 +24,8 @@ When `minimumHumanUsefulnessAverage` is declared, every answered case must carry
 
 The command exits zero only when the declared case pass rate and human-usefulness threshold pass. A nonzero result is production evidence of an unmet acceptance gate, not a reason to weaken the set.
 
+For a frozen-snapshot relevance ablation, run the same set and deployed revision with one read-only `SARATHI_RELEVANCE_PROFILE` per isolated CLI process: `legacy` keeps lexical retrieval and the source-balanced/first-citation envelope; `semantic` enables existing exact/full-text/vector retrieval; `reranked` adds deterministic domain reranking; and `expanded` adds authorized parent context plus facet/materiality envelope selection. The profile never mutates or re-ingests indexed content. New semantic chunk boundaries therefore affect a frozen snapshot only after a separately authorized future synchronization and must not be credited in this experiment.
+
 Evaluation evidence is reported at three distinct levels:
 
 - **Case pass:** one exact governed question passed its declared automated checks on a named runtime revision.
