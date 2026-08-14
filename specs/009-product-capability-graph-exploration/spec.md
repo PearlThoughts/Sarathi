@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/it-126-capability-graph`
 **Created**: 2026-08-13
-**Status**: Approved for implementation
+**Status**: Product-owner interaction baseline accepted; production promotion in progress
 **Work tracking**: Jira `IT-126`; Beads `sar-ebu`
 
 ## 1) Purpose
@@ -214,3 +214,66 @@ A keyboard-only user or a user whose browser cannot initialize WebGL explores th
 - [ADR 0011](../../docs/architecture/decisions/0011-product-capability-registry-and-product-studio.md)
 - Jira `IT-126`
 - Beads `sar-ebu`
+
+## 14) Product-owner acceptance addendum — Product Digital Twin Explorer
+
+The first production implementation at revision `1d18bbf5a4585a399e6019d8921ea491867c53f8`
+passed its technical gates but failed product-owner usability acceptance. The graph exposed many
+controls and metadata surfaces without giving a newly onboarded person a coherent way to learn the
+product. Technical presence is therefore not acceptance evidence for this experience.
+
+The accepted interaction direction is a synchronized model-explorer workspace:
+
+- a persistent left product tree for the complete authorized hierarchy;
+- an uninterrupted central 3D text model for spatial exploration;
+- a persistent right contextual inspector with actual named children and relationships;
+- a contextual analysis drawer for advanced views and delivery/history detail;
+- `Explore`, `Explain`, and `Tour` entry modes, with advanced analysis kept secondary;
+- deliberate camera movement and selected-path animation, never continuous ambient motion.
+
+### Additional functional requirements
+
+- **FR-024**: Tree, canvas, and inspector MUST remain simultaneously visible on supported desktop
+  layouts and MUST share one selection. Tablet layouts MAY collapse one side panel at a time while
+  preserving the same state and keyboard path.
+- **FR-025**: Selecting an entity in any surface MUST reveal and highlight its complete visible tree
+  path, update the inspector, and preserve the current scene identity.
+- **FR-026**: The persistent inspector MUST display named immediate children and named related
+  entities as direct navigation actions rather than counts alone.
+- **FR-027**: The default surface MUST prioritize search, breadcrumbs, lens, revision, and learning
+  mode. Path, impact, prerequisites, variants, coverage, history, and other expert operations MUST
+  move into contextual inspector or analysis controls.
+- **FR-028**: The 3D model MUST use stable product-area clustering, hierarchy-sensitive label
+  typography, selection halos, hover/selection edge labels, intentional camera framing, and
+  selected-path motion. These encodings MUST remain understandable without color alone.
+- **FR-029**: `Explore` MUST support free synchronized navigation; `Explain` MUST present a concise
+  governed narrative for the selection; `Tour` MUST step through a governed or explicitly
+  presentation-authored sequence of existing Sarathi IDs without inventing product semantics.
+- **FR-030**: Delivery context MUST visibly separate active sprint, recently completed sprint,
+  current-quarter promise relevance, blocked work, rollout, verification, and acceptance.
+- **FR-031**: Sparse relationship coverage MUST be disclosed as a coverage limitation. Visual
+  rendering MUST NOT infer a dependency, journey, DDD boundary, or business relationship from
+  coordinates, hierarchy, work-item co-occurrence, or animation.
+- **FR-032**: A reviewable prototype using current authorized data or public synthetic fixtures MUST
+  be product-owner reviewed before another production merge or deployment.
+
+### Prototype acceptance slice
+
+The next review checkpoint is intentionally narrower than the full original feature:
+
+1. Persistent hierarchy tree with expand/collapse, search, selection, and zoom/isolate actions.
+2. Central 3D model with improved text rendering, stable clusters, intentional motion, and direct
+   node/edge interaction.
+3. Persistent inspector with About, Contains, Relationships, and Delivery sections.
+4. Synchronized selection across all three surfaces.
+5. One representative deep hierarchy slice.
+6. One clickable governed relationship.
+7. One delivery overlay that distinguishes quarter and sprint context from delivery stages.
+8. One guided learning tour over existing authorized entity IDs.
+
+The product owner accepted this interaction baseline for production promotion on 2026-08-14.
+That acceptance covers the usability direction represented by the synchronized tree, 3D model,
+persistent inspector, learning modes, and contextual delivery presentation. It does not waive
+post-deploy verification, authorize inferred relationships, or claim that the currently sparse
+governed relationship dataset is complete. Remaining lenses and analytical surfaces may now be
+refined incrementally over the same governed model.

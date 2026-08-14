@@ -8,7 +8,9 @@ The Payload/Next runtime owns only its authentication records and future editori
 
 Product Studio login uses Payload's own secure HttpOnly cookie and database-backed session. The unchecked default retains Payload's two-hour lifetime. An editor may explicitly select **Remember me** to extend only that login to 365 days; the request-scoped duration applies to the signed token, cookie, and session record without changing the shared authentication configuration. Standard Payload logout revokes the session and clears the same cookie.
 
-The first view is an interactive 3D text capability graph: users orbit the governed product model, drill from product areas into capabilities and features, reveal typed cross-relations, jump through search, and open the governed dossier for the current focus. Text height and node size represent hierarchy role and direct-child count, while stable color identifies the top-level product area; neither encodes delivery progress or evidence volume. A compact text navigator remains available so keyboard and assistive-technology users do not depend on WebGL graph interaction.
+The first view is a synchronized Product Digital Twin workspace: a persistent authorized product tree, an interactive 3D text capability model, and a persistent contextual inspector. Users can orbit the local governed neighbourhood, select without rebuilding the scene, drill through product areas/capabilities/features, inspect named children and typed relations, and learn through Explore, Explain, or a governed structural Tour. The same tree and analytical views remain fully keyboard-operable when WebGL is unavailable.
+
+Text height and node size represent hierarchy role and direct-child count, while stable color identifies the top-level product area; neither encodes delivery progress or evidence volume. Camera movement and relationship particles occur only for a deliberate focus or selected path and are disabled under reduced motion. Delivery content comes from Sarathi's sanctioned delivery projection and keeps proposed, implemented, deployed, compatible, verified, and accepted states distinct.
 
 ## Database isolation
 
