@@ -143,7 +143,7 @@ full local CI -> self-review -> PR checks -> merge -> deploy -> live verify
 - [ ] Jira-keyed PR passed governance and required checks.
 - [ ] Merged SHA deployed through Railway and live-verified.
 - [ ] Beads/Jira updated with exact evidence.
-- [ ] Product owner asked to review; acceptance not inferred.
+- [x] Product-owner interaction baseline explicitly accepted on 2026-08-14; post-deploy verification remains separate.
 
 ## 12) Usability-recovery milestone
 

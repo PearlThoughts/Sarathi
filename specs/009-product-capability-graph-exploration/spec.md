@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/it-126-capability-graph`
 **Created**: 2026-08-13
-**Status**: Product-owner acceptance rejected; interaction redesign in progress
+**Status**: Product-owner interaction baseline accepted; production promotion in progress
 **Work tracking**: Jira `IT-126`; Beads `sar-ebu`
 
 ## 1) Purpose
@@ -271,5 +271,9 @@ The next review checkpoint is intentionally narrower than the full original feat
 7. One delivery overlay that distinguishes quarter and sprint context from delivery stages.
 8. One guided learning tour over existing authorized entity IDs.
 
-This prototype is review evidence, not production acceptance. Remaining lenses and analytical
-surfaces may be refined only after this interaction baseline is accepted.
+The product owner accepted this interaction baseline for production promotion on 2026-08-14.
+That acceptance covers the usability direction represented by the synchronized tree, 3D model,
+persistent inspector, learning modes, and contextual delivery presentation. It does not waive
+post-deploy verification, authorize inferred relationships, or claim that the currently sparse
+governed relationship dataset is complete. Remaining lenses and analytical surfaces may now be
+refined incrementally over the same governed model.
