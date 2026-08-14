@@ -1609,18 +1609,28 @@ const responseAcceptance = (
         match[1] === undefined ? [] : [match[1]],
       );
   const evaluatedItems = result.items.filter((item) => answer.text.includes(item.citationUrl));
+  const reportSourceCoverage = result.periodDeliveryReport?.census.sourceCoverage ?? [];
   const requestedAt = Date.parse(request.requestedAt);
-  const freshEvidence = evaluatedItems.filter((item) => {
-    if (item.indexedAt === undefined) return true;
-    const indexedAt = Date.parse(item.indexedAt);
+  const freshnessReferenceAt =
+    structuredReportProduct && result.periodDeliveryReport?.census.boundary.kind === "absolute"
+      ? Math.min(requestedAt, Date.parse(result.periodDeliveryReport.census.boundary.toExclusive))
+      : requestedAt;
+  const evaluatedFreshness = structuredReportProduct
+    ? reportSourceCoverage.map(({ checkpointAt }) => checkpointAt)
+    : evaluatedItems.map(({ indexedAt }) => indexedAt);
+  const freshEvidence = evaluatedFreshness.filter((freshnessTimestamp) => {
+    if (freshnessTimestamp === undefined) return !structuredReportProduct;
+    const indexedAt = Date.parse(freshnessTimestamp);
     return (
-      Number.isFinite(indexedAt) && Math.max(0, requestedAt - indexedAt) <= policy.freshnessWindowMs
+      Number.isFinite(indexedAt) &&
+      Number.isFinite(freshnessReferenceAt) &&
+      Math.max(0, freshnessReferenceAt - indexedAt) <= policy.freshnessWindowMs
     );
   }).length;
   const citedStatements =
     materialLines.length === 0 ? 0 : linkedUrls.length > 0 ? materialLines.length : 0;
   const citationCoverage = ratio(citedStatements, materialLines.length);
-  const freshnessCoverage = ratio(freshEvidence, evaluatedItems.length);
+  const freshnessCoverage = ratio(freshEvidence, evaluatedFreshness.length);
   const completenessPassed =
     result.complete &&
     completenessRatio === 1 &&
@@ -1667,7 +1677,7 @@ const responseAcceptance = (
     citationPassed,
     groundingPassed,
     freshEvidence,
-    evaluatedEvidence: evaluatedItems.length,
+    evaluatedEvidence: evaluatedFreshness.length,
     freshnessCoverage,
     freshnessPassed,
     formatPassed,
@@ -2188,9 +2198,7 @@ export const createDeliveryAssistant = (
                       responseMode,
                       responseProduct,
                       responseBudget,
-                      acceptance: qualityFailed
-                        ? { ...acceptance, formatPassed: false, passed: false }
-                        : acceptance,
+                      acceptance: qualityFailed ? { ...acceptance, passed: false } : acceptance,
                     };
                   }),
                 );

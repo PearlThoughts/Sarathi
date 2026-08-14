@@ -299,13 +299,13 @@ describe("delivery intelligence application", () => {
             {
               source: "github",
               available: true,
-              checkpointAt: "2026-07-20T12:00:00.000Z",
+              checkpointAt: "2026-07-20T12:30:00.000Z",
               candidateCount: 20,
             },
             {
               source: "jira",
               available: true,
-              checkpointAt: "2026-07-20T12:00:00.000Z",
+              checkpointAt: "2026-07-20T12:30:00.000Z",
               candidateCount: 20,
             },
           ],
@@ -359,6 +359,10 @@ describe("delivery intelligence application", () => {
       acceptance: {
         product: "period_delivery_brief",
         mode: "deep_dive",
+        freshEvidence: 2,
+        evaluatedEvidence: 2,
+        freshnessPassed: true,
+        passed: true,
       },
     });
     expect(answer.text).toContain("## Delivered");
@@ -482,7 +486,7 @@ describe("delivery intelligence application", () => {
                 {
                   source: "github",
                   available: true,
-                  checkpointAt: "2026-07-20T12:00:00.000Z",
+                  checkpointAt: "2026-07-20T18:00:00.000Z",
                   candidateCount: 1,
                 },
               ],
@@ -569,6 +573,7 @@ describe("delivery intelligence application", () => {
   });
 
   it("renders a previous-quarter delivery question as a capability-grouped leadership report", async () => {
+    let checkpointAt = "2026-07-20T12:00:00.000Z";
     const periodCensus = {
       version: 1,
       boundary: {
@@ -589,13 +594,13 @@ describe("delivery intelligence application", () => {
         {
           source: "github",
           available: true,
-          checkpointAt: "2026-07-20T12:00:00.000Z",
+          checkpointAt,
           candidateCount: 1,
         },
         {
           source: "jira",
           available: true,
-          checkpointAt: "2026-07-20T12:00:00.000Z",
+          checkpointAt,
           candidateCount: 1,
         },
       ],
@@ -626,6 +631,7 @@ describe("delivery intelligence application", () => {
               citationUrl: "https://github.com/example/product/pull/101",
               completionStage: "merged" as const,
               observedAt: "2026-05-12T10:00:00.000Z",
+              indexedAt: "2026-05-12T10:05:00.000Z",
             },
             {
               ...item(
@@ -638,31 +644,39 @@ describe("delivery intelligence application", () => {
               title: "SEO metadata publishing",
               completionStage: "merged" as const,
               observedAt: "2026-05-12T10:00:00.000Z",
+              indexedAt: "2026-05-12T10:05:00.000Z",
             },
           ],
           conflicts: [],
           unavailableSources: [],
           complete: true,
-          periodCensus,
+          periodCensus: {
+            ...periodCensus,
+            sourceCoverage: periodCensus.sourceCoverage.map((coverage) => ({
+              ...coverage,
+              checkpointAt,
+            })),
+          },
         }),
     };
 
+    const assistant = createDeliveryAssistant({
+      sources: [source],
+      answerComposer: capabilityReportComposer,
+      capabilityLedger: {
+        version: 1,
+        capabilities: [
+          {
+            key: "seo-improvements",
+            title: "SEO improvements",
+            aliases: [{ value: "SEO" }, { value: "metadata" }],
+          },
+        ],
+      },
+      now: () => new Date(request.requestedAt),
+    });
     const answer = await Effect.runPromise(
-      createDeliveryAssistant({
-        sources: [source],
-        answerComposer: capabilityReportComposer,
-        capabilityLedger: {
-          version: 1,
-          capabilities: [
-            {
-              key: "seo-improvements",
-              title: "SEO improvements",
-              aliases: [{ value: "SEO" }, { value: "metadata" }],
-            },
-          ],
-        },
-        now: () => new Date(request.requestedAt),
-      }).answer({
+      assistant.answer({
         ...request,
         question: "What have we delivered in the previous quarter?",
       }),
@@ -682,6 +696,9 @@ describe("delivery intelligence application", () => {
         citationPassed: true,
         groundingPassed: true,
         completenessPassed: true,
+        freshEvidence: 2,
+        evaluatedEvidence: 2,
+        freshnessPassed: true,
         passed: true,
       },
     });
@@ -695,6 +712,24 @@ describe("delivery intelligence application", () => {
     expect(answer.text).not.toContain("replay checksum");
     expect(answer.text).not.toContain("### Delivery brief");
     expect(answer.text.match(/- \*\*SEO improvements\*\*/g)).toHaveLength(1);
+    checkpointAt = "2026-03-01T00:00:00.000Z";
+    const staleCensusAnswer = await Effect.runPromise(
+      assistant.answer({
+        ...request,
+        question: "What have we delivered in the previous quarter?",
+      }),
+    );
+    expect(staleCensusAnswer).toMatchObject({
+      status: "failed",
+      failure: { classification: "SARATHI-REPORT-QUALITY-FAILED" },
+      acceptance: {
+        freshEvidence: 0,
+        evaluatedEvidence: 2,
+        freshnessPassed: false,
+        formatPassed: true,
+        passed: false,
+      },
+    });
   });
 
   it("reconstructs a capability episode with lifecycle, dependency, and advisory Jira hygiene", async () => {
@@ -2777,11 +2812,11 @@ describe("delivery intelligence application", () => {
       candidates: [],
       configuredSources: ["jira", "strategy", "teams", "vault", "github"],
       sourceCheckpoints: new Map([
-        ["jira", "2026-07-31T12:00:00.000Z"],
-        ["strategy", "2026-07-31T12:00:00.000Z"],
-        ["teams", "2026-07-31T12:00:00.000Z"],
-        ["vault", "2026-07-31T12:00:00.000Z"],
-        ["github", "2026-07-31T12:00:00.000Z"],
+        ["jira", "2026-07-31T18:00:00.000Z"],
+        ["strategy", "2026-07-31T18:00:00.000Z"],
+        ["teams", "2026-07-31T18:00:00.000Z"],
+        ["vault", "2026-07-31T18:00:00.000Z"],
+        ["github", "2026-07-31T18:00:00.000Z"],
       ]),
       pageSize: 200,
       pagesRead: 1,
