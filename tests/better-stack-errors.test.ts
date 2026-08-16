@@ -59,5 +59,10 @@ describe("Better Stack safe error boundary", () => {
         SARATHI_ERRORS_DSN: "https://example.invalid/not-better-stack",
       }),
     ).toBeUndefined();
+    expect(
+      createBetterStackSafeErrorCapture({
+        SARATHI_ERRORS_DSN: "https://validation@s123.us-west-2a.betterstackdata.com/2682799",
+      }),
+    ).toBeTypeOf("function");
   });
 });

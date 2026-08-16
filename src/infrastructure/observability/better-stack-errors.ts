@@ -55,7 +55,7 @@ export const safeBetterStackErrorEvent = (input: SafeDeliveryError): SafeBetterS
 
 const validatedBetterStackDsn = (value: string): string => {
   const dsn = new URL(value);
-  if (dsn.protocol !== "https:" || !dsn.hostname.endsWith("betterstack.com"))
+  if (dsn.protocol !== "https:" || !dsn.hostname.endsWith("betterstackdata.com"))
     throw new Error("SARATHI_ERRORS_DSN must be a Better Stack HTTPS endpoint.");
   return dsn.toString();
 };
