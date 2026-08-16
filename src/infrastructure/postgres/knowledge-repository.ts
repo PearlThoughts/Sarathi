@@ -1,8 +1,15 @@
-import { and, cosineDistance, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, cosineDistance, eq, inArray, isNull, ne, type SQL, sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { Effect } from "effect";
+import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { RepositoryError } from "../../domain/errors.ts";
 import { stableSha256 } from "../../domain/hash.ts";
 import type { SensitivityTier } from "../../domain/policy.ts";
+import {
+  childDeliveryExecution,
+  type DeliveryExecutionContext,
+  endDeliveryExecution,
+} from "../../modules/delivery-execution-observability/index.ts";
 import {
   assertNonFinancialAttributes,
   type DeliveryEntityCatalog,
@@ -67,6 +74,130 @@ type SearchRow = {
 
 const postgresBindBatchSize = 1_000;
 const embeddingCacheWriteBatchSize = 256;
+const searchDialect = new PgDialect();
+
+const postgresPool = (database: KnowledgePostgresDatabase): Pool =>
+  (database as KnowledgePostgresDatabase & { readonly $client: Pool }).$client;
+
+type PostgresKnowledgeSearchOperation =
+  | "knowledge.exact"
+  | "knowledge.full_text"
+  | "knowledge.vector";
+
+export const executePostgresKnowledgeSearch = async <Row extends QueryResultRow>(
+  database: KnowledgePostgresDatabase,
+  statement: SQL,
+  operation: PostgresKnowledgeSearchOperation,
+  execution?: DeliveryExecutionContext | undefined,
+  signal?: AbortSignal | undefined,
+): Promise<{ readonly rows: readonly Row[] }> => {
+  const compiled = searchDialect.sqlToQuery(statement);
+  const pool = postgresPool(database);
+  if (execution === undefined && signal === undefined) {
+    const result = await pool.query<Row>(compiled.sql, compiled.params);
+    return { rows: result.rows };
+  }
+  const waitStartedAt = Date.now();
+  const waitExecution =
+    execution === undefined
+      ? undefined
+      : childDeliveryExecution(execution, "database.wait", {
+          operation,
+          "database.waiting": pool.waitingCount,
+        });
+  const client = await pool.connect().then(
+    (connected) => {
+      if (waitExecution !== undefined)
+        endDeliveryExecution(waitExecution, "success", {
+          operation,
+          "database.pool_wait.ms": Math.max(0, Date.now() - waitStartedAt),
+          "database.waiting": pool.waitingCount,
+        });
+      execution?.observer.recordMetric({
+        name: "delivery.database.pool_wait",
+        value: Math.max(0, Date.now() - waitStartedAt),
+        unit: "ms",
+        labels: { stage: "database.wait", outcome: "success", operation: "read" },
+      });
+      return connected;
+    },
+    (failure: unknown) => {
+      if (waitExecution !== undefined)
+        endDeliveryExecution(
+          waitExecution,
+          "failed",
+          { operation, "database.pool_wait.ms": Math.max(0, Date.now() - waitStartedAt) },
+          "database_pool_starvation",
+        );
+      execution?.observer.recordMetric({
+        name: "delivery.database.pool_wait",
+        value: Math.max(0, Date.now() - waitStartedAt),
+        unit: "ms",
+        labels: { stage: "database.wait", outcome: "failed", operation: "read" },
+      });
+      throw failure;
+    },
+  );
+  const queryStartedAt = Date.now();
+  const queryExecution =
+    execution === undefined
+      ? undefined
+      : childDeliveryExecution(execution, "database.query", { operation });
+  const cancellationSignal = signal ?? execution?.signal;
+  let cancellationRequested = false;
+  const cancel = (): void => {
+    cancellationRequested = true;
+    const processId = (client as PoolClient & { readonly processID: number }).processID;
+    void pool.query("select pg_cancel_backend($1)", [processId]).catch(() => undefined);
+  };
+  if (cancellationSignal?.aborted === true) cancel();
+  else cancellationSignal?.addEventListener("abort", cancel, { once: true });
+  try {
+    if (cancellationSignal?.aborted === true)
+      throw new Error("Knowledge query cancelled before execution.");
+    const result = await client.query<Row>(compiled.sql, compiled.params);
+    if (queryExecution !== undefined)
+      endDeliveryExecution(queryExecution, "success", {
+        operation,
+        "database.query.ms": Math.max(0, Date.now() - queryStartedAt),
+        "database.rows": result.rowCount ?? result.rows.length,
+        "cancellation.state": cancellationRequested ? "acknowledged" : "not_requested",
+      });
+    execution?.observer.recordMetric({
+      name: "delivery.database.query_duration",
+      value: Math.max(0, Date.now() - queryStartedAt),
+      unit: "ms",
+      labels: { stage: "database.query", outcome: "success", operation: "read" },
+    });
+    return { rows: result.rows };
+  } catch (failure) {
+    if (queryExecution !== undefined)
+      endDeliveryExecution(
+        queryExecution,
+        cancellationRequested ? "cancelled" : "failed",
+        {
+          operation,
+          "database.query.ms": Math.max(0, Date.now() - queryStartedAt),
+          "cancellation.state": cancellationRequested ? "acknowledged" : "not_requested",
+        },
+        cancellationRequested ? "other" : "slow_query",
+      );
+    execution?.observer.recordMetric({
+      name: "delivery.database.query_duration",
+      value: Math.max(0, Date.now() - queryStartedAt),
+      unit: "ms",
+      labels: {
+        stage: "database.query",
+        outcome: cancellationRequested ? "cancelled" : "failed",
+        operation: "read",
+      },
+    });
+    throw failure;
+  } finally {
+    cancellationSignal?.removeEventListener("abort", cancel);
+    client.release();
+  }
+};
 
 export const boundedPostgresBindBatches = <Value>(
   values: readonly Value[],
@@ -457,6 +588,8 @@ const readLexicalSearchLists = async (
   database: KnowledgePostgresDatabase,
   query: KnowledgeQuery,
   limit: number,
+  execution?: DeliveryExecutionContext | undefined,
+  signal?: AbortSignal | undefined,
 ): Promise<Readonly<Record<"exact" | "keyword", readonly SearchRow[]>>> => {
   const externalId = /\b[a-z][a-z0-9]+-\d+\b/i.exec(query.question)?.[0];
   const candidateLimit = Math.min(1_000, limit * 20);
@@ -472,7 +605,9 @@ const readLexicalSearchLists = async (
   const [exactResult, keywordResult] = await Promise.all([
     externalId === undefined
       ? Promise.resolve({ rows: [] })
-      : database.execute(sql`
+      : executePostgresKnowledgeSearch<SearchRow>(
+          database,
+          sql`
           with candidates as materialized (
             select passage.id
             from ${knowledgeItemTable} item
@@ -489,8 +624,14 @@ const readLexicalSearchLists = async (
           select authorized.*, content.body from authorized
           join ${knowledgePassageTable} content on content.id = authorized.id
           order by content.ordinal
-          limit ${limit}`),
-    database.execute(sql`
+          limit ${limit}`,
+          "knowledge.exact",
+          execution,
+          signal,
+        ),
+    executePostgresKnowledgeSearch<SearchRow>(
+      database,
+      sql`
       with query as (
         select websearch_to_tsquery('english', ${query.question}) as value
       ), candidates as materialized (
@@ -511,7 +652,11 @@ const readLexicalSearchLists = async (
       join ${knowledgePassageTable} content on content.id = authorized.id
       join candidates on candidates.id = authorized.id
       order by candidates.rank desc, authorized.source_updated_at desc
-      limit ${limit}`),
+      limit ${limit}`,
+      "knowledge.full_text",
+      execution,
+      signal,
+    ),
   ]);
   return {
     exact: valuesFromResult(exactResult),
@@ -1666,7 +1811,10 @@ const reconcileSnapshot = async (
 
 export const createPostgresKnowledgeRepository = (
   database: KnowledgePostgresDatabase,
-  configuration: { readonly entityCatalog?: DeliveryEntityCatalog | undefined } = {},
+  configuration: {
+    readonly entityCatalog?: DeliveryEntityCatalog | undefined;
+    readonly execution?: DeliveryExecutionContext | undefined;
+  } = {},
 ): KnowledgeRepository => ({
   reconcile: (snapshot, embeddings, trigger) => {
     if (embeddings.dimensions !== 1536) {
@@ -1797,28 +1945,49 @@ export const createPostgresKnowledgeRepository = (
       }),
     );
   },
-  search: (query, queryEmbedding) =>
+  search: (query, queryEmbedding, control) =>
     Effect.tryPromise({
       try: async () => {
         if (queryEmbedding.length !== 1536)
           throw new Error("Query embedding dimensions do not match the active projection schema.");
+        const limit = Math.max(1, Math.min(query.topK, 50));
+        const candidateLimit = Math.min(1_000, limit * 20);
+        const vectorDistance = cosineDistance(sql`projection.embedding`, [...queryEmbedding]);
         const authorized = authorizedPassages(
           query.audience.workspaceId,
           query.audience.maximumSensitivity,
           query.audience.audienceIds,
           query.audience.actorId,
           query.sources,
+          sql`select id from candidates`,
         );
-        const limit = Math.max(1, Math.min(query.topK, 50));
         const [lexical, vectorResult] = await Promise.all([
-          readLexicalSearchLists(database, query, limit),
-          database.execute(sql`
-            with authorized as materialized (${authorized})
+          readLexicalSearchLists(
+            database,
+            query,
+            limit,
+            control?.execution ?? configuration.execution,
+            control?.signal,
+          ),
+          executePostgresKnowledgeSearch<SearchRow>(
+            database,
+            sql`
+            with candidates as materialized (
+              select projection.passage_id as id, ${vectorDistance} as distance
+              from ${knowledgeProjectionTable} projection
+              where projection.workspace_id = ${query.audience.workspaceId}
+              order by ${vectorDistance}
+              limit ${candidateLimit}
+            ), authorized as materialized (${authorized})
             select authorized.*, content.body from authorized
-            join ${knowledgeProjectionTable} projection on projection.passage_id = authorized.id
+            join candidates on candidates.id = authorized.id
             join ${knowledgePassageTable} content on content.id = authorized.id
-            order by ${cosineDistance(sql`projection.embedding`, [...queryEmbedding])}
-            limit ${limit}`),
+            order by candidates.distance
+            limit ${limit}`,
+            "knowledge.vector",
+            control?.execution ?? configuration.execution,
+            control?.signal,
+          ),
         ]);
         return fuseSearchRows(
           {
@@ -1835,12 +2004,18 @@ export const createPostgresKnowledgeRepository = (
           operation: "knowledge-query",
         }),
     }),
-  searchLexical: (query) =>
+  searchLexical: (query, control) =>
     Effect.tryPromise({
       try: async () => {
         const limit = Math.max(1, Math.min(query.topK, 50));
         return fuseSearchRows(
-          await readLexicalSearchLists(database, query, limit),
+          await readLexicalSearchLists(
+            database,
+            query,
+            limit,
+            control?.execution ?? configuration.execution,
+            control?.signal,
+          ),
           limit,
           query.expandParents === true,
         );

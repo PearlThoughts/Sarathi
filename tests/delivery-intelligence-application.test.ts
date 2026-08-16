@@ -254,7 +254,7 @@ describe("delivery intelligence application", () => {
     expect(deliveryResponseModePolicies.structured.totalBudgetMs).toBeGreaterThan(
       deliveryResponseBudget.totalBudgetMs,
     );
-    expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBeUndefined();
+    expect(deliveryResponseModePolicies.deep_dive.maximumItems).toBe(240);
     expect(deliveryResponseModePolicies.deep_dive.maximumLines).toBeUndefined();
     expect(deliveryResponseModePolicies.deep_dive.latencyTargetMs).toBeUndefined();
     expect(deliveryResponseModePolicies.deep_dive.totalBudgetMs).toBe(240_000);

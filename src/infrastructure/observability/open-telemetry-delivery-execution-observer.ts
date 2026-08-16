@@ -44,6 +44,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
   const tracer = trace.getTracer("sarathi.delivery-execution", "1");
   const meter = metrics.getMeter("sarathi.delivery-execution", "1");
   const activeSpans = new Map<string, Span>();
+  const activeSpanAttributes = new Map<string, DeliveryExecutionAttributes>();
   const instruments = new Map<
     DeliveryExecutionMetricName,
     ReturnType<typeof meter.createHistogram>
@@ -60,6 +61,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
   };
   return {
     startSpan: ({ stage, parent, attributes }) => {
+      const startAttributes = sanitizeDeliveryExecutionAttributes(attributes ?? {});
       const parentOtelSpan = parent === undefined ? undefined : activeSpans.get(parent.spanId);
       const parentContext =
         parentOtelSpan === undefined
@@ -67,7 +69,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
           : trace.setSpan(otelContext.active(), parentOtelSpan);
       const otelSpan = tracer.startSpan(
         stage,
-        { attributes: safeOtelAttributes(attributes) },
+        { attributes: safeOtelAttributes(startAttributes) },
         parentContext,
       );
       const spanContext = otelSpan.spanContext();
@@ -79,12 +81,17 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
         startedAtEpochMs: Date.now(),
       };
       activeSpans.set(span.spanId, otelSpan);
+      activeSpanAttributes.set(span.spanId, startAttributes);
       return span;
     },
     endSpan: (span, input) => {
+      const attributes = sanitizeDeliveryExecutionAttributes({
+        ...activeSpanAttributes.get(span.spanId),
+        ...input.attributes,
+      });
       const otelSpan = activeSpans.get(span.spanId);
       if (otelSpan !== undefined) {
-        otelSpan.setAttributes(safeOtelAttributes(input.attributes));
+        otelSpan.setAttributes(safeOtelAttributes(attributes));
         otelSpan.setAttribute("delivery.outcome", input.outcome);
         otelSpan.setAttribute("delivery.failure_class", input.failureClass ?? "none");
         otelSpan.setStatus({
@@ -93,6 +100,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
         otelSpan.end();
         activeSpans.delete(span.spanId);
       }
+      activeSpanAttributes.delete(span.spanId);
       log({
         event: "delivery_execution_span",
         stage: span.stage,
@@ -102,7 +110,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
         trace_id: span.traceId,
         span_id: span.spanId,
         ...(span.parentSpanId === undefined ? {} : { parent_span_id: span.parentSpanId }),
-        ...sanitizeDeliveryExecutionAttributes(input.attributes ?? {}),
+        ...attributes,
       });
     },
     recordMetric: ({ name, value, unit, labels }) => {

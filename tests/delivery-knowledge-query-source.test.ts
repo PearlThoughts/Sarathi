@@ -59,14 +59,13 @@ describe("delivery knowledge query source", () => {
     );
     expect(embed).toHaveBeenCalledWith(["Is Atlas Site Composer fully deployed?"]);
     expect(embed).toHaveBeenCalledOnce();
-    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenCalledOnce();
     expect(search.mock.calls[0]?.[0]).toMatchObject({
       subject: "Atlas Site Composer",
       facets: expect.arrayContaining(["identity", "deployment", "lifecycle"]),
       topK: 25,
-      expandParents: false,
+      expandParents: true,
     });
-    expect(search.mock.calls[1]?.[0]).toMatchObject({ expandParents: true });
     expect(search.mock.calls[0]?.[1]).toEqual([0.1, 0.2]);
   });
 

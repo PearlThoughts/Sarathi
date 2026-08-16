@@ -461,7 +461,7 @@ const answerFromRuntime = async (
         allowedActorIds: new Set([request.actorId]),
       }),
       createDeliveryKnowledgeQuerySource({
-        repository: createPostgresKnowledgeRepository(opened.database),
+        repository: createPostgresKnowledgeRepository(opened.database, { execution }),
         embeddings: createAiSdkKnowledgeEmbedding(
           knowledgeEmbeddingConfigurationFromEnvironment(environment),
         ),

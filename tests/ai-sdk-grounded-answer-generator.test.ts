@@ -2,10 +2,26 @@ import { MockLanguageModelV4 } from "ai/test";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  classifyModelProviderFailure,
   createGroundedAnswerGenerator,
   createOpenRouterLanguageModel,
   openRouterModelConfigurationFromEnvironment,
 } from "../src/infrastructure/model/index.ts";
+
+describe("model provider failure classification", () => {
+  it.each([
+    [{ statusCode: 402 }, false, "402", "openrouter-provider-billing"],
+    [{ statusCode: 429 }, false, "429", "openrouter-provider-rate-limit"],
+    [{ statusCode: 503 }, false, "5xx", "openrouter-provider-5xx"],
+    [{ name: "TimeoutError" }, false, "timeout", "openrouter-provider-timeout"],
+    [{ name: "AbortError" }, true, "cancelled", "openrouter-provider-cancelled"],
+  ] as const)("classifies safe provider status %s", (failure, interrupted, statusClass, operation) => {
+    expect(classifyModelProviderFailure(failure, interrupted)).toEqual({
+      statusClass,
+      operation,
+    });
+  });
+});
 
 const successfulModel = (text: string): MockLanguageModelV4 =>
   new MockLanguageModelV4({

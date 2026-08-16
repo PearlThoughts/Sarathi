@@ -4,7 +4,6 @@ import { isSensitivityAtOrBelow } from "../../domain/policy.ts";
 import {
   childDeliveryExecution,
   endDeliveryExecution,
-  observeDeliveryEffect,
 } from "../../modules/delivery-execution-observability/index.ts";
 import type {
   DeliveryQuerySource,
@@ -106,7 +105,7 @@ export const createDeliveryKnowledgeQuerySource = (
               ? { subject: plan.subject.phrase }
               : {}),
           ...(plan.facets === undefined ? {} : { facets: plan.facets }),
-          expandParents: false,
+          expandParents: relevanceProfile === "expanded",
         } as const;
         const queryVector = yield* (() => {
           if (configuration.embeddings === undefined || relevanceProfile === "legacy")
@@ -125,8 +124,14 @@ export const createDeliveryKnowledgeQuerySource = (
           );
         })();
         const results = yield* queryVector === undefined
-          ? queryKnowledgeLexically(configuration.repository, query)
-          : configuration.repository.search(query, queryVector);
+          ? queryKnowledgeLexically(configuration.repository, query, {
+              signal: context.execution?.signal,
+              execution: context.execution,
+            })
+          : configuration.repository.search(query, queryVector, {
+              signal: context.execution?.signal,
+              execution: context.execution,
+            });
         const rerankExecution =
           context.execution === undefined
             ? undefined
@@ -144,38 +149,8 @@ export const createDeliveryKnowledgeQuerySource = (
             "candidates.unique": reranked.length,
             "candidates.excluded": Math.max(0, reranked.length - selected.length),
           });
-        const contextualized = yield* (() => {
-          if (relevanceProfile !== "expanded" || queryVector === undefined || selected.length === 0)
-            return Effect.succeed(selected);
-          const expand = () =>
-            Effect.gen(function* () {
-              const expanded = yield* configuration.repository.search(
-                { ...query, expandParents: true },
-                queryVector,
-              );
-              const expandedById = new Map(expanded.map((candidate) => [candidate.id, candidate]));
-              return selected.map((candidate) => {
-                const parentContext = expandedById.get(candidate.id);
-                return parentContext === undefined
-                  ? candidate
-                  : {
-                      ...parentContext,
-                      componentRanks: candidate.componentRanks,
-                      score: candidate.score,
-                    };
-              });
-            });
-          return context.execution === undefined
-            ? expand()
-            : observeDeliveryEffect(
-                context.execution,
-                "parent.expand",
-                { "candidates.unique": selected.length },
-                expand,
-              );
-        })();
         return {
-          items: contextualized
+          items: selected
             .filter(
               (result) =>
                 (sources === undefined || sources.includes(result.source)) &&

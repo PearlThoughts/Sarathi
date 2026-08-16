@@ -1,5 +1,5 @@
 import { Tracer as EffectOpenTelemetryTracer } from "@effect/opentelemetry";
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import {
   type DeliveryExecutionAttributes,
   type DeliveryExecutionFailureClass,
@@ -83,6 +83,39 @@ export const endDeliveryExecution = (
     unit: "ms",
     labels: { stage: context.span.stage, outcome },
   });
+  if (context.span.stage === "provider.generate") {
+    context.observer.recordMetric({
+      name: "delivery.provider.duration",
+      value: elapsedMs,
+      unit: "ms",
+      labels: {
+        stage: context.span.stage,
+        outcome,
+        provider_status_class: safeAttributes["provider.status_class"] ?? "other",
+        cancellation_state: safeAttributes["cancellation.state"] ?? "other",
+      },
+    });
+    for (const [attribute, tokenKind] of [
+      ["tokens.input", "input"],
+      ["tokens.output", "output"],
+      ["tokens.reasoning", "reasoning"],
+      ["tokens.total", "total"],
+    ] as const) {
+      const value = safeAttributes[attribute];
+      if (value !== undefined)
+        context.observer.recordMetric({
+          name: "delivery.provider.tokens",
+          value,
+          unit: "1",
+          labels: {
+            stage: context.span.stage,
+            outcome,
+            operation: "compose",
+            token_kind: tokenKind,
+          },
+        });
+    }
+  }
 };
 
 export const observeDeliveryEffect = <A, E, R>(
@@ -90,6 +123,16 @@ export const observeDeliveryEffect = <A, E, R>(
   stage: DeliveryExecutionStage,
   attributes: DeliveryExecutionAttributes,
   make: (context: DeliveryExecutionContext) => Effect.Effect<A, E, R>,
+  options: {
+    readonly successAttributes?: DeliveryExecutionAttributes | undefined;
+    readonly successAttributesFor?: ((value: A) => DeliveryExecutionAttributes) | undefined;
+    readonly classifyFailure?:
+      | ((failure: E) => {
+          readonly failureClass: DeliveryExecutionFailureClass;
+          readonly attributes?: DeliveryExecutionAttributes | undefined;
+        })
+      | undefined;
+  } = {},
 ): Effect.Effect<A, E, R> => {
   const context = childDeliveryExecution(parent, stage, attributes);
   const effectParentSpan = EffectOpenTelemetryTracer.makeExternalSpan({
@@ -100,9 +143,18 @@ export const observeDeliveryEffect = <A, E, R>(
     Effect.onExit((exit) =>
       Effect.sync(() => {
         if (Exit.isSuccess(exit)) {
-          endDeliveryExecution(context, "success");
+          endDeliveryExecution(
+            context,
+            "success",
+            options.successAttributesFor?.(exit.value) ?? options.successAttributes,
+          );
           return;
         }
+        const failure = Cause.failureOption(exit.cause);
+        const classified =
+          Option.isSome(failure) && options.classifyFailure !== undefined
+            ? options.classifyFailure(failure.value)
+            : undefined;
         const outcome = context.signal.aborted
           ? "cancelled"
           : remainingDeliveryExecutionBudgetMs(context) === 0
@@ -111,8 +163,10 @@ export const observeDeliveryEffect = <A, E, R>(
         endDeliveryExecution(
           context,
           outcome,
-          {},
-          outcome === "timeout" ? "internal_deadline_exhaustion" : "other",
+          classified?.attributes ?? {},
+          outcome === "timeout"
+            ? "internal_deadline_exhaustion"
+            : (classified?.failureClass ?? "other"),
         );
       }),
     ),
@@ -125,6 +179,7 @@ export const createInMemoryDeliveryExecutionObserver = (): DeliveryExecutionObse
   readonly spans: readonly {
     readonly span: DeliveryExecutionSpan;
     readonly outcome?: string | undefined;
+    readonly failureClass?: string | undefined;
     readonly attributes?: DeliveryExecutionAttributes | undefined;
   }[];
   readonly metrics: readonly unknown[];
@@ -133,6 +188,7 @@ export const createInMemoryDeliveryExecutionObserver = (): DeliveryExecutionObse
   const spans: {
     span: DeliveryExecutionSpan;
     outcome?: string | undefined;
+    failureClass?: string | undefined;
     attributes?: DeliveryExecutionAttributes | undefined;
   }[] = [];
   const metrics: unknown[] = [];
@@ -149,7 +205,13 @@ export const createInMemoryDeliveryExecutionObserver = (): DeliveryExecutionObse
     },
     endSpan: (span, input) => {
       const index = spans.findIndex((entry) => entry.span.spanId === span.spanId);
-      if (index >= 0) spans[index] = { span, outcome: input.outcome, attributes: input.attributes };
+      if (index >= 0)
+        spans[index] = {
+          span,
+          outcome: input.outcome,
+          failureClass: input.failureClass,
+          attributes: input.attributes,
+        };
     },
     recordMetric: (input) => metrics.push(input),
     captureError: (input) => errors.push(input),

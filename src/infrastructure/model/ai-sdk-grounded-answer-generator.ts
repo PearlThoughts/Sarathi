@@ -28,6 +28,40 @@ type ModelProviderDiagnosticSink = (event: ModelProviderDiagnosticEvent) => void
 type ResolvedLanguageModel = Exclude<LanguageModel, string>;
 type LanguageModelResolver = (configuration: OpenRouterModelConfiguration) => ResolvedLanguageModel;
 
+type ModelProviderFailureClassification = {
+  readonly operation:
+    | "openrouter-provider-billing"
+    | "openrouter-provider-rate-limit"
+    | "openrouter-provider-5xx"
+    | "openrouter-provider-failure"
+    | "openrouter-provider-timeout"
+    | "openrouter-provider-cancelled";
+  readonly statusClass: "402" | "429" | "5xx" | "timeout" | "cancelled" | "other";
+};
+
+export const classifyModelProviderFailure = (
+  failure: unknown,
+  interrupted = false,
+): ModelProviderFailureClassification => {
+  if (interrupted) return { operation: "openrouter-provider-cancelled", statusClass: "cancelled" };
+  const record = typeof failure === "object" && failure !== null ? failure : {};
+  const statusCode =
+    "statusCode" in record && typeof record.statusCode === "number"
+      ? record.statusCode
+      : "status" in record && typeof record.status === "number"
+        ? record.status
+        : undefined;
+  if (statusCode === 402) return { operation: "openrouter-provider-billing", statusClass: "402" };
+  if (statusCode === 429)
+    return { operation: "openrouter-provider-rate-limit", statusClass: "429" };
+  if (statusCode !== undefined && statusCode >= 500 && statusCode <= 599)
+    return { operation: "openrouter-provider-5xx", statusClass: "5xx" };
+  const name = "name" in record && typeof record.name === "string" ? record.name : "";
+  if (name === "AbortError" || name === "TimeoutError")
+    return { operation: "openrouter-provider-timeout", statusClass: "timeout" };
+  return { operation: "openrouter-provider-failure", statusClass: "other" };
+};
+
 const required = (key: string, value: string | undefined): string => {
   if (value === undefined || value.trim() === "")
     throw new RepositoryError({ message: `${key} is required.` });
@@ -418,7 +452,12 @@ export const createGroundedAnswerGenerator = (
             outcome: "failed",
             provider: "openrouter",
           });
-          throw error;
+          if (error instanceof RepositoryError) throw error;
+          const classification = classifyModelProviderFailure(error, interruptSignal.aborted);
+          throw new RepositoryError({
+            message: "OpenRouter answer generation is unavailable.",
+            operation: classification.operation,
+          });
         }
       },
       catch: (error) =>
