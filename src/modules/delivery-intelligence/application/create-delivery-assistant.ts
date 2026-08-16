@@ -60,6 +60,7 @@ export type DeliveryAssistantConfiguration = {
   readonly capabilityLedger?: CapabilityLedger | undefined;
   readonly completionResolution?: ProductCompletionResolution | undefined;
   readonly executionObserver?: DeliveryExecutionObserver | undefined;
+  readonly execution?: DeliveryExecutionContext | undefined;
   readonly now?: (() => Date) | undefined;
 };
 
@@ -1941,28 +1942,32 @@ export const createDeliveryAssistant = (
       totalBudgetMs,
     } as const;
     const executionNow = configuration.now?.() ?? new Date();
-    const deadlineEpochMs = executionNow.getTime() + totalBudgetMs;
-    const abortController = new AbortController();
-    const execution = startDeliveryExecution({
-      observer: configuration.executionObserver ?? createNoopDeliveryExecutionObserver(),
-      deadlineEpochMs,
-      signal: abortController.signal,
-      nowEpochMs:
-        configuration.now === undefined
-          ? Date.now
-          : () => configuration.now?.().getTime() ?? Date.now(),
-      attributes: {
-        "service.name": "sarathi",
-        "response.product": responseProduct,
-        "response.mode": responseMode,
-        "timeout.ms": totalBudgetMs,
-      },
-    });
-    const deadlineTimer = setTimeout(
-      () => abortController.abort("delivery-deadline"),
-      totalBudgetMs,
-    );
-    deadlineTimer.unref?.();
+    const deadlineEpochMs =
+      configuration.execution?.deadlineEpochMs ?? executionNow.getTime() + totalBudgetMs;
+    const abortController =
+      configuration.execution === undefined ? new AbortController() : undefined;
+    const execution =
+      configuration.execution ??
+      startDeliveryExecution({
+        observer: configuration.executionObserver ?? createNoopDeliveryExecutionObserver(),
+        deadlineEpochMs,
+        signal: abortController?.signal ?? new AbortController().signal,
+        nowEpochMs:
+          configuration.now === undefined
+            ? Date.now
+            : () => configuration.now?.().getTime() ?? Date.now(),
+        attributes: {
+          "service.name": "sarathi",
+          "response.product": responseProduct,
+          "response.mode": responseMode,
+          "timeout.ms": totalBudgetMs,
+        },
+      });
+    const deadlineTimer =
+      abortController === undefined
+        ? undefined
+        : setTimeout(() => abortController.abort("delivery-deadline"), totalBudgetMs);
+    deadlineTimer?.unref?.();
     const authorization = observeDeliveryEffect(
       execution,
       "authorization.resolve",
@@ -2341,7 +2346,7 @@ export const createDeliveryAssistant = (
             );
           }),
           Effect.timeoutFail({
-            duration: totalBudgetMs,
+            duration: Math.max(1, remainingDeliveryExecutionBudgetMs(execution)),
             onTimeout: () =>
               new RepositoryError({
                 message: "Delivery answer exceeded its response budget.",
@@ -2351,22 +2356,24 @@ export const createDeliveryAssistant = (
         );
       }),
       Effect.timeoutFail({
-        duration: totalBudgetMs,
+        duration: Math.max(1, remainingDeliveryExecutionBudgetMs(execution)),
         onTimeout: () =>
           new RepositoryError({
             message: "Delivery answer exceeded its absolute response deadline.",
             operation: "delivery-answer",
           }),
       }),
-      Effect.onInterrupt(() => Effect.sync(() => abortController.abort("delivery-interrupted"))),
+      Effect.onInterrupt(() => Effect.sync(() => abortController?.abort("delivery-interrupted"))),
       Effect.onExit((exit) =>
         Effect.sync(() => {
-          clearTimeout(deadlineTimer);
+          if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+          if (configuration.execution !== undefined) return;
           const outcome = Exit.isSuccess(exit)
             ? exit.value.status === "failed"
               ? "failed"
               : "success"
-            : abortController.signal.aborted || remainingDeliveryExecutionBudgetMs(execution) === 0
+            : abortController?.signal.aborted === true ||
+                remainingDeliveryExecutionBudgetMs(execution) === 0
               ? "timeout"
               : "failed";
           endDeliveryExecution(

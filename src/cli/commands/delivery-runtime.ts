@@ -43,6 +43,11 @@ import {
   createAnswerFeedbackService,
 } from "../../modules/answer-feedback/index.ts";
 import {
+  childDeliveryExecution,
+  endDeliveryExecution,
+  startDeliveryExecution,
+} from "../../modules/delivery-execution-observability/index.ts";
+import {
   type CapabilityLedger,
   createDeliveryAssistant,
   createProductCapabilityLedgerProjection,
@@ -370,51 +375,84 @@ const answerFromRuntime = async (
   const productMode = deliveryResponseProductPolicies[responseProduct].responseMode;
   if (request.responseMode === undefined && responseMode !== productMode)
     throw new Error("Delivery response product and mode selection diverged.");
+  const responsePolicy = deliveryResponseModePolicies[responseMode];
   const queryBudgetMs = deliveryResponseModePolicies[responseMode].sourceTimeoutMs;
-  const opened = openKnowledgePostgresDatabase(
-    required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
-    queryBudgetMs,
-  );
-  const entityCatalog = parseDeliveryEntityCatalog(
-    environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
-  );
-  const capabilityLedger =
-    environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON === undefined
-      ? undefined
-      : validateCapabilityLedger(
-          parseJson<CapabilityLedger>(
-            "SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON",
-            environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON,
-          ),
-        );
-  const completionContracts =
-    environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON === undefined
-      ? undefined
-      : parseProductCompletionContracts(
-          parseJson<unknown>(
-            "SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON",
-            environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON,
-          ),
-        );
-  const productModelActorMappings =
-    environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON === undefined
-      ? []
-      : parseJson<readonly ProductModelActorMapping[]>(
-          "SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON",
-          environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON,
-        );
-  const platformConfig = await runRepositoryEffect(loadPlatformConfig(environment));
-  const relevanceProfile = deliveryRelevanceProfileFromEnvironment(environment);
-  const productModelConfiguration = platformConfig.productModel;
-  const productOpened =
-    productModelConfiguration === undefined ||
-    productModelConfiguration.databaseUrl ===
-      required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL)
-      ? undefined
-      : openKnowledgePostgresDatabase(productModelConfiguration.databaseUrl, queryBudgetMs);
-  const productDatabase = productOpened?.database ?? opened.database;
   const executionObserver = deliveryExecutionObserverFromEnvironment(environment);
+  const abortController = new AbortController();
+  const execution = startDeliveryExecution({
+    observer: executionObserver,
+    deadlineEpochMs: Date.now() + responsePolicy.totalBudgetMs,
+    signal: abortController.signal,
+    attributes: {
+      "service.name": "sarathi",
+      "response.product": responseProduct,
+      "response.mode": responseMode,
+      "timeout.ms": responsePolicy.totalBudgetMs,
+      ...(environment.RAILWAY_DEPLOYMENT_ID === undefined
+        ? {}
+        : { "deployment.id": environment.RAILWAY_DEPLOYMENT_ID }),
+    },
+  });
+  const cliIngressExecution = childDeliveryExecution(execution, "cli.ingress", {
+    "response.product": responseProduct,
+    "response.mode": responseMode,
+  });
+  const deadlineTimer = setTimeout(
+    () => abortController.abort("delivery-deadline"),
+    responsePolicy.totalBudgetMs,
+  );
+  deadlineTimer.unref?.();
+  let setupOperation = "database.open";
+  let setupCompleted = false;
+  let reportOutcome: "success" | "failed" | "timeout" = "failed";
+  let opened: ReturnType<typeof openKnowledgePostgresDatabase> | undefined;
+  let productOpened: ReturnType<typeof openKnowledgePostgresDatabase> | undefined;
   try {
+    opened = openKnowledgePostgresDatabase(
+      required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL),
+      queryBudgetMs,
+    );
+    setupOperation = "configuration.parse";
+    const entityCatalog = parseDeliveryEntityCatalog(
+      environment.SARATHI_DELIVERY_ENTITY_CATALOG_JSON,
+    );
+    const capabilityLedger =
+      environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON === undefined
+        ? undefined
+        : validateCapabilityLedger(
+            parseJson<CapabilityLedger>(
+              "SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON",
+              environment.SARATHI_DELIVERY_CAPABILITY_LEDGER_JSON,
+            ),
+          );
+    const completionContracts =
+      environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON === undefined
+        ? undefined
+        : parseProductCompletionContracts(
+            parseJson<unknown>(
+              "SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON",
+              environment.SARATHI_NAMED_PRODUCT_COMPLETION_CONTRACTS_JSON,
+            ),
+          );
+    const productModelActorMappings =
+      environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON === undefined
+        ? []
+        : parseJson<readonly ProductModelActorMapping[]>(
+            "SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON",
+            environment.SARATHI_DELIVERY_PRODUCT_MODEL_ACTOR_MAPPINGS_JSON,
+          );
+    setupOperation = "platform.configure";
+    const platformConfig = await runRepositoryEffect(loadPlatformConfig(environment));
+    const relevanceProfile = deliveryRelevanceProfileFromEnvironment(environment);
+    const productModelConfiguration = platformConfig.productModel;
+    productOpened =
+      productModelConfiguration === undefined ||
+      productModelConfiguration.databaseUrl ===
+        required("SARATHI_STRATEGY_DATABASE_URL", environment.SARATHI_STRATEGY_DATABASE_URL)
+        ? undefined
+        : openKnowledgePostgresDatabase(productModelConfiguration.databaseUrl, queryBudgetMs);
+    const productDatabase = productOpened?.database ?? opened.database;
+    setupOperation = "sources.compose";
     const sources = [
       createPostgresDeliveryQuerySource(opened.database, { entityCatalog }),
       createStrategyKernelDeliveryQuerySource({
@@ -449,6 +487,7 @@ const answerFromRuntime = async (
       ),
       capabilityLedger,
       executionObserver,
+      execution,
       ...deliveryResponseBudget,
     };
     const assistant = (() => {
@@ -503,10 +542,42 @@ const answerFromRuntime = async (
       });
       return createRegistryBackedDeliveryAssistant(configuration, projection);
     })();
-    return await runRepositoryEffect(assistant.answer(request));
+    endDeliveryExecution(cliIngressExecution, "success", { operation: "sources.compose" });
+    setupCompleted = true;
+    setupOperation = "report.execute";
+    const answer = await runRepositoryEffect(assistant.answer(request));
+    reportOutcome = answer.status === "failed" ? "failed" : "success";
+    return answer;
   } finally {
+    clearTimeout(deadlineTimer);
     await productOpened?.pool.end();
-    await opened.pool.end();
+    await opened?.pool.end();
+    if (!setupCompleted)
+      endDeliveryExecution(cliIngressExecution, "failed", { operation: setupOperation }, "other");
+    if (abortController.signal.aborted) reportOutcome = "timeout";
+    endDeliveryExecution(
+      execution,
+      reportOutcome,
+      {
+        operation: setupOperation,
+        "response.product": responseProduct,
+        "response.mode": responseMode,
+      },
+      reportOutcome === "timeout"
+        ? "internal_deadline_exhaustion"
+        : reportOutcome === "failed"
+          ? "other"
+          : "none",
+    );
+    if (reportOutcome !== "success")
+      executionObserver.captureError({
+        code: "SARATHI-CLI-RUNTIME-COMPOSITION",
+        stage: setupCompleted ? "delivery.report" : "cli.ingress",
+        failureClass: reportOutcome === "timeout" ? "internal_deadline_exhaustion" : "other",
+        ...(environment.RAILWAY_DEPLOYMENT_ID === undefined
+          ? {}
+          : { deploymentId: environment.RAILWAY_DEPLOYMENT_ID }),
+      });
   }
 };
 
