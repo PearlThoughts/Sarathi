@@ -46,6 +46,7 @@ export const deliveryResponseModePolicies: Readonly<
     sourceTimeoutMs: 90_000,
     compositionTimeoutMs: 120_000,
     totalBudgetMs: 240_000,
+    maximumItems: 240,
     freshnessWindowMs: 2 * 60 * 60 * 1_000,
   },
 };

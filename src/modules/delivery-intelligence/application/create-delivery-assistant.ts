@@ -79,6 +79,48 @@ type ReportFailure = Extract<
   NonNullable<DeliveryAssistantAnswer["failure"]>,
   { readonly code: "SARATHI-REPORT-COMPOSITION-FAILED" }
 >;
+
+const providerFailureTelemetry = (
+  failure: unknown,
+): {
+  readonly failureClass:
+    | "provider_billing"
+    | "provider_rate_limit"
+    | "provider_failure"
+    | "provider_timeout"
+    | "provider_cancelled";
+  readonly attributes: {
+    readonly "provider.status_class": "402" | "429" | "5xx" | "timeout" | "cancelled" | "other";
+  };
+} => {
+  const operation = failure instanceof RepositoryError ? failure.operation : undefined;
+  if (operation === "openrouter-provider-billing")
+    return { failureClass: "provider_billing", attributes: { "provider.status_class": "402" } };
+  if (operation === "openrouter-provider-rate-limit")
+    return {
+      failureClass: "provider_rate_limit",
+      attributes: { "provider.status_class": "429" },
+    };
+  if (operation === "openrouter-provider-timeout")
+    return {
+      failureClass: "provider_timeout",
+      attributes: { "provider.status_class": "timeout" },
+    };
+  if (operation === "openrouter-provider-cancelled")
+    return {
+      failureClass: "provider_cancelled",
+      attributes: { "provider.status_class": "cancelled" },
+    };
+  if (operation === "openrouter-provider-5xx")
+    return {
+      failureClass: "provider_failure",
+      attributes: { "provider.status_class": "5xx" },
+    };
+  return {
+    failureClass: "provider_failure",
+    attributes: { "provider.status_class": "other" },
+  };
+};
 type ReportFailureClassification = ReportFailure["classification"];
 type ReportFailureDiagnosticCode = NonNullable<ReportFailure["diagnosticCode"]>;
 type AnswerFailure = Extract<
@@ -1217,10 +1259,9 @@ const composeWithModel = (
   const deterministic = composeAnswer(request, plan, result, responseMode);
   const rankedItems = rankedForIntent(uniqueRanked(result.items), plan.intents[0] ?? "general");
   const maximumItems = deliveryResponseModePolicies[responseMode].maximumItems;
+  const composableItems = rankedItems.filter((item) => item.selector !== "period_census");
   const items =
-    maximumItems === undefined
-      ? rankedItems.filter((item) => item.selector !== "period_census")
-      : rankedItems.slice(0, maximumItems);
+    maximumItems === undefined ? composableItems : composableItems.slice(0, maximumItems);
   if (
     !reportComposition &&
     requiredCompletionAssessment === undefined &&
@@ -1292,6 +1333,20 @@ const composeWithModel = (
         "envelope.items": items.length,
       },
       () => Effect.suspend(() => composer.compose(compositionInput)),
+      {
+        successAttributesFor: (composed) => ({
+          "provider.status_class": "success",
+          ...(composed.modelUsage === undefined
+            ? {}
+            : {
+                "tokens.input": composed.modelUsage.inputTokens,
+                "tokens.output": composed.modelUsage.outputTokens,
+                "tokens.reasoning": composed.modelUsage.reasoningTokens,
+                "tokens.total": composed.modelUsage.totalTokens,
+              }),
+        }),
+        classifyFailure: providerFailureTelemetry,
+      },
     ).pipe(
       Effect.flatMap((composed) =>
         observeDeliveryEffect(execution, "composition.validate", { operation: "validate" }, () =>
@@ -1809,14 +1864,28 @@ const planForResponseMode = (
   };
 };
 
+const maximumPeriodReportEnrichmentQuestions = 8;
+const maximumPeriodReportEnrichmentItemsPerQuestion = 8;
+
+const latestCapabilityActivity = (
+  section: PeriodDeliveryReport["capabilitySections"][number],
+): number =>
+  Math.max(0, ...section.capsules.map(({ latestActivityAt }) => Date.parse(latestActivityAt) || 0));
+
 const periodReportEnrichmentQuestions = (report: PeriodDeliveryReport): readonly string[] => {
-  const capabilityQuestions = report.capabilitySections.map((section) => {
-    const initiatives = section.capsules
-      .slice(0, 8)
-      .map(({ title }) => safeText(title))
-      .join("; ");
-    return `Latest delivery state, decisions, emerging requirements, human waits, awaited action, acceptance, and project rationale for ${safeText(section.title)}${initiatives === "" ? "" : `: ${initiatives}`}`;
-  });
+  const capabilityQuestions = report.capabilitySections
+    .toSorted(
+      (left, right) =>
+        latestCapabilityActivity(right) - latestCapabilityActivity(left) ||
+        right.capsules.length - left.capsules.length,
+    )
+    .map((section) => {
+      const initiatives = section.capsules
+        .slice(0, 8)
+        .map(({ title }) => safeText(title))
+        .join("; ");
+      return `Latest delivery state, decisions, emerging requirements, human waits, awaited action, acceptance, and project rationale for ${safeText(section.title)}${initiatives === "" ? "" : `: ${initiatives}`}`;
+    });
   const unmapped =
     report.unmappedCapsules.length === 0
       ? []
@@ -1826,7 +1895,7 @@ const periodReportEnrichmentQuestions = (report: PeriodDeliveryReport): readonly
             .map(({ title }) => safeText(title))
             .join("; ")}`,
         ];
-  return [...capabilityQuestions, ...unmapped];
+  return [...capabilityQuestions, ...unmapped].slice(0, maximumPeriodReportEnrichmentQuestions);
 };
 
 const retrievePeriodReportEnrichment = (
@@ -1837,7 +1906,8 @@ const retrievePeriodReportEnrichment = (
 ): Effect.Effect<readonly DeliveryResultItem[]> => {
   const knowledgeSources = sources.filter((source) => source.selectors.includes("knowledge"));
   const questions = periodReportEnrichmentQuestions(report);
-  if (knowledgeSources.length === 0 || questions.length === 0) return Effect.succeed([]);
+  if (knowledgeSources.length === 0 || questions.length === 0 || sourceTimeoutMs <= 0)
+    return Effect.succeed([]);
   return Effect.all(
     questions.flatMap((question, index) => {
       const plan: DeliveryQueryPlan = {
@@ -1848,7 +1918,7 @@ const retrievePeriodReportEnrichment = (
             id: `delivery-report-enrichment-${index + 1}`,
             purpose: "delivered",
             select: "knowledge",
-            limit: 20,
+            limit: maximumPeriodReportEnrichmentItemsPerQuestion,
           },
         ],
         answerMode: "model_assisted",
@@ -1944,6 +2014,8 @@ export const createDeliveryAssistant = (
     const executionNow = configuration.now?.() ?? new Date();
     const deadlineEpochMs =
       configuration.execution?.deadlineEpochMs ?? executionNow.getTime() + totalBudgetMs;
+    const sourceDeadlineEpochMs = Math.min(deadlineEpochMs, startedAt + sourceTimeoutMs);
+    const remainingSourceBudgetMs = (): number => Math.max(0, sourceDeadlineEpochMs - Date.now());
     const abortController =
       configuration.execution === undefined ? new AbortController() : undefined;
     const execution =
@@ -1968,6 +2040,20 @@ export const createDeliveryAssistant = (
         ? undefined
         : setTimeout(() => abortController.abort("delivery-deadline"), totalBudgetMs);
     deadlineTimer?.unref?.();
+    const sourceAbortController = new AbortController();
+    const abortSource = (): void =>
+      sourceAbortController.abort(execution.signal.reason ?? "delivery-deadline");
+    if (execution.signal.aborted) abortSource();
+    else execution.signal.addEventListener("abort", abortSource, { once: true });
+    const sourceDeadlineTimer = setTimeout(
+      () => sourceAbortController.abort("delivery-source-deadline"),
+      remainingSourceBudgetMs(),
+    );
+    sourceDeadlineTimer.unref?.();
+    const sourceExecution: DeliveryExecutionContext = {
+      ...execution,
+      signal: sourceAbortController.signal,
+    };
     const authorization = observeDeliveryEffect(
       execution,
       "authorization.resolve",
@@ -2037,25 +2123,17 @@ export const createDeliveryAssistant = (
         return Effect.all(
           sources.map((source) =>
             observeDeliveryEffect(
-              execution,
-              retrievalPlan.operations.some(({ select }) => select === "period_census")
-                ? "period.census"
-                : "source.retrieve",
+              sourceExecution,
+              source.selectors.includes("period_census") ? "period.census" : "source.retrieve",
               {
                 source: source.source,
                 operation: "read",
-                "timeout.ms": Math.min(
-                  sourceTimeoutMs,
-                  remainingDeliveryExecutionBudgetMs(execution),
-                ),
+                "timeout.ms": remainingSourceBudgetMs(),
               },
               (sourceExecution) =>
                 source.execute({ ...context, execution: sourceExecution }, retrievalPlan).pipe(
                   Effect.timeoutFail({
-                    duration: Math.min(
-                      sourceTimeoutMs,
-                      remainingDeliveryExecutionBudgetMs(execution),
-                    ),
+                    duration: Math.max(1, remainingSourceBudgetMs()),
                     onTimeout: () =>
                       new RepositoryError({
                         message: `${source.source} delivery query exceeded its response budget.`,
@@ -2182,21 +2260,19 @@ export const createDeliveryAssistant = (
               periodDeliveryReport === undefined || configuration.answerComposer === undefined
                 ? Effect.succeed([])
                 : observeDeliveryEffect(
-                    execution,
+                    sourceExecution,
                     "parent.expand",
                     {
                       "episodes.count": periodDeliveryReport.capsules.length,
-                      "timeout.ms": Math.min(
-                        sourceTimeoutMs,
-                        remainingDeliveryExecutionBudgetMs(execution),
-                      ),
+                      "queries.count": periodReportEnrichmentQuestions(periodDeliveryReport).length,
+                      "timeout.ms": remainingSourceBudgetMs(),
                     },
                     (parentExecution) =>
                       retrievePeriodReportEnrichment(
                         configuration.sources,
                         { ...context, execution: parentExecution },
                         periodDeliveryReport,
-                        Math.min(sourceTimeoutMs, remainingDeliveryExecutionBudgetMs(execution)),
+                        remainingSourceBudgetMs(),
                       ),
                   );
             return enrichment.pipe(
@@ -2367,6 +2443,8 @@ export const createDeliveryAssistant = (
       Effect.onExit((exit) =>
         Effect.sync(() => {
           if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+          clearTimeout(sourceDeadlineTimer);
+          execution.signal.removeEventListener("abort", abortSource);
           if (configuration.execution !== undefined) return;
           const outcome = Exit.isSuccess(exit)
             ? exit.value.status === "failed"

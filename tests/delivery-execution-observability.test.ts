@@ -44,6 +44,7 @@ describe("delivery execution observability", () => {
       stage: "unregistered-stage",
       outcome: "success",
       response_mode: "deep_dive",
+      token_kind: "private-record-id",
       trace_id: "deadbeef",
       execution_id: "request-1",
       entity_id: "entity-1",
@@ -55,6 +56,7 @@ describe("delivery execution observability", () => {
       stage: "other",
       outcome: "success",
       response_mode: "deep_dive",
+      token_kind: "other",
     });
   });
 
@@ -216,6 +218,64 @@ describe("delivery execution observability", () => {
       }),
     ).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("retains safe start attributes in the completed structured span event", async () => {
+    const events: Readonly<Record<string, unknown>>[] = [];
+    const observer = createOpenTelemetryDeliveryExecutionObserver({
+      structuredLog: (event) => events.push(event),
+    });
+    const span = observer.startSpan({
+      stage: "source.retrieve",
+      attributes: { source: "knowledge", operation: "read", "timeout.ms": 10_000 },
+    });
+    observer.endSpan(span, {
+      outcome: "failed",
+      failureClass: "slow_query",
+      attributes: { "database.query.ms": 10_000 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: "source.retrieve",
+        source: "knowledge",
+        operation: "read",
+        "timeout.ms": 10_000,
+        "database.query.ms": 10_000,
+      }),
+    );
+  });
+
+  it("records a bounded provider status and failure class without provider response content", async () => {
+    const observer = createInMemoryDeliveryExecutionObserver();
+    const root = startDeliveryExecution({
+      observer,
+      deadlineEpochMs: Date.now() + 10_000,
+      signal: new AbortController().signal,
+    });
+    await Effect.runPromiseExit(
+      observeDeliveryEffect(
+        root,
+        "provider.generate",
+        { operation: "compose" },
+        () => Effect.fail("provider-private-response"),
+        {
+          classifyFailure: () => ({
+            failureClass: "provider_billing",
+            attributes: { "provider.status_class": "402" },
+          }),
+        },
+      ),
+    );
+
+    const providerSpan = observer.spans.find(({ span }) => span.stage === "provider.generate");
+    expect(providerSpan).toMatchObject({
+      outcome: "failed",
+      failureClass: "provider_billing",
+      attributes: { "provider.status_class": "402" },
+    });
+    expect(JSON.stringify(providerSpan)).not.toContain("provider-private-response");
   });
 
   it("adds bounded synchronous overhead before asynchronous export", () => {

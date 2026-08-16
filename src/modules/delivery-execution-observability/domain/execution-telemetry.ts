@@ -41,6 +41,7 @@ export const deliveryExecutionFailureClasses = [
   "cancellation_not_propagated",
   "provider_rejection",
   "provider_timeout",
+  "provider_cancelled",
   "provider_billing",
   "provider_rate_limit",
   "provider_failure",
@@ -127,6 +128,7 @@ export type DeliveryExecutionAttributes = {
   readonly "database.query.ms"?: number | undefined;
   readonly "database.rows"?: number | undefined;
   readonly "database.waiting"?: number | undefined;
+  readonly "queries.count"?: number | undefined;
   readonly "provider.status_class"?:
     | "success"
     | "402"
@@ -201,6 +203,7 @@ export type DeliveryExecutionMetricLabels = {
     | "acknowledged"
     | "other"
     | undefined;
+  readonly token_kind?: "input" | "output" | "reasoning" | "total" | "other" | undefined;
   readonly exhaustion_stage?: DeliveryExecutionStage | "other" | undefined;
   readonly environment?: "production" | "staging" | "development" | "test" | "other" | undefined;
   readonly overlap?: "yes" | "no" | "other" | undefined;
@@ -233,6 +236,7 @@ const attributeKeys = new Set<keyof DeliveryExecutionAttributes>([
   "database.query.ms",
   "database.rows",
   "database.waiting",
+  "queries.count",
   "provider.status_class",
   "provider.retry",
   "cancellation.state",
@@ -264,6 +268,7 @@ const metricLabelKeys = new Set<keyof DeliveryExecutionMetricLabels>([
   "operation",
   "provider_status_class",
   "cancellation_state",
+  "token_kind",
   "exhaustion_stage",
   "environment",
   "overlap",
@@ -316,6 +321,7 @@ const boundedLabelValues: Readonly<
   operation: new Set(["read", "write", "compose", "validate", "deliver", "other"]),
   provider_status_class: new Set(["success", "402", "429", "5xx", "timeout", "cancelled", "other"]),
   cancellation_state: new Set(["not_requested", "requested", "acknowledged", "other"]),
+  token_kind: new Set(["input", "output", "reasoning", "total", "other"]),
   exhaustion_stage: new Set([...deliveryExecutionStages, "other"]),
   environment: new Set(["production", "staging", "development", "test", "other"]),
   overlap: new Set(["yes", "no", "other"]),

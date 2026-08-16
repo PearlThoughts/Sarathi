@@ -1,6 +1,7 @@
 import type { Effect } from "effect";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
+import type { DeliveryExecutionContext } from "../../delivery-execution-observability/index.ts";
 import type { DeliveryProjection } from "../../delivery-intelligence/index.ts";
 import type {
   KnowledgeAclRule,
@@ -88,6 +89,11 @@ export type KnowledgeSearchResult = {
   readonly lineEnd?: number | undefined;
 };
 
+export type KnowledgeQueryControl = {
+  readonly signal?: AbortSignal | undefined;
+  readonly execution?: DeliveryExecutionContext | undefined;
+};
+
 export type KnowledgeRepository = {
   readonly reconcile: (
     snapshot: KnowledgeSourceSnapshot,
@@ -97,9 +103,11 @@ export type KnowledgeRepository = {
   readonly search: (
     query: KnowledgeQuery,
     queryEmbedding: readonly number[],
+    control?: KnowledgeQueryControl | undefined,
   ) => Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError>;
   readonly searchLexical: (
     query: KnowledgeQuery,
+    control?: KnowledgeQueryControl | undefined,
   ) => Effect.Effect<readonly KnowledgeSearchResult[], RepositoryError>;
 };
 
