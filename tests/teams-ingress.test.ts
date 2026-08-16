@@ -371,7 +371,7 @@ describe("Teams ingress configuration", () => {
     });
   });
 
-  it("attaches feedback controls without changing the Markdown answer", () => {
+  it("renders an eligible Markdown answer and feedback controls as one visual response", () => {
     const activity = sameThreadReplyActivity(
       "root-activity",
       "**Status:** Ready\n\n- Existing high-quality answer",
@@ -379,13 +379,21 @@ describe("Teams ingress configuration", () => {
       { answerId: "af_11111111-1111-4111-8111-111111111111" },
     );
 
-    expect(activity.text).toBe("**Status:** Ready\n\n- Existing high-quality answer");
+    expect(activity.text).toBeUndefined();
+    expect(activity.summary).toBe("Sarathi answer with feedback controls");
     expect(activity.attachments).toHaveLength(1);
     expect(activity.attachments?.[0]?.content).toMatchObject({
       type: "AdaptiveCard",
-      body: [{ text: "Was this answer useful?" }],
+      body: [
+        {
+          text: "**Status:** Ready\n\n- Existing high-quality answer",
+          wrap: true,
+        },
+        { text: "Was this answer useful?", separator: true },
+      ],
     });
-    expect(JSON.stringify(activity.attachments)).not.toContain(activity.text);
+    expect(JSON.stringify(activity.attachments)).toContain("Existing high-quality answer");
+    expect(JSON.stringify(activity).match(/Existing high-quality answer/g)).toHaveLength(1);
   });
 
   it("authorizes a feedback action and returns a quiet replacement confirmation card", async () => {
@@ -514,7 +522,8 @@ describe("Teams ingress configuration", () => {
       (event) => diagnostics.push(event),
     );
 
-    expect(result.body[0]).toMatchObject({
+    expect(result.body[0]).toMatchObject({ text: "Original answer" });
+    expect(result.body[2]).toMatchObject({
       text: "Feedback recorded: Partly useful. You can revise it below.",
     });
     expect(diagnostics).toEqual([

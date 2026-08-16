@@ -14,6 +14,12 @@ export type AdaptiveCardPayload = {
   readonly version: "1.5";
   readonly body: readonly Record<string, unknown>[];
   readonly actions?: readonly Record<string, unknown>[] | undefined;
+  readonly msteams?:
+    | {
+        readonly width: "Full";
+        readonly entities: readonly Record<string, unknown>[];
+      }
+    | undefined;
 };
 
 export type AnswerFeedbackCardAttachment = {
@@ -39,6 +45,12 @@ const choices: readonly {
 ];
 
 type IdGenerator = () => string;
+
+type AnswerFeedbackCardMention = {
+  readonly source: "teams";
+  readonly externalId: string;
+  readonly displayName: string;
+};
 
 const idempotencyKey = (randomUuid: IdGenerator): string => `fi_${randomUuid()}`;
 
@@ -153,12 +165,68 @@ export const renderAnswerFeedbackCard = (
   actions: ratingActions(invitation.answerId, randomUuid),
 });
 
-export const renderAnswerFeedbackAttachment = (
+const adaptiveCardMentionEntities = (
+  answerText: string,
+  mentions: readonly AnswerFeedbackCardMention[],
+): readonly Record<string, unknown>[] =>
+  mentions
+    .filter(({ displayName }) => answerText.includes(`<at>${displayName}</at>`))
+    .map(({ externalId, displayName }) => ({
+      type: "mention",
+      text: `<at>${displayName}</at>`,
+      mentioned: { id: externalId, name: displayName },
+    }));
+
+export const renderAnswerWithFeedbackCard = (
+  answerText: string,
   invitation: AnswerFeedbackInvitation,
+  mentions: readonly AnswerFeedbackCardMention[] = [],
+  randomUuid: IdGenerator = () => crypto.randomUUID(),
+  confirmation?: AnswerFeedbackRevision | undefined,
+): AdaptiveCardPayload => {
+  const feedback = renderAnswerFeedbackCard(invitation, randomUuid, confirmation);
+  const mentionEntities = adaptiveCardMentionEntities(answerText, mentions);
+  return {
+    ...feedback,
+    body: [
+      {
+        type: "TextBlock",
+        text: answerText,
+        wrap: true,
+        spacing: "None",
+      },
+      {
+        type: "TextBlock",
+        text: "Was this answer useful?",
+        weight: "Bolder",
+        wrap: true,
+        separator: true,
+        spacing: "Medium",
+      },
+      ...(confirmation === undefined
+        ? []
+        : [
+            {
+              type: "TextBlock",
+              text: `Feedback recorded: ${ratingLabel(confirmation.rating)}. You can revise it below.`,
+              wrap: true,
+              color: "Good",
+              spacing: "Small",
+            },
+          ]),
+    ],
+    msteams: { width: "Full", entities: mentionEntities },
+  };
+};
+
+export const renderAnswerWithFeedbackAttachment = (
+  answerText: string,
+  invitation: AnswerFeedbackInvitation,
+  mentions: readonly AnswerFeedbackCardMention[] = [],
   randomUuid?: IdGenerator | undefined,
 ): AnswerFeedbackCardAttachment => ({
   contentType: answerFeedbackCardContentType,
-  content: renderAnswerFeedbackCard(invitation, randomUuid),
+  content: renderAnswerWithFeedbackCard(answerText, invitation, mentions, randomUuid),
 });
 
 export const renderAnswerFeedbackFailureCard = (message: string): AdaptiveCardPayload => ({

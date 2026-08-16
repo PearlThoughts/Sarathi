@@ -4,9 +4,10 @@ import {
   type AnswerFeedbackCardAttachment,
   answerFeedbackActionVerb,
   answerFeedbackCardContentType,
-  renderAnswerFeedbackAttachment,
   renderAnswerFeedbackCard,
   renderAnswerFeedbackFailureCard,
+  renderAnswerWithFeedbackAttachment,
+  renderAnswerWithFeedbackCard,
 } from "../src/infrastructure/teams/answer-feedback-card.ts";
 
 const answerId = "af_11111111-1111-4111-8111-111111111111";
@@ -31,21 +32,66 @@ describe("answer feedback Adaptive Card", () => {
     expectTypeOf<AdaptiveCardPayload>().toBeObject();
     expectTypeOf<AnswerFeedbackCardAttachment>().toBeObject();
   });
-  it("attaches all three binding choices without moving answer text into the card", () => {
-    const attachment = renderAnswerFeedbackAttachment({ answerId }, generator());
+  it("renders the answer and all three binding choices in one attachment", () => {
+    const attachment = renderAnswerWithFeedbackAttachment(
+      "**Status:** Ready\n\n- Existing high-quality answer",
+      { answerId },
+      [],
+      generator(),
+    );
     const serialized = JSON.stringify(attachment);
 
     expect(attachment.contentType).toBe("application/vnd.microsoft.card.adaptive");
     expect(attachment.content.body).toEqual([
-      expect.objectContaining({ text: "Was this answer useful?" }),
+      expect.objectContaining({
+        type: "TextBlock",
+        text: "**Status:** Ready\n\n- Existing high-quality answer",
+        wrap: true,
+      }),
+      expect.objectContaining({
+        text: "Was this answer useful?",
+        separator: true,
+      }),
     ]);
+    expect(attachment.content.msteams).toEqual({ width: "Full", entities: [] });
     expect(attachment.content.actions?.map((action) => action.title)).toEqual([
       "✅ Useful as-is",
       "🟡 Partly useful",
       "❌ Not useful",
     ]);
-    expect(serialized).not.toContain("Original answer body");
+    expect(serialized).toContain("Existing high-quality answer");
     expect(serialized).not.toContain("Question body");
+  });
+
+  it("carries real Teams mentions inside the same Adaptive Card", () => {
+    const card = renderAnswerWithFeedbackCard(
+      "<at>Delivery Reviewer</at>, please confirm acceptance.",
+      { answerId },
+      [
+        {
+          source: "teams",
+          externalId: "reviewer-id",
+          displayName: "Delivery Reviewer",
+        },
+        {
+          source: "teams",
+          externalId: "unused-id",
+          displayName: "Unused Reviewer",
+        },
+      ],
+      generator(),
+    );
+
+    expect(card.msteams).toEqual({
+      width: "Full",
+      entities: [
+        {
+          type: "mention",
+          text: "<at>Delivery Reviewer</at>",
+          mentioned: { id: "reviewer-id", name: "Delivery Reviewer" },
+        },
+      ],
+    });
   });
 
   it("submits positive feedback directly and discloses multi-select detail forms", () => {
@@ -104,7 +150,7 @@ describe("answer feedback Adaptive Card", () => {
   });
 
   it("returns a quiet confirmation card with fresh revision controls", () => {
-    const card = renderAnswerFeedbackCard({ answerId }, generator(), {
+    const card = renderAnswerWithFeedbackCard("Original answer", { answerId }, [], generator(), {
       id: "fr_22222222-2222-4222-8222-222222222222",
       answerId,
       workspaceId: "workspace",
@@ -117,7 +163,8 @@ describe("answer feedback Adaptive Card", () => {
       reviewDisposition: "unreviewed",
     });
 
-    expect(card.body[0]).toEqual(
+    expect(card.body[0]).toEqual(expect.objectContaining({ text: "Original answer" }));
+    expect(card.body[2]).toEqual(
       expect.objectContaining({
         text: "Feedback recorded: Partly useful. You can revise it below.",
       }),
@@ -126,9 +173,23 @@ describe("answer feedback Adaptive Card", () => {
   });
 
   it("keeps action payloads opaque and free of URLs, source bodies, prompts, and envelopes", () => {
-    const serialized = JSON.stringify(renderAnswerFeedbackCard({ answerId }, generator()));
+    const card = renderAnswerWithFeedbackCard(
+      "Private answer body with https://private.example/source",
+      { answerId },
+      [],
+      generator(),
+    );
+    const payloads = (card.actions ?? []).flatMap((action) => {
+      if (action.type === "Action.Execute") return [action.data];
+      const detailCard = action.card as {
+        readonly actions?: readonly Record<string, unknown>[];
+      };
+      return (detailCard.actions ?? []).map((nested) => nested.data);
+    });
+    const serialized = JSON.stringify(payloads);
     expect(serialized).toContain(answerId);
     expect(serialized).not.toContain("https://private.example");
+    expect(serialized).not.toContain("Private answer body");
     expect(serialized).not.toContain("sourceBody");
     expect(serialized).not.toContain("prompt");
     expect(serialized).not.toContain("envelope");

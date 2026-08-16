@@ -61,9 +61,9 @@ import {
 import {
   type AdaptiveCardPayload,
   answerFeedbackActionVerb,
-  renderAnswerFeedbackAttachment,
-  renderAnswerFeedbackCard,
   renderAnswerFeedbackFailureCard,
+  renderAnswerWithFeedbackAttachment,
+  renderAnswerWithFeedbackCard,
 } from "../infrastructure/teams/answer-feedback-card.ts";
 import {
   createKnowledgeTeamsContextSearch,
@@ -1109,8 +1109,10 @@ export const handleTeamsAnswerFeedbackAction = async (
       outcome: submitted.idempotent ? "idempotent" : "recorded",
       ...(hash === undefined ? {} : { activityHash: hash }),
     });
-    return renderAnswerFeedbackCard(
+    return renderAnswerWithFeedbackCard(
+      submitted.answer.answerText,
       { answerId: submitted.answer.id },
+      [],
       () => crypto.randomUUID(),
       submitted.revision,
     );
@@ -1281,8 +1283,12 @@ export const sameThreadReplyActivity = (
   Activity.fromObject({
     type: ActivityTypes.Message,
     replyToId,
-    text,
-    ...(feedback === undefined ? {} : { attachments: [renderAnswerFeedbackAttachment(feedback)] }),
+    ...(feedback === undefined
+      ? { text }
+      : {
+          summary: "Sarathi answer with feedback controls",
+          attachments: [renderAnswerWithFeedbackAttachment(text, feedback, mentions)],
+        }),
     entities: mentions
       .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
       .map(({ externalId, displayName }) => ({
@@ -1303,8 +1309,12 @@ export const sameChatReplyActivity = (
 ): Activity =>
   Activity.fromObject({
     type: ActivityTypes.Message,
-    text,
-    ...(feedback === undefined ? {} : { attachments: [renderAnswerFeedbackAttachment(feedback)] }),
+    ...(feedback === undefined
+      ? { text }
+      : {
+          summary: "Sarathi answer with feedback controls",
+          attachments: [renderAnswerWithFeedbackAttachment(text, feedback, mentions)],
+        }),
     entities: mentions
       .filter(({ displayName }) => text.includes(`<at>${displayName}</at>`))
       .map(({ externalId, displayName }) => ({
