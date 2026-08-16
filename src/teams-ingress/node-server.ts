@@ -43,6 +43,7 @@ import {
   createGroundedAnswerGeneratorFromEnvironment,
   knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../infrastructure/model/index.ts";
+import { deliveryExecutionObserverFromEnvironment } from "../infrastructure/observability/index.ts";
 import {
   applyStrategyKernelPostgresMigrations,
   closeStrategyKernelPostgresDatabase,
@@ -756,6 +757,7 @@ export const hostedTeamsIngressCompositionFromEnvironment = (
               { relevanceProfile },
             ),
             capabilityLedger,
+            executionObserver: deliveryExecutionObserverFromEnvironment(environment),
             ...deliveryResponseBudget,
           });
           return createBoundedDeliveryAssistant(assistant, {

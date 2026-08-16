@@ -33,6 +33,8 @@ The objective is to maintain a policy-bounded delivery representation once and r
 9. **Response depth follows intent.** Operational answers prefer concise, decision-ready formatting, while requested briefs and deep dives may use the length, structure, and latency needed for completeness. Resolvable citations remain inline; a person is tagged only through a source-resolved Teams identity.
 10. **Evidence census precedes narrative.** Period reports enumerate and reconcile the authorized candidate population before ranking, summarization, or model composition. Top-k retrieval is enrichment, not proof of completeness.
 11. **Business impact has an evidence class.** Observed outcomes, attributed impact claims, model-assisted inferences, and unknowns remain distinguishable in storage, evaluation, and user-visible reports.
+12. **One deadline governs the execution.** Report ingress establishes one absolute deadline and cancellation signal. Every retrieval, database, expansion, composition, validation, and delivery operation receives the remaining budget rather than starting an independent timeout.
+13. **Execution telemetry is a product safety capability.** Delivery execution exposes vendor-neutral, privacy-safe spans and bounded measurements. Exporters are asynchronous, fail-open infrastructure and never become a report dependency.
 
 ## 4. Capability Architecture
 
@@ -112,6 +114,12 @@ A delivery leader asks for a weekly, monthly, sprint, or quarterly report. Sarat
 
 [Evidence-First Period Delivery Reporting](./period-delivery-reporting.md) defines the census, change capsule, capability ledger, delivery chain, outcome assertion, report products, and evaluation contract.
 
+### Story 8 — Attributable, Bounded Report Execution
+
+An operator can explain a slow or failed report from a complete stage waterfall without inspecting questions, source content, prompts, answers, or private identifiers. The trace distinguishes database waiting, retrieval, expansion, envelope construction, provider work, validation, and delivery while recording the remaining absolute budget at every boundary.
+
+**Independent test**: delayed retrieval, database pool starvation, scheduler overlap, provider rejection, provider timeout, and unavailable telemetry each produce the correct safe failure class; database and provider work stop on cancellation; telemetry failure neither fails nor materially delays the report; and the frozen indexed snapshot remains unchanged.
+
 ## 6. Functional Requirements
 
 - **FR-001**: Model workspace-scoped delivery objects, relationships, observations, claims, metrics, conflicts, and source links independently of any reporting period.
@@ -148,6 +156,15 @@ A delivery leader asks for a weekly, monthly, sprint, or quarterly report. Sarat
 - **FR-032**: Provide distinct `operational_answer`, `period_delivery_brief`, `leadership_report`, and `implementation_investigation` products with end-to-end response-mode and timeout propagation.
 - **FR-033**: Preserve authorized actor, surrounding thread, referenced entities, workspace cadence, and declared goal context during question planning without treating contextual claims as source observations.
 - **FR-034**: Validate material-claim citation coverage, census completeness, source freshness, inference labelling, authorization, latency, theme recall, initiative recall, and fingerprint-bound human usefulness before accepting a leadership report.
+- **FR-035**: Establish one absolute report deadline and cooperative cancellation signal at ingress; propagate both through authorization, planning, census, retrieval, database, fusion, reranking, parent expansion, episode construction, lifecycle/completion assessment, envelope construction, provider composition, validation, and delivery.
+- **FR-036**: Expose a vendor-neutral `DeliveryExecutionObservability` port from domain/application code. OpenTelemetry, Better Stack, structured stdout, Railway, and error-reporting SDKs remain infrastructure adapters.
+- **FR-037**: Emit one `delivery.report` root trace with explicit parent-child lifecycle spans; emit scheduler and synchronization executions as separate roots and correlate overlap only through bounded resource measurements.
+- **FR-038**: Enforce an allowlist at the telemetry port so questions, answers, prompts, source excerpts, people, source-native identifiers, private URLs, request headers, provider responses, credentials, and private configuration cannot cross the boundary.
+- **FR-039**: Restrict metric labels to documented enumerations. Unknown values collapse to `other`; execution, correlation, entity, customer, source-record, question, trace, and span identifiers are prohibited as labels.
+- **FR-040**: Export telemetry asynchronously through a bounded queue with explicit drop/export-failure measurements. Exporter unavailability must fail open and add only a negligible bounded enqueue cost to report execution.
+- **FR-041**: Record safe stage duration, remaining budget, candidate/duplicate/exclusion counts, expansion and episode ratios, envelope size, database pool wait/query duration, provider status class/retry/cancellation/tokens/cost, in-flight work, scheduler overlap, event-loop delay, heap/GC pressure, CPU saturation, and telemetry health.
+- **FR-042**: Classify internal deadline exhaustion, database pool starvation, slow query, candidate expansion, sequential budget multiplication, scheduler contention, missing cancellation, provider rejection by safe status class, provider timeout, provider cancellation, envelope explosion, transport timeout, and telemetry overhead without exposing provider bodies.
+- **FR-043**: Keep AI SDK experimental telemetry disabled unless a permanent privacy test proves that no model input, output, prompt, source material, or private identifier can be exported.
 
 ## 7. Core Data Contracts
 
@@ -167,6 +184,8 @@ A delivery leader asks for a weekly, monthly, sprint, or quarterly report. Sarat
 - **OutcomeAssertion**: an observed outcome, attributed impact claim, labelled inference, or explicit unknown.
 - **PeriodCensus**: the complete authorized candidate population, deduplication/exclusion accounting, source freshness, coverage, and deterministic replay checksum for one interval.
 - **PeriodDeliveryReport**: a capability-grouped report over an accepted census with citations, inference boundaries, conflicts, gaps, and coverage disclosure.
+- **DeliveryExecutionContext**: an opaque execution/trace identity, one absolute deadline, cooperative cancellation signal, safe response classifications, and current span lineage.
+- **DeliveryExecutionMeasurement**: an allowlisted stage transition, duration, remaining budget, bounded count/resource measurement, outcome, or safe failure class.
 
 ## 8. Operational and Security Standards
 
@@ -176,10 +195,12 @@ A delivery leader asks for a weekly, monthly, sprint, or quarterly report. Sarat
 - Logs contain identifiers, counts, hashes, timing, checkpoints, and redacted error classes only. They never contain provider keys, message bodies, email bodies, document bodies, or model prompts.
 - Checkpoints advance only after the source record, knowledge projection, delivery projection, ACLs, and tombstones commit together.
 - Production migration requires a verified backup/restore point and recorded application rollback revision before apply.
+- Telemetry export is non-blocking and fail-open. A bounded in-process queue may drop telemetry under pressure but must measure drops without using execution identifiers as metric labels.
+- OpenTelemetry is the trace authority. Error reporting disables performance tracing, default PII, request bodies, headers, cookies, and user context; explicit safe capture may include only safe codes, stages, durations, and deployment metadata.
 
 ## 9. Verification
 
-Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, arbitrary period parsing, delivery-stage membership, exhaustive pagination, cross-source change deduplication, capability mapping, outcome evidence classes, report-mode propagation, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, and source-resolved Teams mention transport.
+Permanent tests cover architecture boundaries, generated migration ordering, existing-table preservation, replay deduplication, version changes, deletion and scope removal, object/relation reconciliation, finance isolation, workspace exclusion, connected-source guards, plan validation, dependency traversal, ownership, blockers, current and previous sprint queries, arbitrary period parsing, delivery-stage membership, exhaustive pagination, cross-source change deduplication, capability mapping, outcome evidence classes, report-mode propagation, risk ordering, recurring-pattern thresholds, claim conflicts, citation resolution, log redaction, partial-source behavior, model-egress filtering, concise rich-response shape, source-resolved Teams mention transport, trace hierarchy, deadline propagation, database/provider cancellation, boundary budget measurements, candidate counts, telemetry allowlisting, metric cardinality, exporter fail-open behavior, provider failure classification, database starvation classification, and bounded expansion/episode construction.
 
 Final acceptance requires exact-branch `bun run check`, runtime smoke, production backup and rollback evidence, historical bootstrap plus continuous event/hourly reconciliation, and observed real Teams answers for project status, delivery risks/next action, implementation truth, dependencies/blockers, sprint and quarter delivery, current work, recurring issues, and daily/weekly summaries. Fast operational questions must meet the ten-second target; requested deep dives are evaluated for completeness and disclosed elapsed time. A private human-authored report reconstruction must meet at least 85% capability-theme recall, 80% materially evidenced initiative recall, 100% material-claim citation coverage, zero unsupported observed outcomes, zero unlabelled inferences, 100% authorization, and at least 4/5 human usefulness for the exact answer fingerprint.
 
@@ -208,5 +229,6 @@ Stop on backup failure, migration drift, connector-scope ambiguity, unauthorized
 - [ADR 0007](../../docs/adr/0007-delivery-intelligence-projection.md)
 - [ADR 0008](../../docs/adr/0008-continuous-project-intelligence-synchronization.md)
 - [ADR 0009](../../docs/adr/0009-evidence-first-period-reporting.md)
+- [ADR 0013](../../docs/adr/0013-delivery-execution-observability.md)
 - [Module Boundaries](../../docs/architecture/module-boundaries.md)
 - [Workspace and Capability Model](../../docs/architecture/workspace-capability-model.md)

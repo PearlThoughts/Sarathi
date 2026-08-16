@@ -1,0 +1,86 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  transform/privacy:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - delete_key(attributes, "question")
+          - delete_key(attributes, "answer")
+          - delete_key(attributes, "prompt")
+          - delete_key(attributes, "completion")
+          - delete_key(attributes, "source_excerpt")
+          - delete_key(attributes, "source_url")
+          - delete_key(attributes, "request.headers")
+          - delete_key(attributes, "provider.response")
+          - delete_key(attributes, "user.name")
+          - delete_key(attributes, "user.id")
+          - delete_key(attributes, "customer.id")
+          - delete_key(attributes, "entity.id")
+          - delete_key(attributes, "record.id")
+  tail_sampling:
+    decision_wait: 5s
+    expected_new_traces_per_sec: 20
+    policies:
+      - name: keep-failed
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: keep-slow
+        type: latency
+        latency:
+          threshold_ms: 10000
+      - name: sample-fast-success
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+  batch:
+    timeout: 2s
+    send_batch_size: 256
+    send_batch_max_size: 512
+
+exporters:
+  otlphttp/betterstack:
+    endpoint: ${env:BETTERSTACK_OTLP_ENDPOINT}
+    headers:
+      Authorization: Bearer ${env:BETTERSTACK_SOURCE_TOKEN}
+    timeout: 2s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 2048
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/privacy, tail_sampling, batch]
+      exporters: [otlphttp/betterstack]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/betterstack]

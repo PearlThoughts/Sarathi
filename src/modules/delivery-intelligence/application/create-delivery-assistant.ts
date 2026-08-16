@@ -1,7 +1,17 @@
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { RepositoryError } from "../../../domain/errors.ts";
 import { stableSha256 } from "../../../domain/hash.ts";
 import { isSensitivityAtOrBelow } from "../../../domain/policy.ts";
+import {
+  childDeliveryExecution,
+  createNoopDeliveryExecutionObserver,
+  type DeliveryExecutionContext,
+  type DeliveryExecutionObserver,
+  endDeliveryExecution,
+  observeDeliveryEffect,
+  remainingDeliveryExecutionBudgetMs,
+  startDeliveryExecution,
+} from "../../delivery-execution-observability/index.ts";
 import type { ProductCompletionResolution } from "../../product-model/index.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
 import type {
@@ -49,6 +59,7 @@ export type DeliveryAssistantConfiguration = {
   readonly totalBudgetMs?: number | undefined;
   readonly capabilityLedger?: CapabilityLedger | undefined;
   readonly completionResolution?: ProductCompletionResolution | undefined;
+  readonly executionObserver?: DeliveryExecutionObserver | undefined;
   readonly now?: (() => Date) | undefined;
 };
 
@@ -1172,6 +1183,7 @@ const composeWithModel = (
     readonly compositionTimeoutMs: number;
     readonly totalBudgetMs: number;
   },
+  execution: DeliveryExecutionContext,
   requiredCompletionAssessment?: DeliveryCompletionAssessment,
 ): Effect.Effect<DeliveryAnswerDraft> => {
   const reportComposition =
@@ -1224,6 +1236,10 @@ const composeWithModel = (
     ),
   ]);
   const composition = (compositionAttempt: "full" | "reduced") => {
+    const envelopeExecution = childDeliveryExecution(execution, "envelope.build", {
+      "candidates.unique": items.length,
+      "episodes.count": result.periodDeliveryReport?.capsules.length ?? 0,
+    });
     const compositionInput = {
       compositionAttempt,
       workspaceId: request.workspaceId,
@@ -1260,209 +1276,228 @@ const composeWithModel = (
         episodes: result.periodDeliveryReport?.capsules.map(({ id }) => id) ?? [],
       }),
     );
-    return Effect.suspend(() => composer.compose(compositionInput)).pipe(
+    endDeliveryExecution(envelopeExecution, "success", {
+      "envelope.items": items.length,
+      "envelope.bytes": new TextEncoder().encode(JSON.stringify(compositionInput)).byteLength,
+      "episodes.count": result.periodDeliveryReport?.capsules.length ?? 0,
+    });
+    return observeDeliveryEffect(
+      execution,
+      "provider.generate",
+      {
+        operation: "compose",
+        "timeout.ms": Math.min(timeoutMs, remainingDeliveryExecutionBudgetMs(execution)),
+        "provider.retry": compositionAttempt === "full" ? 0 : 1,
+        "envelope.items": items.length,
+      },
+      () => Effect.suspend(() => composer.compose(compositionInput)),
+    ).pipe(
       Effect.flatMap((composed) =>
-        Effect.try({
-          try: () => {
-            if (reportComposition) {
-              const review = result.periodDeliveryReport?.sprintReview;
-              const text =
-                review === undefined
-                  ? composed.text.trim()
-                  : renderSprintIdentity(composed.text.trim(), review, request.timeZone);
-              const requiredHeadings =
-                result.periodDeliveryReport?.sprintReview === undefined
-                  ? [
-                      "## Delivered",
-                      "## In progress",
-                      "## Waiting or blocked",
-                      "## Decisions needed",
-                      "## References",
-                    ]
-                  : [
-                      "## Sprint overview",
-                      "## Previous sprint",
-                      "## Current sprint",
-                      "## Q3 alignment",
-                      "## Waiting or decisions",
-                      "## Jira hygiene",
-                      "## References",
-                    ];
-              if (!requiredHeadings.every((heading) => text.includes(heading)))
-                invalidReport("report-composition-structure");
-              const sprintDateIsPresent = (value: string): boolean => {
-                const parsed = new Date(value);
-                if (Number.isNaN(parsed.getTime())) return false;
-                const formats: readonly Intl.DateTimeFormatOptions[] = [
-                  { day: "numeric", month: "short", year: "numeric" },
-                  { day: "numeric", month: "long", year: "numeric" },
-                  { day: "numeric", month: "short" },
-                  { day: "numeric", month: "long" },
-                ];
-                return [
-                  value.slice(0, 10),
-                  ...formats.map((format) =>
-                    new Intl.DateTimeFormat("en-GB", {
-                      timeZone: request.timeZone,
-                      ...format,
-                    }).format(parsed),
-                  ),
-                ].some((candidate) => text.includes(candidate));
-              };
-              for (const [, sprint] of [
-                ["previous", review?.previousSprint],
-                ["current", review?.currentSprint],
-              ] as const) {
-                if (review === undefined) break;
+        observeDeliveryEffect(execution, "composition.validate", { operation: "validate" }, () =>
+          Effect.try({
+            try: () => {
+              if (reportComposition) {
+                const review = result.periodDeliveryReport?.sprintReview;
+                const text =
+                  review === undefined
+                    ? composed.text.trim()
+                    : renderSprintIdentity(composed.text.trim(), review, request.timeZone);
+                const requiredHeadings =
+                  result.periodDeliveryReport?.sprintReview === undefined
+                    ? [
+                        "## Delivered",
+                        "## In progress",
+                        "## Waiting or blocked",
+                        "## Decisions needed",
+                        "## References",
+                      ]
+                    : [
+                        "## Sprint overview",
+                        "## Previous sprint",
+                        "## Current sprint",
+                        "## Q3 alignment",
+                        "## Waiting or decisions",
+                        "## Jira hygiene",
+                        "## References",
+                      ];
+                if (!requiredHeadings.every((heading) => text.includes(heading)))
+                  invalidReport("report-composition-structure");
+                const sprintDateIsPresent = (value: string): boolean => {
+                  const parsed = new Date(value);
+                  if (Number.isNaN(parsed.getTime())) return false;
+                  const formats: readonly Intl.DateTimeFormatOptions[] = [
+                    { day: "numeric", month: "short", year: "numeric" },
+                    { day: "numeric", month: "long", year: "numeric" },
+                    { day: "numeric", month: "short" },
+                    { day: "numeric", month: "long" },
+                  ];
+                  return [
+                    value.slice(0, 10),
+                    ...formats.map((format) =>
+                      new Intl.DateTimeFormat("en-GB", {
+                        timeZone: request.timeZone,
+                        ...format,
+                      }).format(parsed),
+                    ),
+                  ].some((candidate) => text.includes(candidate));
+                };
+                for (const [, sprint] of [
+                  ["previous", review?.previousSprint],
+                  ["current", review?.currentSprint],
+                ] as const) {
+                  if (review === undefined) break;
+                  if (
+                    sprint === undefined ||
+                    sprint.startAt === undefined ||
+                    sprint.endAt === undefined ||
+                    !text.includes(sprint.name) ||
+                    !sprintDateIsPresent(sprint.startAt) ||
+                    !sprintDateIsPresent(sprint.endAt)
+                  )
+                    invalidReport("report-composition-sprint-identity");
+                }
+                if (review !== undefined) {
+                  const previousAt = text.indexOf("## Previous sprint");
+                  const currentAt = text.indexOf("## Current sprint");
+                  const previousSection = text.slice(previousAt, currentAt);
+                  if (
+                    ![
+                      /planned at start/i,
+                      /delivered/i,
+                      /rolled over/i,
+                      /added during sprint/i,
+                      /dropped|superseded/i,
+                    ].every((classification) => classification.test(previousSection))
+                  )
+                    invalidReport("report-composition-sprint-classification");
+                }
+                if (review?.initiatives.some(({ title }) => !text.includes(title)))
+                  invalidReport("report-composition-initiative-identity");
                 if (
-                  sprint === undefined ||
-                  sprint.startAt === undefined ||
-                  sprint.endAt === undefined ||
-                  !text.includes(sprint.name) ||
-                  !sprintDateIsPresent(sprint.startAt) ||
-                  !sprintDateIsPresent(sprint.endAt)
+                  /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
+                    text,
+                  ) ||
+                  /\b(?:sir here is|please test|test done\?)\b/i.test(text)
                 )
-                  invalidReport("report-composition-sprint-identity");
-              }
-              if (review !== undefined) {
-                const previousAt = text.indexOf("## Previous sprint");
-                const currentAt = text.indexOf("## Current sprint");
-                const previousSection = text.slice(previousAt, currentAt);
+                  invalidReport("report-composition-prohibited-prose");
+                const referencesAt = text.indexOf("## References");
+                const reportBody = text.slice(0, referencesAt);
+                const inlineJiraIdentifiers = [
+                  ...reportBody.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g),
+                ].flatMap((match) => (match[0] === undefined ? [] : [match[0]]));
                 if (
-                  ![
-                    /planned at start/i,
-                    /delivered/i,
-                    /rolled over/i,
-                    /added during sprint/i,
-                    /dropped|superseded/i,
-                  ].every((classification) => classification.test(previousSection))
+                  new Set(inlineJiraIdentifiers).size > 5 ||
+                  reportBody
+                    .split(/\r?\n/)
+                    .some((line) => new Set(line.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []).size > 2)
                 )
-                  invalidReport("report-composition-sprint-classification");
-              }
-              if (review?.initiatives.some(({ title }) => !text.includes(title)))
-                invalidReport("report-composition-initiative-identity");
-              if (
-                /\b(?:evidence-backed|proof|grounding|source count|business impact unknown|completeness ratio)\b/i.test(
+                  invalidReport("report-composition-identifier-inventory");
+                if (
+                  composed.citations.some(
+                    ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
+                  )
+                )
+                  invalidReport("report-composition-composer-citation-unknown");
+                if (text.slice(0, referencesAt).includes("](https://"))
+                  invalidReport("report-composition-citation-placement");
+                const referenceFooter = text.slice(referencesAt);
+                if (composed.citations.some(({ url }) => !referenceFooter.includes(`](${url})`)))
+                  invalidReport("report-composition-text-citation-unknown");
+                const unmatchedReferenceFooter = composed.citations.reduce(
+                  (footer, { url }) => footer.replaceAll(`](${url})`, "]"),
+                  referenceFooter,
+                );
+                if (unmatchedReferenceFooter.includes("](https://"))
+                  invalidReport("report-composition-text-citation-unknown");
+                if (allowedCitationUrls.size > 0 && composed.citations.length === 0)
+                  invalidReport("report-composition-citations-missing");
+                return {
+                  ...deterministic,
                   text,
-                ) ||
-                /\b(?:sir here is|please test|test done\?)\b/i.test(text)
-              )
-                invalidReport("report-composition-prohibited-prose");
-              const referencesAt = text.indexOf("## References");
-              const reportBody = text.slice(0, referencesAt);
-              const inlineJiraIdentifiers = [
-                ...reportBody.matchAll(/\b[A-Z][A-Z0-9]+-\d+\b/g),
-              ].flatMap((match) => (match[0] === undefined ? [] : [match[0]]));
+                  citations: validatedReportCitations(
+                    composed.citations,
+                    result,
+                    plan.requiredSources ?? [],
+                  ),
+                  mentions: [],
+                  relevanceDiagnostics: {
+                    retrievalFingerprint,
+                    compositionEnvelopeFingerprint,
+                    selectedCandidateCount: items.length,
+                    selectedEpisodeCount:
+                      composed.compositionDiagnostics?.selectedEpisodeCount ??
+                      result.periodDeliveryReport?.capsules.length ??
+                      0,
+                    missingFacetCount: composed.compositionDiagnostics?.missingFacetCount ?? 0,
+                    ...(composed.modelUsage === undefined
+                      ? {}
+                      : { modelUsage: composed.modelUsage }),
+                  },
+                  ...(result.periodDeliveryReport === undefined
+                    ? {}
+                    : { periodDeliveryReport: result.periodDeliveryReport }),
+                };
+              }
+              const lines = composed.text
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+              if (!lines.some((line) => line.startsWith("## ")))
+                throw new Error("Composed delivery answer lacks topic headings.");
+              if (!lines.some((line) => line.startsWith("- ")))
+                throw new Error("Composed delivery answer lacks scannable bullets.");
+              if (!lines.includes("### References"))
+                throw new Error("Composed delivery answer lacks a references footer.");
               if (
-                new Set(inlineJiraIdentifiers).size > 5 ||
-                reportBody
-                  .split(/\r?\n/)
-                  .some((line) => new Set(line.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []).size > 2)
+                requiredCompletionAssessment !== undefined &&
+                renderedCompletionVerdict(composed.text) !==
+                  requiredCompletionVerdict(requiredCompletionAssessment)
               )
-                invalidReport("report-composition-identifier-inventory");
+                throw new RepositoryError({
+                  message: "Delivery answer did not contain the required completion verdict.",
+                  operation: "answer-completion-verdict-invalid",
+                });
+              if (
+                requiredCompletionAssessment !== undefined &&
+                !validatesCompletionSemantics(composed.text, requiredCompletionAssessment)
+              )
+                throw new RepositoryError({
+                  message: "Delivery answer omitted required completion semantics.",
+                  operation: "answer-completion-semantic-invalid",
+                });
               if (
                 composed.citations.some(
                   ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
                 )
               )
-                invalidReport("report-composition-composer-citation-unknown");
-              if (text.slice(0, referencesAt).includes("](https://"))
-                invalidReport("report-composition-citation-placement");
-              const referenceFooter = text.slice(referencesAt);
-              if (composed.citations.some(({ url }) => !referenceFooter.includes(`](${url})`)))
-                invalidReport("report-composition-text-citation-unknown");
-              const unmatchedReferenceFooter = composed.citations.reduce(
-                (footer, { url }) => footer.replaceAll(`](${url})`, "]"),
-                referenceFooter,
-              );
-              if (unmatchedReferenceFooter.includes("](https://"))
-                invalidReport("report-composition-text-citation-unknown");
-              if (allowedCitationUrls.size > 0 && composed.citations.length === 0)
-                invalidReport("report-composition-citations-missing");
+                throw new Error("Composed delivery answer contains an unknown citation.");
               return {
                 ...deterministic,
-                text,
-                citations: validatedReportCitations(
-                  composed.citations,
-                  result,
-                  plan.requiredSources ?? [],
-                ),
+                text: lines.join("\n"),
+                citations: citationsWithSourceProvenance(composed.citations, result),
                 mentions: [],
                 relevanceDiagnostics: {
                   retrievalFingerprint,
                   compositionEnvelopeFingerprint,
                   selectedCandidateCount: items.length,
-                  selectedEpisodeCount:
-                    composed.compositionDiagnostics?.selectedEpisodeCount ??
-                    result.periodDeliveryReport?.capsules.length ??
-                    0,
+                  selectedEpisodeCount: composed.compositionDiagnostics?.selectedEpisodeCount ?? 0,
                   missingFacetCount: composed.compositionDiagnostics?.missingFacetCount ?? 0,
                   ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
                 },
-                ...(result.periodDeliveryReport === undefined
+                ...(requiredCompletionAssessment === undefined
                   ? {}
-                  : { periodDeliveryReport: result.periodDeliveryReport }),
+                  : { completionAssessment: requiredCompletionAssessment }),
               };
-            }
-            const lines = composed.text
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter(Boolean);
-            if (!lines.some((line) => line.startsWith("## ")))
-              throw new Error("Composed delivery answer lacks topic headings.");
-            if (!lines.some((line) => line.startsWith("- ")))
-              throw new Error("Composed delivery answer lacks scannable bullets.");
-            if (!lines.includes("### References"))
-              throw new Error("Composed delivery answer lacks a references footer.");
-            if (
-              requiredCompletionAssessment !== undefined &&
-              renderedCompletionVerdict(composed.text) !==
-                requiredCompletionVerdict(requiredCompletionAssessment)
-            )
-              throw new RepositoryError({
-                message: "Delivery answer did not contain the required completion verdict.",
-                operation: "answer-completion-verdict-invalid",
-              });
-            if (
-              requiredCompletionAssessment !== undefined &&
-              !validatesCompletionSemantics(composed.text, requiredCompletionAssessment)
-            )
-              throw new RepositoryError({
-                message: "Delivery answer omitted required completion semantics.",
-                operation: "answer-completion-semantic-invalid",
-              });
-            if (
-              composed.citations.some(
-                ({ url }) => !resolvableUrl(url) || !allowedCitationUrls.has(url),
-              )
-            )
-              throw new Error("Composed delivery answer contains an unknown citation.");
-            return {
-              ...deterministic,
-              text: lines.join("\n"),
-              citations: citationsWithSourceProvenance(composed.citations, result),
-              mentions: [],
-              relevanceDiagnostics: {
-                retrievalFingerprint,
-                compositionEnvelopeFingerprint,
-                selectedCandidateCount: items.length,
-                selectedEpisodeCount: composed.compositionDiagnostics?.selectedEpisodeCount ?? 0,
-                missingFacetCount: composed.compositionDiagnostics?.missingFacetCount ?? 0,
-                ...(composed.modelUsage === undefined ? {} : { modelUsage: composed.modelUsage }),
-              },
-              ...(requiredCompletionAssessment === undefined
-                ? {}
-                : { completionAssessment: requiredCompletionAssessment }),
-            };
-          },
-          catch: (error) =>
-            error instanceof RepositoryError
-              ? error
-              : new RepositoryError({
-                  message: "Delivery answer composition was invalid.",
-                  operation: "report-composition-invalid",
-                }),
-        }),
+            },
+            catch: (error) =>
+              error instanceof RepositoryError
+                ? error
+                : new RepositoryError({
+                    message: "Delivery answer composition was invalid.",
+                    operation: "report-composition-invalid",
+                  }),
+          }),
+        ),
       ),
     );
   };
@@ -1873,22 +1908,94 @@ export const createDeliveryAssistant = (
       responseProduct,
     );
     const responsePolicy = deliveryResponseModePolicies[responseMode];
-    if (responseProduct === "leadership_report" && configuration.capabilityLedger === undefined)
-      return Effect.fail(
-        new RepositoryError({
-          message:
-            "Leadership reporting requires a reviewed capability ledger; no report was generated.",
-          operation: "delivery-leadership-report-configuration",
-        }),
-      );
-    if (requestsRestrictedSecretMaterial(request.question))
-      return Effect.fail(
-        new RepositoryError({
-          message: "Credential and secret material is excluded from delivery-assistant answers.",
-          operation: "delivery-restricted-content-authorization",
-        }),
-      );
-    return planQuestion(request, configuration.modelPlanner).pipe(
+    const totalBudgetMs = Math.max(
+      100,
+      Math.min(
+        responseMode === "fast"
+          ? (configuration.totalBudgetMs ?? responsePolicy.totalBudgetMs)
+          : responsePolicy.totalBudgetMs,
+        responsePolicy.totalBudgetMs,
+      ),
+    );
+    const sourceTimeoutMs = Math.max(
+      100,
+      Math.min(
+        responseMode === "fast"
+          ? (configuration.sourceTimeoutMs ?? responsePolicy.sourceTimeoutMs)
+          : responsePolicy.sourceTimeoutMs,
+        totalBudgetMs,
+      ),
+    );
+    const compositionTimeoutMs = Math.max(
+      100,
+      Math.min(
+        responseMode === "fast"
+          ? (configuration.compositionTimeoutMs ?? responsePolicy.compositionTimeoutMs)
+          : responsePolicy.compositionTimeoutMs,
+        totalBudgetMs,
+      ),
+    );
+    const responseBudget = {
+      sourceTimeoutMs,
+      compositionTimeoutMs,
+      totalBudgetMs,
+    } as const;
+    const executionNow = configuration.now?.() ?? new Date();
+    const deadlineEpochMs = executionNow.getTime() + totalBudgetMs;
+    const abortController = new AbortController();
+    const execution = startDeliveryExecution({
+      observer: configuration.executionObserver ?? createNoopDeliveryExecutionObserver(),
+      deadlineEpochMs,
+      signal: abortController.signal,
+      nowEpochMs:
+        configuration.now === undefined
+          ? Date.now
+          : () => configuration.now?.().getTime() ?? Date.now(),
+      attributes: {
+        "service.name": "sarathi",
+        "response.product": responseProduct,
+        "response.mode": responseMode,
+        "timeout.ms": totalBudgetMs,
+      },
+    });
+    const deadlineTimer = setTimeout(
+      () => abortController.abort("delivery-deadline"),
+      totalBudgetMs,
+    );
+    deadlineTimer.unref?.();
+    const authorization = observeDeliveryEffect(
+      execution,
+      "authorization.resolve",
+      { "response.product": responseProduct, "response.mode": responseMode },
+      () => {
+        if (responseProduct === "leadership_report" && configuration.capabilityLedger === undefined)
+          return Effect.fail(
+            new RepositoryError({
+              message:
+                "Leadership reporting requires a reviewed capability ledger; no report was generated.",
+              operation: "delivery-leadership-report-configuration",
+            }),
+          );
+        if (requestsRestrictedSecretMaterial(request.question))
+          return Effect.fail(
+            new RepositoryError({
+              message:
+                "Credential and secret material is excluded from delivery-assistant answers.",
+              operation: "delivery-restricted-content-authorization",
+            }),
+          );
+        return Effect.void;
+      },
+    );
+    return authorization.pipe(
+      Effect.flatMap(() =>
+        observeDeliveryEffect(
+          execution,
+          "question.plan",
+          { "response.product": responseProduct, "response.mode": responseMode },
+          () => planQuestion(request, configuration.modelPlanner),
+        ),
+      ),
       Effect.flatMap((planned) => {
         const plan = planForResponseMode(planned, responseMode);
         const retrievalPlan = completionRetrievalPlan(plan, configuration.completionResolution);
@@ -1899,39 +2006,6 @@ export const createDeliveryAssistant = (
               operation: "delivery-finance-authorization",
             }),
           );
-        const now = configuration.now?.() ?? new Date();
-        const totalBudgetMs = Math.max(
-          100,
-          Math.min(
-            responseMode === "fast"
-              ? (configuration.totalBudgetMs ?? responsePolicy.totalBudgetMs)
-              : responsePolicy.totalBudgetMs,
-            responsePolicy.totalBudgetMs,
-          ),
-        );
-        const sourceTimeoutMs = Math.max(
-          100,
-          Math.min(
-            responseMode === "fast"
-              ? (configuration.sourceTimeoutMs ?? responsePolicy.sourceTimeoutMs)
-              : responsePolicy.sourceTimeoutMs,
-            totalBudgetMs,
-          ),
-        );
-        const compositionTimeoutMs = Math.max(
-          100,
-          Math.min(
-            responseMode === "fast"
-              ? (configuration.compositionTimeoutMs ?? responsePolicy.compositionTimeoutMs)
-              : responsePolicy.compositionTimeoutMs,
-            totalBudgetMs,
-          ),
-        );
-        const responseBudget = {
-          sourceTimeoutMs,
-          compositionTimeoutMs,
-          totalBudgetMs,
-        } as const;
         const selectors = new Set(retrievalPlan.operations.map((operation) => operation.select));
         const sources = configuration.sources.filter(
           (source) =>
@@ -1947,24 +2021,44 @@ export const createDeliveryAssistant = (
           financeAccess: request.financeAccess,
           requestedAt: request.requestedAt,
           timeZone: request.timeZone,
-          deadlineAt: new Date(now.getTime() + totalBudgetMs).toISOString(),
+          deadlineAt: new Date(deadlineEpochMs).toISOString(),
           question: request.question,
           responseProduct,
           responseMode,
           totalBudgetMs,
           sourceTimeoutMs,
+          execution,
         } as const;
         return Effect.all(
           sources.map((source) =>
-            source.execute(context, retrievalPlan).pipe(
-              Effect.timeoutFail({
-                duration: sourceTimeoutMs,
-                onTimeout: () =>
-                  new RepositoryError({
-                    message: `${source.source} delivery query exceeded its response budget.`,
-                    operation: `delivery-query-${source.source}`,
+            observeDeliveryEffect(
+              execution,
+              retrievalPlan.operations.some(({ select }) => select === "period_census")
+                ? "period.census"
+                : "source.retrieve",
+              {
+                source: source.source,
+                operation: "read",
+                "timeout.ms": Math.min(
+                  sourceTimeoutMs,
+                  remainingDeliveryExecutionBudgetMs(execution),
+                ),
+              },
+              (sourceExecution) =>
+                source.execute({ ...context, execution: sourceExecution }, retrievalPlan).pipe(
+                  Effect.timeoutFail({
+                    duration: Math.min(
+                      sourceTimeoutMs,
+                      remainingDeliveryExecutionBudgetMs(execution),
+                    ),
+                    onTimeout: () =>
+                      new RepositoryError({
+                        message: `${source.source} delivery query exceeded its response budget.`,
+                        operation: `delivery-query-${source.source}`,
+                      }),
                   }),
-              }),
+                ),
+            ).pipe(
               Effect.either,
               Effect.map((result) => ({ source, result })),
             ),
@@ -1972,6 +2066,7 @@ export const createDeliveryAssistant = (
           { concurrency: "unbounded" },
         ).pipe(
           Effect.flatMap((results) => {
+            const fusionExecution = childDeliveryExecution(execution, "retrieval.fuse");
             const failures = results.filter(({ result }) => result._tag === "Left");
             const successful = results.flatMap(({ result }) =>
               result._tag === "Right" ? [result.right] : [],
@@ -2026,6 +2121,19 @@ export const createDeliveryAssistant = (
               periodCensus: successful.find((result) => result.periodCensus !== undefined)
                 ?.periodCensus,
             };
+            endDeliveryExecution(fusionExecution, "success", {
+              "candidates.retrieved": successful.reduce(
+                (count, current) => count + current.items.length,
+                0,
+              ),
+              "candidates.unique": merged.items.length,
+              "candidates.duplicates_removed": Math.max(
+                0,
+                successful.reduce((count, current) => count + current.items.length, 0) -
+                  merged.items.length,
+              ),
+              "candidates.excluded": failures.length,
+            });
             const representedSources = new Set([
               ...merged.items.map((item) => item.source),
               ...merged.conflicts.flatMap((conflict) =>
@@ -2044,6 +2152,9 @@ export const createDeliveryAssistant = (
             const missingRequiredIntents = intentsRequiredForCompleteness.filter(
               (intent) => !representedIntents.has(intent),
             );
+            const episodeExecution = childDeliveryExecution(execution, "episode.consolidate", {
+              "candidates.unique": merged.items.length,
+            });
             const periodDeliveryReport =
               (responseProduct === "leadership_report" ||
                 responseProduct === "period_delivery_brief") &&
@@ -2055,14 +2166,33 @@ export const createDeliveryAssistant = (
                     capabilityLedger: configuration.capabilityLedger,
                   })
                 : undefined;
+            endDeliveryExecution(episodeExecution, "success", {
+              "episodes.count": periodDeliveryReport?.capsules.length ?? 0,
+              "episodes.merge_ratio":
+                merged.items.length === 0
+                  ? 0
+                  : (periodDeliveryReport?.capsules.length ?? 0) / merged.items.length,
+            });
             const enrichment =
               periodDeliveryReport === undefined || configuration.answerComposer === undefined
                 ? Effect.succeed([])
-                : retrievePeriodReportEnrichment(
-                    configuration.sources,
-                    context,
-                    periodDeliveryReport,
-                    sourceTimeoutMs,
+                : observeDeliveryEffect(
+                    execution,
+                    "parent.expand",
+                    {
+                      "episodes.count": periodDeliveryReport.capsules.length,
+                      "timeout.ms": Math.min(
+                        sourceTimeoutMs,
+                        remainingDeliveryExecutionBudgetMs(execution),
+                      ),
+                    },
+                    (parentExecution) =>
+                      retrievePeriodReportEnrichment(
+                        configuration.sources,
+                        { ...context, execution: parentExecution },
+                        periodDeliveryReport,
+                        Math.min(sourceTimeoutMs, remainingDeliveryExecutionBudgetMs(execution)),
+                      ),
                   );
             return enrichment.pipe(
               Effect.flatMap((enrichmentItems) => {
@@ -2096,6 +2226,7 @@ export const createDeliveryAssistant = (
                   plan.intents.includes("delivered") &&
                   plan.intents.includes("status") &&
                   namedCompletionQuestionSubject(request.question) !== undefined;
+                const completionExecution = childDeliveryExecution(execution, "completion.assess");
                 const completionReconciliation =
                   !completionRequested || configuration.completionResolution === undefined
                     ? undefined
@@ -2104,6 +2235,9 @@ export const createDeliveryAssistant = (
                         result: completed,
                         requestedAt: request.requestedAt,
                       });
+                endDeliveryExecution(completionExecution, "success", {
+                  "candidates.unique": completed.items.length,
+                });
                 const requiredCompletionAssessment = completionReconciliation?.assessment;
                 const compositionResult: DeliveryQueryResult =
                   completionReconciliation === undefined
@@ -2161,6 +2295,7 @@ export const createDeliveryAssistant = (
                             responseMode,
                             responseProduct,
                             responseBudget,
+                            execution,
                             requiredCompletionAssessment,
                           );
                 return composed.pipe(
@@ -2215,6 +2350,53 @@ export const createDeliveryAssistant = (
           }),
         );
       }),
+      Effect.timeoutFail({
+        duration: totalBudgetMs,
+        onTimeout: () =>
+          new RepositoryError({
+            message: "Delivery answer exceeded its absolute response deadline.",
+            operation: "delivery-answer",
+          }),
+      }),
+      Effect.onInterrupt(() => Effect.sync(() => abortController.abort("delivery-interrupted"))),
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          clearTimeout(deadlineTimer);
+          const outcome = Exit.isSuccess(exit)
+            ? exit.value.status === "failed"
+              ? "failed"
+              : "success"
+            : abortController.signal.aborted || remainingDeliveryExecutionBudgetMs(execution) === 0
+              ? "timeout"
+              : "failed";
+          endDeliveryExecution(
+            execution,
+            outcome,
+            { "response.product": responseProduct, "response.mode": responseMode },
+            outcome === "timeout"
+              ? "internal_deadline_exhaustion"
+              : outcome === "failed"
+                ? "other"
+                : "none",
+          );
+          execution.observer.recordMetric({
+            name: "delivery.report.outcome",
+            value: 1,
+            unit: "1",
+            labels: {
+              outcome,
+              response_mode: responseMode,
+              response_product: responseProduct,
+              failure_class:
+                outcome === "timeout"
+                  ? "internal_deadline_exhaustion"
+                  : outcome === "failed"
+                    ? "other"
+                    : "none",
+            },
+          });
+        }),
+      ),
     );
   },
 });

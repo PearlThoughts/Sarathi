@@ -321,6 +321,13 @@
 - Scope: Bounded planning, explicit response-product and fast/structured/deep-dive mode selection, product-specific transport and source-budget propagation, independent completeness/citation/grounding/freshness/format/latency acceptance, finance authorization before source calls, workspace and sensitivity filtering before model composition, deterministic period-census coverage diagnostics, deduplication, initiative-first alignment against declared goals, explicit unassigned work, decision-ready compound briefs, active-over-terminal status ranking, conflict disclosure, citation validation, deterministic fallback for eligible operational answers, partial-source behavior for non-report products, and composed-or-safe-failure publication for weekly, sprint, recent-period, and leadership reports.
 - Prerequisites: Bun dependencies installed with `bun install`.
 
+## delivery-execution-observability
+
+- Command: `bunx vitest run tests/delivery-execution-observability.test.ts`
+- Location: `tests/delivery-execution-observability.test.ts`
+- Scope: Vendor-neutral report trace hierarchy, parent-child identity, remaining-budget boundaries, span-attribute allowlisting, bounded metric-label cardinality, fail-open structured/error export, and bounded synchronous enqueue overhead.
+- Prerequisites: Bun dependencies installed with `bun install`.
+
 ## delivery-intelligence-live-sources
 
 - Command: `bunx vitest run tests/delivery-query-sources.test.ts`

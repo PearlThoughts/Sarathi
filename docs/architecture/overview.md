@@ -10,6 +10,7 @@ Sarathi follows a domain-first hexagonal structure:
 - `src/modules/*`: bounded contexts with a public `index.ts`, then `domain`, `application`, `ports`, and `api` layers only when needed.
 - `src/modules/boundary-policy`: the policy gate for trust tier, sensitivity, delegation stage, approval, and model egress.
 - `src/modules/delivery-intelligence`: canonical project objects, relationships, observations, claims, metrics, conflicts, query grammar, product profile, and answer orchestration for the AI Delivery Assistant.
+- `src/modules/delivery-execution-observability`: privacy-safe execution stages, one absolute deadline and cancellation context, bounded measurements, and vendor-neutral telemetry ports.
 - `src/modules/knowledge-layer`: versioned documents, passages, provenance, deletion reconciliation, full-text/vector retrieval, and citations supporting delivery intelligence.
 - `src/modules/follow-up`: generic due-item planning and exception digest primitives.
 - `src/modules/messaging`: Teams-ready message contracts and delivery ports.
@@ -25,6 +26,8 @@ The first production-critical invariant is:
 > Authorization must happen before retrieval, before tool invocation, and before model egress.
 
 Connector and context-assembly work must call the boundary-policy capability before retrieving source context, invoking tools, or sending model-visible output.
+
+Delivery report execution establishes one `delivery.report` root trace and one absolute deadline at ingress. Application and domain code emit only the allowlisted observability vocabulary. Structured logs, OpenTelemetry, Better Stack, Railway, and error-reporting integrations remain infrastructure edges; their queues and failures never become synchronous report dependencies.
 
 ## Source Systems
 

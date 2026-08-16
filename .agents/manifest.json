@@ -50,6 +50,11 @@
       "responsibility": "Model project objects, relationships, observations, claims, metrics, conflicts, safe delivery queries, and concise cited results."
     },
     {
+      "name": "delivery-execution-observability",
+      "path": "src/modules/delivery-execution-observability",
+      "responsibility": "Own privacy-safe delivery execution stages, absolute-deadline context, cooperative cancellation, bounded measurements, metric labels, and vendor-neutral telemetry ports."
+    },
+    {
       "name": "knowledge-layer",
       "path": "src/modules/knowledge-layer",
       "responsibility": "Synchronize versioned documents and passages, enforce retrieval boundaries, and provide cited full-text and vector knowledge retrieval."
