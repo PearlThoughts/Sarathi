@@ -148,6 +148,52 @@ describe("delivery execution observability", () => {
     expect(observer.spans.every(({ outcome }) => outcome !== undefined)).toBe(true);
   });
 
+  it("reuses an ingress-owned absolute deadline without ending the shared report root", async () => {
+    const observer = createInMemoryDeliveryExecutionObserver();
+    const controller = new AbortController();
+    const deadlineEpochMs = Date.now() + 5_000;
+    const execution = startDeliveryExecution({
+      observer,
+      deadlineEpochMs,
+      signal: controller.signal,
+    });
+    const source: DeliveryQuerySource = {
+      source: "projection",
+      selectors: ["observations"],
+      execute: (context) => {
+        expect(context.execution?.deadlineEpochMs).toBe(deadlineEpochMs);
+        expect(context.deadlineAt).toBe(new Date(deadlineEpochMs).toISOString());
+        return Effect.succeed({
+          items: [],
+          conflicts: [],
+          unavailableSources: ["jira"],
+          complete: false,
+        });
+      },
+    };
+
+    await Effect.runPromise(
+      createDeliveryAssistant({ sources: [source], execution }).answer({
+        workspaceId: "synthetic-workspace",
+        actorId: "synthetic-actor",
+        maximumSensitivity: "internal",
+        financeAccess: false,
+        requestedAt: new Date().toISOString(),
+        timeZone: "UTC",
+        question: "What did the team do today?",
+      }),
+    );
+
+    const report = observer.spans.find(({ span }) => span.stage === "delivery.report");
+    expect(report?.outcome).toBeUndefined();
+    expect(observer.spans.filter(({ span }) => span.stage === "delivery.report")).toHaveLength(1);
+    endDeliveryExecution(execution, "success");
+    expect(report?.outcome).toBeUndefined();
+    expect(observer.spans.find(({ span }) => span.stage === "delivery.report")?.outcome).toBe(
+      "success",
+    );
+  });
+
   it("keeps structured logging and safe error capture fail-open", async () => {
     const observer = createOpenTelemetryDeliveryExecutionObserver({
       structuredLog: () => {
