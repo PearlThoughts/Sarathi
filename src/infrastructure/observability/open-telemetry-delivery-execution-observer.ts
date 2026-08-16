@@ -30,7 +30,7 @@ type SafeErrorCapture = (input: {
   readonly elapsedMs?: number | undefined;
 }) => void;
 
-export type OpenTelemetryDeliveryObserverConfiguration = {
+type OpenTelemetryDeliveryObserverConfiguration = {
   readonly structuredLog?: ((event: Readonly<Record<string, unknown>>) => void) | undefined;
   readonly safeErrorCapture?: SafeErrorCapture | undefined;
 };
@@ -127,7 +127,7 @@ export const createOpenTelemetryDeliveryExecutionObserver = (
   };
 };
 
-export type DeliveryOpenTelemetryRuntimeConfiguration = {
+type DeliveryOpenTelemetryRuntimeConfiguration = {
   readonly endpoint: string;
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly serviceVersion?: string | undefined;
@@ -141,7 +141,7 @@ export type DeliveryOpenTelemetryRuntimeConfiguration = {
 const otlpUrl = (base: string, signal: "traces" | "metrics"): string =>
   `${base.replace(/\/+$/, "")}/v1/${signal}`;
 
-export const startDeliveryOpenTelemetryRuntime = (
+const startDeliveryOpenTelemetryRuntime = (
   configuration: DeliveryOpenTelemetryRuntimeConfiguration,
 ): { readonly shutdown: () => Promise<void> } => {
   const resource = resourceFromAttributes({
@@ -253,7 +253,7 @@ export const deliveryExecutionObserverFromEnvironment = (
   return observer;
 };
 
-export const shutdownDeliveryOpenTelemetryRuntime = async (): Promise<void> => {
+const shutdownDeliveryOpenTelemetryRuntime = async (): Promise<void> => {
   await processRuntime?.shutdown();
   processRuntime = undefined;
   processObserver = undefined;
