@@ -21,6 +21,7 @@ import {
   sanitizeDeliveryExecutionAttributes,
   sanitizeDeliveryExecutionMetricLabels,
 } from "../../modules/delivery-execution-observability/index.ts";
+import { createBetterStackSafeErrorCapture } from "./better-stack-errors.ts";
 
 type SafeErrorCapture = (input: {
   readonly code: string;
@@ -229,7 +230,10 @@ export const deliveryExecutionObserverFromEnvironment = (
   const structuredLog = (event: Readonly<Record<string, unknown>>): void => {
     process.stdout.write(`${JSON.stringify(event)}\n`);
   };
-  const observer = createOpenTelemetryDeliveryExecutionObserver({ structuredLog });
+  const observer = createOpenTelemetryDeliveryExecutionObserver({
+    structuredLog,
+    safeErrorCapture: createBetterStackSafeErrorCapture(environment),
+  });
   processObserver = observer;
   const endpoint = environment.SARATHI_OTLP_ENDPOINT?.trim();
   if (endpoint === undefined || endpoint === "") return observer;
