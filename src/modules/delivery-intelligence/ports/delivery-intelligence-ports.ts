@@ -2,6 +2,7 @@ import type { Effect } from "effect";
 import type { CollaborationSourceScope } from "../../../domain/collaboration-source-scope.ts";
 import type { RepositoryError } from "../../../domain/errors.ts";
 import type { SensitivityTier } from "../../../domain/policy.ts";
+import type { DeliveryExecutionContext } from "../../delivery-execution-observability/index.ts";
 import type { ProductCompletionResolution } from "../../product-model/index.ts";
 import type { CompletionAssessment } from "../domain/completion-model.ts";
 import type { DeliveryConflict, DeliverySourceKind } from "../domain/delivery-model.ts";
@@ -32,6 +33,7 @@ export type DeliveryQueryContext = {
   readonly responseMode?: DeliveryResponseMode | undefined;
   readonly totalBudgetMs?: number | undefined;
   readonly sourceTimeoutMs?: number | undefined;
+  readonly execution?: DeliveryExecutionContext | undefined;
 };
 
 type DeliveryQuestionContextEvidence = {
@@ -153,7 +155,7 @@ export type DeliveryQuerySource = {
   ) => Effect.Effect<DeliveryQueryResult, RepositoryError>;
 };
 
-export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt"> & {
+export type DeliveryAssistantRequest = Omit<DeliveryQueryContext, "deadlineAt" | "execution"> & {
   readonly plan?: DeliveryQueryPlan | undefined;
   readonly responseMode?: DeliveryResponseMode | undefined;
   readonly responseProduct?: DeliveryResponseProduct | undefined;

@@ -21,6 +21,7 @@ import {
   createGroundedAnswerGeneratorFromEnvironment,
   knowledgeEmbeddingConfigurationFromEnvironment,
 } from "../../infrastructure/model/index.ts";
+import { deliveryExecutionObserverFromEnvironment } from "../../infrastructure/observability/index.ts";
 import {
   createPostgresAnswerFeedbackRepository,
   createPostgresDeliveryQuerySource,
@@ -412,6 +413,7 @@ const answerFromRuntime = async (
       ? undefined
       : openKnowledgePostgresDatabase(productModelConfiguration.databaseUrl, queryBudgetMs);
   const productDatabase = productOpened?.database ?? opened.database;
+  const executionObserver = deliveryExecutionObserverFromEnvironment(environment);
   try {
     const sources = [
       createPostgresDeliveryQuerySource(opened.database, { entityCatalog }),
@@ -446,6 +448,7 @@ const answerFromRuntime = async (
         { relevanceProfile },
       ),
       capabilityLedger,
+      executionObserver,
       ...deliveryResponseBudget,
     };
     const assistant = (() => {

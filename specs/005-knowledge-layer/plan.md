@@ -15,6 +15,7 @@ Refactor the existing production-pilot child capability from a knowledge-led ans
 - Sources: continuously synchronized Jira, versioned knowledge roots, default-branch repository code/activity, and bounded collaboration channels; optional live verification and scoped project email.
 - Retrieval: structured delivery queries first; exact/full-text/vector knowledge retrieval and GitHub live search as supporting operations.
 - Verification: Vitest, Bun integration tests, architecture fitness, privacy scan, `bun run check`, runtime smoke, production acceptance, and rollback proof.
+- Observability: vendor-neutral Effect spans and measurements, OpenTelemetry OTLP at the infrastructure edge, structured JSON correlation, Better Stack telemetry/errors/uptime, and bounded fail-open export.
 
 ## 3. Constitution and Architecture Check
 
@@ -43,6 +44,11 @@ src/modules/knowledge-layer/
                 ranking and citations
   application/  ingestion, reconciliation, hybrid retrieval and cited context
   ports/        repository, source, embedding, live-search contracts
+
+src/modules/delivery-execution-observability/
+  domain/       safe stage/outcome/failure/metric vocabulary and allowlists
+  application/  deadline-aware span lifecycle and bounded measurements
+  ports/        asynchronous trace, metric, and safe-error export
 
 src/infrastructure/
   postgres/     Drizzle schema/migrations and repository implementations
@@ -128,6 +134,17 @@ Teams mention handling consumes one `DeliveryAssistant` port. It does not classi
 7. Compose structured and leadership reports from an accepted report envelope using schemas and prompts distinct from fast operational answers.
 8. Evaluate against a private human-authored report withheld from the production answer path, run source ablations, and require theme/initiative recall, citation, inference, authorization, and human-usefulness thresholds.
 
+### Slice I — Delivery Execution Observability And Deadline Control
+
+1. Ratify ADR 0013 and add `delivery-execution-observability` as a platform capability with a strict telemetry allowlist and bounded metric-label vocabulary.
+2. Carry one absolute deadline and cooperative cancellation signal through every report stage and infrastructure adapter; refuse provider invocation after expiry.
+3. Instrument ingress, authorization, planning, census, retrieval/database operations, fusion/reranking, parent expansion, episode/lifecycle/completion work, envelope construction, provider composition, validation, and delivery as one trace hierarchy.
+4. Instrument scheduler/synchronization as separate root traces and record bounded database, event-loop, heap/GC, CPU, in-flight, and overlap measurements without private identifiers.
+5. Export OTLP asynchronously through a stateless collector on Railway private networking when operationally proven; retain direct OTLP/HTTP behind the same port as a documented fallback. Keep structured JSON logs correlated by trace/span IDs.
+6. Integrate Better Stack Errors through explicit safe capture with performance tracing and default PII disabled; add `/health` and `/ready` monitors, bounded alerts, and operational dashboards/views.
+7. Reproduce against the unchanged indexed snapshot, diagnose the measured stage, and only then apply the smallest bounded retrieval, query, concurrency, cancellation, or envelope correction.
+8. Prove fault injection, telemetry fail-open behavior, privacy/cardinality gates, full local CI, governed merge/deploy, telemetry receipt, production CLI evaluation, and separate Teams/human acceptance status.
+
 ## 6. Data and Migration Strategy
 
 Drizzle schema definitions are authoritative for new tables. Because delivery migrations `0002` and `0003` have not been deployed and exist only on this feature branch, regenerate them into one coherent migration rather than carrying an abandoned intermediate design into production. The deployed knowledge migration and existing audit tables remain immutable sentinels.
@@ -156,6 +173,7 @@ The synchronization control plane is event-first and reconciliation-correct. Ver
 - Production: exact SHA, migration journal, safe counts/checksums, real citations, response latency, log scan, app rollback, and database recovery evidence.
 - Continuous sync: historical bootstrap, pagination, event authenticity, duplicate/out-of-order delivery, subscription renewal, hourly repair, changed-only embedding reuse, deletion convergence, lag/freshness reporting, and manual replay.
 - Period reporting: relative/explicit window parsing, timezone boundaries, completion-stage membership, exhaustive pagination, duplicate collapse, capsule joins, capability mappings, outcome evidence classes, coverage disclosure, source ablations, citation validation, report-mode budget propagation, and gold-report reconstruction.
+- Delivery execution: trace parentage, remaining budget at every boundary, absolute-deadline propagation, cooperative database/provider cancellation, no post-deadline provider call, bounded candidate/parent/episode/envelope work, safe failure classification, telemetry allowlist/cardinality, non-blocking export, and controlled source/database/pool/scheduler/provider/collector/error-backend fault injection.
 
 ## 9. Stop Conditions
 
@@ -163,6 +181,6 @@ Stop on migration drift, backup failure, unresolved architecture violation, inco
 
 ## 10. Dependency and Completion Gates
 
-`spec/ADR -> domain and architecture fitness -> coherent migration -> projection reconciliation -> safe query execution -> complete period census -> change/capability/outcome reconstruction -> report composition -> focused tests -> exact-branch CI -> governed merge -> backup -> migration/deploy -> bounded sync -> gold reconstruction and real Teams answers -> rollback proof`.
+`spec/ADR -> observability boundary -> instrumentation-only deploy -> frozen-snapshot trace -> measured correction -> domain and architecture fitness -> safe query execution -> complete period census -> report composition -> fault/privacy tests -> exact-branch CI -> governed merge -> deploy -> telemetry receipt -> frozen-snapshot CLI result -> separately approved Teams and human acceptance -> rollback proof`.
 
 Schema creation, mocked queries, readiness HTTP 200, deployment, ingestion counts, embedding counts, or one sparse cited answer do not independently complete the capability.

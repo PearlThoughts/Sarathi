@@ -17,6 +17,8 @@ Do not create placeholder folders. A layer exists only when there is production 
 
 `src/modules/delivery-intelligence` owns the public product role and the reusable delivery model. It names delivery objects, relations, observations, claims, metrics, query plans, audience semantics, team-profile dials, and the PostgreSQL/pgvector storage boundary. Reporting is a query over this model, not a separate temporal subsystem.
 
+`src/modules/delivery-execution-observability` owns the safe execution-stage vocabulary, one absolute deadline and cooperative cancellation context, bounded span attributes, bounded metric labels, and telemetry ports. It never receives questions, answers, prompts, source content, people, source-native identifiers, private URLs, request headers, provider responses, credentials, or private configuration. OpenTelemetry, structured stdout, error reporting, Better Stack, and Railway adapters live under `src/infrastructure/observability`.
+
 `src/modules/product-model` owns the slower-changing business product vocabulary: stable product, area, capability, and feature identity; its primary hierarchy; aliases; registration and lifecycle; variants; revisions; and governed identity evolution. It does not own delivery state or report composition.
 
 `src/modules/answer-feedback` owns exact-answer feedback snapshots, append-only actor revisions, current projections, privacy-safe aggregates, review dispositions, and reviewed corrected-answer candidates. Teams owns neither this domain nor its persistence. Feedback cannot mutate the original answer, product model, lifecycle state, evaluation rating, or source systems.

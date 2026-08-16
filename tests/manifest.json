@@ -312,6 +312,13 @@
       "description": "Complete split disposition across aliases, relation endpoints, variants, opaque references, and children, including orphan and contested-shell outcomes."
     },
     {
+      "id": "delivery-execution-observability",
+      "path": "tests/delivery-execution-observability.test.ts",
+      "command": "bunx vitest run tests/delivery-execution-observability.test.ts",
+      "prerequisites": ["bun install"],
+      "description": "Vendor-neutral report trace hierarchy, remaining-budget boundaries, telemetry allowlist, bounded metric labels, fail-open exporters, and bounded enqueue overhead."
+    },
+    {
       "id": "delivery-intelligence-application",
       "path": "tests/delivery-intelligence-application.test.ts",
       "command": "bunx vitest run tests/delivery-intelligence-application.test.ts tests/delivery-initiative-alignment.test.ts",
